@@ -14,7 +14,7 @@ from typing import Any
 import httpx
 from fastapi import HTTPException, Request, status
 
-from agent.core.hf_tokens import bearer_token_from_header
+
 
 logger = logging.getLogger(__name__)
 
@@ -46,11 +46,6 @@ REQUIRED_OAUTH_SCOPES: tuple[str, ...] = (
     "jobs",
     "write-discussions",
 )
-
-# Log the whoami-v2 shape once at DEBUG so we can confirm the production Pro
-# signal without hammering the HF API.
-_WHOAMI_SHAPE_LOGGED = False
-
 
 def normalize_oauth_scopes(scopes: Iterable[str]) -> tuple[str, ...]:
     """Return stable, de-duplicated OAuth scopes preserving declaration order."""
@@ -125,46 +120,24 @@ def _user_from_info(user_info: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _normalize_user_plan(whoami: Any) -> str:
-    """Normalize a whoami-v2 payload to the app's supported plan tiers."""
-    if isinstance(whoami, dict):
-        return "pro" if whoami.get("isPro") else "free"
-    return "free"
-
-
-async def _fetch_user_plan(token: str) -> str:
-    """Look up the user's HF plan via /api/whoami-v2.
-
-    Returns 'free' | 'pro'. Non-200, network errors, or an unknown
-    payload shape all collapse to 'free' — safe default; we'd rather avoid
-    selecting the Pro default on bad data.
-    """
-    global _WHOAMI_SHAPE_LOGGED
-    whoami = await fetch_whoami_v2(token)
-    if whoami is None:
-        return "free"
-
-    if not _WHOAMI_SHAPE_LOGGED:
-        _WHOAMI_SHAPE_LOGGED = True
-        logger.debug(
-            "whoami-v2 payload keys: %s (sample values: isPro=%r)",
-            sorted(whoami.keys())
-            if isinstance(whoami, dict)
-            else type(whoami).__name__,
-            whoami.get("isPro") if isinstance(whoami, dict) else None,
-        )
-
-    return _normalize_user_plan(whoami)
-
-
 async def _extract_user_from_token(token: str) -> dict[str, Any] | None:
     """Validate a token and return a user dict, or None."""
     user_info = await _validate_token(token)
     if user_info is None:
         return None
     user = _user_from_info(user_info)
-    user["plan"] = await _fetch_user_plan(token)
+    user["plan"] = "free"
     return user
+
+
+def bearer_token_from_header(auth_header: str) -> str | None:
+    """Extract bearer token from Authorization header."""
+    if not auth_header:
+        return None
+    parts = auth_header.split()
+    if len(parts) != 2 or parts[0].lower() != "bearer":
+        return None
+    return parts[1]
 
 
 async def _dev_user_from_env() -> dict[str, Any]:
@@ -196,7 +169,7 @@ async def get_current_user(request: Request) -> dict[str, Any]:
     if token:
         if not _cookie_has_current_oauth_scope_marker(request):
             logger.info(
-                "Rejecting stale HF OAuth cookie; current scopes require refresh."
+                "Rejecting stale OAuth cookie; current scopes require refresh."
             )
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
