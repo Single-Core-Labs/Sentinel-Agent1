@@ -26,6 +26,14 @@ from agent.tools.github_read_file import (
     github_read_file_handler,
 )
 from agent.tools.notify_tool import NOTIFY_TOOL_SPEC, notify_handler
+from agent.tools.git_tools import (
+    GIT_COMMIT_TOOL_SPEC,
+    GIT_DIFF_TOOL_SPEC,
+    GIT_STATUS_TOOL_SPEC,
+    _git_commit_handler,
+    _git_diff_handler,
+    _git_status_handler,
+)
 from agent.tools.plan_tool import PLAN_TOOL_SPEC, plan_tool_handler
 from agent.tools.research_tool import RESEARCH_TOOL_SPEC, research_handler
 from agent.tools.web_search_tool import WEB_SEARCH_TOOL_SPEC, web_search_handler
@@ -310,6 +318,25 @@ def create_builtin_tools(local_mode: bool = False) -> list[ToolSpec]:
             description=GITHUB_READ_FILE_TOOL_SPEC["description"],
             parameters=GITHUB_READ_FILE_TOOL_SPEC["parameters"],
             handler=github_read_file_handler,
+        ),
+        # Git tools
+        ToolSpec(
+            name=GIT_STATUS_TOOL_SPEC["name"],
+            description=GIT_STATUS_TOOL_SPEC["description"],
+            parameters=GIT_STATUS_TOOL_SPEC["parameters"],
+            handler=_git_status_handler,
+        ),
+        ToolSpec(
+            name=GIT_DIFF_TOOL_SPEC["name"],
+            description=GIT_DIFF_TOOL_SPEC["description"],
+            parameters=GIT_DIFF_TOOL_SPEC["parameters"],
+            handler=_git_diff_handler,
+        ),
+        ToolSpec(
+            name=GIT_COMMIT_TOOL_SPEC["name"],
+            description=GIT_COMMIT_TOOL_SPEC["description"],
+            parameters=GIT_COMMIT_TOOL_SPEC["parameters"],
+            handler=_git_commit_handler,
         ),
     ]
 

@@ -494,6 +494,28 @@ async def event_listener(
                         "past messages are not re-injected."
                     )
                 turn_complete_event.set()
+            elif event.event_type == "plan_generated":
+                shimmer.stop()
+                model = event.data.get("model", "?") if event.data else "?"
+                console.print(
+                    f"[bold rgb(80,160,255)]Plan phase[/bold rgb(80,160,255)] "
+                    f"[dim](model: {model})[/dim]"
+                )
+            elif event.event_type == "step_completed":
+                step_id = event.data.get("step_id", "?") if event.data else "?"
+                status = event.data.get("status", "?") if event.data else "?"
+                console.print(
+                    f"  [dim]Step {step_id}: {status}[/dim]"
+                )
+            elif event.event_type == "observation":
+                phase = event.data.get("phase", "?") if event.data else "?"
+                tool_count = event.data.get("tool_count", 0) if event.data else 0
+                success_count = event.data.get("success_count", 0) if event.data else 0
+                if tool_count > 0:
+                    summary = f"{success_count}/{tool_count} tools succeeded"
+                    console.print(
+                        f"  [dim]Observe ({phase}): {summary}[/dim]"
+                    )
             elif event.event_type == "tool_log":
                 tool = event.data.get("tool", "") if event.data else ""
                 log = event.data.get("log", "") if event.data else ""

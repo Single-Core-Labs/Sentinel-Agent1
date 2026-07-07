@@ -125,6 +125,8 @@ User Message → [ContextManager]
 `turn_complete`, `interrupted`, `error`, `compacted`, `undo_complete`, `new_complete`,
 `resume_complete`, `shutdown`
 
+**New phase events**: `plan_generated`, `step_completed`, `observation`
+
 ## Tool Categories
 
 | Category | Tools |
@@ -160,5 +162,8 @@ User Message → [ContextManager]
 | `agent/router.py` | Tool Router + Model Router |
 | `agent/gate.py` | Approval gate (Slack, CLI) |
 | `agent/tools/` | Tool implementations by category |
+| `agent/core/plan.py` | Structured Plan/PlanStep + Phase enum |
+| `agent/core/model_router.py` | Cheap/strong model switching |
+| `agent/tools/git_tools.py` | git_status, git_diff, git_commit |
 | `agent/config.py` | Configuration |
 | `agent/main.py` | Entry point |

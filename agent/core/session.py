@@ -19,6 +19,11 @@ from agent.core.usage_thresholds import (
     USAGE_WARNING_FIRST_THRESHOLD_USD,
 )
 
+# Phase event type constants
+EVENT_PLAN_GENERATED = "plan_generated"
+EVENT_STEP_COMPLETED = "step_completed"
+EVENT_OBSERVATION = "observation"
+
 logger = logging.getLogger(__name__)
 
 _DEFAULT_MAX_TOKENS = 200_000
@@ -138,6 +143,10 @@ class Session:
         self.config = config
         self.is_running = True
         self.current_plan: list[dict[str, str]] = []
+        self.model_router: Any = None
+        self._phase: str = "plan"
+        self._plan_iteration: int = 0
+        self._plan_mode: bool = False
         self._cancelled = asyncio.Event()
         self.pending_approval: Optional[dict[str, Any]] = None
         self.sandbox = None
@@ -419,6 +428,21 @@ class Session:
         """Increment turn counter (called after each user interaction)"""
         self.turn_count += 1
 
+    def set_phase(self, phase: str) -> None:
+        self._phase = phase
+        self._plan_iteration = 0
+
+    @property
+    def phase(self) -> str:
+        return self._phase
+
+    def increment_plan_iteration(self) -> None:
+        self._plan_iteration += 1
+
+    @property
+    def plan_iteration(self) -> int:
+        return self._plan_iteration
+
     def start_new_conversation(self) -> dict[str, Any]:
         """Rotate this runtime into a fresh conversation.
 
@@ -444,6 +468,9 @@ class Session:
         from agent.tools.plan_tool import reset_current_plan
 
         self.current_plan = []
+        self._phase = "plan"
+        self._plan_iteration = 0
+        self._plan_mode = False
         reset_current_plan()
 
         system_msg = self._fresh_system_message()

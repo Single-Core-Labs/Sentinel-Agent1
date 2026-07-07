@@ -31,7 +31,14 @@ from agent.core.prompt_caching import (
     with_prompt_cache_params,
     with_prompt_caching,
 )
-from agent.core.session import Event, OpType, Session
+from agent.core.model_router import ModelRouter
+from agent.core.session import (
+    EVENT_OBSERVATION,
+    EVENT_PLAN_GENERATED,
+    Event,
+    OpType,
+    Session,
+)
 from agent.core.tools import ToolRouter
 from agent.core.usage_thresholds import (
     USAGE_THRESHOLD_TOOL_NAME,
@@ -65,6 +72,9 @@ ToolCall = ChatCompletionMessageToolCall
 _MALFORMED_TOOL_PREFIX = "ERROR: Tool call to '"
 _MALFORMED_TOOL_SUFFIX = "' had malformed JSON arguments"
 _NO_TOOL_INCOMPLETE_PLAN_RETRY_LIMIT = 2
+# Hard cap per user turn: 50 iterations in plan phase, 200 total
+_MAX_PLAN_ITERATIONS = 50
+_MAX_TOTAL_ITERATIONS = 200
 
 
 def _unfinished_plan_items(session: Session) -> list[dict[str, str]]:
@@ -1190,11 +1200,21 @@ class Handlers:
             Event(event_type="processing", data={"message": "Processing user input"})
         )
 
+        # Initialize plan→act→observe phase tracking
+        session.set_phase("plan")
+        model_router: ModelRouter | None = getattr(session, "model_router", None)
+
         # Agentic loop - continue until model doesn't call tools or max iterations is reached
         iteration = 0
         final_response = None
         errored = False
-        max_iterations = session.config.max_iterations
+        max_iterations = min(
+            session.config.max_iterations
+            if session.config.max_iterations != -1
+            else _MAX_TOTAL_ITERATIONS,
+            _MAX_TOTAL_ITERATIONS,
+        )
+        plan_mode_iterations = _MAX_PLAN_ITERATIONS
         no_tool_incomplete_plan_retries = 0
 
         while max_iterations == -1 or iteration < max_iterations:
@@ -1256,13 +1276,47 @@ class Handlers:
 
             messages = session.context_manager.get_messages()
             tools = session.tool_router.get_tool_specs_for_llm()
+
+            # ── Phase-aware model routing ──
+            if model_router and session.phase == "plan":
+                model_router.use_cheap()
+            elif model_router and session.phase == "act":
+                model_router.use_strong()
+            active_model = (
+                model_router.current_model if model_router else session.config.model_name
+            )
+
+            # ── Emit plan_generated on first plan iteration ──
+            if session.phase == "plan" and session.plan_iteration == 0:
+                await session.send_event(
+                    Event(
+                        event_type=EVENT_PLAN_GENERATED,
+                        data={
+                            "model": active_model,
+                            "iteration": iteration,
+                        },
+                    )
+                )
+
+            # ── Hard cap on plan-mode iterations ──
+            if session.phase == "plan" and session.plan_iteration >= plan_mode_iterations:
+                logger.info(
+                    "Plan phase iteration cap (%d) reached — switching to act phase",
+                    plan_mode_iterations,
+                )
+                session.set_phase("act")
+                if model_router:
+                    model_router.use_strong()
+
+            session.increment_plan_iteration()
+
             try:
                 # ── Call the LLM (streaming or non-streaming) ──
                 # Pull the per-model probed effort from the session cache when
                 # available; fall back to the raw preference for models we
                 # haven't probed yet (e.g. research sub-model).
                 llm_params = _resolve_llm_params(
-                    session.config.model_name,
+                    active_model if not model_router else active_model,
                     session.hf_token,
                     reasoning_effort=session.effective_effort_for(
                         session.config.model_name
@@ -1663,6 +1717,20 @@ class Handlers:
                                 },
                             )
                         )
+
+                    # ── Emit observation event after non-approval tools ──
+                    await session.send_event(
+                        Event(
+                            event_type=EVENT_OBSERVATION,
+                            data={
+                                "phase": session.phase,
+                                "tool_count": len(results),
+                                "success_count": sum(1 for _, _, _, _, ok in results if ok),
+                                "iteration": iteration,
+                                "plan_iteration": session.plan_iteration,
+                            },
+                        )
+                    )
 
                 # If there are tools requiring approval, ask for batch approval
                 if approval_required_tools:
@@ -2336,6 +2404,21 @@ class Handlers:
                         },
                     )
                 )
+
+            # ── Emit observation event after approved tool execution ──
+            await session.send_event(
+                Event(
+                    event_type=EVENT_OBSERVATION,
+                    data={
+                        "phase": session.phase,
+                        "tool_count": len(results),
+                        "success_count": sum(
+                            1 for r in results if isinstance(r, tuple) and r[3]
+                        ),
+                        "source": "approval_execution",
+                    },
+                )
+            )
 
         # Process rejected tools
         for tc, tool_name, approval_decision in rejected_tasks:

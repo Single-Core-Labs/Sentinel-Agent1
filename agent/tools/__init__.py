@@ -19,10 +19,24 @@ from agent.tools.github_read_file import (
     github_read_file_handler,
 )
 from agent.tools.types import ToolResult
+from agent.tools.git_tools import (
+    GIT_COMMIT_TOOL_SPEC,
+    GIT_DIFF_TOOL_SPEC,
+    GIT_STATUS_TOOL_SPEC,
+    _git_commit_handler,
+    _git_diff_handler,
+    _git_status_handler,
+)
 from agent.tools.web_search_tool import WEB_SEARCH_TOOL_SPEC, web_search_handler
 
 __all__ = [
     "ToolResult",
+    "GIT_STATUS_TOOL_SPEC",
+    "GIT_DIFF_TOOL_SPEC",
+    "GIT_COMMIT_TOOL_SPEC",
+    "_git_status_handler",
+    "_git_diff_handler",
+    "_git_commit_handler",
     "GITHUB_FIND_EXAMPLES_TOOL_SPEC",
     "github_find_examples_handler",
     "GITHUB_LIST_REPOS_TOOL_SPEC",
