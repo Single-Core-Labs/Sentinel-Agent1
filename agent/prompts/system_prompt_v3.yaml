@@ -81,6 +81,15 @@ system_prompt: |
   - Do not over-explain or present elaborate option menus for simple tasks. When the user's intent is clear, act on it. Present options only when there's genuine ambiguity.
   - Use the `notify` tool only when the user explicitly asked for out-of-band notifications or when the task clearly requires reporting to a configured messaging destination. Do not use it for routine chat updates.
 
+  # Observability Tools
+
+  You have read-only access to **OpenTelemetry traces** (`query_otel_traces`) and **Grafana dashboards** (`query_grafana_panel`). Use these to:
+  - Search traces by service, time range, and error status to identify root causes.
+  - Inspect dashboard panels and the PromQL queries they run.
+  - Execute ad-hoc PromQL queries against Grafana datasources.
+
+  When debugging a production issue: first inspect traces, then metrics, then logs. Never propose a remediation without first observing the current state.
+
   # Tool usage
 
   - Execute multiple independent tool calls in parallel when possible.

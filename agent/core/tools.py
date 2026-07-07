@@ -42,6 +42,12 @@ from agent.tools.terraform_tools import (
     _terraform_plan_handler,
     _terraform_state_read_handler,
 )
+from agent.tools.observability_tools import (
+    GRAFANA_PANEL_TOOL_SPEC,
+    OTEL_TRACES_TOOL_SPEC,
+    _query_grafana_panel_handler,
+    _query_otel_traces_handler,
+)
 from agent.tools.plan_tool import PLAN_TOOL_SPEC, plan_tool_handler
 from agent.tools.research_tool import RESEARCH_TOOL_SPEC, research_handler
 from agent.tools.web_search_tool import WEB_SEARCH_TOOL_SPEC, web_search_handler
@@ -364,6 +370,19 @@ def create_builtin_tools(local_mode: bool = False) -> list[ToolSpec]:
             description=TERRAFORM_APPLY_TOOL_SPEC["description"],
             parameters=TERRAFORM_APPLY_TOOL_SPEC["parameters"],
             handler=_terraform_apply_handler,
+        ),
+        # Observability tools (read-only)
+        ToolSpec(
+            name=OTEL_TRACES_TOOL_SPEC["name"],
+            description=OTEL_TRACES_TOOL_SPEC["description"],
+            parameters=OTEL_TRACES_TOOL_SPEC["parameters"],
+            handler=_query_otel_traces_handler,
+        ),
+        ToolSpec(
+            name=GRAFANA_PANEL_TOOL_SPEC["name"],
+            description=GRAFANA_PANEL_TOOL_SPEC["description"],
+            parameters=GRAFANA_PANEL_TOOL_SPEC["parameters"],
+            handler=_query_grafana_panel_handler,
         ),
     ]
 

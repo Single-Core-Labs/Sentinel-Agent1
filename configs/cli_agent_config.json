@@ -20,6 +20,23 @@
     "terraform": {
       "command": "npx",
       "args": ["-y", "terraform-mcp-server"]
+    },
+    "grafana": {
+      "command": "uvx",
+      "args": ["mcp-grafana", "--disable-write"],
+      "env": {
+        "GRAFANA_URL": "${GRAFANA_URL:-http://localhost:3000}",
+        "GRAFANA_SERVICE_ACCOUNT_TOKEN": "${GRAFANA_SERVICE_ACCOUNT_TOKEN}"
+      }
+    },
+    "opentelemetry": {
+      "command": "npx",
+      "args": ["-y", "@traceloop/opentelemetry-mcp"],
+      "env": {
+        "OTEL_ENDPOINT": "${OTEL_ENDPOINT:-http://localhost:16686}",
+        "JAEGER_ENDPOINT": "${JAEGER_ENDPOINT:-http://localhost:16686}",
+        "TEMPO_ENDPOINT": "${TEMPO_ENDPOINT}"
+      }
     }
   },
   "model_routing": {
