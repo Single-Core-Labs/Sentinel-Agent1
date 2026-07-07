@@ -60,6 +60,10 @@ from agent.tools.cloud_tools import (
 )
 from agent.tools.plan_tool import PLAN_TOOL_SPEC, plan_tool_handler
 from agent.tools.research_tool import RESEARCH_TOOL_SPEC, research_handler
+from agent.tools.subagent_tools import (
+    create_subagent_tool_specs,
+    subagent_dispatch_handler,
+)
 from agent.tools.web_search_tool import WEB_SEARCH_TOOL_SPEC, web_search_handler
 
 # Suppress aiohttp deprecation warning
@@ -295,6 +299,35 @@ class ToolRouter:
 # ============================================================================
 
 
+def _build_subagent_tools() -> list[ToolSpec]:
+    """Dynamically create a ToolSpec for each registered subagent."""
+    specs = []
+    for sub_spec in create_subagent_tool_specs():
+        name = sub_spec["name"]
+
+        async def _handler(
+            arguments: dict,
+            session=None,
+            tool_call_id: str | None = None,
+            _name: str = name,
+            **_kw,
+        ) -> tuple[str, bool]:
+            arguments["_subagent_name"] = _name
+            return await subagent_dispatch_handler(
+                arguments, session=session, tool_call_id=tool_call_id
+            )
+
+        specs.append(
+            ToolSpec(
+                name=name,
+                description=sub_spec["description"],
+                parameters=sub_spec["parameters"],
+                handler=_handler,
+            )
+        )
+    return specs
+
+
 def create_builtin_tools(local_mode: bool = False) -> list[ToolSpec]:
     """Create built-in tool specifications"""
     # in order of importance
@@ -306,6 +339,8 @@ def create_builtin_tools(local_mode: bool = False) -> list[ToolSpec]:
             parameters=RESEARCH_TOOL_SPEC["parameters"],
             handler=research_handler,
         ),
+        # Dynamically registered subagent tools
+        *_build_subagent_tools(),
         ToolSpec(
             name=WEB_SEARCH_TOOL_SPEC["name"],
             description=WEB_SEARCH_TOOL_SPEC["description"],
