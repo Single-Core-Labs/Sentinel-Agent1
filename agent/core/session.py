@@ -11,6 +11,7 @@ from typing import Any, Optional
 from litellm import Message
 
 from agent.config import Config
+from agent.context_manager.compression import CompressionContextManager
 from agent.context_manager.manager import ContextManager
 from agent.messaging.gateway import NotificationGateway
 from agent.messaging.models import NotificationRequest
@@ -23,6 +24,10 @@ from agent.core.usage_thresholds import (
 EVENT_PLAN_GENERATED = "plan_generated"
 EVENT_STEP_COMPLETED = "step_completed"
 EVENT_OBSERVATION = "observation"
+
+# Sentinel prefix injected by read-tool results for diff-context detection.
+# Defined in agent.context_manager.compression to avoid circular imports.
+FILE_READ_PREFIX = "[FILE_READ]"
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +134,7 @@ class Session:
         if config is None:
             raise ValueError("Session requires a Config")
         tool_specs = tool_router.get_tool_specs_for_llm() if tool_router else []
-        self.context_manager = context_manager or ContextManager(
+        inner_cm = context_manager or ContextManager(
             model_max_tokens=_get_max_tokens_safe(config.model_name),
             compact_size=0.1,
             untouched_messages=5,
@@ -138,11 +143,16 @@ class Session:
             local_mode=local_mode,
             autonomous_mode=autonomous_mode,
         )
+        self.context_manager = CompressionContextManager(
+            inner=inner_cm,
+            model_name=config.model_name,
+        )
         self.event_queue = event_queue
         self.session_id = session_id or str(uuid.uuid4())
         self.config = config
         self.is_running = True
         self.current_plan: list[dict[str, str]] = []
+        self._compression_enabled: bool = True
         self.model_router: Any = None
         self._phase: str = "plan"
         self._plan_iteration: int = 0
@@ -427,6 +437,12 @@ class Session:
     def increment_turn(self) -> None:
         """Increment turn counter (called after each user interaction)"""
         self.turn_count += 1
+
+    def get_token_report(self) -> Any:
+        """Return the token-compression report if compression is enabled."""
+        if hasattr(self.context_manager, "get_token_report"):
+            return self.context_manager.get_token_report()
+        return None
 
     def set_phase(self, phase: str) -> None:
         self._phase = phase
