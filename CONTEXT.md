@@ -105,6 +105,9 @@ User Message → [ContextManager]
 - Slack approval requests (buttons)
 - CLI y/n prompts
 - Policy-based auto-approval
+- **Mandatory approval**: `restart_service`, `scale_deployment`, `terraform_apply` — ALWAYS require user approval. NO config (yolo_mode, auto_approval, budget caps) can bypass.
+- **Pre-action preview**: before approval, the system shows a detailed diff of what the cloud mutation will change.
+- **Pre-action checkpoint**: before executing an approved mutation, session state is snapshotted. If the mutation causes issues, `rewind_cloud_action` restores the session to that checkpoint.
 
 ## Operations (OpType)
 
@@ -117,6 +120,7 @@ User Message → [ContextManager]
 | `NEW` | `new_conversation()` | Fresh chat |
 | `RESUME` | `resume()` | Reload saved session |
 | `SHUTDOWN` | `shutdown()` | Save + stop |
+| `REWIND_CLOUD` | `rewind()` | Undo last approved cloud mutation via checkpoint |
 
 ## Events
 
@@ -132,7 +136,9 @@ User Message → [ContextManager]
 | Category | Tools |
 |---|---|
 | **Code** | fs (read/write/edit), grep, git (status/diff/log/commit/push), exec |
-| **Infra** | terraform (plan/apply), aws, gcp, kubectl, helm |
+| **Infra (read)** | terraform (plan, state), aws/gcp IAM (read only) |
+| **Infra (mutating, mandatory approval)** | terraform (apply), restart_service, scale_deployment |
+| **Infra (rewind)** | rewind_cloud_action (restore session from checkpoint) |
 | **Observability** | otel (traces/metrics/logs), grafana (query/dashboard) |
 | **Research** | web_search, docs |
 | **Planning** | plan_tool |

@@ -55,6 +55,10 @@ from agent.core.yolo_budget import (
     yolo_budget_can_resume,
     yolo_budget_pending_to_tool,
 )
+from agent.tools.cloud_tools import (
+    MUTATING_CLOUD_TOOLS,
+    render_cloud_action_preview,
+)
 DEFAULT_CPU_SANDBOX_HARDWARE = "cpu-basic"
 
 
@@ -248,6 +252,24 @@ def _is_budgeted_auto_approval_target(tool_name: str, tool_args: dict) -> bool:
     return tool_name == "sandbox_create"
 
 
+# ── Cloud mutating tools — mandatory approval, NO config can bypass ──
+
+MANDATORY_APPROVAL_TOOLS: frozenset[str] = frozenset({
+    "terraform_apply",
+    *MUTATING_CLOUD_TOOLS,
+})
+
+
+def _mandatory_approval_tool(tool_name: str) -> bool:
+    """Return True if this tool is in the mandatory-approval set.
+
+    These tools: restart_service, scale_deployment, terraform_apply
+    ALWAYS require user approval regardless of yolo_mode, auto_approval,
+    budget settings, or any other config.  No bypass is possible.
+    """
+    return tool_name in MANDATORY_APPROVAL_TOOLS
+
+
 def _base_needs_approval(
     tool_name: str, tool_args: dict, config: Config | None = None
 ) -> bool:
@@ -262,8 +284,8 @@ def _base_needs_approval(
         hardware = tool_args.get("hardware") or DEFAULT_CPU_SANDBOX_HARDWARE
         return hardware != DEFAULT_CPU_SANDBOX_HARDWARE
 
-    # ── Terraform apply is mutating — always require approval ──
-    if tool_name == "terraform_apply":
+    # ── Mandatory-approval tools (terraform_apply + cloud mutating) ──
+    if _mandatory_approval_tool(tool_name):
         return True
 
     return False
@@ -326,6 +348,10 @@ async def _approval_decision(
             remaining_cap_usd=budget.remaining_cap_usd,
             billable=estimate.billable,
         )
+
+    # ── Mandatory-approval tools: NO bypass, not even yolo mode ──
+    if _mandatory_approval_tool(tool_name):
+        return ApprovalDecision(requires_approval=True)
 
     if base_requires_approval and yolo_enabled:
         return ApprovalDecision(requires_approval=False, auto_approved=True)
@@ -1747,6 +1773,13 @@ class Handlers:
                             "arguments": tool_args,
                             "tool_call_id": tc.id,
                         }
+                        # Pre-action preview for cloud mutating tools
+                        if _mandatory_approval_tool(tool_name):
+                            try:
+                                preview = render_cloud_action_preview(tool_name, tool_args)
+                                tool_payload["action_preview"] = preview
+                            except Exception:
+                                pass
                         if decision.auto_approval_blocked:
                             tool_payload.update(
                                 {
@@ -2260,6 +2293,17 @@ class Handlers:
                 )
             )
             return
+
+        # ── Pre-action checkpoint: snapshot session before any approved mutation ──
+        # This enables rewind if the cloud action causes issues.
+        has_cloud_mutation = any(
+            _mandatory_approval_tool(tool_name)
+            for _, tool_name, _, _ in approved_tasks
+        )
+        if has_cloud_mutation:
+            session.checkpoint()
+            logger.info("Pre-action checkpoint saved for %d approved cloud mutation(s)",
+                        sum(1 for _, n, _, _ in approved_tasks if _mandatory_approval_tool(n)))
 
         # Clear pending approval immediately so a page refresh during
         # execution won't re-show the approval dialog.

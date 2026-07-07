@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import time
-from datetime import datetime, timezone
 
 try:
     from http.server import HTTPServer, BaseHTTPRequestHandler

@@ -48,6 +48,16 @@ from agent.tools.observability_tools import (
     _query_grafana_panel_handler,
     _query_otel_traces_handler,
 )
+from agent.tools.cloud_tools import (
+    READ_IAM_STATE_TOOL_SPEC,
+    RESTART_SERVICE_TOOL_SPEC,
+    REWIND_CLOUD_ACTION_TOOL_SPEC,
+    SCALE_DEPLOYMENT_TOOL_SPEC,
+    _read_iam_state_handler,
+    _restart_service_handler,
+    _rewind_cloud_action_handler,
+    _scale_deployment_handler,
+)
 from agent.tools.plan_tool import PLAN_TOOL_SPEC, plan_tool_handler
 from agent.tools.research_tool import RESEARCH_TOOL_SPEC, research_handler
 from agent.tools.web_search_tool import WEB_SEARCH_TOOL_SPEC, web_search_handler
@@ -383,6 +393,33 @@ def create_builtin_tools(local_mode: bool = False) -> list[ToolSpec]:
             description=GRAFANA_PANEL_TOOL_SPEC["description"],
             parameters=GRAFANA_PANEL_TOOL_SPEC["parameters"],
             handler=_query_grafana_panel_handler,
+        ),
+        # Cloud infrastructure tools (read-only)
+        ToolSpec(
+            name=READ_IAM_STATE_TOOL_SPEC["name"],
+            description=READ_IAM_STATE_TOOL_SPEC["description"],
+            parameters=READ_IAM_STATE_TOOL_SPEC["parameters"],
+            handler=_read_iam_state_handler,
+        ),
+        # Cloud infrastructure tools (approval-gated mutating)
+        ToolSpec(
+            name=RESTART_SERVICE_TOOL_SPEC["name"],
+            description=RESTART_SERVICE_TOOL_SPEC["description"],
+            parameters=RESTART_SERVICE_TOOL_SPEC["parameters"],
+            handler=_restart_service_handler,
+        ),
+        ToolSpec(
+            name=SCALE_DEPLOYMENT_TOOL_SPEC["name"],
+            description=SCALE_DEPLOYMENT_TOOL_SPEC["description"],
+            parameters=SCALE_DEPLOYMENT_TOOL_SPEC["parameters"],
+            handler=_scale_deployment_handler,
+        ),
+        # Cloud rewind tool (read-only, no approval)
+        ToolSpec(
+            name=REWIND_CLOUD_ACTION_TOOL_SPEC["name"],
+            description=REWIND_CLOUD_ACTION_TOOL_SPEC["description"],
+            parameters=REWIND_CLOUD_ACTION_TOOL_SPEC["parameters"],
+            handler=_rewind_cloud_action_handler,
         ),
     ]
 

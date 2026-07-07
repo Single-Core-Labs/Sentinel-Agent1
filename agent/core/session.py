@@ -187,6 +187,9 @@ class Session:
         self._local_save_path: Optional[str] = None
         self._last_heartbeat_ts: Optional[float] = None
 
+        # Checkpoint for pre-action snapshots (rewind support).
+        self._checkpoint: dict[str, Any] | None = None
+
         # Per-model probed reasoning-effort cache. Populated by the probe
         # on /model switch, read by ``effective_effort_for`` below. Keys are
         # raw model ids (including any ``:tag``). Values:
@@ -197,6 +200,57 @@ class Session:
         # Key absent → not probed yet; fall back to the raw preference.
         self.model_effective_effort: dict[str, str | None] = {}
         self.context_manager.on_message_added = self._schedule_trace_message
+
+    # ── Checkpoint / Rewind ──────────────────────────────────────────────
+
+    def checkpoint(self) -> None:
+        """Snapshot current session state for potential rewind.
+
+        Called *before* executing an approved mutating cloud action.
+        Captures messages, plan, turn state, and pending approval so the
+        session can be rolled back if the action causes issues.
+        """
+        from copy import deepcopy
+
+        self._checkpoint = {
+            "messages": deepcopy(getattr(self.context_manager, "items", [])),
+            "current_plan": deepcopy(self.current_plan),
+            "turn_count": self.turn_count,
+            "_phase": self._phase,
+            "_plan_iteration": self._plan_iteration,
+            "pending_approval": deepcopy(self.pending_approval),
+            "timestamp": datetime.now().astimezone().isoformat(),
+        }
+
+    def has_checkpoint(self) -> bool:
+        return self._checkpoint is not None
+
+    def rewind_to_checkpoint(self) -> str | None:
+        """Restore session state from the last checkpoint.
+
+        Returns a human-readable summary of what was rewound, or None if
+        no checkpoint exists.
+        """
+        if not self._checkpoint:
+            return None
+
+        cp = self._checkpoint
+        # Restore context manager messages
+        cm = getattr(self, "context_manager", None)
+        if cm is not None:
+            cm.items = cp.get("messages", [])
+
+        self.current_plan = cp.get("current_plan", [])
+        self.turn_count = cp.get("turn_count", 0)
+        self._phase = cp.get("_phase", "plan")
+        self._plan_iteration = cp.get("_plan_iteration", 0)
+        self.pending_approval = cp.get("pending_approval")
+
+        self._checkpoint = None
+        return (
+            f"Session rewound to checkpoint from {cp.get('timestamp', '?')}. "
+            f"Messages restored to {len(cp.get('messages', []))} items."
+        )
 
     async def send_event(self, event: Event) -> None:
         """Send event back to client and log to trajectory"""
