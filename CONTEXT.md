@@ -8,51 +8,33 @@
 ## Architecture
 
 ```ascii
-┌─────────────────────────────────────────────────────────────┐
-│                       User / CLI                            │
-└──────┬──────────────────────────────────────────┬───────────┘
-       │ Operations (OpType)                       │ Events
-       ↓ (user_input, exec_approval, undo,         ↑
-  submission_queue  compact, new, resume, shutdown) event_queue
-       │                                            │
-       ↓                                            │
-┌──────────────────────────────────────────────────────┐
-│              submission_loop (agent_loop.py)          │
-│  ┌────────────────────────────────────────────────┐  │
-│  │  process_submission() — route OpType to        │  │
-│  │  handler                                        │  │
-│  └────────────────────────────────────────────────┘  │
-│                        ↓                             │
-│  ┌────────────────────────────────────────────────┐  │
-│  │           Handlers.run_agent()                 │  │
-│  │                                                │  │
-│  │  ┌──────────────────────────────────────────┐  │  │
-│  │  │  Session                                 │  │  │
-│  │  │  ┌──────────────────────────────────┐    │  │  │
-│  │  │  │  ContextManager                  │    │  │  │
-│  │  │  │  • Message history               │    │  │  │
-│  │  │  │    (litellm.Message[])           │    │  │  │
-│  │  │  │  • Auto-compaction at 90%        │    │  │  │
-│  │  │  │    of model_max_tokens           │    │  │  │
-│  │  │  └──────────────────────────────────┘    │  │  │
-│  │  │                                          │  │  │
-│  │  │  ┌──────────────────────────────────┐    │  │  │
-│  │  │  │  ToolRouter                      │    │  │  │
-│  │  │  │  • GitHub code search / read     │    │  │  │
-│  │  │  │  • Local filesystem tools        │    │  │  │
-│  │  │  │  • Planning / Notify             │    │  │  │
-│  │  │  │  • MCP server tools (dynamic)    │    │  │  │
-│  │  │  └──────────────────────────────────┘    │  │  │
-│  │  └──────────────────────────────────────────┘  │  │
-│  │                                                │  │
-│  │  ┌──────────────────────────────────────────┐  │  │
-│  │  │  Doom Loop Detector                      │  │  │
-│  │  │  • 3+ identical consecutive tool calls   │  │  │
-│  │  │  • Repeating sequences                   │  │  │
-│  │  │  • Injects corrective prompt             │  │  │
-│  │  └──────────────────────────────────────────┘  │  │
-│  └────────────────────────────────────────────────┘  │
-└──────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────┐
+│                 CLI Shell                    │
+│  (REPL, headless/scripted mode, session mgmt)│
+└───────────────────┬───────────────────────────┘
+                     │
+              ┌──────▼───────┐
+              │  Agent Loop   │  (plan → act → observe, bounded iterations,
+              │               │   doom-loop detector, plan mode)
+              └──────┬────────┘
+                     │
+        ┌────────────┼─────────────────┐
+        │            │                 │
+ ┌──────▼─────┐ ┌────▼──────┐   ┌──────▼───────┐
+ │ Context Mgr │ │Tool Router│   │ Model Router  │
+ │ (compaction,│ │(lazy tool │   │ (cheap model  │
+ │ diff-only,  │ │ docs, MCP │   │  for mechanical│
+ │ prompt cache│ │ registry) │   │  steps, strong │
+ └─────────────┘ └────┬──────┘   │  model for     │
+                       │          │  reasoning)    │
+        ┌──────────────┼──────────┴────────────────┘
+        │              │
+ ┌──────▼─────┐ ┌──────▼──────┐  ┌───────────────┐ ┌▼──────────┐
+ │ Code tools │ │ Infra tools │  │ Observability │ │ Approval  │
+ │ (fs, grep, │ │ (Terraform  │  │ (OTel, Grafana│ │ Gate      │
+ │  git, exec)│ │  plan/apply,│  │  query, read) │ │ (Slack/   │
+ │            │ │  AWS/GCP)   │  │               │ │  CLI y/n) │
+ └────────────┘ └─────────────┘  └───────────────┘ └───────────┘
 ```
 
 ## Agentic Loop
@@ -60,34 +42,81 @@
 ```ascii
 User Message → [ContextManager]
   ╔═════════════════════════════════════════════╗
-  ║  Iteration Loop (max 300)                   ║
+  ║  Iteration Loop (bounded)                   ║
   ║  1. Cancel check → compact check            ║
   ║  2. Doom-loop detection                     ║
-  ║  3. litellm.acompletion()                   ║
+  ║  3. Model Router → pick model               ║
+  ║  4. litellm.acompletion()                   ║
   ║     ↓                                       ║
-  ║  4. Has tool_calls? ─No──> emit done        ║
+  ║  5. Has tool_calls? ─No──> emit done        ║
   ║     │ Yes                                   ║
-  ║  5. Validate args + add to context          ║
-  ║  6. Approval check per tool                 ║
-  ║  7. Execute (parallel if no approval needed)║
-  ║  8. Add results → loop                      ║
+  ║  6. Route to tool via ToolRouter            ║
+  ║  7. Approval Gate check per tool            ║
+  ║  8. Execute (parallel if no approval needed)║
+  ║  9. Add results → loop                      ║
   ╚═════════════════════════════════════════════╝
 ```
+
+## Components
+
+### CLI Shell
+- REPL with prompt_toolkit
+- Headless/scripted mode for CI pipelines
+- Session management (new, resume, list, delete)
+- Command dispatch (/model, /compact, etc.)
+
+### Agent Loop
+- Plan → act → observe iteration
+- Bounded iterations (configurable max)
+- Doom-loop detector (repeated tool calls)
+- Plan mode (decompose task before acting)
+
+### Context Manager
+- Message history with auto-compaction at 90% model_max_tokens
+- Diff-only updates (send only changed context)
+- Prompt caching headers for supported providers
+
+### Tool Router
+- Lazy tool documentation (fetch on first use)
+- MCP registry for dynamic tool discovery
+- Built-in tool specs (code, infra, observability)
+
+### Model Router
+- Cheap/fast model for mechanical steps (file reads, git ops)
+- Strong/reasoning model for planning, complex logic
+- Automatic fallback on rate limits / errors
+
+### Code Tools
+- Filesystem operations (read, write, edit, grep)
+- Git operations (status, diff, log, commit, push)
+- Shell execution (bash, with sandbox support)
+
+### Infra Tools
+- Terraform plan/apply
+- Cloud provider tools (AWS, GCP)
+- Kubernetes tools (kubectl, Helm)
+
+### Observability
+- OpenTelemetry integration
+- Grafana query and dashboard read
+- Log aggregation query
+
+### Approval Gate
+- Slack approval requests (buttons)
+- CLI y/n prompts
+- Policy-based auto-approval
 
 ## Operations (OpType)
 
 | OpType | Handler | Description |
 |---|---|---|
-| `USER_INPUT` | `Handlers.run_agent()` | Main agentic loop |
-| `EXEC_APPROVAL` | `Handlers.exec_approval()` | User responds to approval request |
-| `UNDO` | `Handlers.undo()` | Remove last complete turn |
-| `COMPACT` | `_compact_and_notify()` | Force context compaction |
-| `NEW` | `Handlers.new_conversation()` | Fresh chat |
-| `RESUME` | `Handlers.resume()` | Reload saved session |
-| `SHUTDOWN` | `Handlers.shutdown()` | Save + stop |
-
-> `interrupt` is **not** an OpType — `session.cancel()` sets a flag, loop exits cleanly.
-> Model switching (`/model`) is handled **outside** the loop in `main.py`.
+| `USER_INPUT` | `run_agent()` | Main agentic loop |
+| `EXEC_APPROVAL` | `exec_approval()` | User responds to approval request |
+| `UNDO` | `undo()` | Remove last complete turn |
+| `COMPACT` | `compact()` | Force context compaction |
+| `NEW` | `new_conversation()` | Fresh chat |
+| `RESUME` | `resume()` | Reload saved session |
+| `SHUTDOWN` | `shutdown()` | Save + stop |
 
 ## Events
 
@@ -96,91 +125,40 @@ User Message → [ContextManager]
 `turn_complete`, `interrupted`, `error`, `compacted`, `undo_complete`, `new_complete`,
 `resume_complete`, `shutdown`
 
-## Tools
+## Tool Categories
 
-| Tool | Purpose |
+| Category | Tools |
 |---|---|
-| `research` | Sub-agent with read-only tools |
-| `web_search` | DuckDuckGo search |
-| `plan_tool` | Multi-step planning |
-| `notify` | Slack notifications |
-| `github_find_examples` / `github_list_repos` / `github_read_file` | GitHub code search |
+| **Code** | fs (read/write/edit), grep, git (status/diff/log/commit/push), exec |
+| **Infra** | terraform (plan/apply), aws, gcp, kubectl, helm |
+| **Observability** | otel (traces/metrics/logs), grafana (query/dashboard) |
+| **Research** | web_search, docs |
+| **Planning** | plan_tool |
+| **Notification** | notify (Slack) |
 
-Plus local tools (bash/read/write/edit) and dynamic MCP tools.
+---
+
+## Startup Flow
+
+```
+1. Particle logo animation (~2.5s)
+2. CRT boot sequence
+3. Agent initialization
+4. Model picker (choose provider/model)
+5. Agent ready
+```
+
+---
 
 ## Key Files
 
 | Path | Purpose |
 |---|---|
-| `agent/main.py` | CLI entry, event listener, command dispatch |
-| `agent/core/agent_loop.py` | submission_loop, handlers, agentic loop |
-| `agent/core/session.py` | Session, OpType, Event |
-| `agent/core/tools.py` | ToolRouter, ToolSpec, tool registration |
-| `agent/core/doom_loop.py` | Repeat detection |
-| `agent/core/model_switcher.py` | Model listing, probing, switching |
-| `agent/context_manager/manager.py` | Message history, compaction |
-| `agent/config.py` | Config dataclass |
-| `agent/utils/terminal_display.py` | CLI rendering, theme |
-| `agent/utils/particle_logo.py` | Startup particle animation |
-| `agent/utils/crt_boot.py` | CRT-style boot sequence |
-| `agent/utils/boot_timing.py` | Color interpolation helpers |
-
----
-
-## Session Changes Log
-
-### 1. Changed UI theme to blue
-- **`agent/utils/boot_timing.py`**: `warm_gold_from_white()` → `blue_from_white()` (white→blue)
-- **`agent/utils/particle_logo.py`**: All hold/final colors from `(255,200,80)` → `(80,160,255)`
-- **`agent/utils/terminal_display.py`**: Theme colors, boot lines, init display, tool calls → blue
-- **`agent/utils/crt_boot.py`**: Cursor, noise, scanlines → blue
-- **`agent/main.py`**: Model picker heading → blue
-
-### 2. Changed animations
-- **`agent/utils/particle_logo.py`**: FPS 24→30, converge 0.9s→0.7s, more particles
-- **`agent/utils/crt_boot.py`**: New glitch character set
-
-### 3. Added model provider picker at startup
-- **`agent/main.py`**: Added `_model_picker()` function called after `ready_event.wait()`
-- Shows numbered list of 6 suggested models
-- User enters number, custom model ID, or Enter to skip
-- Calls `probe_and_switch_model()` on selection
-
-### 4. Startup flow (current)
-```
-1. Particle logo: "WELCOME TO / PLATFORM-AGENT" (blue, ~2.5s)
-2. CRT boot: "Welcome to Platform-Agent" + system info
-3. Agent initialization
-4. Model picker:
-   1. anthropic/claude-opus-4.8:fal-ai  (Claude Opus 4.8)
-   2. openai/gpt-5.5:fal-ai            (GPT-5.5)
-   3. MiniMaxAI/MiniMax-M3:novita      (MiniMax M3)
-   4. moonshotai/Kimi-K2.7-Code:novita (Kimi K2.7 Code)
-   5. zai-org/GLM-5.2:novita           (GLM 5.2)
-   6. deepseek-ai/DeepSeek-V4-Pro:novita (DeepSeek V4 Pro)
-   0. Skip — keep default
-   Enter number or paste model ID (Enter to skip):
-5. Agent ready with selected model
-```
-
-### 5. Pushed to GitHub
-- Remote: `https://github.com/Single-Core-Labs/Sentinel-Agent.git`
-- Initial commit: all 199 files
-
----
-
-## File inventory (agent/tools/)
-- `docs_tools.py` — Documentation search tools
-- `dataset_tools.py` — Dataset inspection
-- `papers_tool.py` — Paper discovery
-- `edit_utils.py` — String replacement helpers
-- `github_find_examples.py` — GitHub example discovery
-- `github_list_repos.py` — GitHub repo listing
-- `github_read_file.py` — GitHub file reader
-- `local_tools.py` — Local filesystem tools (bash/read/write/edit)
-- `notify_tool.py` — Slack notifications
-- `plan_tool.py` — Multi-step planning
-- `research_tool.py` — Sub-agent delegation
-- `types.py` — ToolResult type
-- `utilities.py` — Job formatting helpers
-- `web_search_tool.py` — DuckDuckGo search
+| `agent/shell.py` | CLI shell (REPL, headless mode, session mgmt) |
+| `agent/loop.py` | Agentic loop (plan → act → observe) |
+| `agent/context.py` | Context manager (compaction, diff-only, prompt cache) |
+| `agent/router.py` | Tool Router + Model Router |
+| `agent/gate.py` | Approval gate (Slack, CLI) |
+| `agent/tools/` | Tool implementations by category |
+| `agent/config.py` | Configuration |
+| `agent/main.py` | Entry point |
