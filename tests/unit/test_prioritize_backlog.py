@@ -349,7 +349,7 @@ def test_hf_discussion_event_normalization():
         ],
     )
 
-    record = mod.normalize_hf_discussion(discussion, details)
+    record = mod.normalize_space_discussion(discussion, details)
 
     assert record["id"] == "hf_discussion#7"
     assert record["url"] == (

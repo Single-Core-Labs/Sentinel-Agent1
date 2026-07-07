@@ -118,7 +118,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument(
         "--hf-token",
         default=None,
-        help="Defaults to HF_TOKEN or the local huggingface_hub token cache.",
+        help="Defaults to TOKEN env var.",
     )
     ap.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
     ap.add_argument("--max-comments", type=int, default=DEFAULT_MAX_COMMENTS)
@@ -204,10 +204,8 @@ def resolve_model(model: str | None, config_path: str) -> str:
     return load_config(str(path), include_user_defaults=True).model_name
 
 
-def resolve_hf_token(cli_token: str | None) -> str | None:
-    from agent.core.hf_tokens import resolve_hf_token as _resolve_hf_token
-
-    return _resolve_hf_token(cli_token, os.environ.get("HF_TOKEN"))
+def resolve_token(cli_token: str | None) -> str | None:
+    return cli_token or os.environ.get("TOKEN")
 
 
 def _truncate_text(value: Any, max_chars: int) -> str:
@@ -589,7 +587,7 @@ def _hf_comment_event(event: Any, max_comment_chars: int) -> dict[str, Any] | No
     }
 
 
-def normalize_hf_discussion(
+def normalize_space_discussion(
     discussion: Any,
     details: Any,
     *,
@@ -657,30 +655,32 @@ def collect_hf_discussions(
     max_comment_chars: int = DEFAULT_MAX_COMMENT_CHARS,
     api: Any | None = None,
 ) -> list[dict[str, Any]]:
-    if api is None:
-        from huggingface_hub import HfApi
-
-        api = HfApi()
+    import httpx
 
     records: list[dict[str, Any]] = []
-    discussions = api.get_repo_discussions(
-        repo_id=space_id,
-        repo_type="space",
-        discussion_type="discussion",
-        discussion_status="open",
-        token=token,
+    client = httpx.Client(timeout=30.0, follow_redirects=True)
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    resp = client.get(
+        f"https://huggingface.co/api/spaces/{space_id}/discussions",
+        headers=headers,
+        params={"type": "discussion", "status": "open"},
     )
+    resp.raise_for_status()
+    discussions = resp.json()
     for discussion in discussions:
-        details = api.get_discussion_details(
-            repo_id=space_id,
-            repo_type="space",
-            discussion_num=discussion.num,
-            token=token,
+        details_resp = client.get(
+            f"https://huggingface.co/api/spaces/{space_id}/discussions/{discussion['num']}",
+            headers=headers,
         )
+        details_resp.raise_for_status()
+        details = details_resp.json()
+        import types
+        discussion_obj = types.SimpleNamespace(**discussion)
+        details_obj = types.SimpleNamespace(**details)
         records.append(
-            normalize_hf_discussion(
-                discussion,
-                details,
+            normalize_space_discussion(
+                discussion_obj,
+                details_obj,
                 max_comments=max_comments,
                 max_body_chars=max_body_chars,
                 max_comment_chars=max_comment_chars,
@@ -1827,7 +1827,7 @@ async def async_main(argv: list[str] | None = None) -> int:
     model = resolve_model(args.model, args.config)
     output_dir = resolve_output_dir(args.output_dir)
     github_token = args.github_token or os.environ.get("GITHUB_TOKEN")
-    hf_token = resolve_hf_token(args.hf_token)
+    hf_token = resolve_token(args.hf_token)
     github_report_labels = _github_issue_labels([args.github_report_label])
     if args.create_github_issue and not github_token:
         logger.error("--create-github-issue requires --github-token or GITHUB_TOKEN.")

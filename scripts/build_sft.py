@@ -28,7 +28,7 @@ Usage::
         --days 7
 
 Env:
-    HF_TOKEN (or HF_SFT_WRITE_TOKEN) — write access to target dataset.
+    TOKEN — write access to target dataset.
 """
 
 from __future__ import annotations
@@ -50,32 +50,31 @@ from agent.sft.tagger import tag_session  # noqa: E402
 logger = logging.getLogger("build_sft")
 
 
-def _iter_session_files(api, repo_id: str, day: date, token: str) -> Iterable[str]:
+def _iter_session_files(repo_id: str, day: date, token: str) -> Iterable[str]:
     prefix = f"sessions/{day.isoformat()}/"
+    import httpx
     try:
-        files = api.list_repo_files(repo_id=repo_id, repo_type="dataset", token=token)
+        resp = httpx.get(
+            f"https://huggingface.co/api/datasets/{repo_id}",
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=30,
+        )
+        resp.raise_for_status()
+        info = resp.json()
+        files = [f["rfilename"] for f in info.get("siblings", [])]
     except Exception as e:
-        logger.warning("list_repo_files(%s) failed: %s", repo_id, e)
+        logger.warning("list files(%s) failed: %s", repo_id, e)
         return []
     return [f for f in files if f.startswith(prefix) and f.endswith(".jsonl")]
 
 
 def _download_and_parse(repo_id: str, path: str, token: str) -> dict | None:
-    from huggingface_hub import hf_hub_download
-
+    import httpx
     try:
-        local = hf_hub_download(
-            repo_id=repo_id,
-            filename=path,
-            repo_type="dataset",
-            token=token,
-        )
-    except Exception as e:
-        logger.warning("hf_hub_download(%s) failed: %s", path, e)
-        return None
-    try:
-        with open(local, "r") as f:
-            line = f.readline().strip()
+        url = f"https://huggingface.co/datasets/{repo_id}/raw/main/{path}"
+        resp = httpx.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=30)
+        resp.raise_for_status()
+        line = resp.text.strip().split("\n")[0]
         if not line:
             return None
         row = json.loads(line)
@@ -114,42 +113,37 @@ def _reshape_to_sft(row: dict) -> dict:
     }
 
 
-def _upload_row(api, row: dict, day: date, target_repo: str, token: str) -> None:
+def _upload_row(row: dict, day: date, target_repo: str, token: str) -> None:
     session_id = row["session_id"]
     path_in_repo = f"sft/{day.isoformat()}/{session_id}.jsonl"
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".jsonl", delete=False) as tmp:
-        json.dump(row, tmp, ensure_ascii=False)
-        tmp_path = tmp.name
+    import httpx
     try:
-        api.create_repo(
-            repo_id=target_repo,
-            repo_type="dataset",
-            exist_ok=True,
-            token=token,
+        resp = httpx.post(
+            f"https://huggingface.co/api/datasets/{target_repo}/upload",
+            files={
+                "file": (path_in_repo, json.dumps(row, ensure_ascii=False), "application/jsonl"),
+            },
+            data={
+                "repo_type": "dataset",
+                "commit_message": f"Add SFT row {session_id}",
+                "create_pr": "false",
+            },
+            headers={"Authorization": f"Bearer {token}"},
+            timeout=60,
         )
-        api.upload_file(
-            path_or_fileobj=tmp_path,
-            path_in_repo=path_in_repo,
-            repo_id=target_repo,
-            repo_type="dataset",
-            token=token,
-            commit_message=f"Add SFT row {session_id}",
-        )
-    finally:
-        try:
-            os.unlink(tmp_path)
-        except Exception:
-            pass
+        resp.raise_for_status()
+    except Exception as e:
+        logger.warning("upload failed for %s: %s", session_id, e)
+        raise
 
 
 def run_for_day(
-    api,
     source_repo: str,
     target_repo: str,
     day: date,
     token: str,
 ) -> int:
-    paths = _iter_session_files(api, source_repo, day, token)
+    paths = _iter_session_files(source_repo, day, token)
     n = 0
     for path in paths:
         sess = _download_and_parse(source_repo, path, token)
@@ -159,7 +153,7 @@ def run_for_day(
         if not sft_row.get("session_id"):
             continue
         try:
-            _upload_row(api, sft_row, day, target_repo, token)
+            _upload_row(sft_row, day, target_repo, token)
             n += 1
         except Exception as e:
             logger.warning("upload failed for %s: %s", sft_row["session_id"], e)
@@ -186,22 +180,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = ap.parse_args(argv)
 
-    token = (
-        os.environ.get("HF_SFT_WRITE_TOKEN")
-        or os.environ.get("HF_SESSION_UPLOAD_TOKEN")
-        or os.environ.get("HF_TOKEN")
-        or os.environ.get("HF_ADMIN_TOKEN")
-    )
+    token = os.environ.get("TOKEN")
     if not token:
         logger.error(
-            "No HF token found. Set one of: HF_SFT_WRITE_TOKEN, "
-            "HF_SESSION_UPLOAD_TOKEN, HF_TOKEN, HF_ADMIN_TOKEN."
+            "No token found. Set TOKEN."
         )
         return 1
-
-    from huggingface_hub import HfApi
-
-    api = HfApi()
 
     if args.date:
         target_days = [date.fromisoformat(args.date)]
@@ -211,7 +195,7 @@ def main(argv: list[str] | None = None) -> int:
 
     total = 0
     for day in target_days:
-        total += run_for_day(api, args.source, args.target, day, token)
+        total += run_for_day(args.source, args.target, day, token)
     logger.info("Total exported: %d sessions", total)
     return 0
 

@@ -674,7 +674,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = ap.parse_args(argv)
 
-    token = os.environ.get("TOKEN") or os.environ.get("HF_TOKEN")
+    token = os.environ.get("TOKEN")
     if not token:
         logger.error(
             "No token found. Set TOKEN."

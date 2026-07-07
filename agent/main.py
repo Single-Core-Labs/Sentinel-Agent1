@@ -112,7 +112,7 @@ def resolve_token() -> str | None:
     """Resolve token from environment variables."""
     import os
 
-    return os.environ.get("HF_TOKEN") or os.environ.get("ADMIN_TOKEN") or None
+    return os.environ.get("ADMIN_TOKEN") or None
 
 
 async def _get_user_identity(token: str | None) -> tuple[str | None, str]:
