@@ -189,10 +189,7 @@ def substitute_env_vars(obj: Any) -> Any:
             elif has_default:
                 return default_value or ""
             else:
-                raise ValueError(
-                    f"Environment variable '{var_name}' is not set. "
-                    f"Add it to your .env file."
-                )
+                return ""
 
         return re.sub(pattern, replacer, obj)
 
