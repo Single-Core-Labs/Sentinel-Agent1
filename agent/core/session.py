@@ -153,7 +153,7 @@ class Session:
         self.is_running = True
         self.current_plan: list[dict[str, str]] = []
         self._compression_enabled: bool = True
-        self.model_router: Any = None
+        self.model_router: Any = self._build_model_router(config)
         self._phase: str = "plan"
         self._plan_iteration: int = 0
         self._plan_mode: bool = False
@@ -437,6 +437,25 @@ class Session:
     def increment_turn(self) -> None:
         """Increment turn counter (called after each user interaction)"""
         self.turn_count += 1
+
+    @staticmethod
+    def _build_model_router(config: Config) -> Any:
+        """Build a ModelRouter from config, merging any model_routing overrides."""
+        from agent.core.model_router import ModelRouter, StepClassifier
+
+        routing = config.model_routing or {}
+        cheap = routing.get("cheap_model") or config.model_name
+        strong = routing.get("strong_model") or config.model_name
+        mech_kw = routing.get("mechanical_keywords")
+        reas_kw = routing.get("reasoning_keywords")
+        classifier: StepClassifier | None = None
+        if mech_kw or reas_kw:
+            classifier = StepClassifier.from_keywords(mechanical=mech_kw, reasoning=reas_kw)
+        router = ModelRouter(strong_model=strong, cheap_model=cheap, classifier=classifier)
+        step_overrides = routing.get("overrides")
+        if step_overrides:
+            router.configure(overrides=step_overrides)
+        return router
 
     def get_token_report(self) -> Any:
         """Return the token-compression report if compression is enabled."""

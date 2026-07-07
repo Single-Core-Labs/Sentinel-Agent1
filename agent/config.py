@@ -45,6 +45,19 @@ class Config(BaseModel):
     # ``Session.model_effective_effort``. ``None`` = thinking off.
     # Valid values: None | "minimal" | "low" | "medium" | "high" | "xhigh" | "max"
     reasoning_effort: str | None = "high"
+
+    # Model routing for step classification.
+    model_routing: dict | None = None
+    """Example:
+    {
+      "cheap_model": "gpt-4o-mini",
+      "strong_model": "gpt-4o",
+      "mechanical_keywords": ["list", "grep", "format"],
+      "reasoning_keywords": ["plan", "debug", "design"],
+      "overrides": {"step-3": "strong"}
+    }
+    """
+
     messaging: MessagingConfig = MessagingConfig()
 
 

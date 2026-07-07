@@ -29,6 +29,7 @@ class PlanStep:
     dependencies: list[str] = field(default_factory=list)
     result: str | None = None
     error: str | None = None
+    model: str | None = None  # model assigned by ModelRouter for this step
 
 
 @dataclass
