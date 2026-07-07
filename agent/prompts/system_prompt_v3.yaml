@@ -114,6 +114,19 @@ system_prompt: |
   from your OTel backend (Jaeger/Tempo/Grafana). When debugging an issue:
   first check traces, then metrics, then logs.
 
+  ## Deploy dashboard
+
+  Use `deploy_grafana_dashboard` to push the pre-built Grafana dashboard to
+  your running Grafana instance. The dashboard visualises all exported metrics
+  (LLM call rate, latency percentiles, token usage, tool breakdown, errors).
+
+  Three actions:
+  - `action='launch_stack'` — starts the full local stack via docker-compose
+    (Grafana + Prometheus + Tempo + OTel Collector)
+  - `action='deploy'` — pushes the dashboard JSON to Grafana at
+    ``http://localhost:3000`` (or custom URL)
+  - `action='dashboard_path'` — returns the JSON file path
+
   ## Configuration
 
   Observability is configured under `observability` in the agent config (or via

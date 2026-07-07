@@ -58,6 +58,10 @@ from agent.tools.cloud_tools import (
     _rewind_cloud_action_handler,
     _scale_deployment_handler,
 )
+from agent.tools.deploy_observability import (
+    DEPLOY_OBSERVABILITY_TOOL_SPEC,
+    deploy_grafana_dashboard_handler,
+)
 from agent.tools.plan_tool import PLAN_TOOL_SPEC, plan_tool_handler
 from agent.tools.research_tool import RESEARCH_TOOL_SPEC, research_handler
 from agent.tools.subagent_tools import (
@@ -460,6 +464,13 @@ def create_builtin_tools(local_mode: bool = False) -> list[ToolSpec]:
             description=REWIND_CLOUD_ACTION_TOOL_SPEC["description"],
             parameters=REWIND_CLOUD_ACTION_TOOL_SPEC["parameters"],
             handler=_rewind_cloud_action_handler,
+        ),
+        # Grafana observability dashboard deployment
+        ToolSpec(
+            name=DEPLOY_OBSERVABILITY_TOOL_SPEC["name"],
+            description=DEPLOY_OBSERVABILITY_TOOL_SPEC["description"],
+            parameters=DEPLOY_OBSERVABILITY_TOOL_SPEC["parameters"],
+            handler=deploy_grafana_dashboard_handler,
         ),
     ]
 
