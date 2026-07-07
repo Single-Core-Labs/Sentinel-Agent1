@@ -12,6 +12,7 @@ from fastmcp.mcp_config import (
 from pydantic import BaseModel
 
 from agent.messaging.models import MessagingConfig
+from agent.observability.config import ObservabilityConfig
 
 # These two are the canonical server config types for MCP servers.
 MCPServerConfig = Union[StdioMCPServer, RemoteMCPServer]
@@ -38,6 +39,11 @@ class Config(BaseModel):
     confirm_cpu_jobs: bool = True
     auto_file_upload: bool = False
     tool_runtime: Literal["local", "sandbox"] = "local"
+
+    # OpenTelemetry observability configuration.
+    # Set ``enabled: true`` to start exporting traces, metrics, and logs.
+    # All fields can be overridden via ``PLATFORM_AGENT_TELEMETRY_*`` env vars.
+    observability: ObservabilityConfig = ObservabilityConfig()
 
     # Reasoning effort *preference* — the ceiling the user wants. The probe
     # on `/model` walks a cascade down from here (``max`` → ``xhigh`` → ``high``

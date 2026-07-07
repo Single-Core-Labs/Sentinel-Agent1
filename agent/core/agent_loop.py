@@ -55,6 +55,7 @@ from agent.core.yolo_budget import (
     yolo_budget_can_resume,
     yolo_budget_pending_to_tool,
 )
+from agent.observability import init_observability, record_session_start, shutdown_observability
 from agent.tools.cloud_tools import (
     MUTATING_CLOUD_TOOLS,
     render_cloud_action_preview,
@@ -2609,6 +2610,11 @@ async def submission_loop(
     )
     if session_holder is not None:
         session_holder[0] = session
+    # ── Initialise OpenTelemetry ────────────────────────────────────────
+    init_observability(config.observability)
+    record_session_start({"mode": "local" if local_mode else "sandbox"})
+    logger.info("Agent observability initialised")
+
     if not local_mode:
         start_cpu_sandbox_preload(session)
     logger.info("Agent loop started")
@@ -2646,7 +2652,7 @@ async def submission_loop(
         logger.info("Agent loop exited")
 
     finally:
-        # Emergency save if session saving is enabled and shutdown wasn't called properly
+        shutdown_observability()
         if session.config.save_sessions and session.is_running:
             logger.info("Emergency save: preserving session before exit...")
             try:

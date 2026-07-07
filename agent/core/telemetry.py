@@ -12,6 +12,10 @@ Callsites are one-liners::
 
 All ``record_*`` functions emit a single ``Event`` via ``session.send_event``
 and never raise — telemetry is best-effort and must not break the agent.
+
+Each function also emits **OpenTelemetry** signals (spans / metrics) when
+the ``ObservabilityConfig`` is enabled.  OTel instrumentation is fire-and-forget
+and never raises.
 """
 
 from __future__ import annotations
@@ -20,6 +24,8 @@ import asyncio
 import logging
 import time
 from typing import Any
+
+from agent.observability.instrumentation import instrument_llm_call
 
 logger = logging.getLogger(__name__)
 
@@ -84,8 +90,7 @@ async def record_llm_call(
     finish_reason: str | None,
     kind: str = "main",
 ) -> dict:
-    """Emit an ``llm_call`` event and return the extracted usage dict so
-    callers can stash it on their result object if they want.
+    """Emit an ``llm_call`` event and OTel span/metrics, return usage dict.
 
     ``kind`` tags the call site so downstream analytics can break spend
     down by category. Values currently emitted by the codebase:
@@ -113,6 +118,24 @@ async def record_llm_call(
             cost_usd = float(completion_cost(completion_response=response) or 0.0)
         except Exception:
             cost_usd = 0.0
+
+    # ── OTel span + metrics ──────────────────────────────────────────────
+    with instrument_llm_call(
+        model=model,
+        kind=kind,
+        prompt_tokens=usage.get("prompt_tokens"),
+        completion_tokens=usage.get("completion_tokens"),
+        total_tokens=usage.get("total_tokens"),
+        finish_reason=finish_reason,
+        cost_usd=cost_usd,
+        latency_ms=latency_ms,
+    ) as span:
+        if span is not None and usage:
+            span.set_attribute("cost_usd", cost_usd)
+            span.set_attribute("total_tokens", usage.get("total_tokens", 0))
+            span.set_attribute("cache_read_tokens", usage.get("cache_read_tokens", 0))
+
+    # ── Existing event-based telemetry ────────────────────────────────────
     from agent.core.session import Event  # local import to avoid cycle
 
     try:

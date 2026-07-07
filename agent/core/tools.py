@@ -264,34 +264,39 @@ class ToolRouter:
         For MCP tools, converts the CallToolResult content blocks to a string.
         For built-in tools, calls their handler directly.
         """
-        # Check if this is a built-in tool with a handler
-        tool = self.tools.get(tool_name)
-        if tool and tool.handler:
-            import inspect
+        tool_type = "builtin" if (self.tools.get(tool_name) and self.tools[tool_name].handler) else "mcp"
+        from agent.observability.instrumentation import instrument_tool_call
 
-            # Check if handler accepts session argument
-            sig = inspect.signature(tool.handler)
-            if "session" in sig.parameters:
-                # Check if handler also accepts tool_call_id parameter
-                if "tool_call_id" in sig.parameters:
-                    return await tool.handler(
-                        arguments, session=session, tool_call_id=tool_call_id
-                    )
-                return await tool.handler(arguments, session=session)
-            return await tool.handler(arguments)
+        with instrument_tool_call(
+            tool_name=tool_name,
+            tool_type=tool_type,
+        ):
+            # Check if this is a built-in tool with a handler
+            tool = self.tools.get(tool_name)
+            if tool and tool.handler:
+                import inspect
 
-        # Otherwise, use MCP client
-        if self._mcp_initialized:
-            try:
-                result = await self.mcp_client.call_tool(tool_name, arguments)
-                output = convert_mcp_content_to_string(result.content)
-                return output, not result.is_error
-            except ToolError as e:
-                # Catch MCP tool errors and return them to the agent
-                error_msg = f"Tool error: {str(e)}"
-                return error_msg, False
+                # Check if handler accepts session argument
+                sig = inspect.signature(tool.handler)
+                if "session" in sig.parameters:
+                    if "tool_call_id" in sig.parameters:
+                        return await tool.handler(
+                            arguments, session=session, tool_call_id=tool_call_id
+                        )
+                    return await tool.handler(arguments, session=session)
+                return await tool.handler(arguments)
 
-        return "MCP client not initialized", False
+            # Otherwise, use MCP client
+            if self._mcp_initialized:
+                try:
+                    result = await self.mcp_client.call_tool(tool_name, arguments)
+                    output = convert_mcp_content_to_string(result.content)
+                    return output, not result.is_error
+                except ToolError as e:
+                    error_msg = f"Tool error: {str(e)}"
+                    return error_msg, False
+
+            return "MCP client not initialized", False
 
 
 # ============================================================================
