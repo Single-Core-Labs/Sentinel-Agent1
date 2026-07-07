@@ -262,6 +262,10 @@ def _base_needs_approval(
         hardware = tool_args.get("hardware") or DEFAULT_CPU_SANDBOX_HARDWARE
         return hardware != DEFAULT_CPU_SANDBOX_HARDWARE
 
+    # ── Terraform apply is mutating — always require approval ──
+    if tool_name == "terraform_apply":
+        return True
+
     return False
 
 

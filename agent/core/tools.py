@@ -34,6 +34,14 @@ from agent.tools.git_tools import (
     _git_diff_handler,
     _git_status_handler,
 )
+from agent.tools.terraform_tools import (
+    TERRAFORM_APPLY_TOOL_SPEC,
+    TERRAFORM_PLAN_TOOL_SPEC,
+    TERRAFORM_STATE_TOOL_SPEC,
+    _terraform_apply_handler,
+    _terraform_plan_handler,
+    _terraform_state_read_handler,
+)
 from agent.tools.plan_tool import PLAN_TOOL_SPEC, plan_tool_handler
 from agent.tools.research_tool import RESEARCH_TOOL_SPEC, research_handler
 from agent.tools.web_search_tool import WEB_SEARCH_TOOL_SPEC, web_search_handler
@@ -337,6 +345,25 @@ def create_builtin_tools(local_mode: bool = False) -> list[ToolSpec]:
             description=GIT_COMMIT_TOOL_SPEC["description"],
             parameters=GIT_COMMIT_TOOL_SPEC["parameters"],
             handler=_git_commit_handler,
+        ),
+        # Terraform tools
+        ToolSpec(
+            name=TERRAFORM_PLAN_TOOL_SPEC["name"],
+            description=TERRAFORM_PLAN_TOOL_SPEC["description"],
+            parameters=TERRAFORM_PLAN_TOOL_SPEC["parameters"],
+            handler=_terraform_plan_handler,
+        ),
+        ToolSpec(
+            name=TERRAFORM_STATE_TOOL_SPEC["name"],
+            description=TERRAFORM_STATE_TOOL_SPEC["description"],
+            parameters=TERRAFORM_STATE_TOOL_SPEC["parameters"],
+            handler=_terraform_state_read_handler,
+        ),
+        ToolSpec(
+            name=TERRAFORM_APPLY_TOOL_SPEC["name"],
+            description=TERRAFORM_APPLY_TOOL_SPEC["description"],
+            parameters=TERRAFORM_APPLY_TOOL_SPEC["parameters"],
+            handler=_terraform_apply_handler,
         ),
     ]
 

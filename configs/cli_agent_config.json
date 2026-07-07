@@ -16,6 +16,14 @@
     "hf-mcp-server": {
       "transport": "http",
       "url": "https://platformops.co/mcp?login"
+    },
+    "terraform": {
+      "command": "npx",
+      "args": ["-y", "terraform-mcp-server"]
     }
+  },
+  "model_routing": {
+    "cheap_model": "zai-org/GLM-5.2:novita",
+    "strong_model": "zai-org/GLM-5.2:novita"
   }
 }
