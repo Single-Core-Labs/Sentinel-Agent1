@@ -1,378 +1,426 @@
 import { Box, useApp, useInput } from 'ink';
 import { useState, useCallback, useRef } from 'react';
 import { THEMES, type ThemeConfig } from './theme.js';
-import { IPCEventEmitter, type AgentEvent, type PlanItem } from './events/ipc-emitter.js';
+import { MockEventEmitter, type AgentEvent, type PlanItem } from './events/mock-emitter.js';
+import { IPCEventEmitter } from './events/ipc-emitter.js';
 import { StartupSequence } from './components/startup-sequence.js';
-import { ModelPicker } from './components/model-picker.js';
+import { ModelPicker, MODEL_OPTIONS, type ModelOption } from './components/model-picker.js';
 import { ChatView, type DisplayItem } from './components/chat-view.js';
 import { StatusBar } from './components/status-bar.js';
 import { InputBar } from './components/input-bar.js';
 
 type AppPhase = 'startup' | 'model-picker' | 'main';
+type Mode = 'plan' | 'executing' | 'idle';
 
-interface ModelOption {
-  id: string;
-  provider: string;
-  name: string;
-  description?: string;
-}
+const USE_MOCK = process.env['SENTINEL_MOCK'] === '1' || process.argv.includes('--mock');
 
-const DEFAULT_MODEL: ModelOption = {
-  id: 'claude-sonnet-4',
-  provider: 'Anthropic',
-  name: 'Claude Sonnet 4',
-  description: 'Best all-round balance',
-};
+let _counter = 0;
+const uid = (prefix = 'i') => `${prefix}-${++_counter}`;
 
-let eventIdCounter = 0;
-function nextId(prefix = 'ev') { return `${prefix}-${++eventIdCounter}`; }
+// ── App ────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [phase, setPhase] = useState<AppPhase>('startup');
+  const [phase, setPhase]         = useState<AppPhase>('startup');
   const [themeName, setThemeName] = useState('dark');
-  const [model, setModel] = useState<ModelOption>(DEFAULT_MODEL);
-  const [items, setItems] = useState<DisplayItem[]>([]);
-  const [activeItem, setActiveItem] = useState<DisplayItem | null>(null);
+  const [model, setModel]         = useState<ModelOption>(MODEL_OPTIONS[1]!);
+  const [items, setItems]         = useState<DisplayItem[]>([]);
+  const [activeItem, setActive]   = useState<DisplayItem | null>(null);
   const [turnCount, setTurnCount] = useState(0);
-  const [mode, setMode] = useState<'plan' | 'executing'>('plan');
-  const { exit } = useApp();
+  const [tokenUsage, setTokens]   = useState(0);
+  const [mode, setMode]           = useState<Mode>('idle');
+  const [pendingApproval, setPending] = useState<string | null>(null);
+  const [sessionId]               = useState(() => Math.random().toString(36).slice(2, 10));
+  const { exit }                  = useApp();
 
-  const emitterRef = useRef<IPCEventEmitter | null>(null);
-  const toolStatusRef = useRef<Map<string, 'pending' | 'running' | 'completed' | 'error'>>(new Map());
-  const planRef = useRef<PlanItem[]>([]);
-  const lastInterruptRef = useRef(0);
+  const theme: ThemeConfig = THEMES[themeName] ?? THEMES['dark']!;
 
-  const theme: ThemeConfig = THEMES[themeName] || THEMES.dark;
+  // emitter ref — holds the live event source (mock or IPC)
+  type Emitter = MockEventEmitter | IPCEventEmitter;
+  const emitterRef    = useRef<Emitter | null>(null);
+  const planRef       = useRef<PlanItem[]>([]);
+  const toolMapRef    = useRef<Map<string, DisplayItem & { kind: 'tool-call' }>>(new Map());
+  const interruptRef  = useRef(0);
+  const assistIdRef   = useRef<string | null>(null);
 
-  const startSession = useCallback(() => {
-    const emitter = new IPCEventEmitter();
-    emitterRef.current = emitter;
+  // ── Event handler ──────────────────────────────────────────────
 
-    const handler = (event: AgentEvent) => {
-      switch (event.type) {
-        case 'ready':
-          setItems(prev => [...prev, { kind: 'ready', id: nextId('ready') } as DisplayItem]);
-          break;
+  const handleEvent = useCallback((event: AgentEvent) => {
+    const d = event.data ?? {};
 
-        case 'processing':
-          setActiveItem({ kind: 'processing', id: nextId('proc'), message: event.data?.message as string } as DisplayItem);
-          setMode('executing');
-          break;
+    switch (event.type) {
+      case 'ready':
+        setItems(p => [...p, { kind: 'ready', id: uid('ready') }]);
+        setMode('idle');
+        break;
 
-        case 'plan_generated': {
-          const plan = event.data?.plan as PlanItem[] | undefined;
-          if (plan) planRef.current = plan;
-          setItems(prev => [...prev, {
-            kind: 'plan', id: nextId('plan'), items: plan ?? [],
-          } as DisplayItem]);
-          setActiveItem(null);
-          setMode('plan');
-          break;
-        }
+      case 'processing':
+        setMode('executing');
+        setActive({ kind: 'processing', id: uid('proc'), message: d['message'] as string });
+        break;
 
-        case 'step_completed': {
-          const stepId = event.data?.stepId as string;
-          const content = event.data?.content as string;
-          planRef.current = planRef.current.map(p =>
-            p.id === stepId ? { ...p, status: 'completed' as const } : p
-          );
-          setItems(prev => [
-            ...prev.filter(i => !(i.kind === 'plan')), // remove old plan
-            { kind: 'plan', id: nextId('plan'), items: [...planRef.current] } as DisplayItem,
-            { kind: 'step', id: nextId('step'), content, stepId, checked: true } as DisplayItem,
-          ]);
-          break;
-        }
-
-        case 'tool_call': {
-          const d = event.data as Record<string, unknown>;
-          const tid = (d.id || nextId('tc')) as string;
-          const args = JSON.stringify(d.arguments || {});
-          toolStatusRef.current.set(tid, 'pending');
-          setActiveItem({
-            kind: 'tool-call', id: tid, tool: d.tool as string,
-            args: args.slice(0, 80), status: 'pending',
-          } as DisplayItem);
-          break;
-        }
-
-        case 'tool_state_change': {
-          const d = event.data as Record<string, unknown>;
-          const tid = d.id as string;
-          const state = d.state as string;
-          const status = state === 'running' ? 'running'
-            : state === 'completed' ? 'completed'
-            : state === 'error' ? 'error' : 'pending';
-          toolStatusRef.current.set(tid, status);
-          setActiveItem(prev =>
-            prev?.kind === 'tool-call' && prev.id === tid
-              ? { ...prev, status } as DisplayItem
-              : prev
-          );
-          break;
-        }
-
-        case 'tool_output': {
-          const d = event.data as Record<string, unknown>;
-          const tid = d.id as string;
-          const output = d.output as string;
-          const status = toolStatusRef.current.get(tid) || 'completed';
-          // Finalize the active item into the log
-          setItems(prev => {
-            const exists = prev.some(i => i.kind === 'tool-call' && i.id === tid);
-            if (exists) return prev;
-            return [...prev, {
-              kind: 'tool-call', id: tid, tool: d.tool as string,
-              args: JSON.stringify(d.arguments || {}).slice(0, 80),
-              status, output,
-            } as DisplayItem];
-          });
-          setActiveItem(null);
-          break;
-        }
-
-        case 'assistant_chunk': {
-          const text = event.data?.text as string || '';
-          setActiveItem(prev => {
-            if (prev?.kind === 'assistant') {
-              return { ...prev, text: prev.text + text, complete: false } as DisplayItem;
-            }
-            return { kind: 'assistant', id: nextId('asst'), text, complete: false } as DisplayItem;
-          });
-          break;
-        }
-
-        case 'assistant_message': {
-          const text = (event.data?.text as string) || '';
-          setActiveItem(prev => {
-            if (prev?.kind === 'assistant') {
-              setItems(i => [...i, { ...prev, text: prev.text || text, complete: true } as DisplayItem]);
-              return null;
-            }
-            setItems(i => [...i, { kind: 'assistant', id: nextId('asst'), text, complete: true } as DisplayItem]);
-            return null;
-          });
-          break;
-        }
-
-        case 'assistant_stream_end':
-          setActiveItem(prev => {
-            if (prev?.kind === 'assistant') {
-              setItems(i => [...i, { ...prev, complete: true } as DisplayItem]);
-            }
-            return null;
-          });
-          break;
-
-        case 'approval_required': {
-          const d = event.data as Record<string, unknown>;
-          setItems(prev => [...prev, {
-            kind: 'approval', id: nextId('appr'),
-            tool: d.tool as string,
-            args: JSON.stringify(d.arguments || {}).slice(0, 80),
-            reason: d.reason as string,
-          } as DisplayItem]);
-          setActiveItem(null);
-          break;
-        }
-
-        case 'tool_log': {
-          const d = event.data as Record<string, unknown>;
-          setItems(prev => [...prev, {
-            kind: 'tool-log', id: nextId('tlog'),
-            tool: d.tool as string, message: d.message as string,
-          } as DisplayItem]);
-          break;
-        }
-
-        case 'error': {
-          const d = event.data as Record<string, unknown>;
-          setItems(prev => [...prev, {
-            kind: 'error', id: nextId('err'),
-            message: d.message as string,
-            code: d.code as string,
-          } as DisplayItem]);
-          setActiveItem(null);
-          break;
-        }
-
-        case 'compacted': {
-          const d = event.data as Record<string, unknown>;
-          setItems(prev => [...prev, {
-            kind: 'compacted', id: nextId('cmp'),
-            tokensBefore: (d.tokensBefore || 0) as number,
-            tokensAfter: (d.tokensAfter || 0) as number,
-          } as DisplayItem]);
-          break;
-        }
-
-        case 'observation': {
-          const d = event.data as Record<string, unknown>;
-          setItems(prev => [...prev, {
-            kind: 'observation', id: nextId('obs'),
-            content: d.content as string,
-          } as DisplayItem]);
-          break;
-        }
-
-        case 'turn_complete': {
-          const d = event.data as Record<string, unknown>;
-          setTurnCount(t => t + 1);
-          setItems(prev => [...prev, {
-            kind: 'turn-complete', id: nextId('tc'),
-            summary: d.summary as string,
-            turnCount: d.turnCount as number,
-          } as DisplayItem]);
-          setActiveItem(null);
-          setMode('plan');
-          break;
-        }
-
-        case 'interrupted':
-          setItems(prev => [...prev, { kind: 'interrupted', id: nextId('int') } as DisplayItem]);
-          setActiveItem(null);
-          break;
+      case 'plan_generated': {
+        const plan = d['plan'] as PlanItem[] | undefined;
+        if (plan) planRef.current = plan.map(p => ({ ...p }));
+        setMode('plan');
+        setActive(null);
+        setItems(p => [...p, { kind: 'plan', id: uid('plan'), items: planRef.current.slice() }]);
+        break;
       }
-    };
 
-    emitter.on('event', handler);
-    emitter.start();
-    return emitter;
+      case 'step_completed': {
+        const stepId  = d['stepId'] as string;
+        const content = d['content'] as string;
+        planRef.current = planRef.current.map(p =>
+          p.id === stepId ? { ...p, status: 'completed' as const } : p
+        );
+        // Update the plan card in place
+        setItems(p => {
+          const idx = [...p].reverse().findIndex(i => i.kind === 'plan');
+          if (idx === -1) return [...p, { kind: 'step', id: uid('step'), content, stepId }];
+          const realIdx = p.length - 1 - idx;
+          const newItems = [...p];
+          newItems[realIdx] = { kind: 'plan', id: (p[realIdx]! as any).id, items: planRef.current.slice() };
+          return [...newItems, { kind: 'step', id: uid('step'), content, stepId }];
+        });
+        break;
+      }
+
+      case 'assistant_chunk': {
+        const chunk = d['text'] as string || '';
+        setTokens(t => t + chunk.length);
+        if (!assistIdRef.current) assistIdRef.current = uid('asst');
+        const id = assistIdRef.current;
+        setActive(prev => {
+          if (prev?.kind === 'assistant' && prev.id === id) {
+            return { ...prev, text: prev.text + chunk };
+          }
+          return { kind: 'assistant', id, text: chunk, complete: false };
+        });
+        break;
+      }
+
+      case 'assistant_message': {
+        const text = d['text'] as string || '';
+        setTokens(t => t + text.length);
+        setActive(prev => {
+          const finalText = prev?.kind === 'assistant' ? prev.text || text : text;
+          const id = assistIdRef.current ?? uid('asst');
+          setItems(p => [...p, { kind: 'assistant', id, text: finalText, complete: true }]);
+          assistIdRef.current = null;
+          return null;
+        });
+        break;
+      }
+
+      case 'assistant_stream_end':
+        setActive(prev => {
+          if (prev?.kind === 'assistant') {
+            const id = assistIdRef.current ?? prev.id;
+            setItems(p => [...p, { ...prev, id, complete: true }]);
+            assistIdRef.current = null;
+            return null;
+          }
+          return null;
+        });
+        break;
+
+      case 'tool_call': {
+        const id   = d['id'] as string || uid('tc');
+        const item: DisplayItem & { kind: 'tool-call' } = {
+          kind: 'tool-call', id,
+          tool:   d['tool'] as string || '?',
+          args:   JSON.stringify(d['arguments'] ?? {}).slice(0, 60),
+          status: 'pending',
+        };
+        toolMapRef.current.set(id, item);
+        setActive(null);
+        setItems(p => [...p, item]);
+        setMode('executing');
+        break;
+      }
+
+      case 'tool_state_change': {
+        const id    = d['id'] as string;
+        const state = d['state'] as string;
+        const status: 'pending'|'running'|'completed'|'error' =
+          state === 'running' ? 'running' :
+          state === 'completed' ? 'completed' :
+          state === 'error' ? 'error' : 'pending';
+        setItems(p => p.map(i =>
+          i.kind === 'tool-call' && i.id === id ? { ...i, status } : i
+        ));
+        const existing = toolMapRef.current.get(id);
+        if (existing) toolMapRef.current.set(id, { ...existing, status });
+        break;
+      }
+
+      case 'tool_output': {
+        const id     = d['id'] as string;
+        const output = d['output'] as string || '';
+        const status: 'completed'|'error' = d['success'] ? 'completed' : 'error';
+        setItems(p => p.map(i =>
+          i.kind === 'tool-call' && i.id === id ? { ...i, status, output } : i
+        ));
+        const existing = toolMapRef.current.get(id);
+        if (existing) toolMapRef.current.set(id, { ...existing, status, output });
+        break;
+      }
+
+      case 'tool_log':
+        setItems(p => [...p, {
+          kind: 'tool-log', id: uid('tlog'),
+          tool: d['tool'] as string || '',
+          message: d['message'] as string || '',
+        }]);
+        break;
+
+      case 'approval_required': {
+        const id = d['id'] as string || uid('appr');
+        const item: DisplayItem = {
+          kind: 'approval', id,
+          tool:   d['tool'] as string || '?',
+          args:   JSON.stringify(d['arguments'] ?? {}).slice(0, 80),
+          reason: d['reason'] as string | undefined,
+        };
+        setPending(id);
+        setItems(p => [...p, item]);
+        setActive(null);
+        break;
+      }
+
+      case 'error':
+        setItems(p => [...p, {
+          kind: 'error', id: uid('err'),
+          message: d['message'] as string || 'Unknown error',
+          code:    d['code'] as string | undefined,
+        }]);
+        setActive(null);
+        break;
+
+      case 'compacted':
+        setItems(p => [...p, {
+          kind: 'compacted', id: uid('cmp'),
+          tokensBefore: (d['tokensBefore'] as number) || 0,
+          tokensAfter:  (d['tokensAfter'] as number)  || 0,
+        }]);
+        break;
+
+      case 'observation':
+        setItems(p => [...p, {
+          kind: 'observation', id: uid('obs'),
+          content: d['content'] as string || '',
+        }]);
+        break;
+
+      case 'turn_complete':
+        setTurnCount(t => t + 1);
+        setItems(p => [...p, {
+          kind: 'turn-complete', id: uid('tc'),
+          summary:   d['summary'] as string | undefined,
+          turnCount: d['turnCount'] as number | undefined,
+        }]);
+        setActive(null);
+        setMode('idle');
+        break;
+
+      case 'interrupted':
+        setItems(p => [...p, { kind: 'interrupted', id: uid('int') }]);
+        setActive(null);
+        setMode('idle');
+        break;
+    }
   }, []);
 
-  // Handle commands
+  // ── Session start ──────────────────────────────────────────────
+
+  const startSession = useCallback(() => {
+    emitterRef.current?.stop();
+    planRef.current = [];
+    toolMapRef.current.clear();
+    assistIdRef.current = null;
+
+    const emitter: Emitter = USE_MOCK
+      ? new MockEventEmitter()
+      : new IPCEventEmitter();
+    emitterRef.current = emitter;
+    emitter.on('event', handleEvent);
+    emitter.start();
+  }, [handleEvent]);
+
+  // ── Slash commands / send ──────────────────────────────────────
+
   const handleSend = useCallback((text: string) => {
     if (text.startsWith('/')) {
-      const parts = text.split(/\s+/);
-      const cmd = parts[0];
-
+      const [cmd, ...rest] = text.trim().split(/\s+/);
       switch (cmd) {
         case '/theme': {
-          const target = parts[1];
+          const target = rest[0];
           if (target && THEMES[target]) {
             setThemeName(target);
-            setItems(prev => [...prev, {
-              kind: 'assistant', id: nextId('theme'),
-              text: `Switched to "${target}" theme`, complete: true,
-            } as DisplayItem]);
+            setItems(p => [...p, {
+              kind: 'assistant', id: uid('theme'), complete: true,
+              text: `Theme switched to "${target}"`,
+            }]);
           } else {
-            setItems(prev => [...prev, {
-              kind: 'assistant', id: nextId('theme'),
-              text: `Available themes: ${Object.keys(THEMES).join(', ')}`, complete: true,
-            } as DisplayItem]);
+            setItems(p => [...p, {
+              kind: 'assistant', id: uid('theme'), complete: true,
+              text: `Available themes: ${Object.keys(THEMES).join(', ')}`,
+            }]);
           }
           return;
         }
-
         case '/model':
           setPhase('model-picker');
           return;
-
-        case '/new':
-          emitterRef.current?.stop();
-          setItems([]);
-          setActiveItem(null);
-          planRef.current = [];
-          setMode('plan');
-          setTurnCount(0);
-          startSession();
-          return;
-
         case '/help':
-          setItems(prev => [...prev, {
-            kind: 'assistant', id: nextId('help'), complete: true,
+          setItems(p => [...p, {
+            kind: 'assistant', id: uid('help'), complete: true,
             text: [
-              'Available commands:',
-              '  /theme <name>    — Switch theme (dark, high-contrast)',
-              '  /model           — Change model',
-              '  /new             — Start a new session',
-              '  /compact         — Compact context (placeholder)',
-              '  /undo            — Undo last turn (placeholder)',
-              '  /help            — Show this help',
+              'Commands:',
+              '  /theme <name>   Switch theme (dark | high-contrast | cyber)',
+              '  /model          Change model',
+              '  /new            Start a new session',
+              '  /compact        Compact context',
+              '  /undo           Undo last turn',
+              '  /resume         Resume last session',
+              '  /quit           Exit',
               '',
               'Keys:',
-              '  Ctrl+C once      — Interrupt current turn',
-              '  Ctrl+C twice     — Exit',
-              '  Shift+Enter      — Newline in input',
+              '  Ctrl+C once     Interrupt current turn',
+              '  Ctrl+C twice    Exit',
+              '  x               Expand last tool output',
+              '  Shift+Enter     Newline in input',
             ].join('\n'),
-          } as DisplayItem]);
+          }]);
           return;
-
-        case '/undo':
-        case '/compact':
         case '/new':
-        case '/resume':
-          emitterRef.current?.sendCommand(cmd);
+          setItems([]);
+          setActive(null);
+          setMode('idle');
+          setTurnCount(0);
+          setTokens(0);
+          startSession();
+          emitterRef.current?.sendCommand?.('/new');
           return;
-
+        case '/compact':
+        case '/undo':
+        case '/resume':
+          emitterRef.current?.sendCommand?.(cmd!);
+          return;
+        case '/quit':
+          exit();
+          return;
         default:
-          setItems(prev => [...prev, {
-            kind: 'assistant', id: nextId('unknown'), complete: true,
-            text: `Unknown command: ${cmd}. Type /help for available commands.`,
-          } as DisplayItem]);
+          setItems(p => [...p, {
+            kind: 'assistant', id: uid('unk'), complete: true,
+            text: `Unknown command: ${cmd}. Type /help for the list.`,
+          }]);
           return;
       }
     }
 
-    // Regular user message
-    setItems(prev => [...prev, {
-      kind: 'user', id: nextId('user'), text,
-    } as DisplayItem]);
-    
-    emitterRef.current?.send(text);
-  }, [startSession]);
+    // Regular message
+    setItems(p => [...p, { kind: 'user', id: uid('user'), text }]);
+    emitterRef.current?.send?.(text);
+    setMode('executing');
+  }, [startSession, exit]);
 
-  // Ctrl+C handling
+  // ── Approval handling ──────────────────────────────────────────
+
+  const handleApprove = useCallback((id: string) => {
+    setItems(p => p.map(i => i.kind === 'approval' && i.id === id ? { ...i } : i));
+    setPending(null);
+    emitterRef.current?.sendApproval?.([{ id, approved: true }]);
+  }, []);
+
+  const handleReject = useCallback((id: string) => {
+    setItems(p => p.map(i => i.kind === 'approval' && i.id === id ? { ...i } : i));
+    setPending(null);
+    emitterRef.current?.sendApproval?.([{ id, approved: false }]);
+  }, []);
+
+  const handleExpandTool = useCallback((id: string) => {
+    setItems(p => p.map(i =>
+      i.kind === 'tool-call' && i.id === id ? { ...i, expanded: !i.expanded } : i
+    ));
+  }, []);
+
+  // ── Ctrl+C ─────────────────────────────────────────────────────
+
   useInput((input, key) => {
     if (input === 'c' && key.ctrl) {
       const now = Date.now();
-      if (now - lastInterruptRef.current < 1500) {
+      if (now - interruptRef.current < 1500) {
         exit();
         return;
       }
-      lastInterruptRef.current = now;
+      interruptRef.current = now;
       emitterRef.current?.stop();
-      setItems(prev => [...prev, { kind: 'interrupted', id: nextId('int') } as DisplayItem]);
-      setActiveItem(null);
+      setItems(p => [...p, { kind: 'interrupted', id: uid('int') }]);
+      setActive(null);
+      setMode('idle');
     }
   });
 
-  // All phases render into a consistent-height wrapper so Ink's
-  // ANSI-diff engine always covers the previous frame's pixels.
+  // ── Render ─────────────────────────────────────────────────────
+
   return (
     <Box flexDirection="column" minHeight={24}>
       {phase === 'startup' && (
-        <StartupSequence onComplete={() => { setPhase('main'); startSession(); }} theme={theme} />
-      )}
-
-      {phase === 'model-picker' && (
-        <ModelPicker
-          onSelect={(m) => {
-            setModel(m);
-            setPhase('main');
+        <StartupSequence
+          onComplete={() => {
+            setPhase('model-picker');
           }}
           theme={theme}
         />
       )}
 
+      {phase === 'model-picker' && (
+        <ModelPicker
+          onSelect={m => {
+            setModel(m);
+            setPhase('main');
+            startSession();
+          }}
+          theme={theme}
+          defaultModel={model.id}
+        />
+      )}
+
       {phase === 'main' && (
         <Box flexDirection="column" minHeight={24}>
+          {/* Chat area */}
           <Box flexGrow={1} flexDirection="column" overflowY="hidden">
-            <ChatView items={items} activeItem={activeItem} theme={theme} />
+            <ChatView
+              items={items}
+              activeItem={activeItem}
+              theme={theme}
+              pendingApprovalId={pendingApproval}
+              onApprove={handleApprove}
+              onReject={handleReject}
+              onExpandTool={handleExpandTool}
+            />
           </Box>
+
+          {/* Persistent input */}
           <InputBar
             onSend={handleSend}
-            disabled={emitterRef.current?.isRunning() ?? false}
+            disabled={pendingApproval !== null}
             theme={theme}
-          />
-          <StatusBar
-            model={model ? `${model.provider}/${model.name}` : 'none'}
-            sessionId={`ses_${Math.random().toString(36).slice(2, 10)}`}
-            turnCount={turnCount}
-            tokenUsage={items.reduce((sum, i) => sum + (i.kind === 'assistant' ? i.text.length : 0), 0)}
             mode={mode}
-            theme={theme}
           />
+
+          {/* Status bar */}
+          <Box borderStyle="single" borderColor={theme.colors.dimBorder} paddingX={1} marginTop={0}>
+            <StatusBar
+              model={`${model.provider}/${model.name}`}
+              sessionId={sessionId}
+              turnCount={turnCount}
+              tokenUsage={tokenUsage}
+              mode={mode}
+              theme={theme}
+            />
+          </Box>
         </Box>
       )}
     </Box>

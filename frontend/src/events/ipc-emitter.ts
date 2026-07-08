@@ -59,7 +59,7 @@ export class IPCEventEmitter extends EventEmitter {
       terminal: false,
     });
 
-    rl.on('line', (line) => {
+    rl.on('line', (line: string) => {
       if (!line.trim()) return;
       try {
         const parsed = JSON.parse(line);
@@ -73,12 +73,12 @@ export class IPCEventEmitter extends EventEmitter {
       }
     });
 
-    this.child.stderr.on('data', (data) => {
+    this.child.stderr.on('data', () => {
       // Useful for debug but don't disrupt the UI unless it's critical
       // console.error(`[PYTHON STDERR]: ${data.toString()}`);
     });
 
-    this.child.on('close', (code) => {
+    this.child.on('close', (code: number | null) => {
       this.running = false;
       this.emit('event', { type: 'turn_complete', data: { summary: `Process exited with code ${code}` }, timestamp: Date.now() });
       this.emit('end');

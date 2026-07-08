@@ -1,11 +1,25 @@
 import { EventEmitter } from 'node:events';
 
+// ── Event types ────────────────────────────────────────────────────
+
 export type AgentEventType =
-  | 'ready' | 'processing'
-  | 'assistant_chunk' | 'assistant_message' | 'assistant_stream_end'
-  | 'tool_call' | 'tool_output' | 'tool_log' | 'tool_state_change'
-  | 'approval_required' | 'turn_complete' | 'interrupted' | 'error'
-  | 'compacted' | 'plan_generated' | 'step_completed' | 'observation';
+  | 'ready'
+  | 'processing'
+  | 'assistant_chunk'
+  | 'assistant_message'
+  | 'assistant_stream_end'
+  | 'tool_call'
+  | 'tool_output'
+  | 'tool_log'
+  | 'tool_state_change'
+  | 'approval_required'
+  | 'turn_complete'
+  | 'interrupted'
+  | 'error'
+  | 'compacted'
+  | 'plan_generated'
+  | 'step_completed'
+  | 'observation';
 
 export interface AgentEvent {
   type: AgentEventType;
@@ -19,7 +33,9 @@ export interface PlanItem {
   status: 'pending' | 'in_progress' | 'completed';
 }
 
-interface ScriptStep {
+// ── Mock Emitter ───────────────────────────────────────────────────
+
+interface Step {
   type: AgentEventType;
   data?: Record<string, unknown>;
   delay: number;
@@ -27,104 +43,138 @@ interface ScriptStep {
 
 export class MockEventEmitter extends EventEmitter {
   private timers: ReturnType<typeof setTimeout>[] = [];
-  private running = false;
+  private _running = false;
 
   start() {
-    if (this.running) return;
-    this.running = true;
+    if (this._running) return;
+    this._running = true;
 
-    const script: ScriptStep[] = [
-      { type: 'ready', delay: 200 },
-      { type: 'processing', data: { message: 'Analyzing request...' }, delay: 300 },
+    const script: Step[] = [
+      { type: 'ready', delay: 100 },
+
+      // Turn 1: plan + tool calls
+      { type: 'processing', data: { message: 'Thinking...' }, delay: 400 },
       {
-        type: 'plan_generated', delay: 600, data: {
+        type: 'plan_generated', delay: 700, data: {
           plan: [
-            { id: 'p1', content: 'Scan project structure for database modules', status: 'pending' },
-            { id: 'p2', content: 'Extract connection pool configuration', status: 'pending' },
-            { id: 'p3', content: 'Implement new connection manager with retry logic', status: 'pending' },
-            { id: 'p4', content: 'Write unit tests for connection manager', status: 'pending' },
+            { id: 'p1', content: 'Read current database connection module', status: 'pending' },
+            { id: 'p2', content: 'Identify missing retry logic', status: 'pending' },
+            { id: 'p3', content: 'Implement exponential back-off + circuit breaker', status: 'pending' },
+            { id: 'p4', content: 'Write unit tests for new connection manager', status: 'pending' },
           ] as PlanItem[],
         },
       },
-      { type: 'step_completed', data: { stepId: 'p1', content: 'Located db/connection.ts and db/pool.ts' }, delay: 500 },
+      { type: 'step_completed', data: { stepId: 'p1', content: 'Located src/db/connection.ts' }, delay: 600 },
       {
-        type: 'tool_call', delay: 400, data: {
-          id: 'tc-1', tool: 'read_file',
-          arguments: { path: 'src/db/connection.ts' },
+        type: 'tool_call', delay: 300, data: {
+          id: 'tc-1', tool: 'read_file', arguments: { path: 'src/db/connection.ts' },
         },
       },
-      { type: 'tool_state_change', data: { id: 'tc-1', tool: 'read_file', state: 'running' }, delay: 200 },
+      { type: 'tool_state_change', data: { id: 'tc-1', state: 'running' }, delay: 150 },
       {
-        type: 'tool_output', delay: 500, data: {
+        type: 'tool_output', delay: 600, data: {
           id: 'tc-1', tool: 'read_file',
-          output: 'import { createPool } from "mysql2/promise";\n\nconst pool = createPool({\n  host: process.env.DB_HOST,\n  user: process.env.DB_USER,\n  password: process.env.DB_PASS,\n  database: "app",\n  waitForConnections: true,\n  connectionLimit: 10,\n});\n\nexport async function query(sql: string, params?: unknown[]) {\n  const conn = await pool.getConnection();\n  try {\n    const [rows] = await conn.execute(sql, params);\n    return rows;\n  } finally {\n    conn.release();\n  }\n}',
+          output: 'import { createPool } from "mysql2/promise";\n\nconst pool = createPool({\n  host: process.env.DB_HOST,\n  user: process.env.DB_USER,\n  password: process.env.DB_PASS,\n  database: "app",\n  connectionLimit: 10,\n});\n\nexport async function query(sql: string) {\n  const conn = await pool.getConnection();\n  try { return await conn.execute(sql); }\n  finally { conn.release(); }\n}',
           success: true,
         },
       },
-      { type: 'tool_state_change', data: { id: 'tc-1', tool: 'read_file', state: 'completed' }, delay: 200 },
-      { type: 'step_completed', data: { stepId: 'p2', content: 'Configuration extracted - pool using mysql2 without retry' }, delay: 400 },
-      { type: 'assistant_chunk', data: { text: 'I can see the current database module uses a simple connection pool without any retry logic or proper error handling.' }, delay: 300 },
-      { type: 'assistant_chunk', data: { text: ' Let me refactor it to add connection retry, circuit breaker, and better error reporting.' }, delay: 400 },
-      { type: 'assistant_message', data: { text: 'I can see the current database module uses a simple connection pool without any retry logic or proper error handling. Let me refactor it to add connection retry, circuit breaker, and better error reporting.' }, delay: 100 },
+      { type: 'tool_state_change', data: { id: 'tc-1', state: 'completed' }, delay: 100 },
+      { type: 'step_completed', data: { stepId: 'p2', content: 'No retry logic found — pool fails silently on disconnect' }, delay: 400 },
+
+      // Streaming assistant message
+      { type: 'assistant_chunk', data: { text: "I can see the database module uses a basic pool " }, delay: 300 },
+      { type: 'assistant_chunk', data: { text: "without any connection retry or circuit breaker logic. " }, delay: 250 },
+      { type: 'assistant_chunk', data: { text: "This means transient failures will propagate uncaught " }, delay: 250 },
+      { type: 'assistant_chunk', data: { text: "to callers. Let me fix that now." }, delay: 200 },
       { type: 'assistant_stream_end', delay: 100 },
+
+      // File edit with approval
       {
         type: 'tool_call', delay: 400, data: {
           id: 'tc-2', tool: 'edit_file',
-          arguments: { path: 'src/db/connection.ts', description: 'Refactor with retry logic' },
+          arguments: { path: 'src/db/connection.ts', description: 'Add retry + circuit breaker' },
         },
       },
-      { type: 'tool_state_change', data: { id: 'tc-2', tool: 'edit_file', state: 'running' }, delay: 200 },
+      { type: 'tool_state_change', data: { id: 'tc-2', state: 'running' }, delay: 150 },
       {
         type: 'approval_required', delay: 500, data: {
-          tool: 'edit_file', tool_call_id: 'tc-2',
+          id: 'tc-2', tool: 'edit_file',
           arguments: { path: 'src/db/connection.ts' },
-          reason: 'Modifying source file — review required',
+          reason: 'Modifying source file — manual review required',
         },
       },
       {
-        type: 'tool_output', delay: 700, data: {
+        type: 'tool_output', delay: 800, data: {
           id: 'tc-2', tool: 'edit_file',
-          output: '✓ Successfully wrote 85 lines to src/db/connection.ts\n\nChanges:\n- Added exponential backoff retry (max 3 attempts)\n- Added circuit breaker with 30s timeout\n- Added structured error types\n- Preserved existing query API signature',
+          output: '✓ Wrote 92 lines to src/db/connection.ts\n\n+ Added exponential backoff (max 3 retries)\n+ Added circuit breaker (30s timeout)\n+ Preserved existing query() API surface\n- Removed silent error swallowing',
           success: true,
         },
       },
-      { type: 'tool_state_change', data: { id: 'tc-2', tool: 'edit_file', state: 'completed' }, delay: 200 },
-      { type: 'step_completed', data: { stepId: 'p3', content: 'Connection manager refactored with retry and circuit breaker' }, delay: 400 },
-      { type: 'assistant_chunk', data: { text: 'The refactored module now handles transient failures gracefully. Let me verify the tests pass.' }, delay: 300 },
-      { type: 'tool_log', data: { tool: 'bash', message: 'Running: npm test -- --coverage' }, delay: 400 },
-      { type: 'error', data: { message: '2 test assertions failed in connection.test.ts', code: 'TEST_FAILURE' }, delay: 600 },
-      { type: 'compacted', data: { tokensBefore: 15230, tokensAfter: 8430 }, delay: 400 },
-      { type: 'observation', data: { content: 'Test coverage at 67% — needs work in error-path coverage' }, delay: 400 },
-      { type: 'turn_complete', data: { summary: 'Refactored db/connection.ts with retry + circuit breaker', turnCount: 3 }, delay: 500 },
+      { type: 'tool_state_change', data: { id: 'tc-2', state: 'completed' }, delay: 100 },
+      { type: 'step_completed', data: { stepId: 'p3', content: 'Connection manager refactored successfully' }, delay: 300 },
+
+      // Tool log example
+      { type: 'tool_log', data: { tool: 'bash', message: '$ npm test -- --coverage --testPathPattern=connection' }, delay: 400 },
+
+      // Error example
+      { type: 'error', data: { message: '2 assertions failed in connection.test.ts', code: 'TEST_FAILURE' }, delay: 600 },
+
+      // Compacted
+      { type: 'compacted', data: { tokensBefore: 18240, tokensAfter: 9410 }, delay: 500 },
+
+      // Observation
+      { type: 'observation', data: { content: 'Test coverage at 72% — error-path branches need work' }, delay: 400 },
+
+      // More assistant chunks
+      { type: 'assistant_chunk', data: { text: "The tests reveal two uncovered branches in the circuit-breaker " }, delay: 300 },
+      { type: 'assistant_chunk', data: { text: "fallback. Let me add the missing assertions now." }, delay: 250 },
+      { type: 'assistant_stream_end', delay: 100 },
+
+      { type: 'step_completed', data: { stepId: 'p4', content: 'Unit tests expanded to cover all error paths' }, delay: 500 },
+
+      // Turn complete
+      {
+        type: 'turn_complete', delay: 400, data: {
+          summary: 'Refactored db/connection.ts — retry + circuit breaker + test coverage',
+          turnCount: 1,
+        },
+      },
     ];
 
-    let cumulative = 0;
+    let t = 0;
     for (const step of script) {
-      cumulative += step.delay;
+      t += step.delay;
       const timer = setTimeout(() => {
-        if (!this.running) return;
-        this.emit('event', {
-          type: step.type,
-          data: step.data,
-          timestamp: Date.now(),
-        } as AgentEvent);
-      }, cumulative);
+        if (!this._running) return;
+        this.emit('event', { type: step.type, data: step.data, timestamp: Date.now() } as AgentEvent);
+      }, t);
       this.timers.push(timer);
     }
 
-    this.timers.push(setTimeout(() => {
-      this.running = false;
+    const done = setTimeout(() => {
+      this._running = false;
       this.emit('end');
-    }, cumulative + 200));
+    }, t + 300);
+    this.timers.push(done);
   }
 
   stop() {
-    this.running = false;
+    this._running = false;
     for (const t of this.timers) clearTimeout(t);
     this.timers = [];
   }
 
-  isRunning() {
-    return this.running;
+  isRunning() { return this._running; }
+
+  send(text: string) {
+    this.emit('tool_log', { tool: 'mock', message: `Message sent: ${text}` });
+  }
+
+  sendCommand(cmd: string) {
+    this.emit('tool_log', { tool: 'mock', message: `Command sent: ${cmd}` });
+  }
+
+  sendApproval(approvals: Array<{id: string; approved: boolean}>) {
+    this.emit('tool_log', { tool: 'mock', message: `Approval sent: ${JSON.stringify(approvals)}` });
   }
 }

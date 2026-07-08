@@ -1,12 +1,46 @@
 import { Box, Text, useInput } from 'ink';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import type { ThemeConfig } from '../theme.js';
 
-// Clean wordmark — rendered as styled text, no box drawing
-const WORDMARK = '◆ sentinel-ai';
+// ── Particle field ─────────────────────────────────────────────────
+
+interface Particle {
+  x: number;
+  y: number;
+  char: string;
+  age: number;
+  maxAge: number;
+  col: string;
+}
+
+const COLS = ['#F97316','#0EA5E9','#A78BFA','#22C55E','#E2E8F0','#64748B'];
+const W = 74;
+const H = 10;
+const MAX_PARTICLES = 55;
+
+function makeParticle(chars: string[]): Particle {
+  return {
+    x: Math.floor(Math.random() * W),
+    y: Math.floor(Math.random() * H),
+    char: chars[Math.floor(Math.random() * chars.length)]!,
+    age: 0,
+    maxAge: 8 + Math.floor(Math.random() * 14),
+    col: COLS[Math.floor(Math.random() * COLS.length)]!,
+  };
+}
+
+const WORDMARK_LINES = [
+  ' ██████╗ ██╗      █████╗ ████████╗███████╗ ██████╗ ██████╗ ███╗   ███╗',
+  ' ██╔══██╗██║     ██╔══██╗╚══██╔══╝██╔════╝██╔═══██╗██╔══██╗████╗ ████║',
+  ' ██████╔╝██║     ███████║   ██║   █████╗  ██║   ██║██████╔╝██╔████╔██║',
+  ' ██╔═══╝ ██║     ██╔══██║   ██║   ██╔══╝  ██║   ██║██╔══██╗██║╚██╔╝██║',
+  ' ██║     ███████╗██║  ██║   ██║   ██║     ╚██████╔╝██║  ██║██║ ╚═╝ ██║',
+  ' ╚═╝     ╚══════╝╚═╝  ╚═╝   ╚═╝   ╚═╝      ╚═════╝ ╚═╝  ╚═╝╚═╝     ╚═╝',
+];
 
 const BOOT_LINES = [
-  'Loading tools...',
+  'Checking system dependencies...',
+  'Loading tool registry...',
   'Connecting session store...',
   'Ready.',
 ];
@@ -17,53 +51,109 @@ interface Props {
 }
 
 export function StartupSequence({ onComplete, theme }: Props) {
+  const [phase, setPhase] = useState<'particles' | 'boot' | 'done'>('particles');
+  const [particles, setParticles] = useState<Particle[]>([]);
   const [bootIndex, setBootIndex] = useState(0);
-  const [done, setDone] = useState(false);
-
-  // Any keypress skips to completion
-  useInput(() => {
-    if (!done) {
-      setDone(true);
-      onComplete();
-    }
-  });
-
-  useEffect(() => {
-    if (done) return;
-    if (bootIndex >= BOOT_LINES.length) {
-      const t = setTimeout(() => {
-        setDone(true);
-        onComplete();
-      }, 120);
-      return () => clearTimeout(t);
-    }
-    const t = setTimeout(
-      () => setBootIndex(i => i + 1),
-      bootIndex === 0 ? 80 : 220,
-    );
-    return () => clearTimeout(t);
-  }, [bootIndex, done, onComplete]);
-
+  const skipped = useRef(false);
   const c = theme.colors;
 
-  return (
-    <Box flexDirection="column" paddingTop={1} paddingLeft={2}>
-      {/* Wordmark */}
-      <Box marginBottom={1}>
-        <Text color={c.accent} bold>
-          {WORDMARK}
-        </Text>
-        <Text color={c.muted}> — platform engineering agent</Text>
-      </Box>
+  // Skip on any key
+  useInput(() => {
+    if (skipped.current) return;
+    skipped.current = true;
+    setPhase('boot');
+    setBootIndex(BOOT_LINES.length);
+    setTimeout(onComplete, 80);
+  });
 
-      {/* Boot lines */}
+  // Particle animation tick
+  useEffect(() => {
+    if (phase !== 'particles') return;
+    const interval = setInterval(() => {
+      setParticles(prev => {
+        let next = prev
+          .map(p => ({ ...p, age: p.age + 1 }))
+          .filter(p => p.age < p.maxAge);
+        while (next.length < MAX_PARTICLES) {
+          next.push(makeParticle(theme.particleChars));
+        }
+        return next;
+      });
+    }, 80);
+
+    // Advance to boot phase after 2.2s
+    const advance = setTimeout(() => {
+      if (skipped.current) return;
+      setPhase('boot');
+    }, 2200);
+
+    return () => { clearInterval(interval); clearTimeout(advance); };
+  }, [phase, theme.particleChars]);
+
+  // Boot sequence stagger
+  useEffect(() => {
+    if (phase !== 'boot') return;
+    if (bootIndex >= BOOT_LINES.length) {
+      const t = setTimeout(() => { setPhase('done'); onComplete(); }, 180);
+      return () => clearTimeout(t);
+    }
+    const t = setTimeout(() => setBootIndex(i => i + 1), bootIndex === 0 ? 60 : 230);
+    return () => clearTimeout(t);
+  }, [phase, bootIndex, onComplete]);
+
+  // Render particle grid
+  const renderGrid = () => {
+    const grid: Record<string, Particle> = {};
+    for (const p of particles) {
+      grid[`${p.x},${p.y}`] = p;
+    }
+    const rows: JSX.Element[] = [];
+    for (let y = 0; y < H; y++) {
+      const cells: JSX.Element[] = [];
+      for (let x = 0; x < W; x++) {
+        const key = `${x},${y}`;
+        const p = grid[key];
+        const fade = p ? 1 - p.age / p.maxAge : 0;
+        cells.push(
+          <Text key={x} color={p?.col} dimColor={fade < 0.5}>
+            {p ? p.char : ' '}
+          </Text>
+        );
+      }
+      rows.push(<Box key={y}>{cells}</Box>);
+    }
+    return rows;
+  };
+
+  if (phase === 'particles') {
+    return (
+      <Box flexDirection="column" paddingTop={1}>
+        <Box flexDirection="column" alignItems="center">
+          {renderGrid()}
+        </Box>
+        <Box flexDirection="column" alignItems="center" marginTop={1}>
+          {WORDMARK_LINES.map((l, i) => (
+            <Text key={i} color={c.accent} bold>{l}</Text>
+          ))}
+        </Box>
+        <Box justifyContent="center" marginTop={1}>
+          <Text color={c.muted} dimColor>Press any key to skip</Text>
+        </Box>
+      </Box>
+    );
+  }
+
+  return (
+    <Box flexDirection="column" paddingTop={2} paddingLeft={3}>
+      <Box marginBottom={1}>
+        <Text color={c.accent} bold>◆ sentinel-ai</Text>
+        <Text color={c.muted}>  platform engineering agent  v0.1</Text>
+      </Box>
       {BOOT_LINES.slice(0, bootIndex).map((line, i) => {
         const isLast = i === BOOT_LINES.length - 1;
         return (
           <Box key={i}>
-            <Text color={isLast ? c.success : c.muted}>
-              {isLast ? '✓ ' : '  '}
-            </Text>
+            <Text color={isLast ? c.success : c.muted}>{isLast ? '✓ ' : '  '}</Text>
             <Text color={isLast ? c.foreground : c.muted}>{line}</Text>
           </Box>
         );
