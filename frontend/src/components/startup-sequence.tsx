@@ -81,11 +81,11 @@ export function StartupSequence({ onComplete, theme }: Props) {
       });
     }, 80);
 
-    // Advance to boot phase after 2.2s
+    // Advance to boot phase after 6s
     const advance = setTimeout(() => {
       if (skipped.current) return;
       setPhase('boot');
-    }, 2200);
+    }, 6000);
 
     return () => { clearInterval(interval); clearTimeout(advance); };
   }, [phase, theme.particleChars]);
@@ -94,10 +94,10 @@ export function StartupSequence({ onComplete, theme }: Props) {
   useEffect(() => {
     if (phase !== 'boot') return;
     if (bootIndex >= BOOT_LINES.length) {
-      const t = setTimeout(() => { setPhase('done'); onComplete(); }, 180);
+      const t = setTimeout(() => { setPhase('done'); onComplete(); }, 600);
       return () => clearTimeout(t);
     }
-    const t = setTimeout(() => setBootIndex(i => i + 1), bootIndex === 0 ? 60 : 230);
+    const t = setTimeout(() => setBootIndex(i => i + 1), bootIndex === 0 ? 900 : 1100);
     return () => clearTimeout(t);
   }, [phase, bootIndex, onComplete]);
 
@@ -144,20 +144,29 @@ export function StartupSequence({ onComplete, theme }: Props) {
   }
 
   return (
-    <Box flexDirection="column" paddingTop={2} paddingLeft={3}>
-      <Box marginBottom={1}>
-        <Text color={c.accent} bold>◆ sentinel-ai</Text>
-        <Text color={c.muted}>  platform engineering agent  v0.1</Text>
+    <Box flexDirection="column" paddingTop={1}>
+      <Box flexDirection="column" alignItems="center">
+        <Box flexDirection="column" alignItems="center">
+          {WORDMARK_LINES.map((l, i) => (
+            <Text key={i} color={c.accent} bold>{l}</Text>
+          ))}
+        </Box>
       </Box>
-      {BOOT_LINES.slice(0, bootIndex).map((line, i) => {
-        const isLast = i === BOOT_LINES.length - 1;
-        return (
-          <Box key={i}>
-            <Text color={isLast ? c.success : c.muted}>{isLast ? '✓ ' : '  '}</Text>
-            <Text color={isLast ? c.foreground : c.muted}>{line}</Text>
-          </Box>
-        );
-      })}
+      <Box flexDirection="column" paddingTop={1} paddingLeft={3}>
+        <Box marginBottom={1}>
+          <Text color={c.accent} bold>◆ sentinel-ai</Text>
+          <Text color={c.muted}>  platform engineering agent  v0.1</Text>
+        </Box>
+        {BOOT_LINES.slice(0, bootIndex).map((line, i) => {
+          const isLast = i === BOOT_LINES.length - 1;
+          return (
+            <Box key={i}>
+              <Text color={isLast ? c.success : c.muted}>{isLast ? '✓ ' : '  '}</Text>
+              <Text color={isLast ? c.foreground : c.muted}>{line}</Text>
+            </Box>
+          );
+        })}
+      </Box>
     </Box>
   );
 }
