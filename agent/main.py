@@ -1355,17 +1355,195 @@ async def headless_main(
         await notification_gateway.close()
 
 
+async def _ipc_event_writer(event_queue: asyncio.Queue):
+    while True:
+        try:
+            event = await event_queue.get()
+            # Serialize the event safely
+            data = event.data if isinstance(event.data, dict) else {}
+            # Need to handle potential non-serializable objects (like datetime)
+            import json
+            try:
+                line = json.dumps({"type": event.event_type, "data": data}, default=str)
+                sys.stdout.write(line + "\n")
+                sys.stdout.flush()
+            except Exception as e:
+                pass # Silently drop serialization errors in IPC mode
+            if event.event_type == "shutdown":
+                break
+        except asyncio.CancelledError:
+            break
+        except Exception:
+            pass
+
+async def _ipc_input_reader(submission_queue: asyncio.Queue, config, session_holder):
+    import sys
+    import json
+    loop = asyncio.get_running_loop()
+    sub_id = [0]
+    
+    # Read from stdin continuously
+    while True:
+        try:
+            line = await loop.run_in_executor(None, sys.stdin.readline)
+            if not line:
+                break
+            line = line.strip()
+            if not line:
+                continue
+            
+            try:
+                cmd = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+                
+            op_type_str = cmd.get("op_type")
+            data = cmd.get("data", {})
+            
+            op_type = None
+            if op_type_str == "USER_INPUT":
+                op_type = OpType.USER_INPUT
+                # Handle slash commands via JSON directly if they want, but let's just forward text
+            elif op_type_str == "EXEC_APPROVAL":
+                op_type = OpType.EXEC_APPROVAL
+            elif op_type_str == "UNDO":
+                op_type = OpType.UNDO
+            elif op_type_str == "COMPACT":
+                op_type = OpType.COMPACT
+            elif op_type_str == "NEW":
+                op_type = OpType.NEW
+            elif op_type_str == "RESUME":
+                op_type = OpType.RESUME
+            elif op_type_str == "SHUTDOWN":
+                op_type = OpType.SHUTDOWN
+            else:
+                continue
+                
+            sub_id[0] += 1
+            submission = Submission(
+                id=f"ipc_sub_{sub_id[0]}",
+                operation=Operation(op_type=op_type, data=data)
+            )
+            await submission_queue.put(submission)
+            
+            if op_type == OpType.SHUTDOWN:
+                break
+        except Exception:
+            break
+
+async def ipc_main(model: str | None = None, sandbox_tools: bool = False):
+    """IPC JSON loop for external frontends."""
+    import logging
+    logging.getLogger().setLevel(logging.CRITICAL)
+    _configure_runtime_logging()
+    
+    config = load_config(CLI_CONFIG_PATH, include_user_defaults=True)
+    _normalize_config_model(config)
+    if model:
+        try:
+            config.model_name = _validate_cli_model_override(model)
+        except ValueError:
+            pass
+    _apply_tool_runtime_override(config, sandbox_tools=sandbox_tools)
+    local_mode = _is_local_tool_runtime(config)
+
+    hf_token = resolve_token()
+    user, _ = await _get_user_identity(hf_token)
+
+    notification_gateway = NotificationGateway(config.messaging)
+    await notification_gateway.start()
+
+    submission_queue: asyncio.Queue = asyncio.Queue()
+    event_queue: asyncio.Queue = asyncio.Queue()
+
+    tool_router = ToolRouter(
+        config.mcpServers, hf_token=hf_token, local_mode=local_mode
+    )
+    session_holder: list = [None]
+
+    agent_task = asyncio.create_task(
+        submission_loop(
+            submission_queue,
+            event_queue,
+            config=config,
+            tool_router=tool_router,
+            session_holder=session_holder,
+            hf_token=hf_token,
+            user_id=user,
+            local_mode=local_mode,
+            autonomous_mode=False,
+            stream=True,
+            notification_gateway=notification_gateway,
+            notification_destinations=config.messaging.default_auto_destinations(),
+            defer_turn_complete_notification=True,
+        )
+    )
+
+    writer_task = asyncio.create_task(_ipc_event_writer(event_queue))
+    reader_task = asyncio.create_task(_ipc_input_reader(submission_queue, config, session_holder))
+
+    try:
+        await asyncio.gather(reader_task, agent_task)
+    except asyncio.CancelledError:
+        pass
+    finally:
+        writer_task.cancel()
+        agent_task.cancel()
+        await tool_router.__aexit__(None, None, None)
+        await notification_gateway.close()
+
+
+def _launch_ink_ui(model: str | None, sandbox_tools: bool) -> int:
+    """Launch the Node/Ink terminal UI. Returns process exit code."""
+    import subprocess
+    import shutil
+
+    # Find the frontend directory relative to this file (agent/main.py)
+    # Structure: <root>/agent/main.py  →  <root>/frontend/
+    agent_dir = os.path.dirname(os.path.abspath(__file__))
+    root_dir = os.path.dirname(agent_dir)
+    frontend_dir = os.path.join(root_dir, "frontend")
+    entry = os.path.join(frontend_dir, "src", "index.tsx")
+
+    if not os.path.isfile(entry):
+        return -1  # Frontend not found — caller falls back to Python REPL
+
+    # Prefer local tsx binary so we don't need a global install
+    tsx_candidates = [
+        os.path.join(frontend_dir, "node_modules", ".bin", "tsx.cmd"),
+        os.path.join(frontend_dir, "node_modules", ".bin", "tsx"),
+        shutil.which("tsx"),
+    ]
+    tsx = next((t for t in tsx_candidates if t and os.path.isfile(t)), None)
+
+    if tsx is None:
+        return -1  # No tsx available — fall back
+
+    cmd = [tsx, entry]
+    if model:
+        cmd += ["--model", model]
+    if sandbox_tools:
+        cmd += ["--sandbox-tools"]
+
+    try:
+        result = subprocess.run(
+            cmd,
+            cwd=frontend_dir,
+            env={**os.environ, "FORCE_COLOR": "1"},
+        )
+        return result.returncode
+    except Exception:
+        return -1
+
+
 def cli():
-    """Entry point for the platform-agent CLI command."""
+    """Entry point for the platform-agent / sentinel-ai CLI command."""
     import logging as _logging
     import warnings
 
-    # Suppress aiohttp "Unclosed client session" noise during event loop teardown
     _logging.getLogger("asyncio").setLevel(_logging.CRITICAL)
     _configure_runtime_logging()
-    # Suppress litellm pydantic deprecation warnings
     warnings.filterwarnings("ignore", category=DeprecationWarning, module="litellm")
-    # Suppress whoosh invalid escape sequence warnings (third-party, unfixed upstream)
     warnings.filterwarnings("ignore", category=SyntaxWarning, module="whoosh")
 
     parser = argparse.ArgumentParser(description="PlatformOps Agent CLI")
@@ -1391,13 +1569,27 @@ def cli():
         action="store_true",
         help="Use HF Space sandbox tools instead of local filesystem tools",
     )
+    parser.add_argument(
+        "--json-ipc",
+        action="store_true",
+        help="Run in JSON IPC mode for the Ink UI (internal use)",
+    )
+    parser.add_argument(
+        "--python-repl",
+        action="store_true",
+        help="Force the legacy Python prompt_toolkit REPL instead of the Ink UI",
+    )
     args = parser.parse_args()
 
     try:
-        if args.prompt:
+        if args.json_ipc:
+            asyncio.run(
+                ipc_main(model=args.model, sandbox_tools=args.sandbox_tools)
+            )
+        elif args.prompt:
             max_iter = args.max_iterations
             if max_iter is not None and max_iter < 0:
-                max_iter = 10_000  # effectively unlimited
+                max_iter = 10_000
             asyncio.run(
                 headless_main(
                     args.prompt,
@@ -1407,11 +1599,18 @@ def cli():
                     sandbox_tools=args.sandbox_tools,
                 )
             )
-        else:
+        elif args.python_repl:
             asyncio.run(main(model=args.model, sandbox_tools=args.sandbox_tools))
+        else:
+            # Default interactive mode: launch the Ink UI
+            code = _launch_ink_ui(args.model, args.sandbox_tools)
+            if code == -1:
+                # Ink UI unavailable — fall back to Python REPL
+                asyncio.run(main(model=args.model, sandbox_tools=args.sandbox_tools))
+            elif code != 0:
+                sys.exit(code)
     except KeyboardInterrupt:
         print("\n\nGoodbye!")
-
 
 if __name__ == "__main__":
     cli()
