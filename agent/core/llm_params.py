@@ -59,6 +59,9 @@ def _resolve_local_model_params(
     }
 
 
+def _is_nim_model(model_id: str) -> bool:
+    return model_id.startswith("nvidia/")
+
 def _resolve_llm_params(
     model_name: str,
     session_token: str | None = None,
@@ -72,6 +75,16 @@ def _resolve_llm_params(
 
     if local_model_provider(normalized_model) is not None:
         return _resolve_local_model_params(normalized_model, reasoning_effort, strict)
+
+    # NVIDIA NIM models use the nvidia_nim/ provider prefix in LiteLLM
+    if _is_nim_model(normalized_model):
+        nim_key = os.environ.get("NVIDIA_NIM_API_KEY")
+        if not nim_key:
+            nim_key = "sk-nim-no-key"
+        return {
+            "model": f"nvidia_nim/{normalized_model.removeprefix('nvidia/')}",
+            "api_key": nim_key,
+        }
 
     params = {
         "model": f"openai/{normalized_model}",

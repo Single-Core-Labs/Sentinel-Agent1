@@ -18,6 +18,9 @@ export const MODEL_OPTIONS: ModelOption[] = [
   { id: 'deepseek-ai/DeepSeek-V4-Pro:novita',     provider: 'DeepSeek',  name: 'DeepSeek V4 Pro',   description: 'Strong open-weight coding model',          tag: 'open' },
   { id: 'moonshotai/Kimi-K2.7-Code:novita',       provider: 'Moonshot',  name: 'Kimi K2.7 Code',    description: 'Code-specialized, long context',           tag: 'code' },
   { id: 'zai-org/GLM-5.2:novita',                 provider: 'ZhipuAI',   name: 'GLM-5.2',           description: 'Efficient, multilingual',                  tag: 'efficient' },
+  { id: 'nvidia/llama-3.1-nemotron-70b-instruct',  provider: 'NVIDIA',    name: 'Nemotron 70B (NIM)',  description: 'Tuned Llama for reasoning/chat',           tag: 'nim' },
+  { id: 'nvidia/llama-3.3-nemotron-super-49b',     provider: 'NVIDIA',    name: 'Nemotron Super 49B (NIM)', description: 'Balanced cost/quality',                   tag: 'nim' },
+  { id: 'nvidia/nemotron-4-340b-instruct',          provider: 'NVIDIA',    name: 'Nemotron 340B (NIM)', description: 'Largest NIM model, highest quality',          tag: 'nim' },
 ];
 
 interface Props {
@@ -34,6 +37,7 @@ const TAG_COLORS: Record<string, string> = {
   open:        '#F97316',
   code:        '#34D399',
   efficient:   '#F59E0B',
+  nim:         '#76B900',
 };
 
 export function ModelPicker({ onSelect, theme, defaultModel }: Props) {
