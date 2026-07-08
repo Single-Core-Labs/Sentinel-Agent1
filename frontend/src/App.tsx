@@ -233,7 +233,7 @@ export default function App() {
 
   // ── Session start ──────────────────────────────────────────────
 
-  const startSession = useCallback(() => {
+  const startSession = useCallback((selectedModel: string) => {
     emitterRef.current?.stop();
     planRef.current = [];
     toolMapRef.current.clear();
@@ -244,7 +244,7 @@ export default function App() {
       : new IPCEventEmitter();
     emitterRef.current = emitter;
     emitter.on('event', handleEvent);
-    emitter.start();
+    emitter.start(selectedModel);
   }, [handleEvent]);
 
   // ── Slash commands / send ──────────────────────────────────────
@@ -299,7 +299,7 @@ export default function App() {
           setMode('idle');
           setTurnCount(0);
           setTokens(0);
-          startSession();
+          startSession(model.id);
           emitterRef.current?.sendCommand?.('/new');
           return;
         case '/compact':
@@ -369,7 +369,8 @@ export default function App() {
       {phase === 'startup' && (
         <StartupSequence
           onComplete={() => {
-            setPhase('model-picker');
+            setPhase('main');
+            startSession(model.id);
           }}
           theme={theme}
         />
@@ -380,7 +381,6 @@ export default function App() {
           onSelect={m => {
             setModel(m);
             setPhase('main');
-            startSession();
           }}
           theme={theme}
           defaultModel={model.id}

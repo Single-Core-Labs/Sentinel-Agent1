@@ -38,13 +38,18 @@ export class IPCEventEmitter extends EventEmitter {
     }
   }
 
-  start() {
+  start(modelId?: string) {
     if (this.running) return;
     this.running = true;
 
     // Spawn the python agent in JSON IPC mode
     const projectRoot = path.resolve(process.cwd(), '..');
-    this.child = spawn(this.pythonPath, ['-m', 'agent.main', '--json-ipc'], {
+    const args = ['-m', 'agent.main', '--json-ipc'];
+    if (modelId) {
+      args.push('--model', modelId);
+    }
+    
+    this.child = spawn(this.pythonPath, args, {
       cwd: projectRoot,
       env: process.env,
     });

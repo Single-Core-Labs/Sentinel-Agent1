@@ -45,7 +45,7 @@ export class MockEventEmitter extends EventEmitter {
   private timers: ReturnType<typeof setTimeout>[] = [];
   private _running = false;
 
-  start() {
+  start(_modelId?: string) {
     if (this._running) return;
     this._running = true;
 
