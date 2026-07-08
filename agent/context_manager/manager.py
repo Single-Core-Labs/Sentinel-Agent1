@@ -22,8 +22,6 @@ from agent.core.prompt_caching import (
 logger = logging.getLogger(__name__)
 
 
-
-
 _COMPACT_PROMPT = (
     "Please provide a concise summary of the conversation above, focusing on "
     "key decisions, the 'why' behind the decisions, problems solved, and "
@@ -178,6 +176,7 @@ class ContextManager:
         self.untouched_messages = untouched_messages
         self.items: list[Message] = [Message(role="system", content=self.system_prompt)]
         self.on_message_added = None
+        self._redo_buffer: list[Message] = []
 
     def refresh_system_prompt(
         self,
@@ -356,18 +355,33 @@ class ContextManager:
 
         Pops from the end until the last user message is removed, keeping the
         tool_use/tool_result pairing valid. Never removes the system message.
+        The removed messages are saved to the redo buffer.
 
         Returns True if a user message was found and removed.
         """
         if len(self.items) <= 1:
             return False
 
+        self._redo_buffer.clear()
         while len(self.items) > 1:
             msg = self.items.pop()
+            self._redo_buffer.append(msg)
             if getattr(msg, "role", None) == "user":
                 return True
 
         return False
+
+    def redo_last_turn(self) -> bool:
+        """Restore the last undone turn from the redo buffer.
+
+        Returns True if messages were restored.
+        """
+        if not self._redo_buffer:
+            return False
+
+        self.items.extend(reversed(self._redo_buffer))
+        self._redo_buffer.clear()
+        return True
 
     def truncate_to_user_message(self, user_message_index: int) -> bool:
         """Truncate history to just before the Nth user message (0-indexed).

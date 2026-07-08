@@ -101,7 +101,10 @@ def print_banner(
         (f"{_I}Welcome to Platform-Agent", "rgb(80,160,255)"),
         (f"{_I}  User: {user_label}", "rgb(50,100,180)"),
         (f"{_I}  Model: {model_label}", "rgb(50,100,180)"),
-        (f"{_I}  Tool runtime: {tool_runtime or 'local filesystem'}", "rgb(50,100,180)"),
+        (
+            f"{_I}  Tool runtime: {tool_runtime or 'local filesystem'}",
+            "rgb(50,100,180)",
+        ),
         (f"{_I}  Tools: loading...", "rgb(50,100,180)"),
         ("", ""),
         (f"{_I}Type /model to switch · /help · /quit to exit", "rgb(80,160,255)"),
@@ -125,7 +128,9 @@ def print_init_done(tool_count: int = 0) -> None:
         time.sleep(0.012)
     f.write("\n\n")
     # Reprint the help line
-    f.write(f"{_I}{_ACCENT}/help for commands · /model to switch · /quit to exit{ANSI_RESET}\n\n")
+    f.write(
+        f"{_I}{_ACCENT}/help for commands · /model to switch · /quit to exit{ANSI_RESET}\n\n"
+    )
     f.write(f"{_I}{_ACCENT}Ready. Let's build something impressive.{ANSI_RESET}\n")
     f.flush()
 
@@ -421,21 +426,23 @@ HELP_ROWS: tuple[tuple[str, str, str], ...] = (
     ("/new", "", "Start a fresh chat"),
     ("/clear", "", "Clear terminal and start fresh"),
     ("/undo", "", "Undo last turn"),
+    ("/redo", "", "Redo undone turn"),
     ("/compact", "", "Compact context window"),
     ("/resume", "[index|id|path]", "Pick up from ./session_logs"),
+    ("/sessions", "", "List saved sessions"),
     ("/model", "[id]", "Show available models or switch"),
-    (
-        "/effort",
-        "[level]",
-        "Set reasoning effort preference",
-    ),
+    ("/models", "", "List available models"),
+    ("/effort", "[level]", "Set reasoning effort preference"),
     ("/yolo", "", "Toggle auto-approve mode"),
     ("/status", "", "Current model & turn count"),
-    (
-        "/share-traces",
-        "[public|private]",
-        "Show or change trace visibility",
-    ),
+    ("/thinking", "", "Toggle thinking block display"),
+    ("/details", "", "Toggle tool execution details"),
+    ("/editor", "", "Open external editor for composing"),
+    ("/export", "", "Export conversation to Markdown"),
+    ("/connect", "", "Configure provider"),
+    ("/init", "", "Guided AGENTS.md setup"),
+    ("/share", "", "Share current session"),
+    ("/unshare", "", "Unshare current session"),
     ("/quit", "", "Exit"),
 )
 

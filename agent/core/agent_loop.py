@@ -55,11 +55,16 @@ from agent.core.yolo_budget import (
     yolo_budget_can_resume,
     yolo_budget_pending_to_tool,
 )
-from agent.observability import init_observability, record_session_start, shutdown_observability
+from agent.observability import (
+    init_observability,
+    record_session_start,
+    shutdown_observability,
+)
 from agent.tools.cloud_tools import (
     MUTATING_CLOUD_TOOLS,
     render_cloud_action_preview,
 )
+
 DEFAULT_CPU_SANDBOX_HARDWARE = "cpu-basic"
 
 
@@ -69,6 +74,7 @@ def start_cpu_sandbox_preload(session) -> None:
 
 async def teardown_session_sandbox(session) -> None:
     pass
+
 
 logger = logging.getLogger(__name__)
 
@@ -255,10 +261,12 @@ def _is_budgeted_auto_approval_target(tool_name: str, tool_args: dict) -> bool:
 
 # ── Cloud mutating tools — mandatory approval, NO config can bypass ──
 
-MANDATORY_APPROVAL_TOOLS: frozenset[str] = frozenset({
-    "terraform_apply",
-    *MUTATING_CLOUD_TOOLS,
-})
+MANDATORY_APPROVAL_TOOLS: frozenset[str] = frozenset(
+    {
+        "terraform_apply",
+        *MUTATING_CLOUD_TOOLS,
+    }
+)
 
 
 def _mandatory_approval_tool(tool_name: str) -> bool:
@@ -1314,7 +1322,9 @@ class Handlers:
             elif model_router and session.phase == "act":
                 model_router.use_strong()
             active_model = (
-                model_router.current_model if model_router else session.config.model_name
+                model_router.current_model
+                if model_router
+                else session.config.model_name
             )
 
             # ── Emit plan_generated on first plan iteration ──
@@ -1330,7 +1340,10 @@ class Handlers:
                 )
 
             # ── Hard cap on plan-mode iterations ──
-            if session.phase == "plan" and session.plan_iteration >= plan_mode_iterations:
+            if (
+                session.phase == "plan"
+                and session.plan_iteration >= plan_mode_iterations
+            ):
                 logger.info(
                     "Plan phase iteration cap (%d) reached — switching to act phase",
                     plan_mode_iterations,
@@ -1756,7 +1769,9 @@ class Handlers:
                             data={
                                 "phase": session.phase,
                                 "tool_count": len(results),
-                                "success_count": sum(1 for _, _, _, _, ok in results if ok),
+                                "success_count": sum(
+                                    1 for _, _, _, _, ok in results if ok
+                                ),
                                 "iteration": iteration,
                                 "plan_iteration": session.plan_iteration,
                             },
@@ -1777,7 +1792,9 @@ class Handlers:
                         # Pre-action preview for cloud mutating tools
                         if _mandatory_approval_tool(tool_name):
                             try:
-                                preview = render_cloud_action_preview(tool_name, tool_args)
+                                preview = render_cloud_action_preview(
+                                    tool_name, tool_args
+                                )
                                 tool_payload["action_preview"] = preview
                             except Exception:
                                 pass
@@ -1895,6 +1912,14 @@ class Handlers:
         if not removed:
             logger.warning("Undo: no user message found to remove")
         await session.send_event(Event(event_type="undo_complete"))
+
+    @staticmethod
+    async def redo(session: Session) -> None:
+        """Restore the last undone turn and notify the frontend."""
+        restored = session.context_manager.redo_last_turn()
+        if not restored:
+            logger.warning("Redo: no redo buffer to restore")
+        await session.send_event(Event(event_type="redo_complete"))
 
     @staticmethod
     async def new_conversation(session: Session, *, clear_screen: bool = False) -> None:
@@ -2298,13 +2323,14 @@ class Handlers:
         # ── Pre-action checkpoint: snapshot session before any approved mutation ──
         # This enables rewind if the cloud action causes issues.
         has_cloud_mutation = any(
-            _mandatory_approval_tool(tool_name)
-            for _, tool_name, _, _ in approved_tasks
+            _mandatory_approval_tool(tool_name) for _, tool_name, _, _ in approved_tasks
         )
         if has_cloud_mutation:
             session.checkpoint()
-            logger.info("Pre-action checkpoint saved for %d approved cloud mutation(s)",
-                        sum(1 for _, n, _, _ in approved_tasks if _mandatory_approval_tool(n)))
+            logger.info(
+                "Pre-action checkpoint saved for %d approved cloud mutation(s)",
+                sum(1 for _, n, _, _ in approved_tasks if _mandatory_approval_tool(n)),
+            )
 
         # Clear pending approval immediately so a page refresh during
         # execution won't re-show the approval dialog.
@@ -2545,6 +2571,10 @@ async def process_submission(session: Session, submission) -> bool:
 
     if op.op_type == OpType.UNDO:
         await Handlers.undo(session)
+        return True
+
+    if op.op_type == OpType.REDO:
+        await Handlers.redo(session)
         return True
 
     if op.op_type == OpType.NEW:

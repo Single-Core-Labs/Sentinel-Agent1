@@ -88,9 +88,13 @@ class OpType(Enum):
     USER_INPUT = "user_input"
     EXEC_APPROVAL = "exec_approval"
     UNDO = "undo"
+    REDO = "redo"
     COMPACT = "compact"
     NEW = "new"
     RESUME = "resume"
+    EXPORT = "export"
+    SHARE = "share"
+    UNSHARE = "unshare"
     SHUTDOWN = "shutdown"
 
 
@@ -504,8 +508,12 @@ class Session:
         reas_kw = routing.get("reasoning_keywords")
         classifier: StepClassifier | None = None
         if mech_kw or reas_kw:
-            classifier = StepClassifier.from_keywords(mechanical=mech_kw, reasoning=reas_kw)
-        router = ModelRouter(strong_model=strong, cheap_model=cheap, classifier=classifier)
+            classifier = StepClassifier.from_keywords(
+                mechanical=mech_kw, reasoning=reas_kw
+            )
+        router = ModelRouter(
+            strong_model=strong, cheap_model=cheap, classifier=classifier
+        )
         step_overrides = routing.get("overrides")
         if step_overrides:
             router.configure(overrides=step_overrides)

@@ -8,12 +8,15 @@ Supports two modes:
 
 import argparse
 import asyncio
+import datetime
 import json
 import logging
 import os
+import re
 import signal
 import subprocess
 import sys
+import tempfile
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -30,6 +33,7 @@ from agent.core.session import OpType
 from agent.core.tools import ToolRouter
 from agent.messaging.gateway import NotificationGateway
 from agent.utils.terminal_display import (
+    format_help_text,
     get_console,
     print_approval_header,
     print_approval_item,
@@ -129,7 +133,9 @@ async def _model_picker(
     from agent.core.model_switcher import SUGGESTED_MODELS, probe_and_switch_model
 
     console = get_console()
-    console.print("\n[bold rgb(80,160,255)]Choose a model provider:[/bold rgb(80,160,255)]\n")
+    console.print(
+        "\n[bold rgb(80,160,255)]Choose a model provider:[/bold rgb(80,160,255)]\n"
+    )
     for i, m in enumerate(SUGGESTED_MODELS, 1):
         console.print(f"  [bold]{i}.[/bold] {m['id']}  [dim]({m['label']})[/dim]")
     console.print("  [bold]0.[/bold] Skip — keep default")
@@ -191,6 +197,7 @@ async def _prompt_and_save_token(prompt_session: PromptSession) -> str | None:
     # Validate token against the API
     try:
         import httpx
+
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(
                 "https://platformops.co/oauth/userinfo",
@@ -442,6 +449,9 @@ async def event_listener(
             elif event.event_type == "undo_complete":
                 console.print("[dim]Undone.[/dim]")
                 turn_complete_event.set()
+            elif event.event_type == "redo_complete":
+                console.print("[dim]Redo complete.[/dim]")
+                turn_complete_event.set()
             elif event.event_type == "new_complete":
                 data = event.data or {}
                 if data.get("clear_screen"):
@@ -504,18 +514,14 @@ async def event_listener(
             elif event.event_type == "step_completed":
                 step_id = event.data.get("step_id", "?") if event.data else "?"
                 status = event.data.get("status", "?") if event.data else "?"
-                console.print(
-                    f"  [dim]Step {step_id}: {status}[/dim]"
-                )
+                console.print(f"  [dim]Step {step_id}: {status}[/dim]")
             elif event.event_type == "observation":
                 phase = event.data.get("phase", "?") if event.data else "?"
                 tool_count = event.data.get("tool_count", 0) if event.data else 0
                 success_count = event.data.get("success_count", 0) if event.data else 0
                 if tool_count > 0:
                     summary = f"{success_count}/{tool_count} tools succeeded"
-                    console.print(
-                        f"  [dim]Observe ({phase}): {summary}[/dim]"
-                    )
+                    console.print(f"  [dim]Observe ({phase}): {summary}[/dim]")
             elif event.event_type == "tool_log":
                 tool = event.data.get("tool", "") if event.data else ""
                 log = event.data.get("log", "") if event.data else ""
@@ -685,9 +691,137 @@ async def get_user_input(prompt_session: PromptSession) -> str:
     return await prompt_session.prompt_async(HTML("\n<b><cyan>></cyan></b> "))
 
 
-# ── Slash command helpers ────────────────────────────────────────────────
+# ── Runtime UI state ─────────────────────────────────────────────────────
 
-# Slash commands are defined in terminal_display
+
+@dataclass
+class _UIPreferences:
+    thinking_visible: bool = True
+    details_visible: bool = True
+
+
+_ui = _UIPreferences()
+
+
+# ── Custom commands ──────────────────────────────────────────────────────
+
+CUSTOM_COMMANDS_DIRS = [
+    Path(".opencode") / "commands",
+    Path.home() / ".config" / "opencode" / "commands",
+]
+
+
+def _parse_custom_command(path: Path) -> dict[str, Any] | None:
+    """Parse a .md command file with YAML frontmatter.
+
+    Returns ``{name, description, agent, model, subtask, template}`` or None.
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except Exception:
+        return None
+
+    name = path.stem
+    desc = ""
+    agent = ""
+    model = ""
+    subtask = False
+    template = text
+
+    # YAML frontmatter between --- markers
+    m = re.match(r"^---\s*\n(.*?)\n---\s*\n(.*)", text, re.DOTALL)
+    if m:
+        try:
+            import yaml
+
+            meta = yaml.safe_load(m.group(1)) or {}
+            desc = meta.get("description", "")
+            agent = meta.get("agent", "")
+            model = meta.get("model", "")
+            subtask = bool(meta.get("subtask", False))
+            template = m.group(2).strip()
+        except Exception:
+            pass
+
+    return {
+        "name": name,
+        "description": desc,
+        "agent": agent,
+        "model": model,
+        "subtask": subtask,
+        "template": template,
+    }
+
+
+def _list_custom_commands() -> dict[str, dict[str, Any]]:
+    """Scan all command dirs and return {name: spec}."""
+    commands: dict[str, dict[str, Any]] = {}
+    for d in CUSTOM_COMMANDS_DIRS:
+        resolved = Path(d)
+        if not resolved.is_dir():
+            continue
+        for f in sorted(resolved.glob("*.md")):
+            spec = _parse_custom_command(f)
+            if spec:
+                commands[spec["name"]] = spec
+    return commands
+
+
+async def _expand_custom_command(
+    name: str,
+    args: str,
+    prompt_session: PromptSession | None = None,
+) -> str:
+    """Expand a custom command template into a prompt string.
+
+    Substitutions:
+      - $ARGUMENTS, $1, $2, ... → positional args
+      - !command → shell output
+      - @file   → file content
+    """
+    commands = _list_custom_commands()
+    spec = commands.get(name)
+    if not spec:
+        return ""
+    template = spec["template"]
+    arg_list = args.split() if args else []
+    joined = args
+
+    # Positional args
+    template = template.replace("$ARGUMENTS", joined)
+    for i, a in enumerate(arg_list, 1):
+        template = template.replace(f"${i}", a)
+
+    # Shell injection !command
+    def _replace_shell(m: re.Match) -> str:
+        cmd = m.group(1).strip()
+        try:
+            result = subprocess.run(
+                cmd, shell=True, capture_output=True, text=True, timeout=30
+            )
+            return result.stdout or result.stderr
+        except Exception as e:
+            return f"<error: {e}>"
+
+    template = re.sub(r"!`([^`]+)`", _replace_shell, template)
+
+    # File references @file
+    def _replace_file(m: re.Match) -> str:
+        ref = m.group(1).strip()
+        fpath = Path(ref)
+        if fpath.is_file():
+            try:
+                return fpath.read_text(encoding="utf-8")
+            except Exception:
+                return f"<error: could not read {ref}>"
+        return f"<file not found: {ref}>"
+
+    template = re.sub(r"@(\S+)", _replace_file, template)
+
+    return template
+
+
+# ── Slash command helpers ────────────────────────────────────────────────
 
 
 async def _resume_picker(
@@ -764,9 +898,41 @@ async def _handle_slash_command(
     parts = cmd.strip().split(None, 1)
     command = parts[0].lower()
     arg = parts[1].strip() if len(parts) > 1 else ""
+    console = get_console()
+
+    # ── Check custom commands first ─────────────────────────────────────
+    custom = _list_custom_commands()
+    stripped = command.lstrip("/")
+    if stripped in custom:
+        expanded = await _expand_custom_command(stripped, arg, prompt_session)
+        if expanded:
+            submission_id[0] += 1
+            return Submission(
+                id=f"sub_{submission_id[0]}",
+                operation=Operation(
+                    op_type=OpType.USER_INPUT,
+                    data={"text": expanded},
+                ),
+            )
+        console.print(f"[yellow]Custom command /{stripped} expanded to empty.[/yellow]")
+        return None
+
+    # ── Built-in commands ───────────────────────────────────────────────
 
     if command == "/help":
-        print_help()
+        custom_descs = "\n".join(
+            f"  /{name}  {spec['description'] or '(custom command)'}"
+            for name, spec in sorted(custom.items())
+        )
+        if custom_descs:
+            full_help = format_help_text()
+            console.print()
+            console.print(full_help)
+            console.print("[bold]Custom commands[/bold]")
+            console.print(custom_descs)
+            console.print()
+        else:
+            print_help()
         return None
 
     if command == "/undo":
@@ -774,6 +940,13 @@ async def _handle_slash_command(
         return Submission(
             id=f"sub_{submission_id[0]}",
             operation=Operation(op_type=OpType.UNDO),
+        )
+
+    if command == "/redo":
+        submission_id[0] += 1
+        return Submission(
+            id=f"sub_{submission_id[0]}",
+            operation=Operation(op_type=OpType.REDO),
         )
 
     if command == "/compact":
@@ -815,8 +988,68 @@ async def _handle_slash_command(
             ),
         )
 
-    if command == "/model":
-        console = get_console()
+    if command in {"/sessions", "/continue"}:
+        session = session_holder[0] if session_holder else None
+        if session is None:
+            get_console().print("[bold red]No active session.[/bold red]")
+            return None
+        # /sessions lists all; /continue alias is a no-arg /resume
+        from agent.core.session_resume import (
+            format_session_log_entry,
+            list_session_logs,
+            resolve_session_log_arg,
+        )
+        from agent.core.session import DEFAULT_SESSION_LOG_DIR
+
+        directory = DEFAULT_SESSION_LOG_DIR
+        entries = list_session_logs(directory)
+        if not entries:
+            console.print(f"[yellow]No session logs found in ./{directory}.[/yellow]")
+            return None
+        if arg:
+            selected = resolve_session_log_arg(arg, entries, directory)
+            if selected is None:
+                console.print(f"[bold red]No matching session:[/bold red] {arg}")
+                return None
+            submission_id[0] += 1
+            return Submission(
+                id=f"sub_{submission_id[0]}",
+                operation=Operation(
+                    op_type=OpType.RESUME, data={"path": str(selected)}
+                ),
+            )
+        # List sessions interactively
+        console.print()
+        console.print("[bold]Saved sessions[/bold]")
+        for index, entry in enumerate(entries, start=1):
+            console.print(format_session_log_entry(index, entry))
+        console.print()
+        if prompt_session is None:
+            return None
+        try:
+            choice = await prompt_session.prompt_async(
+                "Select session number or path (blank to cancel): "
+            )
+        except (EOFError, KeyboardInterrupt):
+            console.print("[dim]Cancelled.[/dim]")
+            return None
+        choice = choice.strip()
+        if not choice:
+            return None
+        selected = resolve_session_log_arg(choice, entries, directory)
+        if selected is None:
+            console.print(f"[bold red]Invalid selection:[/bold red] {choice}")
+            return None
+        submission_id[0] += 1
+        return Submission(
+            id=f"sub_{submission_id[0]}",
+            operation=Operation(op_type=OpType.RESUME, data={"path": str(selected)}),
+        )
+
+    if command in {"/model", "/models"}:
+        if not arg and command == "/models":
+            model_switcher.print_model_listing(config, console)
+            return None
         if not arg:
             model_switcher.print_model_listing(config, console)
             return None
@@ -841,7 +1074,6 @@ async def _handle_slash_command(
         return None
 
     if command == "/effort":
-        console = get_console()
         valid = {"minimal", "low", "medium", "high", "xhigh", "max", "off"}
         session = session_holder[0] if session_holder else None
         if not arg:
@@ -864,8 +1096,6 @@ async def _handle_slash_command(
             console.print(f"[dim]Expected one of: {', '.join(sorted(valid))}[/dim]")
             return None
         config.reasoning_effort = None if level == "off" else level
-        # Drop the per-model probe cache — the new preference may resolve
-        # differently. Next ``/model`` (or the retry safety net) reprobes.
         if session is not None:
             session.model_effective_effort.clear()
         console.print(f"[green]Reasoning effort: {level}[/green]")
@@ -886,12 +1116,147 @@ async def _handle_slash_command(
             print(f"Context items: {len(session.context_manager.items)}")
         return None
 
+    if command == "/thinking":
+        _ui.thinking_visible = not _ui.thinking_visible
+        state = "visible" if _ui.thinking_visible else "hidden"
+        console.print(f"[dim]Thinking blocks: {state}[/dim]")
+        return None
+
+    if command == "/details":
+        _ui.details_visible = not _ui.details_visible
+        state = "visible" if _ui.details_visible else "hidden"
+        console.print(f"[dim]Tool execution details: {state}[/dim]")
+        return None
+
+    if command == "/editor":
+        if prompt_session is None:
+            console.print("[yellow]No terminal session available for editor.[/yellow]")
+            return None
+        editor = os.environ.get("EDITOR", "notepad" if os.name == "nt" else "nano")
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w+",
+            suffix=".md",
+            delete=False,
+            encoding="utf-8",
+        )
+        tmp.write("# Compose your message\n\n")
+        tmp.close()
+        try:
+            subprocess.run([editor, tmp.name], check=False)
+            content = Path(tmp.name).read_text(encoding="utf-8").strip()
+            # Strip the heading hint
+            lines = content.splitlines()
+            clean = "\n".join(
+                line for line in lines if line != "# Compose your message"
+            ).strip()
+            if not clean:
+                console.print("[dim]Empty message — cancelled.[/dim]")
+                return None
+            submission_id[0] += 1
+            return Submission(
+                id=f"sub_{submission_id[0]}",
+                operation=Operation(
+                    op_type=OpType.USER_INPUT,
+                    data={"text": clean},
+                ),
+            )
+        finally:
+            Path(tmp.name).unlink(missing_ok=True)
+
+    if command == "/export":
+        session = session_holder[0] if session_holder else None
+        if session is None:
+            console.print("[bold red]No active session to export.[/bold red]")
+            return None
+        ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        export_dir = Path("exports")
+        export_dir.mkdir(exist_ok=True)
+        path = export_dir / f"session_{ts}.md"
+        lines_out = [f"# Session Export ({ts})\n"]
+        for msg in session.context_manager.items:
+            role = getattr(msg, "role", "unknown")
+            content = getattr(msg, "content", "") or ""
+            if role == "system":
+                continue
+            lines_out.append(f"\n## {role}\n")
+            lines_out.append(str(content))
+        path.write_text("\n".join(lines_out), encoding="utf-8")
+        console.print(f"[green]Session exported to[/green] {path}")
+        return None
+
+    if command == "/connect":
+        console.print("[bold]Configure a provider[/bold]")
+        console.print(
+            "Set your API keys in the environment or in a `.env` file.\n"
+            "Available providers: OpenAI, Anthropic, Google, "
+            "NVIDIA NIM (NVIDIA_NIM_API_KEY), and more via LiteLLM.\n"
+            "For custom endpoints, set OPENAI_API_KEY and OPENAI_BASE_URL.\n"
+            "[dim]Example: set OPENAI_API_KEY=sk-... in your .env[/dim]"
+        )
+        return None
+
+    if command == "/init":
+        console.print("[bold]Guided AGENTS.md setup[/bold]")
+        agents_path = Path("AGENTS.md")
+        if agents_path.exists():
+            console.print(
+                f"[green]AGENTS.md already exists[/green] ({agents_path.resolve()})"
+            )
+            console.print(
+                "[dim]Edit it manually to add project-specific instructions "
+                "for the agent.[/dim]"
+            )
+        else:
+            template = (
+                "# Agent Notes\n\n"
+                "## Development\n\n"
+                "- Run tests: <command>\n"
+                "- Build: <command>\n"
+                "- Lint: <command>\n"
+                "- Typecheck: <command>\n"
+                "\n"
+                "## Conventions\n\n"
+                "- <style guide, patterns, etc.>\n"
+            )
+            agents_path.write_text(template, encoding="utf-8")
+            console.print(f"[green]Created AGENTS.md[/green] ({agents_path.resolve()})")
+            console.print("[dim]Edit it with project-specific instructions.[/dim]")
+        return None
+
+    if command == "/share":
+        session = session_holder[0] if session_holder else None
+        if session is None:
+            console.print("[bold red]No active session to share.[/bold red]")
+            return None
+        console.print(
+            "[yellow]Session sharing is not yet available.[/yellow]\n"
+            "[dim]Use /export to save the conversation to a Markdown file.[/dim]"
+        )
+        return None
+
+    if command == "/unshare":
+        console.print("[yellow]Session sharing is not yet available.[/yellow]")
+        return None
+
+    if command == "/themes":
+        console.print(
+            "[bold]Available themes[/bold]\n"
+            "  default  - Default terminal colors\n"
+            "[dim]Theme customization is not yet implemented. "
+            "Set TERMINAL_THEME env var for future support.[/dim]"
+        )
+        return None
+
     if command == "/share-traces":
         session = session_holder[0] if session_holder else None
         await _handle_share_traces_command(arg, config, session)
         return None
 
-    print(f"Unknown command: {command}. Type /help for available commands.")
+    # Custom command name without / prefix
+    console.print(
+        f"[yellow]Unknown command: {command}.[/yellow] "
+        "[dim]Type /help for available commands.[/dim]"
+    )
     return None
 
 
@@ -1363,12 +1728,13 @@ async def _ipc_event_writer(event_queue: asyncio.Queue):
             data = event.data if isinstance(event.data, dict) else {}
             # Need to handle potential non-serializable objects (like datetime)
             import json
+
             try:
                 line = json.dumps({"type": event.event_type, "data": data}, default=str)
                 sys.stdout.write(line + "\n")
                 sys.stdout.flush()
-            except Exception as e:
-                pass # Silently drop serialization errors in IPC mode
+            except Exception:
+                pass  # Silently drop serialization errors in IPC mode
             if event.event_type == "shutdown":
                 break
         except asyncio.CancelledError:
@@ -1376,12 +1742,14 @@ async def _ipc_event_writer(event_queue: asyncio.Queue):
         except Exception:
             pass
 
+
 async def _ipc_input_reader(submission_queue: asyncio.Queue, config, session_holder):
     import sys
     import json
+
     loop = asyncio.get_running_loop()
     sub_id = [0]
-    
+
     # Read from stdin continuously
     while True:
         try:
@@ -1391,15 +1759,15 @@ async def _ipc_input_reader(submission_queue: asyncio.Queue, config, session_hol
             line = line.strip()
             if not line:
                 continue
-            
+
             try:
                 cmd = json.loads(line)
             except json.JSONDecodeError:
                 continue
-                
+
             op_type_str = cmd.get("op_type")
             data = cmd.get("data", {})
-            
+
             op_type = None
             if op_type_str == "USER_INPUT":
                 op_type = OpType.USER_INPUT
@@ -1408,6 +1776,8 @@ async def _ipc_input_reader(submission_queue: asyncio.Queue, config, session_hol
                 op_type = OpType.EXEC_APPROVAL
             elif op_type_str == "UNDO":
                 op_type = OpType.UNDO
+            elif op_type_str == "REDO":
+                op_type = OpType.REDO
             elif op_type_str == "COMPACT":
                 op_type = OpType.COMPACT
             elif op_type_str == "NEW":
@@ -1418,25 +1788,27 @@ async def _ipc_input_reader(submission_queue: asyncio.Queue, config, session_hol
                 op_type = OpType.SHUTDOWN
             else:
                 continue
-                
+
             sub_id[0] += 1
             submission = Submission(
                 id=f"ipc_sub_{sub_id[0]}",
-                operation=Operation(op_type=op_type, data=data)
+                operation=Operation(op_type=op_type, data=data),
             )
             await submission_queue.put(submission)
-            
+
             if op_type == OpType.SHUTDOWN:
                 break
         except Exception:
             break
 
+
 async def ipc_main(model: str | None = None, sandbox_tools: bool = False):
     """IPC JSON loop for external frontends."""
     import logging
+
     logging.getLogger().setLevel(logging.CRITICAL)
     _configure_runtime_logging()
-    
+
     config = load_config(CLI_CONFIG_PATH, include_user_defaults=True)
     _normalize_config_model(config)
     if model:
@@ -1480,7 +1852,9 @@ async def ipc_main(model: str | None = None, sandbox_tools: bool = False):
     )
 
     writer_task = asyncio.create_task(_ipc_event_writer(event_queue))
-    reader_task = asyncio.create_task(_ipc_input_reader(submission_queue, config, session_holder))
+    reader_task = asyncio.create_task(
+        _ipc_input_reader(submission_queue, config, session_holder)
+    )
 
     try:
         await asyncio.gather(reader_task, agent_task)
@@ -1495,8 +1869,8 @@ async def ipc_main(model: str | None = None, sandbox_tools: bool = False):
 
 def _launch_ink_ui(model: str | None, sandbox_tools: bool) -> int:
     """Launch the Node/Ink terminal UI. Returns process exit code."""
-    import subprocess
     import shutil
+    import subprocess
 
     # Find the frontend directory relative to this file (agent/main.py)
     # Structure: <root>/agent/main.py  →  <root>/frontend/
@@ -1583,9 +1957,7 @@ def cli():
 
     try:
         if args.json_ipc:
-            asyncio.run(
-                ipc_main(model=args.model, sandbox_tools=args.sandbox_tools)
-            )
+            asyncio.run(ipc_main(model=args.model, sandbox_tools=args.sandbox_tools))
         elif args.prompt:
             max_iter = args.max_iterations
             if max_iter is not None and max_iter < 0:
@@ -1611,6 +1983,7 @@ def cli():
                 sys.exit(code)
     except KeyboardInterrupt:
         print("\n\nGoodbye!")
+
 
 if __name__ == "__main__":
     cli()
