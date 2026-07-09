@@ -4,12 +4,13 @@ import { THEMES, type ThemeConfig } from './theme.js';
 import { MockEventEmitter, type AgentEvent, type PlanItem } from './events/mock-emitter.js';
 import { IPCEventEmitter } from './events/ipc-emitter.js';
 import { StartupSequence } from './components/startup-sequence.js';
+import { ProviderPicker } from './components/provider-picker.js';
 import { ModelPicker, MODEL_OPTIONS, type ModelOption } from './components/model-picker.js';
 import { ChatView, type DisplayItem } from './components/chat-view.js';
 import { StatusBar } from './components/status-bar.js';
 import { InputBar } from './components/input-bar.js';
 
-type AppPhase = 'startup' | 'model-picker' | 'main';
+type AppPhase = 'startup' | 'provider-picker' | 'model-picker' | 'main';
 type Mode = 'plan' | 'executing' | 'idle';
 
 const USE_MOCK = process.env['SENTINEL_MOCK'] === '1' || process.argv.includes('--mock');
@@ -22,7 +23,8 @@ const uid = (prefix = 'i') => `${prefix}-${++_counter}`;
 export default function App() {
   const [phase, setPhase]         = useState<AppPhase>('startup');
   const [themeName, setThemeName] = useState('dark');
-  const [model, setModel]         = useState<ModelOption>(MODEL_OPTIONS[1]!);
+  const [model, setModel]         = useState<ModelOption | null>(null);
+  const [apiKey, setApiKey]       = useState('');
   const [items, setItems]         = useState<DisplayItem[]>([]);
   const [activeItem, setActive]   = useState<DisplayItem | null>(null);
   const [turnCount, setTurnCount] = useState(0);
@@ -244,8 +246,8 @@ export default function App() {
       : new IPCEventEmitter();
     emitterRef.current = emitter;
     emitter.on('event', handleEvent);
-    emitter.start(selectedModel);
-  }, [handleEvent]);
+    emitter.start(selectedModel, apiKey, model?.provider);
+  }, [handleEvent, apiKey]);
 
   // ── Slash commands / send ──────────────────────────────────────
 
@@ -270,7 +272,7 @@ export default function App() {
           return;
         }
         case '/model':
-          setPhase('model-picker');
+          setPhase('provider-picker');
           return;
         case '/help':
           setItems(p => [...p, {
@@ -369,8 +371,25 @@ export default function App() {
       {phase === 'startup' && (
         <StartupSequence
           onComplete={() => {
+            setPhase('provider-picker');
+          }}
+          theme={theme}
+        />
+      )}
+
+      {phase === 'provider-picker' && (
+        <ProviderPicker
+          onSelect={(selectedModel, key) => {
+            setModel({
+              id: selectedModel.model_id,
+              provider: selectedModel.provider_id,
+              name: selectedModel.name,
+              description: selectedModel.description,
+              tag: selectedModel.tag,
+            });
+            setApiKey(key);
             setPhase('main');
-            startSession(model.id);
+            startSession(selectedModel.model_id);
           }}
           theme={theme}
         />
@@ -383,7 +402,7 @@ export default function App() {
             setPhase('main');
           }}
           theme={theme}
-          defaultModel={model.id}
+          defaultModel={model?.id}
         />
       )}
 
@@ -413,7 +432,7 @@ export default function App() {
           {/* Status bar */}
           <Box borderStyle="single" borderColor={theme.colors.dimBorder} paddingX={1} marginTop={0}>
             <StatusBar
-              model={`${model.provider}/${model.name}`}
+              model={model ? `${model.provider}/${model.name}` : 'No model selected'}
               sessionId={sessionId}
               turnCount={turnCount}
               tokenUsage={tokenUsage}

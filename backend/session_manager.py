@@ -280,14 +280,14 @@ class SessionManager:
         model: str | None,
         event_queue: asyncio.Queue,
         notification_destinations: list[str] | None = None,
+        provider_api_key: str | None = None,
+        provider_id: str | None = None,
     ) -> tuple[ToolRouter, Session]:
         """Build blocking per-session resources in a worker thread."""
         import time as _time
 
         t0 = _time.monotonic()
         tool_router = ToolRouter(self.config.mcpServers)
-        # Deep-copy config so each session's model switches independently —
-        # tab A picking GLM doesn't flip tab B off the default model.
         session_config = self.config.model_copy(deep=True)
         normalized_model = strip_platformops_model_prefix(model)
         if normalized_model:
@@ -302,6 +302,8 @@ class SessionManager:
             session_id=session_id,
             persistence_store=self._store(),
         )
+        session.provider_api_key = provider_api_key
+        session.provider_id = provider_id
         t1 = _time.monotonic()
         logger.info("Session initialized in %.2fs", t1 - t0)
         return tool_router, session
@@ -988,6 +990,8 @@ class SessionManager:
         user_id: str = "dev",
         model: str | None = None,
         is_pro: bool | None = None,
+        provider_api_key: str | None = None,
+        provider_id: str | None = None,
     ) -> str:
         """Create a new agent session and return its ID.
 
@@ -1000,6 +1004,9 @@ class SessionManager:
             model: Optional model override. When set, replaces ``model_name``
                 on the per-session config clone. None falls back to the
                 config default.
+            provider_api_key: Optional direct provider API key to bypass
+                the gateway router.
+            provider_id: Optional provider identifier for routing.
 
         Raises:
             SessionCapacityError: If the server or user has reached the
@@ -1047,6 +1054,8 @@ class SessionManager:
                 user_id=user_id,
                 model=model,
                 event_queue=event_queue,
+                provider_api_key=provider_api_key,
+                provider_id=provider_id,
             )
 
             # Create wrapper

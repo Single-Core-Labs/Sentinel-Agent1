@@ -38,7 +38,7 @@ export class IPCEventEmitter extends EventEmitter {
     }
   }
 
-  start(modelId?: string) {
+  start(modelId?: string, providerApiKey?: string, providerId?: string) {
     if (this.running) return;
     this.running = true;
 
@@ -48,10 +48,27 @@ export class IPCEventEmitter extends EventEmitter {
     if (modelId) {
       args.push('--model', modelId);
     }
+
+    // Prepare env with provider API key if provided
+    const env = { ...process.env };
+    if (providerApiKey && providerId) {
+      const envMap: Record<string, string> = {
+        'google-ai-studio': 'GOOGLE_AI_STUDIO_API_KEY',
+        'anthropic': 'ANTHROPIC_API_KEY',
+        'openai': 'OPENAI_API_KEY',
+        'deepseek': 'DEEPSEEK_API_KEY',
+        'models-dev': 'MODELS_DEV_API_KEY',
+        'github-copilot': 'GITHUB_COPILOT_TOKEN',
+      };
+      const envVar = envMap[providerId];
+      if (envVar) {
+        env[envVar] = providerApiKey;
+      }
+    }
     
     this.child = spawn(this.pythonPath, args, {
       cwd: projectRoot,
-      env: process.env,
+      env,
     });
 
     if (!this.child.stdout || !this.child.stdin || !this.child.stderr) {

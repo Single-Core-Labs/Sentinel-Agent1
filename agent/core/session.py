@@ -129,6 +129,8 @@ class Session:
         persistence_store: Any | None = None,
     ):
         self.hf_token: Optional[str] = hf_token
+        self.provider_api_key: Optional[str] = None
+        self.provider_id: Optional[str] = None
         self.user_id: Optional[str] = user_id
         self.local_mode = local_mode
         self.autonomous_mode = autonomous_mode

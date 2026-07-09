@@ -552,8 +552,10 @@ async def _heal_effort_and_rebuild_params(
 
     return _resolve_llm_params(
         model,
-        session.hf_token,
+        session.hf_token or session.provider_api_key,
         reasoning_effort=session.effective_effort_for(model),
+        provider_api_key=session.provider_api_key,
+        provider_id=session.provider_id,
     )
 
 

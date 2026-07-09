@@ -322,29 +322,35 @@ async def create_session(
 ) -> SessionResponse:
     """Create a new agent session bound to the authenticated user.
 
-    Optional body ``{"model"?: <id>}`` selects the session's LLM; unknown
-    ids are rejected (400). Empty requests use the web default.
+    Optional body ``{"model"?: <id>, "provider_api_key"?: ..., "provider_id"?: ...}``
+    selects the session's LLM and optionally a direct provider API key to
+    bypass the gateway router. Unknown model ids are rejected (400).
+    Empty requests use the web default.
 
     Returns 503 if the server or user has reached the session limit.
     """
-    # Optional model override. Empty body falls back to the config default.
     model: str | None = None
+    provider_api_key: str | None = None
+    provider_id: str | None = None
     try:
         body = await request.json()
     except Exception:
         body = None
     if isinstance(body, dict):
         model = body.get("model")
+        provider_api_key = body.get("provider_api_key")
+        provider_id = body.get("provider_id")
 
     _validate_model_id(model)
 
-    # Empty requests use the web default.
     model = _model_override_for_new_session(model)
 
     try:
         session_id = await session_manager.create_session(
             user_id=user["user_id"],
             model=model,
+            provider_api_key=provider_api_key,
+            provider_id=provider_id,
         )
     except SessionCapacityError as e:
         raise HTTPException(status_code=503, detail=str(e))

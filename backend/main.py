@@ -17,6 +17,7 @@ load_dotenv(Path(__file__).parent.parent / ".env")
 
 from routes.agent import router as agent_router  # noqa: E402
 from routes.auth import router as auth_router  # noqa: E402
+from routes.providers import router as providers_router  # noqa: E402
 from session_manager import session_manager  # noqa: E402
 
 # Configure logging
@@ -103,6 +104,7 @@ app.add_middleware(
 # Include routers
 app.include_router(agent_router)
 app.include_router(auth_router)
+app.include_router(providers_router)
 
 # Serve static files (frontend build) in production
 static_path = Path(__file__).parent.parent / "static"
