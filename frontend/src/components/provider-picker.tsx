@@ -1,5 +1,5 @@
 import { Box, Text, useInput } from 'ink';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import type { ThemeConfig } from '../theme.js';
 
 interface ProviderModel {
@@ -17,15 +17,6 @@ interface ProviderInfo {
   docs_url: string;
   api_key_instructions: string;
   models: ProviderModel[];
-}
-
-interface ProviderStatus {
-  provider_id: string;
-  provider_name: string;
-  has_api_key: boolean;
-  has_oauth: boolean;
-  verified: boolean;
-  auth_type: string;
 }
 
 interface Props {
@@ -47,59 +38,109 @@ const TAG_COLORS: Record<string, string> = {
   copilot:      '#8957E5',
 };
 
+const STATIC_PROVIDERS: ProviderInfo[] = [
+  {
+    id: 'google-ai-studio', name: 'Google AI Studio', auth_type: 'api_key',
+    docs_url: 'https://aistudio.google.com/apikey',
+    api_key_instructions: 'Get your key at https://aistudio.google.com/apikey',
+    models: [
+      { provider_id: 'google-ai-studio', model_id: 'gemini-2.5-pro', name: 'Gemini 2.5 Pro', description: 'Best reasoning, large context, multimodal', tag: 'large-ctx' },
+      { provider_id: 'google-ai-studio', model_id: 'gemini-2.5-flash', name: 'Gemini 2.5 Flash', description: 'Fast, cost-efficient, multimodal', tag: 'fast' },
+    ],
+  },
+  {
+    id: 'anthropic', name: 'Anthropic', auth_type: 'api_key',
+    docs_url: 'https://console.anthropic.com/',
+    api_key_instructions: 'Get your key at https://console.anthropic.com/settings/keys',
+    models: [
+      { provider_id: 'anthropic', model_id: 'claude-sonnet-4', name: 'Claude Sonnet 4', description: 'Best balance of speed and capability', tag: 'recommended' },
+      { provider_id: 'anthropic', model_id: 'claude-haiku-3.5', name: 'Claude Haiku 3.5', description: 'Fast, lightweight', tag: 'fast' },
+    ],
+  },
+  {
+    id: 'openai', name: 'OpenAI', auth_type: 'api_key',
+    docs_url: 'https://platform.openai.com/',
+    api_key_instructions: 'Get your key at https://platform.openai.com/api-keys',
+    models: [
+      { provider_id: 'openai', model_id: 'gpt-4o', name: 'GPT-4o', description: 'Fast multimodal, strong coding', tag: 'fast' },
+      { provider_id: 'openai', model_id: 'gpt-4.5', name: 'GPT-4.5', description: 'Latest flagship model', tag: 'powerful' },
+    ],
+  },
+  {
+    id: 'deepseek', name: 'DeepSeek', auth_type: 'api_key',
+    docs_url: 'https://platform.deepseek.com/',
+    api_key_instructions: 'Get your key at https://platform.deepseek.com/api_keys',
+    models: [
+      { provider_id: 'deepseek', model_id: 'deepseek-chat-v4', name: 'DeepSeek V4 Chat', description: 'Open-weight, strong reasoning', tag: 'open' },
+      { provider_id: 'deepseek', model_id: 'deepseek-reasoner', name: 'DeepSeek R1', description: 'Deep reasoning model', tag: 'open' },
+    ],
+  },
+  {
+    id: 'models-dev', name: 'Models.dev', auth_type: 'api_key',
+    docs_url: 'https://models.dev',
+    api_key_instructions: 'Get your models.dev API key at https://models.dev/keys',
+    models: [
+      { provider_id: 'models-dev', model_id: 'models-dev/gpt-4o', name: 'GPT-4o (via Models.dev)', description: 'Via models.dev routing', tag: 'fast' },
+      { provider_id: 'models-dev', model_id: 'models-dev/claude-sonnet', name: 'Claude Sonnet (via Models.dev)', description: 'Via models.dev routing', tag: 'recommended' },
+    ],
+  },
+  {
+    id: 'github-copilot', name: 'GitHub Copilot', auth_type: 'oauth',
+    docs_url: 'https://github.com/settings/tokens',
+    api_key_instructions: 'Log in with GitHub to use your Copilot account',
+    models: [
+      { provider_id: 'github-copilot', model_id: 'copilot-gpt-4o', name: 'Copilot GPT-4o', description: 'GitHub Copilot hosted model', tag: 'copilot' },
+    ],
+  },
+  {
+    id: 'chatgpt-plus', name: 'ChatGPT Plus/Pro', auth_type: 'api_key',
+    docs_url: 'https://platform.openai.com/',
+    api_key_instructions: 'Use your OpenAI API key with ChatGPT Plus benefits',
+    models: [
+      { provider_id: 'chatgpt-plus', model_id: 'gpt-4o', name: 'GPT-4o (Plus tier)', description: 'ChatGPT Plus tier model', tag: 'fast' },
+    ],
+  },
+];
+
+function getEnvApiKey(providerId: string): string {
+  const envMap: Record<string, string> = {
+    'google-ai-studio': 'GOOGLE_AI_STUDIO_API_KEY',
+    'anthropic': 'ANTHROPIC_API_KEY',
+    'openai': 'OPENAI_API_KEY',
+    'deepseek': 'DEEPSEEK_API_KEY',
+    'models-dev': 'MODELS_DEV_API_KEY',
+    'github-copilot': 'GITHUB_COPILOT_TOKEN',
+  };
+  const envVar = envMap[providerId];
+  if (envVar && typeof process !== 'undefined' && process.env) {
+    return process.env[envVar] || '';
+  }
+  return '';
+}
+
 export function ProviderPicker({ onSelect, theme }: Props) {
   const c = theme.colors;
   const [phase, setPhase] = useState<PickerPhase>('providers');
-  const [providers, setProviders] = useState<ProviderInfo[]>([]);
-  const [statuses, setStatuses] = useState<Record<string, ProviderStatus>>({});
   const [cursor, setCursor] = useState(0);
   const [selectedProvider, setSelectedProvider] = useState<ProviderInfo | null>(null);
   const [modelCursor, setModelCursor] = useState(0);
   const [apiKeyInput, setApiKeyInput] = useState('');
-  const [apiKeyCursor, setApiKeyCursor] = useState(0);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  // Fetch providers on mount
-  useEffect(() => {
-    const fetchProviders = async () => {
-      try {
-        const [provResp, statusResp] = await Promise.all([
-          fetch('/api/providers'),
-          fetch('/api/providers/status'),
-        ]);
-        if (provResp.ok) {
-          const data = await provResp.json();
-          setProviders(data);
-        }
-        if (statusResp.ok) {
-          const data = await statusResp.json();
-          setStatuses(data);
-        }
-      } catch (e) {
-        setError('Failed to load providers');
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchProviders();
-  }, []);
-
-  const providerList = providers;
+  const providerList = STATIC_PROVIDERS;
 
   const getProviderStatusBadge = (pid: string) => {
-    const s = statuses[pid];
-    if (!s) return '';
-    if (s.auth_type === 'oauth') return s.has_oauth ? ' [connected]' : '';
-    return s.verified ? ' [verified]' : s.has_api_key ? ' [key saved]' : ' [no key]';
+    const key = getEnvApiKey(pid);
+    if (key) return ' [env key]';
+    return '';
   };
 
   const handleSelectProvider = () => {
     const p = providerList[cursor];
     if (!p) return;
-    const s = statuses[p.id];
-    if (s?.verified) {
-      // Already have valid creds — go straight to models
+    const envKey = getEnvApiKey(p.id);
+    if (envKey) {
+      // Already have an env key — go straight to models
       setSelectedProvider(p);
       setPhase('models');
       setModelCursor(0);
@@ -107,12 +148,10 @@ export function ProviderPicker({ onSelect, theme }: Props) {
       setSelectedProvider(p);
       setPhase('api-key-input');
       setApiKeyInput('');
-      setApiKeyCursor(0);
     } else if (p.auth_type === 'oauth') {
-      // Trigger OAuth flow via popup/redirect
-      window.open(`/api/providers/oauth/login/${p.id}`, '_blank');
       setSelectedProvider(p);
-      setPhase('models');
+      setPhase('api-key-input');
+      setApiKeyInput('');
     }
   };
 
@@ -134,7 +173,7 @@ export function ProviderPicker({ onSelect, theme }: Props) {
     if (!selectedProvider) return;
     const model = selectedProvider.models[modelCursor];
     if (!model) return;
-    const apiKey = apiKeyInput.trim() || '';
+    const apiKey = apiKeyInput.trim() || getEnvApiKey(selectedProvider.id) || '';
     onSelect(model, apiKey);
   };
 
@@ -175,14 +214,6 @@ export function ProviderPicker({ onSelect, theme }: Props) {
   });
 
   // ── Render ──
-
-  if (loading && providers.length === 0) {
-    return (
-      <Box paddingLeft={3} paddingTop={1}>
-        <Text color={c.muted}>Loading providers...</Text>
-      </Box>
-    );
-  }
 
   if (phase === 'providers') {
     return (
