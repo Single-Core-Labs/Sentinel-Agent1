@@ -179,17 +179,15 @@ export function ProviderPicker({ onSelect, theme }: Props) {
 
   // ── Keyboard handling ──
 
-  useInput((_input, key) => {
+  useInput((input, key) => {
     if (phase === 'providers') {
       if (key.upArrow && cursor > 0) setCursor(c => c - 1);
       if (key.downArrow && cursor < providerList.length - 1) setCursor(c => c + 1);
       if (key.return) handleSelectProvider();
-      if (key.escape) onSelect(providers[0]?.models[0]!, '');
+      if (key.escape) onSelect(STATIC_PROVIDERS[0]?.models[0]!, '');
     }
 
     if (phase === 'api-key-input') {
-      // Simplistic key input — real app would use a proper input
-      const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_';
       if (key.return && !key.shift) {
         handleSubmitApiKey();
         return;
@@ -202,7 +200,9 @@ export function ProviderPicker({ onSelect, theme }: Props) {
         setPhase('providers');
         return;
       }
-      // In a real terminal, we'd need raw character input
+      if (input && !key.ctrl && !key.meta) {
+        setApiKeyInput(s => s + input);
+      }
     }
 
     if (phase === 'models') {
