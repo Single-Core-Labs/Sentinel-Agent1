@@ -125,8 +125,6 @@ export function ProviderPicker({ onSelect, theme }: Props) {
   const [selectedProvider, setSelectedProvider] = useState<ProviderInfo | null>(null);
   const [modelCursor, setModelCursor] = useState(0);
   const [apiKeyInput, setApiKeyInput] = useState('');
-  const [error, setError] = useState('');
-
   const providerList = STATIC_PROVIDERS;
 
   const getProviderStatusBadge = (pid: string) => {
@@ -157,16 +155,8 @@ export function ProviderPicker({ onSelect, theme }: Props) {
 
   const handleSubmitApiKey = () => {
     if (!selectedProvider || !apiKeyInput.trim()) return;
-    setLoading(true);
-    fetch('/api/providers/keys', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider_id: selectedProvider.id, api_key: apiKeyInput.trim() }),
-    })
-      .then(r => r.json())
-      .then(() => setPhase('models'))
-      .catch(() => setError('Failed to save API key'))
-      .finally(() => setLoading(false));
+    setPhase('models');
+    setModelCursor(0);
   };
 
   const handleSelectModel = () => {
@@ -240,12 +230,6 @@ export function ProviderPicker({ onSelect, theme }: Props) {
             );
           })}
         </Box>
-        {error && (
-          <Box marginTop={1}>
-            <Text color={c.warning}>{error}</Text>
-          </Box>
-        )}
-      </Box>
     );
   }
 
