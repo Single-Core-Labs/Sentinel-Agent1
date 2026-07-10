@@ -1,4 +1,4 @@
-import { ModelProvider, type ChatMessage, type StreamCallbacks } from './provider-interface.js';
+import { ModelProvider, type ChatMessage, type StreamCallbacks, type ToolDef, type CompletionResult, type ToolCallData } from './provider-interface.js';
 
 function env(name: string): string | undefined {
   return typeof process !== 'undefined' ? process.env[name] : undefined;
@@ -10,6 +10,87 @@ export class GoogleProvider extends ModelProvider {
   constructor() {
     super();
     this.apiKey = env('GOOGLE_AI_STUDIO_API_KEY');
+  }
+
+  async complete(
+    modelId: string,
+    messages: ChatMessage[],
+    tools?: ToolDef[],
+    signal?: AbortSignal,
+  ): Promise<CompletionResult> {
+    if (!this.apiKey) {
+      return { content: '', toolCalls: [], finishReason: 'error' };
+    }
+
+    const geminiModel = modelId.replace(/^(google\/|gemini\/)/, '');
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${this.apiKey}`;
+
+    const body: Record<string, unknown> = {
+      contents: messages.map(m => ({
+        role: m.role === 'assistant' ? 'model' : m.role === 'tool' ? 'user' : m.role,
+        parts: m.role === 'tool'
+          ? [{ text: `[Tool result for ${m.name ?? m.tool_call_id ?? 'unknown'}]: ${m.content}` }]
+          : [{ text: m.content }],
+      })),
+    };
+
+    if (tools && tools.length > 0) {
+      body.tools = [{
+        functionDeclarations: tools.map(t => ({
+          name: t.name,
+          description: t.description,
+          parameters: t.inputSchema,
+        })),
+      }];
+    }
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal,
+      });
+
+      if (!response.ok) {
+        const errBody = await response.text().catch(() => '');
+        throw new Error(`Gemini request failed: ${response.status}${errBody ? ` — ${errBody.slice(0, 300)}` : ''}`);
+      }
+
+      const data = (await response.json()) as {
+        candidates?: Array<{
+          content?: { parts?: Array<{ text?: string; functionCall?: { name: string; args: Record<string, unknown> } }> };
+          finishReason?: string;
+        }>;
+      };
+
+      const candidate = data.candidates?.[0];
+      if (!candidate) return { content: '', toolCalls: [], finishReason: 'stop' };
+
+      const parts = candidate.content?.parts ?? [];
+      let content = '';
+      const toolCalls: ToolCallData[] = [];
+
+      for (const part of parts) {
+        if (part.text) {
+          content += part.text;
+        }
+        if (part.functionCall) {
+          toolCalls.push({
+            id: `fc_${toolCalls.length}`,
+            name: part.functionCall.name,
+            arguments: part.functionCall.args ?? {},
+          });
+        }
+      }
+
+      return { content, toolCalls, finishReason: candidate.finishReason ?? 'stop' };
+    } catch (err: unknown) {
+      if (typeof err === 'object' && err !== null && (err as DOMException).name === 'AbortError') {
+        return { content: '', toolCalls: [], finishReason: 'interrupted' };
+      }
+      throw err;
+    }
   }
 
   async stream(

@@ -1,4 +1,4 @@
-import { ModelProvider, type ChatMessage, type StreamCallbacks } from './provider-interface.js';
+import { ModelProvider, type ChatMessage, type StreamCallbacks, type ToolDef, type CompletionResult, type ToolCallData } from './provider-interface.js';
 
 function env(name: string): string | undefined {
   return typeof process !== 'undefined' ? process.env[name] : undefined;
@@ -10,6 +10,77 @@ export class AnthropicProvider extends ModelProvider {
   constructor() {
     super();
     this.apiKey = env('ANTHROPIC_API_KEY');
+  }
+
+  async complete(
+    modelId: string,
+    messages: ChatMessage[],
+    tools?: ToolDef[],
+    signal?: AbortSignal,
+  ): Promise<CompletionResult> {
+    if (!this.apiKey) {
+      return { content: '', toolCalls: [], finishReason: 'error' };
+    }
+
+    const body: Record<string, unknown> = {
+      model: modelId,
+      max_tokens: 8192,
+      messages: messages.map(m => ({ role: m.role, content: m.content })),
+      stream: false,
+    };
+
+    if (tools && tools.length > 0) {
+      body.tools = tools.map(t => ({
+        name: t.name,
+        description: t.description,
+        input_schema: t.inputSchema,
+      }));
+    }
+
+    try {
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': this.apiKey,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify(body),
+        signal,
+      });
+
+      if (!response.ok) {
+        const errBody = await response.text().catch(() => '');
+        throw new Error(`Anthropic request failed: ${response.status}${errBody ? ` — ${errBody.slice(0, 300)}` : ''}`);
+      }
+
+      const data = (await response.json()) as {
+        content: Array<{ type: string; text?: string; id?: string; name?: string; input?: Record<string, unknown> }>;
+        stop_reason: string | null;
+      };
+
+      let content = '';
+      const toolCalls: ToolCallData[] = [];
+
+      for (const block of data.content ?? []) {
+        if (block.type === 'text' && block.text) {
+          content += block.text;
+        } else if (block.type === 'tool_use' && block.name) {
+          toolCalls.push({
+            id: block.id ?? `tu_${toolCalls.length}`,
+            name: block.name,
+            arguments: block.input ?? {},
+          });
+        }
+      }
+
+      return { content, toolCalls, finishReason: data.stop_reason ?? 'stop' };
+    } catch (err: unknown) {
+      if (typeof err === 'object' && err !== null && (err as DOMException).name === 'AbortError') {
+        return { content: '', toolCalls: [], finishReason: 'interrupted' };
+      }
+      throw err;
+    }
   }
 
   async stream(
