@@ -14,7 +14,7 @@ export function getProviderForModel(modelId: string): ModelProvider {
     const key = env('OPENAI_API_KEY');
     return new OpenAICompatibleProvider('https://api.openai.com/v1', key, 'OpenAI');
   }
-  if (modelId.startsWith('google/')) return new GoogleProvider();
+  if (modelId.startsWith('google/') || modelId.startsWith('gemini/')) return new GoogleProvider();
   if (modelId.startsWith('deepseek-ai/')) {
     const key = env('DEEPSEEK_API_KEY');
     return new OpenAICompatibleProvider('https://api.deepseek.com/v1', key, 'DeepSeek');
@@ -48,7 +48,7 @@ export function getProviderForModel(modelId: string): ModelProvider {
 }
 
 const PREFIXES_TO_STRIP = [
-  'anthropic/', 'openai/', 'google/', 'deepseek-ai/', 'moonshotai/', 'zai-org/',
+  'anthropic/', 'openai/', 'google/', 'gemini/', 'deepseek-ai/', 'moonshotai/', 'zai-org/',
 ];
 
 export function modelIdToApiModel(modelId: string): string {
@@ -73,6 +73,7 @@ const KEY_MAP: Record<string, { envVar: string; name: string }> = {
   'anthropic/': { envVar: 'ANTHROPIC_API_KEY', name: 'Anthropic' },
   'openai/':    { envVar: 'OPENAI_API_KEY',    name: 'OpenAI' },
   'google/':    { envVar: 'GOOGLE_AI_STUDIO_API_KEY', name: 'Google' },
+  'gemini/':    { envVar: 'GOOGLE_AI_STUDIO_API_KEY', name: 'Google' },
   'deepseek-ai/': { envVar: 'DEEPSEEK_API_KEY', name: 'DeepSeek' },
   'nvidia/':    { envVar: 'NVIDIA_NIM_API_KEY', name: 'NVIDIA NIM' },
   'moonshotai/': { envVar: 'MODELS_DEV_API_KEY', name: 'Models.dev' },
