@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { getProviderForModel, modelIdToApiModel, getMissingKeyMessage } from '../providers/index.js';
+import { getProviderForModel, modelIdToApiModel } from '../providers/index.js';
 import type { ChatMessage, ToolCallData } from '../providers/provider-interface.js';
 import { ToolRegistry } from '../tools/index.js';
 import type { ToolResult } from '../tools/tool-types.js';
@@ -57,17 +57,6 @@ export class RealEventEmitter extends EventEmitter {
     this.toolCallHistory = [];
     this.destructiveActionOccurred = false;
     this.approvalResolvers.clear();
-
-    if (this.modelId) {
-      const missingKey = getMissingKeyMessage(this.modelId);
-      if (missingKey) {
-        this.emit('event', {
-          type: 'error',
-          data: { message: `Cannot start: ${missingKey} — set it in your .env file` },
-          timestamp: Date.now(),
-        } as AgentEvent);
-      }
-    }
 
     this.emit('event', {
       type: 'ready',
