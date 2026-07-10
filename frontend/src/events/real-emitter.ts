@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events';
-import { getProviderForModel, modelIdToApiModel } from '../providers/index.js';
+import { getProviderForModel, modelIdToApiModel, getMissingKeyMessage } from '../providers/index.js';
 import type { ChatMessage, ToolCallData } from '../providers/provider-interface.js';
 import { ToolRegistry } from '../tools/index.js';
 import type { ToolResult } from '../tools/tool-types.js';
@@ -96,6 +96,16 @@ export class RealEventEmitter extends EventEmitter {
 
     this.history.push({ role: 'user', content: text });
 
+    const missingKey = getMissingKeyMessage(this.modelId);
+    if (missingKey) {
+      this.emit('event', {
+        type: 'error',
+        data: { message: missingKey },
+        timestamp: Date.now(),
+      } as AgentEvent);
+      return;
+    }
+
     this.abortController = new AbortController();
     const signal = this.abortController.signal;
 
@@ -138,6 +148,15 @@ export class RealEventEmitter extends EventEmitter {
         ], tools, signal);
 
         if (signal.aborted) break;
+
+        if (response.finishReason === 'error') {
+          this.emit('event', {
+            type: 'error',
+            data: { message: response.content || 'Provider returned an error' },
+            timestamp: Date.now(),
+          } as AgentEvent);
+          break;
+        }
 
         if (response.toolCalls.length > 0) {
           const processed = await this.processToolCalls(response.toolCalls, signal);
