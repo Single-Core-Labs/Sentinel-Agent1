@@ -25,6 +25,7 @@ export const MODEL_OPTIONS: ModelOption[] = [
 
 interface Props {
   onSelect: (model: ModelOption) => void;
+  onCancel?: () => void;
   theme: ThemeConfig;
   defaultModel?: string;
 }
@@ -40,7 +41,7 @@ const TAG_COLORS: Record<string, string> = {
   nim:         '#76B900',
 };
 
-export function ModelPicker({ onSelect, theme, defaultModel }: Props) {
+export function ModelPicker({ onSelect, onCancel, theme, defaultModel }: Props) {
   const defaultIdx = Math.max(0, MODEL_OPTIONS.findIndex(m => m.id === defaultModel));
   const [cursor, setCursor] = useState(defaultIdx);
   const c = theme.colors;
@@ -49,7 +50,10 @@ export function ModelPicker({ onSelect, theme, defaultModel }: Props) {
     if (key.upArrow)   setCursor(i => Math.max(0, i - 1));
     if (key.downArrow) setCursor(i => Math.min(MODEL_OPTIONS.length - 1, i + 1));
     if (key.return)    onSelect(MODEL_OPTIONS[cursor]!);
-    if (key.escape)    onSelect(MODEL_OPTIONS[defaultIdx]!);
+    if (key.escape) {
+      if (onCancel) { onCancel(); return; }
+      if (defaultModel) onSelect(MODEL_OPTIONS[defaultIdx]!);
+    }
   });
 
   const selected = MODEL_OPTIONS[cursor]!;

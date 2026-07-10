@@ -395,6 +395,7 @@ export default function App() {
             setPhase('main');
             startSession(selectedModel.model_id);
           }}
+          onCancel={model ? () => setPhase('main') : undefined}
           theme={theme}
         />
       )}
@@ -405,6 +406,7 @@ export default function App() {
             setModel(m);
             setPhase('main');
           }}
+          onCancel={model ? () => setPhase('main') : undefined}
           theme={theme}
           defaultModel={model?.id}
         />

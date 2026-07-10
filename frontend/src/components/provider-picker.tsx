@@ -21,6 +21,7 @@ interface ProviderInfo {
 
 interface Props {
   onSelect: (model: ProviderModel, apiKey: string) => void;
+  onCancel?: () => void;
   theme: ThemeConfig;
 }
 
@@ -100,13 +101,14 @@ function getEnvApiKey(providerId: string): string {
   return '';
 }
 
-export function ProviderPicker({ onSelect, theme }: Props) {
+export function ProviderPicker({ onSelect, onCancel, theme }: Props) {
   const c = theme.colors;
   const [phase, setPhase] = useState<PickerPhase>('providers');
   const [cursor, setCursor] = useState(0);
   const [selectedProvider, setSelectedProvider] = useState<ProviderInfo | null>(null);
   const [modelCursor, setModelCursor] = useState(0);
   const [apiKeyInput, setApiKeyInput] = useState('');
+  const [pickerMessage, setPickerMessage] = useState('');
   const providerList = STATIC_PROVIDERS;
 
   const getProviderStatusBadge = (pid: string) => {
@@ -149,6 +151,23 @@ export function ProviderPicker({ onSelect, theme }: Props) {
     onSelect(model, apiKey);
   };
 
+  const handleCancel = () => {
+    if (onCancel) {
+      onCancel();
+      return;
+    }
+    // First-run with no prior model — try to find a provider with a configured env key
+    for (const p of STATIC_PROVIDERS) {
+      const key = getEnvApiKey(p.id);
+      if (key && p.models.length > 0) {
+        onSelect(p.models[0]!, key);
+        return;
+      }
+    }
+    // No provider has a configured key — show message and stay on picker
+    setPickerMessage('No API keys found. Select a provider and enter a key to continue, or quit with /quit.');
+  };
+
   // ── Keyboard handling ──
 
   useInput((input, key) => {
@@ -156,7 +175,7 @@ export function ProviderPicker({ onSelect, theme }: Props) {
       if (key.upArrow && cursor > 0) setCursor(c => c - 1);
       if (key.downArrow && cursor < providerList.length - 1) setCursor(c => c + 1);
       if (key.return) handleSelectProvider();
-      if (key.escape) onSelect(STATIC_PROVIDERS[0]?.models[0]!, '');
+      if (key.escape) handleCancel();
     }
 
     if (phase === 'api-key-input') {
@@ -212,6 +231,11 @@ export function ProviderPicker({ onSelect, theme }: Props) {
             );
           })}
         </Box>
+        {pickerMessage && (
+          <Box marginTop={1}>
+            <Text color={c.warning}>{pickerMessage}</Text>
+          </Box>
+        )}
       </Box>
     );
   }
