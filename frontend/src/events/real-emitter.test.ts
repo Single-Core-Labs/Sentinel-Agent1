@@ -33,14 +33,29 @@ function waitFor(events: AgentEvent[], type: string, timeoutMs = 2000): Promise<
 
 describe('RealEventEmitter — no silent failures', () => {
   test('missing API key produces a visible error event, not a silent stall', async () => {
-    delete process.env['ANTHROPIC_API_KEY'];
+    delete process.env['OPENAI_API_KEY'];
     const emitter = new RealEventEmitter();
-    const events = collectEvents(emitter);
-    emitter.start('claude-sonnet-4');
-    emitter.send('hello');
-
-    const err = await waitFor(events, 'error');
-    assert.match(err.data!['message'] as string, /ANTHROPIC_API_KEY/);
+    emitter.start('openai/gpt-4o');
+    const event = await new Promise<any>((resolve, reject) => {
+      const start = Date.now();
+      const events: string[] = [];
+      const timer = setInterval(() => {
+        if (Date.now() - start > 2000) {
+          clearInterval(timer);
+          reject(new Error(`timed out waiting for 'key_required' event; got: ${events.join(', ')}`));
+        }
+      }, 50);
+      emitter.on('event', (e) => {
+        events.push(e.type);
+        if (e.type === 'key_required') {
+          clearInterval(timer);
+          resolve(e);
+        }
+      });
+      emitter.send('hello');
+    });
+    assert.equal(event.type, 'key_required');
+    assert.ok(event.data.message.includes('OPENAI_API_KEY'));
   });
 
   test('provider throwing mid-request surfaces the real error message (regression: used to fall through to a generic message)', async () => {

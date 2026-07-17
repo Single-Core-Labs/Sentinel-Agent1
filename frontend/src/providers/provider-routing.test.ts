@@ -18,6 +18,7 @@ const ALL_ENV_VARS = [
 const originalEnv: Record<string, string | undefined> = {};
 
 before(() => {
+  process.env['SENTINEL_MOCK_KEYS'] = '1';
   for (const v of ALL_ENV_VARS) originalEnv[v] = process.env[v];
 });
 after(() => {

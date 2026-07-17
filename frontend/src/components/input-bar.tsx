@@ -12,6 +12,7 @@ const SLASH_COMMANDS = [
   { command: '/resume',  description: 'Resume last session' },
   { command: '/undo',    description: 'Undo last turn' },
   { command: '/help',    description: 'Show available commands' },
+  { command: '/auth',    description: 'Update API key for current provider' },
   { command: '/quit',    description: 'Exit' },
 ];
 

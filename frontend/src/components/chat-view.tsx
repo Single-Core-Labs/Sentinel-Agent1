@@ -1,6 +1,7 @@
 import { Box, Text, useInput } from 'ink';
 import { useState, useEffect, useCallback } from 'react';
-import type { ThemeConfig } from '../theme.js';
+import { THEMES, type ThemeConfig } from '../theme.js';
+import { useSpinner } from '../hooks/use-spinner.js';
 
 // ── Display item types ─────────────────────────────────────────────
 
@@ -27,16 +28,6 @@ export interface PlanItem {
 }
 
 // ── Hooks ──────────────────────────────────────────────────────────
-
-function useSpinner(frames: string[], active: boolean, ms = 80) {
-  const [i, setI] = useState(0);
-  useEffect(() => {
-    if (!active) return;
-    const t = setInterval(() => setI(x => (x + 1) % frames.length), ms);
-    return () => clearInterval(t);
-  }, [frames, active, ms]);
-  return active ? (frames[i] ?? '') : '';
-}
 
 // ── Sub-components ─────────────────────────────────────────────────
 
@@ -235,6 +226,17 @@ interface ChatViewProps {
   onExpandTool: (id: string) => void;
 }
 
+import { Static } from 'ink';
+
+function isItemStatic(item: DisplayItem, pendingApprovalId: string | null): boolean {
+  if (item.kind === 'assistant') return !!item.complete;
+  if (item.kind === 'tool-call') return item.status === 'completed' || item.status === 'error';
+  if (item.kind === 'approval') return item.id !== pendingApprovalId;
+  if (item.kind === 'plan') return item.items.every(i => i.status === 'completed');
+  if (item.kind === 'processing') return false; 
+  return true; 
+}
+
 export function ChatView({
   items, activeItem, theme, pendingApprovalId, onApprove, onReject, onExpandTool,
 }: ChatViewProps) {
@@ -350,9 +352,20 @@ export function ChatView({
     }
   };
 
+  let firstDynamicIndex = items.findIndex(item => !isItemStatic(item, pendingApprovalId));
+  if (firstDynamicIndex === -1) firstDynamicIndex = items.length;
+
+  const staticItems = items.slice(0, firstDynamicIndex);
+  const dynamicItems = items.slice(firstDynamicIndex);
+
   return (
-    <Box flexDirection="column" flexGrow={1} overflowY="hidden" paddingX={1}>
-      {items.map(renderItem)}
+    <Box flexDirection="column" paddingX={1}>
+      <Static items={staticItems}>
+        {item => renderItem(item)}
+      </Static>
+      <Box flexDirection="column">
+        {dynamicItems.map(renderItem)}
+      </Box>
       {activeItem && renderItem(activeItem)}
     </Box>
   );

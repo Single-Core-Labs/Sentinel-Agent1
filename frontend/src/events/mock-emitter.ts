@@ -19,7 +19,8 @@ export type AgentEventType =
   | 'compacted'
   | 'plan_generated'
   | 'step_completed'
-  | 'observation';
+  | 'observation'
+  | 'key_required';
 
 export interface AgentEvent {
   type: AgentEventType;

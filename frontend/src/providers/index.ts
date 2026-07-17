@@ -2,9 +2,51 @@ import { ModelProvider } from './provider-interface.js';
 import { OpenAICompatibleProvider } from './openai-compatible.js';
 import { AnthropicProvider } from './anthropic.js';
 import { GoogleProvider } from './google.js';
+import fs from 'node:fs';
+import path from 'node:path';
+
+// Local config path for storing keys persistently
+const CONFIG_DIR = path.join(
+  process.env.XDG_CONFIG_HOME ||
+    (process.platform === 'win32'
+      ? (process.env.APPDATA || process.env.USERPROFILE || '')
+      : path.join(process.env.HOME || '', '.config')),
+  'platform-agent'
+);
+const KEYS_FILE = path.join(CONFIG_DIR, 'keys.json');
+
+function loadKeys(): Record<string, string> {
+  if (process.env['SENTINEL_MOCK_KEYS'] === '1') return {};
+  try {
+    return JSON.parse(fs.readFileSync(KEYS_FILE, 'utf-8'));
+  } catch {
+    return {};
+  }
+}
+
+export function saveKey(envVar: string, key: string) {
+  const keys = loadKeys();
+  keys[envVar] = key;
+  fs.mkdirSync(CONFIG_DIR, { recursive: true });
+  fs.writeFileSync(KEYS_FILE, JSON.stringify(keys, null, 2), 'utf-8');
+}
+
+export function clearKey(envVar: string) {
+  const keys = loadKeys();
+  delete keys[envVar];
+  fs.mkdirSync(CONFIG_DIR, { recursive: true });
+  fs.writeFileSync(KEYS_FILE, JSON.stringify(keys, null, 2), 'utf-8');
+}
 
 function env(name: string): string | undefined {
-  return typeof process !== 'undefined' ? process.env[name] : undefined;
+  const keys = loadKeys();
+  if (typeof keys[name] === 'string' && keys[name] !== '') {
+    return keys[name];
+  }
+  if (typeof process !== 'undefined' && process.env[name]) {
+    return process.env[name];
+  }
+  return undefined;
 }
 
 // Single source of truth for provider routing, auth, and display info.
@@ -71,7 +113,7 @@ export function modelIdToApiModel(modelId: string): string {
 export function getMissingKeyMessage(modelId: string): string | null {
   const spec = findProvider(modelId);
   if (!spec) return `Unable to determine provider for: ${modelId}`;
-  if (!env(spec.envVar)) return `${spec.envVar} — set it in your .env file`;
+  if (!env(spec.envVar)) return `Please enter your ${spec.name} API key (${spec.envVar}):`;
   return null;
 }
 

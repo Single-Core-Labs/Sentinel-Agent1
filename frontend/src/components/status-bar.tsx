@@ -1,22 +1,13 @@
 import { Box, Text } from 'ink';
-import { useEffect, useState } from 'react';
 import type { ThemeConfig } from '../theme.js';
-
-function useSpinner(frames: string[], ms = 80) {
-  const [i, setI] = useState(0);
-  useEffect(() => {
-    const t = setInterval(() => setI(x => (x + 1) % frames.length), ms);
-    return () => clearInterval(t);
-  }, [frames, ms]);
-  return frames[i] ?? '';
-}
+import { useSpinner } from '../hooks/use-spinner.js';
 
 interface Props {
   model: string;
   sessionId: string;
   turnCount: number;
   tokenUsage: number;
-  mode: 'plan' | 'executing' | 'idle';
+  mode: 'plan' | 'executing' | 'idle' | 'key_required';
   theme: ThemeConfig;
 }
 
@@ -32,7 +23,7 @@ const MODE_COLOR: Record<string, keyof Props['theme']['colors']> = {
 };
 
 export function StatusBar({ model, sessionId, turnCount, tokenUsage, mode, theme }: Props) {
-  const spinner = useSpinner(theme.spinnerFrames);
+  const spinner = useSpinner(theme.spinnerFrames, mode === 'executing');
   const c = theme.colors;
   const modeColor = c[MODE_COLOR[mode] ?? 'muted'];
   const modeLabel = MODE_LABEL[mode] ?? mode;

@@ -2,6 +2,11 @@
 import { render } from 'ink';
 import fs from 'node:fs';
 import path from 'node:path';
+import dotenv from 'dotenv';
+
+// Load .env from the project root (one level up from frontend)
+dotenv.config({ path: path.resolve(process.cwd(), '../.env') });
+
 import App from './app.js';
 
 // ── Debug-file logger ──────────────────────────────────────────────

@@ -1,5 +1,6 @@
-import { Box, useApp, useInput } from 'ink';
-import { useState, useCallback, useRef } from 'react';
+import { Box, Text, useApp, useInput } from 'ink';
+import TextInput from 'ink-text-input';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { THEMES, type ThemeConfig } from './theme.js';
 import { MockEventEmitter, type AgentEvent, type PlanItem } from './events/mock-emitter.js';
 import { IPCEventEmitter } from './events/ipc-emitter.js';
@@ -12,7 +13,7 @@ import { StatusBar } from './components/status-bar.js';
 import { InputBar } from './components/input-bar.js';
 
 type AppPhase = 'startup' | 'provider-picker' | 'model-picker' | 'main';
-type Mode = 'plan' | 'executing' | 'idle';
+type Mode = 'plan' | 'executing' | 'idle' | 'key_required';
 
 const USE_MOCK = process.env['SENTINEL_MOCK'] === '1' || process.argv.includes('--mock');
 const USE_IPC  = process.env['SENTINEL_IPC'] === '1'  || process.argv.includes('--ipc');
@@ -33,6 +34,8 @@ export default function App() {
   const [tokenUsage, setTokens]   = useState(0);
   const [mode, setMode]           = useState<Mode>('idle');
   const [pendingApproval, setPending] = useState<string | null>(null);
+  const [missingKeyData, setMissingKeyData] = useState<{message: string, modelId: string, text: string} | null>(null);
+  const [keyInput, setKeyInput]     = useState('');
   const [sessionId]               = useState(() => Math.random().toString(36).slice(2, 10));
   const { exit }                  = useApp();
 
@@ -45,6 +48,9 @@ export default function App() {
   const toolMapRef    = useRef<Map<string, DisplayItem & { kind: 'tool-call' }>>(new Map());
   const interruptRef  = useRef(0);
   const assistIdRef   = useRef<string | null>(null);
+  // Chunk batching — accumulate tokens and flush to React state at most 10fps
+  const chunkBufRef   = useRef('');
+  const flushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── Event handler ──────────────────────────────────────────────
 
@@ -93,13 +99,22 @@ export default function App() {
         const chunk = d['text'] as string || '';
         setTokens(t => t + chunk.length);
         if (!assistIdRef.current) assistIdRef.current = uid('asst');
-        const id = assistIdRef.current;
-        setActive(prev => {
-          if (prev?.kind === 'assistant' && prev.id === id) {
-            return { ...prev, text: prev.text + chunk };
-          }
-          return { kind: 'assistant', id, text: chunk, complete: false };
-        });
+        // Accumulate into buffer ref — do NOT setState on every token
+        chunkBufRef.current += chunk;
+        if (!flushTimerRef.current) {
+          flushTimerRef.current = setTimeout(() => {
+            const flushed = chunkBufRef.current;
+            chunkBufRef.current = '';
+            flushTimerRef.current = null;
+            const id = assistIdRef.current!;
+            setActive(prev => {
+              if (prev?.kind === 'assistant' && prev.id === id) {
+                return { ...prev, text: prev.text + flushed };
+              }
+              return { kind: 'assistant', id, text: flushed, complete: false };
+            });
+          }, 100); // flush at most 10fps — stops Windows terminal shuttering
+        }
         break;
       }
 
@@ -192,6 +207,16 @@ export default function App() {
         break;
       }
 
+      case 'key_required':
+        setMode('key_required');
+        setMissingKeyData({
+          message: d['message'] as string,
+          modelId: d['modelId'] as string,
+          text: d['text'] as string,
+        });
+        setKeyInput('');
+        break;
+
       case 'error':
         setItems(p => [...p, {
           kind: 'error', id: uid('err'),
@@ -199,6 +224,7 @@ export default function App() {
           code:    d['code'] as string | undefined,
         }]);
         setActive(null);
+        setMode('idle');
         break;
 
       case 'compacted':
@@ -272,6 +298,23 @@ export default function App() {
               kind: 'assistant', id: uid('theme'), complete: true,
               text: `Available themes: ${Object.keys(THEMES).join(', ')}`,
             }]);
+          }
+          return;
+        }
+        case '/auth': {
+          if (model) {
+            import('./providers/index.js').then(({ getEnvVarForProviderId, clearKey }) => {
+              const envVar = getEnvVarForProviderId(model.providerId);
+              if (envVar) {
+                clearKey(envVar);
+                setMode('key_required');
+                setMissingKeyData({
+                  message: `Please enter your new API key for ${model.provider} (${envVar}):`,
+                  modelId: model.id,
+                  text: ' ', // Empty space to trigger the emitter again without sending a real message
+                });
+              }
+            });
           }
           return;
         }
@@ -371,7 +414,7 @@ export default function App() {
   // ── Render ─────────────────────────────────────────────────────
 
   return (
-    <Box flexDirection="column" minHeight={24}>
+    <Box flexDirection="column">
       {phase === 'startup' && (
         <StartupSequence
           onComplete={() => {
@@ -414,9 +457,9 @@ export default function App() {
       )}
 
       {phase === 'main' && (
-        <Box flexDirection="column" minHeight={24}>
+        <Box flexDirection="column">
           {/* Chat area */}
-          <Box flexGrow={1} flexDirection="column" overflowY="hidden">
+          <Box flexDirection="column">
             <ChatView
               items={items}
               activeItem={activeItem}
@@ -429,12 +472,44 @@ export default function App() {
           </Box>
 
           {/* Persistent input */}
-          <InputBar
-            onSend={handleSend}
-            disabled={pendingApproval !== null}
-            theme={theme}
-            mode={mode}
-          />
+          {mode === 'key_required' && missingKeyData ? (
+            <Box paddingX={1} paddingY={1} borderStyle="single" borderColor="red">
+              <Text color="red">{missingKeyData.message} </Text>
+              <TextInput
+                value={keyInput}
+                onChange={setKeyInput}
+                mask="*"
+                onSubmit={async (val) => {
+                  const { getEnvVarForProviderId } = await import('./providers/index.js');
+                  const { saveKey } = await import('./providers/index.js');
+                  const envVar = getEnvVarForProviderId(model?.providerId || '');
+                  if (envVar) {
+                    const trimmed = val.trim();
+                    if (trimmed) {
+                      saveKey(envVar, trimmed);
+                    } else {
+                      clearKey(envVar);
+                    }
+                  }
+                  setMode('executing');
+                  setMissingKeyData(null);
+                  setKeyInput('');
+                  if (missingKeyData.text.trim()) {
+                    emitterRef.current?.send(missingKeyData.text);
+                  } else {
+                    setMode('idle');
+                  }
+                }}
+              />
+            </Box>
+          ) : (
+            <InputBar
+              onSend={handleSend}
+              disabled={pendingApproval !== null}
+              theme={theme}
+              mode={mode}
+            />
+          )}
 
           {/* Status bar */}
           <Box borderStyle="single" borderColor={theme.colors.dimBorder} paddingX={1} marginTop={0}>

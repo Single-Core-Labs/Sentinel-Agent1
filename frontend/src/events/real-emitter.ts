@@ -9,7 +9,7 @@ export type AgentEventType =
   | 'assistant_chunk' | 'assistant_message' | 'assistant_stream_end'
   | 'tool_call' | 'tool_output' | 'tool_log' | 'tool_state_change'
   | 'approval_required' | 'turn_complete' | 'interrupted' | 'error'
-  | 'compacted' | 'plan_generated' | 'step_completed' | 'observation';
+  | 'compacted' | 'plan_generated' | 'step_completed' | 'observation' | 'key_required';
 
 export interface AgentEvent {
   type: AgentEventType;
@@ -33,7 +33,8 @@ RULES:
 3. After every tool call, examine the result before deciding the next action.
 4. If a tool fails, diagnose the error and try a different approach.
 5. When the task is done, summarize what you did.
-6. Be concise. No filler.`;
+6. Be concise. No filler.
+7. IMPORTANT: Only use tools when the user gives you a concrete engineering task (e.g., "fix this bug", "read this file", "run these tests"). For conversational messages like greetings ("hi", "hello", "thanks") or simple questions that don't require file access, reply directly in text without calling any tools.`;
 
 const PLAN_PROMPT = `Analyze the request and create a step-by-step plan to accomplish it.
 List each step as a bullet point. Be specific about what files you will read, edit, or create, and what commands you will run.`;
@@ -70,6 +71,16 @@ export class RealEventEmitter extends EventEmitter {
       type: 'ready',
       timestamp: Date.now(),
     } as AgentEvent);
+
+    // Eagerly check for missing key right when provider is selected
+    const missingKey = getMissingKeyMessage(this.modelId);
+    if (missingKey) {
+      this.emit('event', {
+        type: 'key_required',
+        data: { message: missingKey, modelId: this.modelId, text: ' ' }, // ' ' prevents sending an empty first message automatically
+        timestamp: Date.now(),
+      } as AgentEvent);
+    }
   }
 
   stop() {
@@ -100,6 +111,16 @@ export class RealEventEmitter extends EventEmitter {
       return;
     }
 
+    const missingKey = getMissingKeyMessage(this.modelId);
+    if (missingKey) {
+      this.emit('event', {
+        type: 'key_required',
+        data: { message: missingKey, modelId: this.modelId, text },
+        timestamp: Date.now(),
+      } as AgentEvent);
+      return;
+    }
+
     this.emit('event', {
       type: 'processing',
       data: { message: 'Thinking...' },
@@ -107,16 +128,6 @@ export class RealEventEmitter extends EventEmitter {
     } as AgentEvent);
 
     this.history.push({ role: 'user', content: text });
-
-    const missingKey = getMissingKeyMessage(this.modelId);
-    if (missingKey) {
-      this.emit('event', {
-        type: 'error',
-        data: { message: missingKey },
-        timestamp: Date.now(),
-      } as AgentEvent);
-      return;
-    }
 
     this.abortController = new AbortController();
     const signal = this.abortController.signal;
