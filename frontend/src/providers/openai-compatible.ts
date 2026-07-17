@@ -10,12 +10,14 @@ export class OpenAICompatibleProvider extends ModelProvider {
   private apiKey: string | undefined;
   private baseUrl: string;
   private displayName: string;
+  private envVarName: string;
 
-  constructor(baseUrl: string, apiKey: string | undefined, displayName: string) {
+  constructor(baseUrl: string, apiKey: string | undefined, displayName: string, envVarName = 'the corresponding env var') {
     super();
     this.baseUrl = baseUrl.replace(/\/+$/, '');
     this.apiKey = apiKey;
     this.displayName = displayName;
+    this.envVarName = envVarName;
   }
 
   async complete(
@@ -24,8 +26,13 @@ export class OpenAICompatibleProvider extends ModelProvider {
     tools?: ToolDef[],
     signal?: AbortSignal,
   ): Promise<CompletionResult> {
+    // Never resolve silently on a missing key — an empty finishReason:'error'
+    // result gets masked by runAgentLoop's generic "Provider returned an
+    // error" fallback (real-emitter.ts), producing the exact silent-failure
+    // symptom this bug-fix branch exists for. Throw so the real reason
+    // (missing key) surfaces to the user.
     if (!this.apiKey) {
-      return { content: '', toolCalls: [], finishReason: 'error' };
+      throw new Error(`${this.displayName} API key missing — set ${this.envVarName}`);
     }
 
     const body: Record<string, unknown> = {
@@ -60,6 +67,8 @@ export class OpenAICompatibleProvider extends ModelProvider {
         signal,
       });
 
+      debugLog('complete() response received status=%d', response.status);
+
       if (!response.ok) {
         const errBody = await response.text().catch(() => '');
         throw new Error(`${this.displayName} request failed: ${response.status}${errBody ? ` — ${errBody.slice(0, 300)}` : ''}`);
@@ -73,7 +82,10 @@ export class OpenAICompatibleProvider extends ModelProvider {
       };
 
       const choice = data.choices?.[0];
-      if (!choice) return { content: '', toolCalls: [], finishReason: 'stop' };
+      if (!choice) {
+        debugLog('complete() response had zero choices');
+        return { content: '', toolCalls: [], finishReason: 'stop' };
+      }
 
       const content = choice.message?.content ?? '';
       const toolCalls: ToolCallData[] = (choice.message?.tool_calls ?? []).map(tc => {
@@ -102,10 +114,11 @@ export class OpenAICompatibleProvider extends ModelProvider {
     signal?: AbortSignal,
   ): Promise<void> {
     if (!this.apiKey) {
-      callbacks.onError(`${this.displayName} API key missing — set the corresponding env var`);
+      callbacks.onError(`${this.displayName} API key missing — set ${this.envVarName}`);
       return;
     }
 
+    let chunksReceived = 0;
     try {
       debugLog('stream() POST %s/chat/completions model=%s', this.baseUrl, modelId);
       const response = await fetch(`${this.baseUrl}/chat/completions`, {
@@ -134,7 +147,6 @@ export class OpenAICompatibleProvider extends ModelProvider {
       const reader = response.body!.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
-      let chunksReceived = 0;
 
       debugLog('stream() first byte received');
 
@@ -180,7 +192,7 @@ export class OpenAICompatibleProvider extends ModelProvider {
       callbacks.onDone();
     } catch (err: unknown) {
       if (typeof err === 'object' && err !== null && (err as DOMException).name === 'AbortError') {
-        debugLog('stream() aborted chunks=%d', (this as any).chunksReceived ?? 0);
+        debugLog('stream() aborted chunks=%d', chunksReceived);
         callbacks.onDone();
         return;
       }

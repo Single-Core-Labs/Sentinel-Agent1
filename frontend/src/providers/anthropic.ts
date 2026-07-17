@@ -10,6 +10,37 @@ function debugLog(...args: unknown[]) {
   if (DEBUG) console.debug('[Anthropic]', ...args);
 }
 
+// Anthropic's Messages API rejects role:'system' in messages[] outright (the
+// system prompt must go in a separate top-level `system` field) and doesn't
+// accept role:'tool' either. Found the identical bug shape in google.ts via
+// a live-key smoke test — real-emitter.ts always sends a system-prompt
+// message first, so every Anthropic request would fail with a 400 the same
+// way every Gemini request did before that fix.
+function toAnthropicPayload(messages: ChatMessage[]): { system?: string; messages: Array<{ role: string; content: unknown }> } {
+  const systemText = messages
+    .filter(m => m.role === 'system')
+    .map(m => m.content)
+    .join('\n\n');
+
+  const converted = messages
+    .filter(m => m.role !== 'system')
+    .map(m => {
+      if (m.role === 'tool') {
+        // ponytail: flattened to a user-role text message rather than a typed
+        // tool_result content block (which would need tool_use_id pairing and
+        // batching multiple tool results from one turn into a single user
+        // message) — this avoids the guaranteed-400 from an invalid role
+        // without a live key on hand to verify the more idiomatic format.
+        // Upgrade to typed tool_result blocks if multi-tool-call turns show
+        // problems once this is verified against production.
+        return { role: 'user', content: `[Tool result for ${m.name ?? m.tool_call_id ?? 'unknown'}]: ${m.content}` };
+      }
+      return { role: m.role, content: m.content };
+    });
+
+  return systemText ? { system: systemText, messages: converted } : { messages: converted };
+}
+
 export class AnthropicProvider extends ModelProvider {
   private apiKey: string | undefined;
 
@@ -24,14 +55,17 @@ export class AnthropicProvider extends ModelProvider {
     tools?: ToolDef[],
     signal?: AbortSignal,
   ): Promise<CompletionResult> {
+    // Throw rather than resolve with an empty finishReason:'error' — that
+    // pattern gets masked by runAgentLoop's generic fallback message
+    // ("Provider returned an error") and produces a silent-looking failure.
     if (!this.apiKey) {
-      return { content: '', toolCalls: [], finishReason: 'error' };
+      throw new Error('Anthropic API key missing — set ANTHROPIC_API_KEY');
     }
 
     const body: Record<string, unknown> = {
       model: modelId,
       max_tokens: 8192,
-      messages: messages.map(m => ({ role: m.role, content: m.content })),
+      ...toAnthropicPayload(messages),
       stream: false,
     };
 
@@ -44,7 +78,7 @@ export class AnthropicProvider extends ModelProvider {
     }
 
     try {
-      debugLog('complete() POST api.anthropic.com model=%s', modelId);
+      debugLog('complete() request sent to api.anthropic.com model=%s', modelId);
       const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: {
@@ -55,6 +89,8 @@ export class AnthropicProvider extends ModelProvider {
         body: JSON.stringify(body),
         signal,
       });
+
+      debugLog('complete() response received status=%d', response.status);
 
       if (!response.ok) {
         const errBody = await response.text().catch(() => '');
@@ -117,7 +153,7 @@ export class AnthropicProvider extends ModelProvider {
         body: JSON.stringify({
           model: modelId,
           max_tokens: 8192,
-          messages: messages.map(m => ({ role: m.role, content: m.content })),
+          ...toAnthropicPayload(messages),
           stream: true,
         }),
         signal,

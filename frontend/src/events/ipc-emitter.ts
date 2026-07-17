@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { spawn, ChildProcess } from 'node:child_process';
 import * as readline from 'node:readline';
 import * as path from 'node:path';
+import { getEnvVarForProviderId } from '../providers/index.js';
 
 export type AgentEventType =
   | 'ready' | 'processing'
@@ -49,18 +50,13 @@ export class IPCEventEmitter extends EventEmitter {
       args.push('--model', modelId);
     }
 
-    // Prepare env with provider API key if provided
+    // Prepare env with provider API key if provided.
+    // envVar lookup is centralized in providers/index.ts — see its header
+    // comment for why three separately-maintained copies of this map caused
+    // a real bug (missing GitHub Copilot entry) elsewhere in this codebase.
     const env = { ...process.env };
     if (providerApiKey && providerId) {
-      const envMap: Record<string, string> = {
-        'google-ai-studio': 'GOOGLE_AI_STUDIO_API_KEY',
-        'anthropic': 'ANTHROPIC_API_KEY',
-        'openai': 'OPENAI_API_KEY',
-        'deepseek': 'DEEPSEEK_API_KEY',
-        'models-dev': 'MODELS_DEV_API_KEY',
-        'github-copilot': 'GITHUB_COPILOT_TOKEN',
-      };
-      const envVar = envMap[providerId];
+      const envVar = getEnvVarForProviderId(providerId);
       if (envVar) {
         env[envVar] = providerApiKey;
       }

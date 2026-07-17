@@ -10,6 +10,31 @@ function debugLog(...args: unknown[]) {
   if (DEBUG) console.debug('[Google]', ...args);
 }
 
+// Gemini's contents[] only accepts 'user' and 'model' roles — 'system' is
+// rejected outright (400: "Role 'system' is not supported"). Discovered via
+// a live-key smoke test: the agent loop always sends a system-prompt message
+// first, and Gemini requests failed on literally every turn before this fix.
+// System messages must go in the separate top-level systemInstruction field.
+function toGeminiPayload(messages: ChatMessage[]): { contents: unknown[]; systemInstruction?: unknown } {
+  const systemText = messages
+    .filter(m => m.role === 'system')
+    .map(m => m.content)
+    .join('\n\n');
+
+  const contents = messages
+    .filter(m => m.role !== 'system')
+    .map(m => ({
+      role: m.role === 'assistant' ? 'model' : 'user',
+      parts: m.role === 'tool'
+        ? [{ text: `[Tool result for ${m.name ?? m.tool_call_id ?? 'unknown'}]: ${m.content}` }]
+        : [{ text: m.content }],
+    }));
+
+  return systemText
+    ? { contents, systemInstruction: { parts: [{ text: systemText }] } }
+    : { contents };
+}
+
 export class GoogleProvider extends ModelProvider {
   private apiKey: string | undefined;
 
@@ -24,21 +49,17 @@ export class GoogleProvider extends ModelProvider {
     tools?: ToolDef[],
     signal?: AbortSignal,
   ): Promise<CompletionResult> {
+    // Throw rather than resolve with an empty finishReason:'error' — that
+    // pattern gets masked by runAgentLoop's generic fallback message
+    // ("Provider returned an error") and produces a silent-looking failure.
     if (!this.apiKey) {
-      return { content: '', toolCalls: [], finishReason: 'error' };
+      throw new Error('Google AI Studio API key missing — set GOOGLE_AI_STUDIO_API_KEY');
     }
 
     const geminiModel = modelId.replace(/^(google\/|gemini\/)/, '');
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${geminiModel}:generateContent?key=${this.apiKey}`;
 
-    const body: Record<string, unknown> = {
-      contents: messages.map(m => ({
-        role: m.role === 'assistant' ? 'model' : m.role === 'tool' ? 'user' : m.role,
-        parts: m.role === 'tool'
-          ? [{ text: `[Tool result for ${m.name ?? m.tool_call_id ?? 'unknown'}]: ${m.content}` }]
-          : [{ text: m.content }],
-      })),
-    };
+    const body: Record<string, unknown> = toGeminiPayload(messages);
 
     if (tools && tools.length > 0) {
       body.tools = [{
@@ -51,13 +72,15 @@ export class GoogleProvider extends ModelProvider {
     }
 
     try {
-      debugLog('complete() POST gemini model=%s', modelId);
+      debugLog('complete() request sent to Gemini model=%s', modelId);
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
         signal,
       });
+
+      debugLog('complete() response received status=%d', response.status);
 
       if (!response.ok) {
         const errBody = await response.text().catch(() => '');
@@ -72,7 +95,10 @@ export class GoogleProvider extends ModelProvider {
       };
 
       const candidate = data.candidates?.[0];
-      if (!candidate) return { content: '', toolCalls: [], finishReason: 'stop' };
+      if (!candidate) {
+        debugLog('complete() response had zero candidates');
+        return { content: '', toolCalls: [], finishReason: 'stop' };
+      }
 
       const parts = candidate.content?.parts ?? [];
       let content = '';
@@ -123,12 +149,7 @@ export class GoogleProvider extends ModelProvider {
       const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: messages.map(m => ({
-            role: m.role === 'assistant' ? 'model' : m.role,
-            parts: [{ text: m.content }],
-          })),
-        }),
+        body: JSON.stringify(toGeminiPayload(messages)),
         signal,
       });
 

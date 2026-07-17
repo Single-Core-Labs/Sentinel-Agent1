@@ -1,6 +1,7 @@
 import { Box, Text, useInput } from 'ink';
 import { useState } from 'react';
 import type { ThemeConfig } from '../theme.js';
+import { getEnvVarForProviderId } from '../providers/index.js';
 
 interface ProviderModel {
   provider_id: string;
@@ -76,6 +77,24 @@ const STATIC_PROVIDERS: ProviderInfo[] = [
     ],
   },
   {
+    id: 'nvidia-nim', name: 'NVIDIA NIM', auth_type: 'api_key',
+    docs_url: 'https://build.nvidia.com/',
+    api_key_instructions: 'Get your key at https://build.nvidia.com/ (Get API Key on any model page)',
+    models: [
+      { provider_id: 'nvidia-nim', model_id: 'nvidia/llama-3.1-nemotron-70b-instruct', name: 'Nemotron 70B', description: 'Tuned Llama for reasoning/chat', tag: 'nim' },
+      { provider_id: 'nvidia-nim', model_id: 'nvidia/llama-3.3-nemotron-super-49b', name: 'Nemotron Super 49B', description: 'Balanced cost/quality', tag: 'nim' },
+    ],
+  },
+  {
+    id: 'models-dev', name: 'Models.dev', auth_type: 'api_key',
+    docs_url: 'https://models.dev/',
+    api_key_instructions: 'Get your key at https://models.dev/',
+    models: [
+      { provider_id: 'models-dev', model_id: 'moonshotai/Kimi-K2.7-Code', name: 'Kimi K2.7 Code', description: 'Code-specialized, long context', tag: 'code' },
+      { provider_id: 'models-dev', model_id: 'zai-org/GLM-5.2', name: 'GLM-5.2', description: 'Efficient, multilingual', tag: 'efficient' },
+    ],
+  },
+  {
     id: 'github-copilot', name: 'GitHub Copilot', auth_type: 'oauth',
     docs_url: 'https://github.com/settings/tokens',
     api_key_instructions: 'Log in with GitHub to use your Copilot account',
@@ -85,16 +104,11 @@ const STATIC_PROVIDERS: ProviderInfo[] = [
   },
 ];
 
+// Single source of truth for provider->env-var lives in providers/index.ts
+// (see its header comment for why: three independently-maintained copies of
+// this map is what caused the GitHub Copilot missing-key bug).
 function getEnvApiKey(providerId: string): string {
-  const envMap: Record<string, string> = {
-    'google-ai-studio': 'GOOGLE_AI_STUDIO_API_KEY',
-    'anthropic': 'ANTHROPIC_API_KEY',
-    'openai': 'OPENAI_API_KEY',
-    'deepseek': 'DEEPSEEK_API_KEY',
-    'models-dev': 'MODELS_DEV_API_KEY',
-    'github-copilot': 'GITHUB_COPILOT_TOKEN',
-  };
-  const envVar = envMap[providerId];
+  const envVar = getEnvVarForProviderId(providerId);
   if (envVar && typeof process !== 'undefined' && process.env) {
     return process.env[envVar] || '';
   }
@@ -152,6 +166,12 @@ export function ProviderPicker({ onSelect, onCancel, theme }: Props) {
   };
 
   const handleCancel = () => {
+    // Bug history: this used to unconditionally call
+    // onSelect(STATIC_PROVIDERS[0]?.models[0]!, '') on Esc, which silently
+    // picked google-ai-studio/gemini-2.5-pro with an empty key regardless of
+    // what the user actually configured — the source of spurious
+    // GOOGLE_AI_STUDIO_API_KEY errors for users who never chose Google.
+    // Esc must never select a provider whose key isn't actually present.
     if (onCancel) {
       onCancel();
       return;
@@ -165,6 +185,7 @@ export function ProviderPicker({ onSelect, onCancel, theme }: Props) {
       }
     }
     // No provider has a configured key — show message and stay on picker
+    // (never fall through to selecting an unconfigured provider)
     setPickerMessage('No API keys found. Select a provider and enter a key to continue, or quit with /quit.');
   };
 

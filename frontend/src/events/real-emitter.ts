@@ -164,7 +164,7 @@ export class RealEventEmitter extends EventEmitter {
       while (turnCount < maxTurns && this._running && !signal.aborted) {
         turnCount++;
 
-        debugLog('runAgentLoop turn=%d', turnCount);
+        debugLog('runAgentLoop turn=%d — sending request to provider (model=%s, historyLen=%d)', turnCount, apiModel, this.history.length);
 
         const response = await provider.complete(apiModel, [
           { role: 'system', content: SYSTEM_PROMPT },
@@ -176,6 +176,12 @@ export class RealEventEmitter extends EventEmitter {
         debugLog('complete() finishReason=%s toolCalls=%d contentLen=%d',
           response.finishReason, response.toolCalls.length, response.content.length);
 
+        // Providers now throw (rather than resolve with finishReason:'error')
+        // on the failure paths we've identified — see providers/*.ts — so this
+        // branch is a defensive backstop, not the primary error path. It's
+        // kept in case a provider implementation legitimately returns an
+        // error status without throwing; the fallback message still surfaces
+        // *something* rather than resolving silently.
         if (response.finishReason === 'error') {
           this.emit('event', {
             type: 'error',

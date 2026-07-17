@@ -1,9 +1,11 @@
 import { Box, Text, useInput } from 'ink';
 import { useState } from 'react';
 import type { ThemeConfig } from '../theme.js';
+import { getEnvVarForProviderId } from '../providers/index.js';
 
 export interface ModelOption {
   id: string;
+  providerId: string;
   provider: string;
   name: string;
   description: string;
@@ -11,17 +13,23 @@ export interface ModelOption {
 }
 
 export const MODEL_OPTIONS: ModelOption[] = [
-  { id: 'anthropic/claude-opus-4.8:fal-ai',       provider: 'Anthropic', name: 'Claude Opus 4.8',  description: 'Most capable, best for complex reasoning', tag: 'powerful' },
-  { id: 'anthropic/claude-sonnet-4',              provider: 'Anthropic', name: 'Claude Sonnet 4',  description: 'Best balance of speed and capability',    tag: 'recommended' },
-  { id: 'openai/gpt-4o',                          provider: 'OpenAI',    name: 'GPT-4o',            description: 'Fast multimodal, strong coding',           tag: 'fast' },
-  { id: 'google/gemini-2.5-pro',                  provider: 'Google',    name: 'Gemini 2.5 Pro',    description: 'Large context window, multimodal',         tag: 'large-ctx' },
-  { id: 'deepseek-ai/DeepSeek-V4-Pro:novita',     provider: 'DeepSeek',  name: 'DeepSeek V4 Pro',   description: 'Strong open-weight coding model',          tag: 'open' },
-  { id: 'moonshotai/Kimi-K2.7-Code:novita',       provider: 'Moonshot',  name: 'Kimi K2.7 Code',    description: 'Code-specialized, long context',           tag: 'code' },
-  { id: 'zai-org/GLM-5.2:novita',                 provider: 'ZhipuAI',   name: 'GLM-5.2',           description: 'Efficient, multilingual',                  tag: 'efficient' },
-  { id: 'nvidia/llama-3.1-nemotron-70b-instruct',  provider: 'NVIDIA',    name: 'Nemotron 70B (NIM)',  description: 'Tuned Llama for reasoning/chat',           tag: 'nim' },
-  { id: 'nvidia/llama-3.3-nemotron-super-49b',     provider: 'NVIDIA',    name: 'Nemotron Super 49B (NIM)', description: 'Balanced cost/quality',                   tag: 'nim' },
-  { id: 'nvidia/nemotron-4-340b-instruct',          provider: 'NVIDIA',    name: 'Nemotron 340B (NIM)', description: 'Largest NIM model, highest quality',          tag: 'nim' },
+  { id: 'anthropic/claude-opus-4.8:fal-ai',       providerId: 'anthropic',        provider: 'Anthropic', name: 'Claude Opus 4.8',  description: 'Most capable, best for complex reasoning', tag: 'powerful' },
+  { id: 'anthropic/claude-sonnet-4',              providerId: 'anthropic',        provider: 'Anthropic', name: 'Claude Sonnet 4',  description: 'Best balance of speed and capability',    tag: 'recommended' },
+  { id: 'openai/gpt-4o',                          providerId: 'openai',           provider: 'OpenAI',    name: 'GPT-4o',            description: 'Fast multimodal, strong coding',           tag: 'fast' },
+  { id: 'google/gemini-2.5-pro',                  providerId: 'google-ai-studio', provider: 'Google',    name: 'Gemini 2.5 Pro',    description: 'Large context window, multimodal',         tag: 'large-ctx' },
+  { id: 'deepseek-ai/DeepSeek-V4-Pro:novita',     providerId: 'deepseek',         provider: 'DeepSeek',  name: 'DeepSeek V4 Pro',   description: 'Strong open-weight coding model',          tag: 'open' },
+  { id: 'moonshotai/Kimi-K2.7-Code:novita',       providerId: 'models-dev',       provider: 'Moonshot',  name: 'Kimi K2.7 Code',    description: 'Code-specialized, long context',           tag: 'code' },
+  { id: 'zai-org/GLM-5.2:novita',                 providerId: 'models-dev',       provider: 'ZhipuAI',   name: 'GLM-5.2',           description: 'Efficient, multilingual',                  tag: 'efficient' },
+  { id: 'nvidia/llama-3.1-nemotron-70b-instruct',  providerId: 'nvidia-nim',       provider: 'NVIDIA',    name: 'Nemotron 70B (NIM)',  description: 'Tuned Llama for reasoning/chat',           tag: 'nim' },
+  { id: 'nvidia/llama-3.3-nemotron-super-49b',     providerId: 'nvidia-nim',       provider: 'NVIDIA',    name: 'Nemotron Super 49B (NIM)', description: 'Balanced cost/quality',                   tag: 'nim' },
+  { id: 'nvidia/nemotron-4-340b-instruct',          providerId: 'nvidia-nim',       provider: 'NVIDIA',    name: 'Nemotron 340B (NIM)', description: 'Largest NIM model, highest quality',          tag: 'nim' },
+  { id: 'copilot-gpt-4o',                          providerId: 'github-copilot',   provider: 'GitHub',    name: 'Copilot GPT-4o',    description: 'GitHub Copilot hosted model',              tag: 'copilot' },
 ];
+
+function hasConfiguredKey(providerId: string): boolean {
+  const envVar = getEnvVarForProviderId(providerId);
+  return !!(envVar && typeof process !== 'undefined' && process.env[envVar]);
+}
 
 interface Props {
   onSelect: (model: ModelOption) => void;
@@ -39,11 +47,12 @@ const TAG_COLORS: Record<string, string> = {
   code:        '#34D399',
   efficient:   '#F59E0B',
   nim:         '#76B900',
+  copilot:     '#8957E5',
 };
 
 export function ModelPicker({ onSelect, onCancel, theme, defaultModel }: Props) {
-  const defaultIdx = Math.max(0, MODEL_OPTIONS.findIndex(m => m.id === defaultModel));
-  const [cursor, setCursor] = useState(defaultIdx);
+  const foundDefaultIdx = MODEL_OPTIONS.findIndex(m => m.id === defaultModel);
+  const [cursor, setCursor] = useState(Math.max(0, foundDefaultIdx));
   const c = theme.colors;
 
   useInput((_input, key) => {
@@ -52,7 +61,21 @@ export function ModelPicker({ onSelect, onCancel, theme, defaultModel }: Props) 
     if (key.return)    onSelect(MODEL_OPTIONS[cursor]!);
     if (key.escape) {
       if (onCancel) { onCancel(); return; }
-      if (defaultModel) onSelect(MODEL_OPTIONS[defaultIdx]!);
+      // Bug history: this used to compute defaultIdx via
+      // Math.max(0, MODEL_OPTIONS.findIndex(...)) unconditionally, so an
+      // unmatched defaultModel (findIndex === -1) silently fell back to
+      // index 0 (Claude Opus) regardless of whether ANTHROPIC_API_KEY was
+      // configured — the same "select an unconfigured provider on Esc" bug
+      // as provider-picker.tsx's handleCancel. Only fall back to a real
+      // prior selection, or to a model whose provider actually has a key.
+      if (foundDefaultIdx !== -1) {
+        onSelect(MODEL_OPTIONS[foundDefaultIdx]!);
+        return;
+      }
+      const configured = MODEL_OPTIONS.find(m => hasConfiguredKey(m.providerId));
+      if (configured) onSelect(configured);
+      // else: no provider has a configured key — stay on the picker rather
+      // than selecting one that will just fail with a missing-key error.
     }
   });
 

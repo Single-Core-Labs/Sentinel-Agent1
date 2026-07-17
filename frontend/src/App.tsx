@@ -386,6 +386,7 @@ export default function App() {
           onSelect={(selectedModel, key) => {
             setModel({
               id: selectedModel.model_id,
+              providerId: selectedModel.provider_id,
               provider: selectedModel.provider_id,
               name: selectedModel.name,
               description: selectedModel.description,
