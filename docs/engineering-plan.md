@@ -4,7 +4,7 @@
 
 | Component | Codebase | Reason |
 |---|---|---|
-| Platform Auth / Model Router / Key Mgmt | `platformops.co` (separate infra) | Already exists — Single Core Labs internal platform |
+| Platform Auth / Model Router / Key Mgmt | `sentinel-ai` (separate infra) | Already exists — Single Core Labs internal platform |
 | Marketing Site | `singlecorelabs.in` (separate repo) | Landing pages, docs, blog — stays as-is |
 | Product Dashboard | **This repo — `frontend/`** | React/MUI/Vite already installed; CLI and web UI share providers, tools, events |
 | Backend API | **This repo — `backend/`** | Sessions, agent runtime, SSE — already built |
@@ -14,18 +14,18 @@
 
 ## Phase 1 — Platform Integration (backend + agent/)
 
-**Goal**: Remove local auth and direct provider calls. Everything routes through `platformops.co`.
+**Goal**: Remove local auth and direct provider calls. Everything routes through `sentinel-ai`.
 
 ### Task 1.1 — Replace auth with platform token
 
 - **Files**: `backend/dependencies.py`, `backend/routes/auth.py`
-- **What**: Replace dev-mode user and OAuth flow with `platformops.co` token validation
+- **What**: Replace dev-mode user and OAuth flow with `sentinel-ai` token validation
 - **Acceptance**: CLI and web API calls authenticate via platform token; no dev bypass
 
 ### Task 1.2 — Route all LLM calls through platform
 
 - **Files**: `agent/core/llm_params.py`, `agent/core/model_router.py`
-- **What**: Remove per-provider API key resolution. Call `router.platformops.co/v1` with platform token for every model
+- **What**: Remove per-provider API key resolution. Call `sentinel-ai` router with platform token for every model
 - **Acceptance**: All 7 provider paths go through a single platform endpoint; no direct Anthropic/OpenAI/Google/etc. calls from the agent
 
 ### Task 1.3 — Remove local key storage
@@ -85,13 +85,13 @@
 ### Task 3.4 — Model picker from platform API
 
 - **Files**: `frontend/src/components/`
-- **What**: Fetch available models from `backend/` (which proxies `platformops.co`). Render as a selectable list
+- **What**: Fetch available models from `backend/` (which proxies `sentinel-ai`). Render as a selectable list
 - **Acceptance**: Model list matches the platform catalog
 
 ### Task 3.5 — SSO login flow
 
 - **Files**: `frontend/src/`
-- **What**: Redirect to `platformops.co` login on first load, handle callback, store token
+- **What**: Redirect to `sentinel-ai` login on first load, handle callback, store token
 - **Acceptance**: Unauthenticated users see login; authenticated users see the dashboard
 
 ### Task 3.6 — Vite config
