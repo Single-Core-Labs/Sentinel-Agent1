@@ -1,4 +1,4 @@
-"""Tests for PlatformOps plan normalization."""
+"""Tests for Sentinel AI plan normalization."""
 
 import sys
 from pathlib import Path

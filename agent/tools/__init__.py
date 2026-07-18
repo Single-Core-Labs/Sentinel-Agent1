@@ -1,5 +1,5 @@
 """
-PlatformOps tools for the agent
+Sentinel AI tools for the agent
 """
 
 from agent.tools.dataset_tools import (

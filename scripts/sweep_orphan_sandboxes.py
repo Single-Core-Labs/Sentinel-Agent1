@@ -2,7 +2,7 @@
 """Backstop sweeper for orphan sentinel-ai sandbox Spaces.
 
 The agent creates a sandbox Space per session.
-This script lists old sandbox-* Spaces and deletes them via the PlatformOps API.
+This script lists old sandbox-* Spaces and deletes them via the Sentinel AI API.
 """
 
 import argparse

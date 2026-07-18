@@ -18,7 +18,7 @@ from fastapi import HTTPException, Request, status
 
 logger = logging.getLogger(__name__)
 
-OPENID_PROVIDER_URL = os.environ.get("OPENID_PROVIDER_URL", "https://platformops.co")
+OPENID_PROVIDER_URL = os.environ.get("OPENID_PROVIDER_URL", "https://sentinel-ai")
 AUTH_ENABLED = bool(os.environ.get("OAUTH_CLIENT_ID", ""))
 
 # Simple in-memory token cache: token -> (user_info, expiry_time)

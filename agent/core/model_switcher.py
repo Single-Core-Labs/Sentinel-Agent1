@@ -33,7 +33,7 @@ from agent.core.model_ids import (
     GPT_55_MODEL_ID,
     KIMI_K27_CODE_MODEL_ID,
     MINIMAX_M3_MODEL_ID,
-    strip_platformops_model_prefix,
+    strip_sentinel_ai_model_prefix,
 )
 
 
@@ -61,14 +61,14 @@ def is_valid_model_id(model_id: str) -> bool:
     Accepts:
       • ollama/<model>, vllm/<model>, lm_studio/<model>, llamacpp/<model>
       • <org>/<model>[:<tag>]            (HF router; tag = provider or policy)
-      • platformops/<org>/<model>[:<tag>] (same, optional LiteLLM prefix)
+      • sentinel-ai/<org>/<model>[:<tag>] (same, optional LiteLLM prefix)
 
     Actual availability is verified against the HF router catalog on
     switch, and by the provider on the probe's ping call.
     """
     if not model_id:
         return False
-    normalized_model_id = strip_platformops_model_prefix(model_id) or model_id
+    normalized_model_id = strip_sentinel_ai_model_prefix(model_id) or model_id
     if is_local_model_id(normalized_model_id):
         return True
     if is_reserved_local_model_id(normalized_model_id):

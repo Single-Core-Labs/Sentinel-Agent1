@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Prioritize the open Sentinel-AI backlog with a product-manager prompt.
 
-Collects open GitHub issues, open GitHub pull requests, and open PlatformOps
+Collects open GitHub issues, open GitHub pull requests, and open Sentinel AI
 Space discussions, then asks an LLM to classify, cluster, and rank them by
 likely product impact.
 
@@ -39,7 +39,7 @@ from agent.core.prompt_caching import (  # noqa: E402
 )
 
 GITHUB_API = "https://api.github.com"
-DEFAULT_GITHUB_REPO = "platformops/sentinel-ai"
+DEFAULT_GITHUB_REPO = "Single-Core-Labs/Sentinel-Agent1"
 DEFAULT_HF_SPACE = "smolagents/sentinel-ai"
 DEFAULT_CONFIG = "configs/cli_agent_config.json"
 DEFAULT_BATCH_SIZE = 12
@@ -615,7 +615,7 @@ def normalize_space_discussion(
     repo_id = getattr(
         discussion, "repo_id", getattr(details, "repo_id", DEFAULT_HF_SPACE)
     )
-    url = f"https://platformops.co/spaces/{repo_id}/discussions/{number}"
+    url = f"https://sentinel-ai/spaces/{repo_id}/discussions/{number}"
 
     return {
         "id": f"hf_discussion#{number}",
@@ -1833,7 +1833,7 @@ async def async_main(argv: list[str] | None = None) -> int:
         logger.error("--create-github-issue requires --github-token or GITHUB_TOKEN.")
         return 1
 
-    logger.info("Collecting GitHub and PlatformOps backlog sources")
+    logger.info("Collecting GitHub and Sentinel AI backlog sources")
     sources = collect_sources(
         args.github_repo,
         args.hf_space,

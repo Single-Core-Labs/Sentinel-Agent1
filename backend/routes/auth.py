@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 # OAuth configuration from environment
 OAUTH_CLIENT_ID = os.environ.get("OAUTH_CLIENT_ID", "")
 OAUTH_CLIENT_SECRET = os.environ.get("OAUTH_CLIENT_SECRET", "")
-OPENID_PROVIDER_URL = os.environ.get("OPENID_PROVIDER_URL", "https://platformops.co")
+OPENID_PROVIDER_URL = os.environ.get("OPENID_PROVIDER_URL", "https://sentinel-ai")
 OAUTH_SCOPES = configured_oauth_scopes()
 
 # In-memory OAuth state store with expiry (5 min TTL)

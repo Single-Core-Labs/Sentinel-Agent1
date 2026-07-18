@@ -17,7 +17,7 @@ from litellm import Message, acompletion
 from agent.core import telemetry
 from agent.core.doom_loop import check_for_doom_loop
 from agent.core.llm_params import _resolve_llm_params
-from agent.core.model_ids import strip_platformops_model_prefix
+from agent.core.model_ids import strip_sentinel_ai_model_prefix
 from agent.core.prompt_caching import (
     router_session_id_for,
     with_prompt_cache_params,
@@ -181,7 +181,7 @@ inspect_dataset({"dataset": "org/dataset-name", "split": "train", "sample_rows":
 
 # 6. Now get working code for the training method
 github_find_examples({"repo": "trl", "keyword": "sft"})
-github_read_file({"repo": "platformops/trl", "path": "examples/scripts/sft.py"})
+github_read_file({"repo": "Single-Core-Labs/trl", "path": "examples/scripts/sft.py"})
 explore_docs("trl")
 ```
 
@@ -267,7 +267,7 @@ RESEARCH_TOOL_SPEC = {
 
 def _get_research_model(main_model: str) -> str:
     """Normalize the main model id for the research sub-call."""
-    return strip_platformops_model_prefix(main_model) or main_model
+    return strip_sentinel_ai_model_prefix(main_model) or main_model
 
 
 async def research_handler(

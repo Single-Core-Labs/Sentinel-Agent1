@@ -110,8 +110,8 @@ def test_free_user_credit_error_mentions_pro_and_billing_links():
     )
 
     assert msg is not None
-    assert "https://platformops.co/subscribe/pro" in msg
-    assert "https://platformops.co/settings/billing" in msg
+    assert "https://sentinel-ai/subscribe/pro" in msg
+    assert "https://sentinel-ai/settings/billing" in msg
 
 
 def test_pro_user_credit_error_mentions_billing_only():
@@ -121,8 +121,8 @@ def test_pro_user_credit_error_mentions_billing_only():
     )
 
     assert msg is not None
-    assert "https://platformops.co/settings/billing" in msg
-    assert "https://platformops.co/subscribe/pro" not in msg
+    assert "https://sentinel-ai/settings/billing" in msg
+    assert "https://sentinel-ai/subscribe/pro" not in msg
 
 
 def test_unknown_plan_credit_error_uses_fallback_wording():
@@ -134,5 +134,5 @@ def test_unknown_plan_credit_error_uses_fallback_wording():
     assert msg is not None
     assert "appear to be exhausted" in msg
     assert "If this is a free account" in msg
-    assert "https://platformops.co/settings/billing" in msg
-    assert "https://platformops.co/subscribe/pro" in msg
+    assert "https://sentinel-ai/settings/billing" in msg
+    assert "https://sentinel-ai/subscribe/pro" in msg

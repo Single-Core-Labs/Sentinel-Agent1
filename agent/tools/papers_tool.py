@@ -17,7 +17,7 @@ from bs4 import BeautifulSoup, Tag
 
 from agent.tools.types import ToolResult
 
-HF_API = "https://platformops.co/api"
+HF_API = "https://sentinel-ai/api"
 ARXIV_HTML = "https://arxiv.org/html"
 AR5IV_HTML = "https://ar5iv.labs.arxiv.org/html"
 
@@ -270,7 +270,7 @@ def _format_paper_list(
 
         lines.append(f"## {i}. {paper_title}")
         lines.append(f"**arxiv_id:** {arxiv_id} | **upvotes:** {upvotes}")
-        lines.append(f"https://platformops.co/papers/{arxiv_id}")
+        lines.append(f"https://sentinel-ai/papers/{arxiv_id}")
         if keywords:
             lines.append(f"**Keywords:** {', '.join(keywords[:5])}")
         if github:
@@ -300,7 +300,7 @@ def _format_paper_detail(paper: dict, s2_data: dict | None = None) -> str:
         influential = s2_data.get("influentialCitationCount", 0)
         meta_parts.append(f"**citations:** {cites} ({influential} influential)")
     lines.append(" | ".join(meta_parts))
-    lines.append(f"https://platformops.co/papers/{arxiv_id}")
+    lines.append(f"https://sentinel-ai/papers/{arxiv_id}")
     lines.append(f"https://arxiv.org/abs/{arxiv_id}")
 
     if authors:
@@ -379,7 +379,7 @@ def _format_read_paper_section(section: dict, arxiv_id: str) -> str:
 
 def _format_datasets(datasets: list, arxiv_id: str, sort: str) -> str:
     lines = [f"# Datasets linked to paper {arxiv_id}"]
-    lines.append(f"https://platformops.co/papers/{arxiv_id}")
+    lines.append(f"https://sentinel-ai/papers/{arxiv_id}")
     lines.append(f"Showing {len(datasets)} dataset(s), sorted by {sort}\n")
 
     for i, ds in enumerate(datasets, 1):
@@ -392,7 +392,7 @@ def _format_datasets(datasets: list, arxiv_id: str, sort: str) -> str:
         tags = ds.get("tags") or []
         interesting = [t for t in tags if not t.startswith(("arxiv:", "region:"))][:5]
 
-        lines.append(f"**{i}. [{ds_id}](https://platformops.co/datasets/{ds_id})**")
+        lines.append(f"**{i}. [{ds_id}](https://sentinel-ai/datasets/{ds_id})**")
         lines.append(f"   Downloads: {downloads:,} | Likes: {likes}")
         if interesting:
             lines.append(f"   Tags: {', '.join(interesting)}")
@@ -419,7 +419,7 @@ def _format_datasets_compact(datasets: list) -> str:
 
 def _format_models(models: list, arxiv_id: str, sort: str) -> str:
     lines = [f"# Models linked to paper {arxiv_id}"]
-    lines.append(f"https://platformops.co/papers/{arxiv_id}")
+    lines.append(f"https://sentinel-ai/papers/{arxiv_id}")
     lines.append(f"Showing {len(models)} model(s), sorted by {sort}\n")
 
     for i, m in enumerate(models, 1):
@@ -429,7 +429,7 @@ def _format_models(models: list, arxiv_id: str, sort: str) -> str:
         pipeline = m.get("pipeline_tag") or ""
         library = m.get("library_name") or ""
 
-        lines.append(f"**{i}. [{model_id}](https://platformops.co/{model_id})**")
+        lines.append(f"**{i}. [{model_id}](https://sentinel-ai/{model_id})**")
         meta = f"   Downloads: {downloads:,} | Likes: {likes}"
         if pipeline:
             meta += f" | Task: {pipeline}"
@@ -468,7 +468,7 @@ def _format_collections(collections: list, arxiv_id: str) -> str:
 
         lines.append(f"**{i}. {title}**")
         lines.append(f"   By: {owner} | Upvotes: {upvotes} | Items: {num_items}")
-        lines.append(f"   https://platformops.co/collections/{slug}")
+        lines.append(f"   https://sentinel-ai/collections/{slug}")
         if desc:
             lines.append(f"   {desc}")
         lines.append("")
@@ -888,7 +888,7 @@ async def _op_find_datasets(args: dict[str, Any], limit: int) -> ToolResult:
 
     if not datasets:
         return {
-            "formatted": f"No datasets found linked to paper {arxiv_id}.\nhttps://platformops.co/papers/{arxiv_id}",
+            "formatted": f"No datasets found linked to paper {arxiv_id}.\nhttps://sentinel-ai/papers/{arxiv_id}",
             "totalResults": 0,
             "resultsShared": 0,
         }
@@ -923,7 +923,7 @@ async def _op_find_models(args: dict[str, Any], limit: int) -> ToolResult:
 
     if not models:
         return {
-            "formatted": f"No models found linked to paper {arxiv_id}.\nhttps://platformops.co/papers/{arxiv_id}",
+            "formatted": f"No models found linked to paper {arxiv_id}.\nhttps://sentinel-ai/papers/{arxiv_id}",
             "totalResults": 0,
             "resultsShared": 0,
         }
@@ -947,7 +947,7 @@ async def _op_find_collections(args: dict[str, Any], limit: int) -> ToolResult:
 
     if not collections:
         return {
-            "formatted": f"No collections found containing paper {arxiv_id}.\nhttps://platformops.co/papers/{arxiv_id}",
+            "formatted": f"No collections found containing paper {arxiv_id}.\nhttps://sentinel-ai/papers/{arxiv_id}",
             "totalResults": 0,
             "resultsShared": 0,
         }
@@ -1018,7 +1018,7 @@ async def _op_find_all_resources(args: dict[str, Any], limit: int) -> ToolResult
         total += len(collections)
         sections.append(_format_collections_compact(collections[:per_cat]))
 
-    header = f"# Resources linked to paper {arxiv_id}\nhttps://platformops.co/papers/{arxiv_id}\n"
+    header = f"# Resources linked to paper {arxiv_id}\nhttps://sentinel-ai/papers/{arxiv_id}\n"
     formatted = header + "\n\n".join(sections)
     return {"formatted": formatted, "totalResults": total, "resultsShared": total}
 

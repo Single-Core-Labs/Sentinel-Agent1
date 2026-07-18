@@ -1,5 +1,5 @@
 """
-Documentation search tools for exploring PlatformOps and Gradio documentation.
+Documentation search tools for exploring Sentinel AI and Gradio documentation.
 """
 
 import asyncio
@@ -98,7 +98,7 @@ async def _fetch_gradio_docs(query: str | None = None) -> str:
 
 async def _fetch_endpoint_docs(hf_token: str, endpoint: str) -> list[dict[str, str]]:
     """Fetch all docs for an endpoint by parsing sidebar and fetching each page."""
-    url = f"https://platformops.co/docs/{endpoint}"
+    url = f"https://sentinel-ai/docs/{endpoint}"
     headers = {"Authorization": f"Bearer {hf_token}"}
 
     async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
@@ -113,7 +113,7 @@ async def _fetch_endpoint_docs(hf_token: str, endpoint: str) -> list[dict[str, s
         nav_items = []
         for link in sidebar.find_all("a", href=True):
             href = link["href"]
-            page_url = f"https://platformops.co{href}" if href.startswith("/") else href
+            page_url = f"https://sentinel-ai{href}" if href.startswith("/") else href
             nav_items.append({"title": link.get_text(strip=True), "url": page_url})
 
         if not nav_items:
@@ -256,7 +256,7 @@ def _format_results(
     note: str | None = None,
 ) -> str:
     """Format search results as readable text."""
-    base_url = f"https://platformops.co/docs/{endpoint}"
+    base_url = f"https://sentinel-ai/docs/{endpoint}"
     out = f"Documentation structure for: {base_url}\n\n"
 
     if query:
@@ -417,13 +417,13 @@ async def docs_fetch_handler(
 
 
 async def _fetch_openapi_spec() -> dict[str, Any]:
-    """Fetch and cache PlatformOps OpenAPI specification."""
+    """Fetch and cache Sentinel AI OpenAPI specification."""
     global _openapi_cache
     if _openapi_cache is not None:
         return _openapi_cache
 
     async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-        resp = await client.get("https://platformops.co/.well-known/openapi.json")
+        resp = await client.get("https://sentinel-ai/.well-known/openapi.json")
         resp.raise_for_status()
 
     _openapi_cache = resp.json()
@@ -448,9 +448,9 @@ def _extract_all_endpoints(spec: dict[str, Any]) -> list[dict[str, Any]]:
     """Extract all endpoints from OpenAPI spec."""
     servers = spec.get("servers", [])
     base_url = (
-        servers[0].get("url", "https://platformops.co")
+        servers[0].get("url", "https://sentinel-ai")
         if servers
-        else "https://platformops.co"
+        else "https://sentinel-ai"
     )
 
     endpoints = []
@@ -734,7 +734,7 @@ def _format_openapi_results(
 
 
 async def search_openapi_handler(arguments: dict[str, Any]) -> tuple[str, bool]:
-    """Search PlatformOps OpenAPI specification by query and/or tag."""
+    """Search Sentinel AI OpenAPI specification by query and/or tag."""
     tag = arguments.get("tag", "").strip() or None
     query = arguments.get("query", "").strip() or None
 
@@ -840,8 +840,8 @@ DOC_ENDPOINTS = [
     "gradio",
     "trackio",
     "smolagents",
-    "platformops",
-    "platformops.js",
+    "sentinel-ai",
+    "sentinel-ai.js",
     "transformers.js",
     "inference-providers",
     "inference-endpoints",
@@ -892,8 +892,8 @@ EXPLORE_DOCS_TOOL_SPEC = {
                 "type": "string",
                 "enum": DOC_ENDPOINTS,
                 "description": (
-                    "The documentation endpoint to explore. Each endpoint corresponds to a major section of the PlatformOps documentation:\n\n"
-                    "• courses — All PlatformOps courses (LLM, robotics, MCP, smol (llm training), agents, deep RL, computer vision, games, diffusion, 3D, audio) and the cookbook recipes. Probably the best place for examples.\n"
+                    "The documentation endpoint to explore. Each endpoint corresponds to a major section of the Sentinel AI documentation:\n\n"
+                    "• courses — All Sentinel AI courses (LLM, robotics, MCP, smol (llm training), agents, deep RL, computer vision, games, diffusion, 3D, audio) and the cookbook recipes. Probably the best place for examples.\n"
                     "• hub — Find answers to questions about models/datasets/spaces, auth, versioning, metadata.\n"
                     "• transformers — Core model library: architectures, configs, tokenizers, training & inference APIs.\n"
                     "• diffusers — Diffusion pipelines, schedulers, fine-tuning, training, and deployment patterns.\n"
@@ -901,8 +901,8 @@ EXPLORE_DOCS_TOOL_SPEC = {
                     "• gradio — UI components and demos for ML models. Uses Gradio's native API: without query returns full docs (llms.txt), with query uses embedding search for precise results.\n"
                     "• trackio — Experiment tracking, metrics logging, and run comparison.\n"
                     "• smolagents — Lightweight agent abstractions and tool-using patterns.\n"
-                    "• platformops — Python client for Hub operations (auth, upload/download, repo management).\n"
-                    "• platformops.js — JS/TS client for Hub APIs in browser and Node.\n"
+                    "• sentinel-ai — Python client for Hub operations (auth, upload/download, repo management).\n"
+                    "• sentinel-ai.js — JS/TS client for Hub APIs in browser and Node.\n"
                     "• transformers.js — Run Transformer models in browser/Node via WebGPU/WASM.\n"
                     "• inference-providers — Unified interface for third-party inference backends.\n"
                     "• inference-endpoints — Managed, scalable model deployments.\n"
@@ -915,13 +915,13 @@ EXPLORE_DOCS_TOOL_SPEC = {
                     "• dataset-viewer — Dataset preview, streaming views, and viewer internals.\n"
                     "• trl — RLHF, DPO, PPO, and SFT utilities for LLMs.\n"
                     "• simulate — Experimental simulation tools and workflows.\n"
-                    "• sagemaker — Deploying PlatformOps models on AWS SageMaker.\n"
+                    "• sagemaker — Deploying Sentinel AI models on AWS SageMaker.\n"
                     "• timm — Image model zoo and utilities.\n"
                     "• safetensors — Safe, fast tensor serialization format.\n"
                     "• tgi — High-throughput text generation server for LLMs.\n"
                     "• setfit — Few-shot text classification via sentence embeddings.\n"
                     "• lerobot — Robotics datasets, policies, and learning workflows.\n"
-                    "• autotrain — No/low-code model training on PlatformOps.\n"
+                    "• autotrain — No/low-code model training on Sentinel AI.\n"
                     "• tei — Optimized inference server for embedding workloads.\n"
                     "• bitsandbytes — Quantization and memory-efficient optimizers.\n"
                     "• sentence_transformers — Embedding models, training recipes, similarity/search workflows.\n"
@@ -968,7 +968,7 @@ DOCS_FETCH_TOOL_SPEC = {
                 "type": "string",
                 "description": (
                     "The full URL to the documentation page. "
-                    "Example: 'https://platformops.co/docs/trl/dpo_trainer' "
+                    "Example: 'https://sentinel-ai/docs/trl/dpo_trainer' "
                     "The .md extension will be added automatically if not present."
                 ),
             },

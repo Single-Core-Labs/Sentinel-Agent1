@@ -58,14 +58,14 @@ def _get_max_tokens_safe(model_name: str) -> int:
     """Return the max input-context tokens for a model.
 
     Primary source: ``litellm.get_model_info(model)['max_input_tokens']``.
-    Strips any HF routing suffix / platformops/ prefix so tagged ids
+    Strips any HF routing suffix / sentinel-ai/ prefix so tagged ids
     ('moonshotai/Kimi-K2.7-Code:novita') look up the bare model. Falls back to a
     conservative 200k default for models not in the catalog.
     """
     from litellm import get_model_info
 
     candidates = [model_name]
-    stripped = model_name.removeprefix("platformops/").split(":", 1)[0]
+    stripped = model_name.removeprefix("sentinel-ai/").split(":", 1)[0]
     if stripped != model_name:
         candidates.append(stripped)
     for candidate in candidates:
@@ -441,9 +441,9 @@ class Session:
 
     def update_model(self, model_name: str) -> None:
         """Switch the active model and update the context window limit."""
-        from agent.core.model_ids import strip_platformops_model_prefix
+        from agent.core.model_ids import strip_sentinel_ai_model_prefix
 
-        normalized = strip_platformops_model_prefix(model_name) or model_name
+        normalized = strip_sentinel_ai_model_prefix(model_name) or model_name
         self.config.model_name = normalized
         self.context_manager.model_max_tokens = _get_max_tokens_safe(normalized)
 

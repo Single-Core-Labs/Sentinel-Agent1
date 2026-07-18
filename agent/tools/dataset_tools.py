@@ -12,7 +12,7 @@ import httpx
 
 from agent.tools.types import ToolResult
 
-BASE_URL = "https://datasets-server.platformops.co"
+BASE_URL = "https://datasets-server.sentinel-ai"
 
 # Truncation limit for long sample values in the output
 MAX_SAMPLE_VALUE_LEN = 150

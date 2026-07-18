@@ -45,13 +45,13 @@ def is_direct_provider_model_id(model_id: str | None) -> bool:
     return model_id in DIRECT_PROVIDER_MODEL_IDS
 
 
-def strip_platformops_model_prefix(model_id: str | None) -> str | None:
-    """Return model ids without LiteLLM's optional ``platformops/`` prefix."""
+def strip_sentinel_ai_model_prefix(model_id: str | None) -> str | None:
+    """Return model ids without LiteLLM's optional ``sentinel-ai/`` prefix."""
     if not model_id:
         return model_id
-    return model_id.removeprefix("platformops/")
+    return model_id.removeprefix("sentinel-ai/")
 
 
 def is_known_router_model_id(model_id: str | None) -> bool:
-    normalized = strip_platformops_model_prefix(model_id)
+    normalized = strip_sentinel_ai_model_prefix(model_id)
     return bool(normalized and normalized in HOSTED_MODEL_IDS)

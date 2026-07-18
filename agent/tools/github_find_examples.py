@@ -267,7 +267,7 @@ def _handle_repo_tree_errors(
 def find_examples(
     keyword: str = "",
     repo: str = "",
-    org: str = "platformops",
+    org: str = "Single-Core-Labs",
     max_results: int = 10,
     min_score: int = 80,
 ) -> ToolResult:
@@ -277,7 +277,7 @@ def find_examples(
     Args:
         keyword: Keyword to fuzzy match against file paths (e.g., "grpo")
         repo: Repository name (e.g., "trl")
-        org: GitHub organization (default: "platformops")
+        org: GitHub organization (default: "Single-Core-Labs")
         max_results: Maximum number of results (default 50)
         min_score: Minimum fuzzy match score (0-100, default 60)
 
@@ -429,7 +429,7 @@ GITHUB_FIND_EXAMPLES_TOOL_SPEC = {
             },
             "org": {
                 "type": "string",
-                "description": "GitHub organization or username. Default: 'platformops'.",
+                "description": "GitHub organization or username. Default: 'Single-Core-Labs'.",
             },
             "max_results": {
                 "type": "integer",
@@ -451,7 +451,7 @@ async def github_find_examples_handler(arguments: Dict[str, Any]) -> tuple[str, 
         result = find_examples(
             keyword=arguments.get("keyword", ""),
             repo=arguments["repo"],
-            org=arguments.get("org", "platformops"),
+            org=arguments.get("org", "Single-Core-Labs"),
             max_results=arguments.get("max_results", 50),
             min_score=arguments.get("min_score", 60),
         )

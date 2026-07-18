@@ -14,6 +14,8 @@ litellm.drop_params = True
 litellm.suppress_debug_info = True
 litellm.modify_params = True
 
+from agent.config import Config  # noqa: E402
 from agent.core.agent_loop import submission_loop  # noqa: E402
+from agent.main import cli  # noqa: E402
 
-__all__ = ["submission_loop"]
+__all__ = ["Config", "cli", "submission_loop"]

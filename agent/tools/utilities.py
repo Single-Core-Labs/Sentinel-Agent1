@@ -1,5 +1,5 @@
 """
-Utility functions for PlatformOps tools
+Utility functions for Sentinel AI tools
 
 Ported from: hf-mcp-server/packages/mcp/src/jobs/formatters.ts
 Includes GPU memory validation for job submissions

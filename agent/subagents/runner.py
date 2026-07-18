@@ -13,7 +13,7 @@ from litellm import Message, acompletion
 from agent.core import telemetry
 from agent.core.doom_loop import check_for_doom_loop
 from agent.core.llm_params import _resolve_llm_params
-from agent.core.model_ids import strip_platformops_model_prefix
+from agent.core.model_ids import strip_sentinel_ai_model_prefix
 from agent.core.prompt_caching import (
     router_session_id_for,
     with_prompt_cache_params,
@@ -333,7 +333,7 @@ def _is_forbidden_tool(tool_name: str) -> bool:
 
 def _get_subagent_model(main_model: str) -> str:
     """Normalise the main model ID for subagent calls."""
-    return strip_platformops_model_prefix(main_model) or main_model
+    return strip_sentinel_ai_model_prefix(main_model) or main_model
 
 
 def _filter_tool_specs(

@@ -28,7 +28,7 @@ from prompt_toolkit import PromptSession
 from agent.config import load_config
 from agent.core.agent_loop import submission_loop
 from agent.core import model_switcher
-from agent.core.model_ids import strip_platformops_model_prefix
+from agent.core.model_ids import strip_sentinel_ai_model_prefix
 from agent.core.session import OpType
 from agent.core.tools import ToolRouter
 from agent.messaging.gateway import NotificationGateway
@@ -76,7 +76,7 @@ def _tool_runtime_label(local_mode: bool) -> str:
 
 
 def _normalize_config_model(config: Any) -> None:
-    normalized = strip_platformops_model_prefix(getattr(config, "model_name", None))
+    normalized = strip_sentinel_ai_model_prefix(getattr(config, "model_name", None))
     if normalized:
         config.model_name = normalized
 
@@ -87,7 +87,7 @@ def _validate_cli_model_override(model: str) -> str:
             "Invalid model id. Use an HF Router id like "
             "'zai-org/GLM-5.2:novita' or a supported local prefix."
         )
-    return model.removeprefix("platformops/")
+    return model.removeprefix("sentinel-ai/")
 
 
 async def _wait_for_initial_sandbox_preload(session_holder: list | None) -> None:
@@ -180,8 +180,8 @@ async def _prompt_and_save_token(prompt_session: PromptSession) -> str | None:
     """Prompt user for a token, validate it. Returns None if skipped."""
     from prompt_toolkit.formatted_text import HTML
 
-    print("\nOptionally provide a PlatformOps token for additional features.")
-    print("Get one at: https://platformops.co/settings/tokens\n")
+    print("\nOptionally provide a Sentinel AI token for additional features.")
+    print("Get one at: https://sentinel-ai.co/settings/tokens\n")
 
     try:
         token = await prompt_session.prompt_async(
@@ -200,7 +200,7 @@ async def _prompt_and_save_token(prompt_session: PromptSession) -> str | None:
 
         async with httpx.AsyncClient(timeout=10.0) as client:
             resp = await client.get(
-                "https://platformops.co/oauth/userinfo",
+                "https://sentinel-ai/oauth/userinfo",
                 headers={"Authorization": f"Bearer {token}"},
             )
             if resp.status_code == 200:
@@ -1056,7 +1056,7 @@ async def _handle_slash_command(
         if not model_switcher.is_valid_model_id(arg):
             model_switcher.print_invalid_id(arg, console)
             return None
-        normalized = arg.removeprefix("platformops/")
+        normalized = arg.removeprefix("sentinel-ai/")
         session = session_holder[0] if session_holder else None
         await model_switcher.probe_and_switch_model(
             normalized,
@@ -1920,7 +1920,7 @@ def cli():
     warnings.filterwarnings("ignore", category=DeprecationWarning, module="litellm")
     warnings.filterwarnings("ignore", category=SyntaxWarning, module="whoosh")
 
-    parser = argparse.ArgumentParser(description="PlatformOps Agent CLI")
+    parser = argparse.ArgumentParser(description="Sentinel AI Agent CLI")
     parser.add_argument(
         "prompt", nargs="?", default=None, help="Run headlessly with this prompt"
     )

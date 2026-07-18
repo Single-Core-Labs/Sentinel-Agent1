@@ -12,7 +12,7 @@ from agent.core.local_models import (
     local_model_provider,
 )
 from agent.core.model_ids import (
-    strip_platformops_model_prefix,
+    strip_sentinel_ai_model_prefix,
 )
 
 logger = logging.getLogger(__name__)
@@ -187,7 +187,7 @@ def _resolve_llm_params(
     provider_api_key: str | None = None,
     provider_id: str | None = None,
 ) -> dict:
-    normalized_model = strip_platformops_model_prefix(model_name) or model_name
+    normalized_model = strip_sentinel_ai_model_prefix(model_name) or model_name
 
     if is_reserved_local_model_id(normalized_model):
         raise ValueError(f"Unsupported local model id: {normalized_model}")

@@ -24,9 +24,9 @@ def test_non_anthropic_research_model_is_unchanged():
     assert _get_research_model("openai/gpt-oss-120b") == "openai/gpt-oss-120b"
 
 
-def test_platformops_prefix_research_model_strips_prefix():
+def test_sentinel_ai_prefix_research_model_strips_prefix():
     assert (
-        _get_research_model("platformops/anthropic/claude-opus-4.8:fal-ai")
+        _get_research_model("sentinel-ai/anthropic/claude-opus-4.8:fal-ai")
         == "anthropic/claude-opus-4.8:fal-ai"
     )
 

@@ -15,7 +15,7 @@ from agent.core.agent_loop import process_submission
 from agent.core.model_ids import (
     GLM_52_MODEL_ID,
     is_known_router_model_id,
-    strip_platformops_model_prefix,
+    strip_sentinel_ai_model_prefix,
 )
 from agent.core.session import Event, OpType, Session
 from agent.core.session_persistence import get_session_store
@@ -200,7 +200,7 @@ class SessionManager:
 
     def __init__(self, config_path: str | None = None) -> None:
         self.config = load_config(config_path or DEFAULT_CONFIG_PATH)
-        normalized_default = strip_platformops_model_prefix(self.config.model_name)
+        normalized_default = strip_sentinel_ai_model_prefix(self.config.model_name)
         if normalized_default:
             self.config.model_name = normalized_default
         self.messaging_gateway = NotificationGateway(self.config.messaging)
@@ -260,7 +260,7 @@ class SessionManager:
     def _model_from_saved_metadata(
         model: str | None,
     ) -> str:
-        normalized = strip_platformops_model_prefix(model)
+        normalized = strip_sentinel_ai_model_prefix(model)
         if normalized and is_known_router_model_id(normalized):
             return normalized
 
@@ -289,7 +289,7 @@ class SessionManager:
         t0 = _time.monotonic()
         tool_router = ToolRouter(self.config.mcpServers)
         session_config = self.config.model_copy(deep=True)
-        normalized_model = strip_platformops_model_prefix(model)
+        normalized_model = strip_sentinel_ai_model_prefix(model)
         if normalized_model:
             session_config.model_name = normalized_model
         session = Session(

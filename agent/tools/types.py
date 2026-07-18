@@ -1,5 +1,5 @@
 """
-Types for PlatformOps tools
+Types for Sentinel AI tools
 
 Ported from: hf-mcp-server/packages/mcp/src/types/
 """

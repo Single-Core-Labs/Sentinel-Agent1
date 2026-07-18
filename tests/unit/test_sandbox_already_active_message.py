@@ -21,7 +21,7 @@ from agent.tools.sandbox_tool import sandbox_create_handler
 def _session_with_sandbox():
     sb = SimpleNamespace(
         space_id="user/sandbox-abc123",
-        url="https://platformops.co/spaces/user/sandbox-abc123",
+        url="https://sentinel-ai/spaces/user/sandbox-abc123",
     )
     return SimpleNamespace(sandbox=sb)
 

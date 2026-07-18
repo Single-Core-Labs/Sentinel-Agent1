@@ -13,7 +13,7 @@ Notes:
 - Vite proxies `/api` and `/auth` to `http://localhost:7860`.
 - If `127.0.0.1:7860` is already owned by another local process, binding the backend to `::1` lets the Vite proxy resolve `localhost` cleanly.
 - Prefer `npm ci` over `npm install` for setup, since `npm install` may rewrite `frontend/package-lock.json` metadata depending on npm version.
-- Non-local LLM calls use `https://router.platformops.co/v1` with the active PlatformOps user's token. Web sessions and the CLI default to GLM 5.2.
+- Non-local LLM calls use `https://router.sentinel-ai/v1` with the active Sentinel AI user's token. Web sessions and the CLI default to GLM 5.2.
 - When asked to start the local server, export the GitHub CLI token first with `export GITHUB_TOKEN="$(gh auth token)"`.
 
 ## Development Checks
@@ -34,7 +34,7 @@ Notes:
 
 ## GitHub PRs
 
-- Open code changes as GitHub PRs first. Do not push code changes directly to the PlatformOps Space deployment branch or Space remote before the PR has been opened, reviewed, and merged, unless the user explicitly asks to bypass the PR flow.
+- Open code changes as GitHub PRs first. Do not push code changes directly to the Sentinel AI Space deployment branch or Space remote before the PR has been opened, reviewed, and merged, unless the user explicitly asks to bypass the PR flow.
 - After implementing a plan, run the required checks, commit the changes, open a GitHub PR, then start the backend and frontend local dev servers for testing.
 
 

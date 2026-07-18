@@ -353,7 +353,7 @@ def test_hf_discussion_event_normalization():
 
     assert record["id"] == "hf_discussion#7"
     assert record["url"] == (
-        "https://platformops.co/spaces/smolagents/sentinel-ai/discussions/7"
+        "https://sentinel-ai/spaces/smolagents/sentinel-ai/discussions/7"
     )
     assert record["body"] == "Initial report"
     assert len(record["comments"]) == 1
@@ -709,7 +709,7 @@ def test_cli_defaults_without_live_network_or_llm():
         None, now=datetime(2026, 5, 4, 12, 30, tzinfo=timezone.utc)
     )
 
-    assert args.github_repo == "platformops/sentinel-ai"
+    assert args.github_repo == "Single-Core-Labs/Sentinel-Agent1"
     assert args.hf_space == "smolagents/sentinel-ai"
     assert args.config == "configs/cli_agent_config.json"
     assert args.resolution_ref == "main"
