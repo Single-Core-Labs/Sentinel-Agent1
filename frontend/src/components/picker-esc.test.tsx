@@ -1,6 +1,6 @@
 import { test, describe, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import React from 'react';
+
 import { render } from 'ink-testing-library';
 import { ProviderPicker } from './provider-picker.js';
 import { ModelPicker, MODEL_OPTIONS } from './model-picker.js';
@@ -40,7 +40,7 @@ describe('ProviderPicker — Esc never selects an unconfigured provider', () => 
 
   test('with only a non-default provider key configured, Esc selects that provider, never index 0 (google-ai-studio)', async () => {
     process.env['NVIDIA_NIM_API_KEY'] = 'nim-test';
-    let selected: { model: { provider_id: string }; key: string } | null = null;
+    let selected: any = null;
     const { stdin } = render(
       <ProviderPicker onSelect={(m, k) => { selected = { model: m, key: k }; }} theme={THEMES['dark']!} />
     );
@@ -72,7 +72,7 @@ describe('ProviderPicker — Esc never selects an unconfigured provider', () => 
 describe('ModelPicker — same-shape Esc bug, fixed', () => {
   test('unmatched defaultModel + only NVIDIA key configured: Esc selects an NVIDIA model, never MODEL_OPTIONS[0] (Anthropic)', async () => {
     process.env['NVIDIA_NIM_API_KEY'] = 'nim-test';
-    let selected: { providerId: string } | null = null;
+    let selected: any = null;
     const { stdin } = render(
       <ModelPicker onSelect={m => { selected = m; }} theme={THEMES['dark']!} defaultModel="not-a-real-model-id" />
     );
@@ -98,7 +98,7 @@ describe('ModelPicker — same-shape Esc bug, fixed', () => {
 
   test('valid defaultModel re-selects that exact model on Esc (no onCancel)', async () => {
     const target = MODEL_OPTIONS[2]!; // openai/gpt-4o
-    let selected: { id: string } | null = null;
+    let selected: any = null;
     const { stdin } = render(
       <ModelPicker onSelect={m => { selected = m; }} theme={THEMES['dark']!} defaultModel={target.id} />
     );

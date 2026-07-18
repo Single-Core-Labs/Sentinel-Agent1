@@ -7,7 +7,7 @@ import dotenv from 'dotenv';
 // Load .env from the project root (one level up from frontend)
 dotenv.config({ path: path.resolve(process.cwd(), '../.env') });
 
-import App from './app.js';
+import App from './App.js';
 
 // ── Debug-file logger ──────────────────────────────────────────────
 // Intercepts console.* calls that would otherwise write directly to

@@ -38,6 +38,17 @@ export function clearKey(envVar: string) {
   fs.writeFileSync(KEYS_FILE, JSON.stringify(keys, null, 2), 'utf-8');
 }
 
+export function saveBaseUrl(envVar: string, baseUrl: string) {
+  const keys = loadKeys();
+  keys[`${envVar}_BASE_URL`] = baseUrl;
+  fs.mkdirSync(CONFIG_DIR, { recursive: true });
+  fs.writeFileSync(KEYS_FILE, JSON.stringify(keys, null, 2), 'utf-8');
+}
+
+export function getBaseUrl(envVar: string): string | undefined {
+  return env(`${envVar}_BASE_URL`);
+}
+
 function env(name: string): string | undefined {
   const keys = loadKeys();
   if (typeof keys[name] === 'string' && keys[name] !== '') {
@@ -88,8 +99,12 @@ export function getProviderForModel(modelId: string): ModelProvider {
       return new AnthropicProvider();
     case 'google':
       return new GoogleProvider();
-    case 'openai-compatible':
-      return new OpenAICompatibleProvider(spec.baseUrl!, env(spec.envVar), spec.name, spec.envVar);
+    case 'openai-compatible': {
+      const customBaseUrl = getBaseUrl(spec.envVar);
+      const baseUrl = customBaseUrl || spec.baseUrl;
+      if (!baseUrl) throw new Error(`No baseUrl configured for provider: ${spec.id}`);
+      return new OpenAICompatibleProvider(baseUrl, env(spec.envVar), spec.name, spec.envVar);
+    }
   }
 }
 

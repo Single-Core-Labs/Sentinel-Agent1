@@ -1,6 +1,6 @@
 import { Box, Text, useApp, useInput } from 'ink';
 import TextInput from 'ink-text-input';
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef } from 'react';
 import { THEMES, type ThemeConfig } from './theme.js';
 import { MockEventEmitter, type AgentEvent, type PlanItem } from './events/mock-emitter.js';
 import { IPCEventEmitter } from './events/ipc-emitter.js';
@@ -426,7 +426,7 @@ export default function App() {
 
       {phase === 'provider-picker' && (
         <ProviderPicker
-          onSelect={(selectedModel, key) => {
+          onSelect={async (selectedModel, key, baseUrl) => {
             setModel({
               id: selectedModel.model_id,
               providerId: selectedModel.provider_id,
@@ -436,6 +436,15 @@ export default function App() {
               tag: selectedModel.tag,
             });
             setApiKey(key);
+
+            if (baseUrl) {
+              const { getEnvVarForProviderId, saveBaseUrl } = await import('./providers/index.js');
+              const envVar = getEnvVarForProviderId(selectedModel.provider_id);
+              if (envVar) {
+                saveBaseUrl(envVar, baseUrl);
+              }
+            }
+
             setPhase('main');
             startSession(selectedModel.model_id);
           }}
@@ -480,8 +489,7 @@ export default function App() {
                 onChange={setKeyInput}
                 mask="*"
                 onSubmit={async (val) => {
-                  const { getEnvVarForProviderId } = await import('./providers/index.js');
-                  const { saveKey } = await import('./providers/index.js');
+                  const { getEnvVarForProviderId, saveKey, clearKey } = await import('./providers/index.js');
                   const envVar = getEnvVarForProviderId(model?.providerId || '');
                   if (envVar) {
                     const trimmed = val.trim();

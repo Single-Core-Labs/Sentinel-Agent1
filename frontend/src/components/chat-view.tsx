@@ -1,6 +1,6 @@
 import { Box, Text, useInput } from 'ink';
-import { useState, useEffect, useCallback } from 'react';
-import { THEMES, type ThemeConfig } from '../theme.js';
+import { useState, useCallback } from 'react';
+import { type ThemeConfig } from '../theme.js';
 import { useSpinner } from '../hooks/use-spinner.js';
 
 // ── Display item types ─────────────────────────────────────────────

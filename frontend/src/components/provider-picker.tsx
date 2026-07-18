@@ -21,12 +21,12 @@ interface ProviderInfo {
 }
 
 interface Props {
-  onSelect: (model: ProviderModel, apiKey: string) => void;
+  onSelect: (model: ProviderModel, apiKey: string, baseUrl?: string) => void;
   onCancel?: () => void;
   theme: ThemeConfig;
 }
 
-type PickerPhase = 'providers' | 'models' | 'api-key-input';
+type PickerPhase = 'providers' | 'models' | 'api-key-input' | 'base-url-input';
 
 const TAG_COLORS: Record<string, string> = {
   powerful:     '#EF4444',
@@ -115,6 +115,14 @@ function getEnvApiKey(providerId: string): string {
   return '';
 }
 
+function getEnvBaseUrl(providerId: string): string {
+  const envVar = getEnvVarForProviderId(providerId);
+  if (envVar && typeof process !== 'undefined' && process.env) {
+    return process.env[`${envVar}_BASE_URL`] || '';
+  }
+  return '';
+}
+
 export function ProviderPicker({ onSelect, onCancel, theme }: Props) {
   const c = theme.colors;
   const [phase, setPhase] = useState<PickerPhase>('providers');
@@ -122,6 +130,7 @@ export function ProviderPicker({ onSelect, onCancel, theme }: Props) {
   const [selectedProvider, setSelectedProvider] = useState<ProviderInfo | null>(null);
   const [modelCursor, setModelCursor] = useState(0);
   const [apiKeyInput, setApiKeyInput] = useState('');
+  const [baseUrlInput, setBaseUrlInput] = useState('');
   const [pickerMessage, setPickerMessage] = useState('');
   const providerList = STATIC_PROVIDERS;
 
@@ -140,19 +149,29 @@ export function ProviderPicker({ onSelect, onCancel, theme }: Props) {
       setSelectedProvider(p);
       setPhase('models');
       setModelCursor(0);
-    } else if (p.auth_type === 'api_key') {
+    } else if (p.auth_type === 'api_key' || p.auth_type === 'oauth') {
       setSelectedProvider(p);
       setPhase('api-key-input');
       setApiKeyInput('');
-    } else if (p.auth_type === 'oauth') {
-      setSelectedProvider(p);
-      setPhase('api-key-input');
-      setApiKeyInput('');
+      setBaseUrlInput(getEnvBaseUrl(p.id));
     }
   };
 
   const handleSubmitApiKey = () => {
     if (!selectedProvider || !apiKeyInput.trim()) return;
+    // DeepSeek, Models.dev, OpenAI etc. are openai-compatible
+    // But since STATIC_PROVIDERS doesn't have kind, we just ask for all api_key if they want a base url?
+    // Let's just ask for base url for all if they want, but actually OpenAI-compatible only makes sense.
+    // We can just add base-url-input phase.
+    if (selectedProvider.id !== 'google-ai-studio' && selectedProvider.id !== 'anthropic' && selectedProvider.id !== 'github-copilot') {
+      setPhase('base-url-input');
+    } else {
+      setPhase('models');
+      setModelCursor(0);
+    }
+  };
+
+  const handleSubmitBaseUrl = () => {
     setPhase('models');
     setModelCursor(0);
   };
@@ -162,7 +181,8 @@ export function ProviderPicker({ onSelect, onCancel, theme }: Props) {
     const model = selectedProvider.models[modelCursor];
     if (!model) return;
     const apiKey = apiKeyInput.trim() || getEnvApiKey(selectedProvider.id) || '';
-    onSelect(model, apiKey);
+    const baseUrl = baseUrlInput.trim() || getEnvBaseUrl(selectedProvider.id) || '';
+    onSelect(model, apiKey, baseUrl);
   };
 
   const handleCancel = () => {
@@ -214,6 +234,24 @@ export function ProviderPicker({ onSelect, onCancel, theme }: Props) {
       }
       if (input && !key.ctrl && !key.meta) {
         setApiKeyInput(s => s + input);
+      }
+    }
+
+    if (phase === 'base-url-input') {
+      if (key.return && !key.shift) {
+        handleSubmitBaseUrl();
+        return;
+      }
+      if (key.backspace || key.delete) {
+        setBaseUrlInput(s => s.slice(0, -1));
+        return;
+      }
+      if (key.escape) {
+        setPhase('api-key-input');
+        return;
+      }
+      if (input && !key.ctrl && !key.meta) {
+        setBaseUrlInput(s => s + input);
       }
     }
 
@@ -279,6 +317,29 @@ export function ProviderPicker({ onSelect, onCancel, theme }: Props) {
         </Box>
         <Box marginTop={1}>
           <Text color={c.muted}>Enter to save · Esc to cancel</Text>
+        </Box>
+      </Box>
+    );
+  }
+
+  if (phase === 'base-url-input') {
+    return (
+      <Box flexDirection="column" paddingLeft={3} paddingTop={1}>
+        <Box marginBottom={1}>
+          <Text color={c.accent} bold>{selectedProvider?.name} Base URL (Optional)  </Text>
+        </Box>
+        <Box flexDirection="column" borderStyle="round" borderColor={c.border} paddingX={2} paddingY={1}>
+          <Box marginBottom={1}>
+            <Text color={c.muted}>Leave empty to use the default endpoint.</Text>
+          </Box>
+          <Box>
+            <Text color={c.accent}>❯ </Text>
+            <Text color={c.foreground}>{baseUrlInput || 'e.g. http://127.0.0.1:11434/v1'}</Text>
+            <Text color={c.accent}>█</Text>
+          </Box>
+        </Box>
+        <Box marginTop={1}>
+          <Text color={c.muted}>Enter to save · Esc to go back</Text>
         </Box>
       </Box>
     );
