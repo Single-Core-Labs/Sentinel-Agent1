@@ -19,7 +19,7 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "cli": "tsx src/index.tsx",
+    "cli": "sentinel-ai",
     "cli:dev": "tsx watch src/index.tsx",
     "test": "node --import tsx --test src/**/*.test.ts src/**/*.test.tsx"
   },
