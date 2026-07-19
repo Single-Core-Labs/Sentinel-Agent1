@@ -1,0 +1,147 @@
+name: Main Branch
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  checks: write
+
+concurrency:
+  group: main-${{ github.workflow }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Clippy matrix — stable + nightly on all tier-1 platforms
+  # ---------------------------------------------------------------------------
+  clippy:
+    name: Clippy (${{ matrix.os }} / ${{ matrix.toolchain }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        toolchain: [stable, nightly]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@${{ matrix.toolchain }}
+        with:
+          components: clippy
+      - uses: swatinem/rust-cache@v2
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+
+  # ---------------------------------------------------------------------------
+  # Nextest matrix — parallel test execution
+  # ---------------------------------------------------------------------------
+  nextest:
+    name: Nextest (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+      - name: Run tests
+        run: cargo nextest run --workspace --profile ci
+
+  # ---------------------------------------------------------------------------
+  # Release build
+  # ---------------------------------------------------------------------------
+  release-build:
+    name: Release build
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+      - run: cargo build --release --workspace
+
+  # ---------------------------------------------------------------------------
+  # Bazel build
+  # ---------------------------------------------------------------------------
+  bazel:
+    name: Bazel build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Mount Bazel cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/bazel
+          key: bazel-main-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'Cargo.lock') }}
+      - name: Build all
+        run: bazel build //...
+      - name: Verify clippy lints
+        run: python3 .github/scripts/verify_bazel_clippy_lints.py
+
+  # ---------------------------------------------------------------------------
+  # macOS notarization
+  # ---------------------------------------------------------------------------
+  notarize:
+    name: macOS notarization
+    runs-on: macos-latest
+    needs: [release-build]
+    if: ${{ github.ref == 'refs/heads/main' }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+      - run: cargo build --release --workspace
+      - name: Sign and notarize
+        run: |
+          .github/scripts/macos-signing/notarize_macos_binary_with_rcodesign.sh
+        env:
+          MACOS_SIGNING_KEY: ${{ secrets.MACOS_SIGNING_KEY }}
+          MACOS_NOTARIZATION_EMAIL: ${{ secrets.MACOS_NOTARIZATION_EMAIL }}
+          MACOS_NOTARIZATION_PASSWORD: ${{ secrets.MACOS_NOTARIZATION_PASSWORD }}
+
+  # ---------------------------------------------------------------------------
+  # Package archive
+  # ---------------------------------------------------------------------------
+  package:
+    name: Package archive
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    needs: [release-build]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+      - run: cargo build --release --workspace
+      - name: Build package archive
+        run: .github/scripts/build-package-archive.sh
+      - name: Archive symbols
+        run: .github/scripts/archive-release-symbols-and-strip-binaries.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sentinel-${{ runner.os }}
+          path: dist/
+
+  # ---------------------------------------------------------------------------
+  # Verify cargo workspace manifests
+  # ---------------------------------------------------------------------------
+  verify-manifests:
+    name: Verify manifests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - run: python3 .github/scripts/verify_cargo_workspace_manifests.py
