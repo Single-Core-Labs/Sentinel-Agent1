@@ -1,0 +1,25 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+    name = "sentinel-core",
+    srcs = glob(["src/**/*.rs"]),
+    edition = "2021",
+    deps = [
+        "@sentinel_crates//:serde",
+        "@sentinel_crates//:serde_json",
+        "@sentinel_crates//:anyhow",
+        "@sentinel_crates//:thiserror",
+        "@sentinel_crates//:tokio",
+        "@sentinel_crates//:tokio-stream",
+        "@sentinel_crates//:futures",
+        "@sentinel_crates//:tracing",
+        "@sentinel_crates//:uuid",
+        "@sentinel_crates//:async-trait",
+        "//crates/sentinel-protocol",
+        "//crates/sentinel-provider",
+        "//crates/sentinel-provider-info",
+        "//crates/sentinel-tools",
+        "//crates/sentinel-config",
+    ],
+    visibility = ["//visibility:public"],
+)

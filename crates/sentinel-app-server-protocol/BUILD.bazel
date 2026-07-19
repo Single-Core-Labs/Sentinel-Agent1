@@ -1,0 +1,16 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+    name = "sentinel-app-server-protocol",
+    srcs = glob(["src/**/*.rs"]),
+    edition = "2021",
+    deps = [
+        "@sentinel_crates//:serde",
+        "@sentinel_crates//:serde_json",
+        "@sentinel_crates//:thiserror",
+        "@sentinel_crates//:chrono",
+        "@sentinel_crates//:uuid",
+        "//crates/sentinel-protocol",
+    ],
+    visibility = ["//visibility:public"],
+)

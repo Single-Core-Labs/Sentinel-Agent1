@@ -1,0 +1,187 @@
+module(
+    name = "sentinel-ai",
+    version = "0.1.0",
+    compatibility_level = 1,
+)
+
+# ---------------------------------------------------------------------------
+# Core build rules
+# ---------------------------------------------------------------------------
+bazel_dep(name = "rules_cc", version = "0.1.1")
+bazel_dep(name = "rules_rust", version = "0.58.0")
+bazel_dep(name = "platforms", version = "0.0.10")
+
+# ---------------------------------------------------------------------------
+# Rust toolchains — stable and nightly
+# ---------------------------------------------------------------------------
+RUST_EDITION = "2021"
+
+# Register the default stable toolchain
+rust = use_extension("@rules_rust//rust:extensions.bzl", "rust")
+rust.toolchain(
+    edition = RUST_EDITION,
+    versions = ["1.85.0"],
+    # nightly is pulled via a second entry for cross-compile / nightly-only crates
+    # rust.toolchain(edition = RUST_EDITION, versions = ["nightly/2025-07-15"])
+)
+use_repo(rust, "rust_toolchains")
+
+register_toolchains("@rust_toolchains//:all")
+
+# ---------------------------------------------------------------------------
+# Platform configuration (see BUILD.bazel for definitions)
+# ---------------------------------------------------------------------------
+
+# ---------------------------------------------------------------------------
+# External Cargo dependencies — locked from Cargo.lock
+# ---------------------------------------------------------------------------
+crate = use_extension("@rules_rust//crate_universe:extensions.bzl", "crate")
+crate.from_cargo(
+    name = "sentinel_crates",
+    cargo_lockfile = "//:Cargo.lock",
+    manifests = [
+        "//:Cargo.toml",
+        "//crates/sentinel-protocol:Cargo.toml",
+        "//crates/sentinel-config:Cargo.toml",
+        "//crates/sentinel-provider-info:Cargo.toml",
+        "//crates/sentinel-provider:Cargo.toml",
+        "//crates/sentinel-core:Cargo.toml",
+        "//crates/sentinel-tools:Cargo.toml",
+        "//crates/sentinel-exec:Cargo.toml",
+        "//crates/sentinel-mcp:Cargo.toml",
+        "//crates/sentinel-sandbox:Cargo.toml",
+        "//crates/sentinel-cli:Cargo.toml",
+        "//crates/sentinel-app-server:Cargo.toml",
+        "//crates/sentinel-app-server-protocol:Cargo.toml",
+        "//crates/sentinel-app-server-client:Cargo.toml",
+        "//crates/sentinel-app-server-daemon:Cargo.toml",
+        "//crates/sentinel-app-server-transport:Cargo.toml",
+        "//crates/sentinel-analytics:Cargo.toml",
+        "//crates/sentinel-agent-identity:Cargo.toml",
+        "//crates/sentinel-agent-graph-store:Cargo.toml",
+    ],
+    # Pin crates that bundle C deps to specific platforms to avoid
+    # build failures on unsupported toolchains.
+    crate_annotations = {
+        "rusqlite": crate.annotation(
+            gen_build_script = True,
+            build_script_data = [
+                "@rules_rust//tools/rust_std:cxx_bridge_header",
+            ],
+            build_script_env = {
+                "SQLITE_MAX_VARIABLE_NUMBER": "250000",
+                "SQLITE_DEFAULT_CACHE_SIZE": "-64000",
+            },
+            patch_template = select({
+                "@platforms//os:windows": "//patches:rusqlite_windows.patch",
+                "//conditions:default": None,
+            }),
+        ),
+        "openssl-sys": crate.annotation(
+            gen_build_script = True,
+            build_script_env = {
+                "OPENSSL_NO_VENDOR": "1",
+            },
+        ),
+        "ring": crate.annotation(
+            gen_build_script = True,
+            build_script_data = ["@rust_toolchains//:target_json"],
+        ),
+        "ed25519-dalek": crate.annotation(
+            gen_build_script = True,
+            build_script_env = {
+                "ED25519_DALEK_USE_PREFER_64BIT": "1" if select({
+                    "@platforms//cpu:x86_64": "1",
+                    "//conditions:default": "0",
+                }) else "0",
+            },
+        ),
+        "reqwest": crate.annotation(
+            gen_build_script = True,
+            build_script_env = {
+                "CARGO_FEATURE_JSON": "1",
+                "CARGO_FEATURE_STREAM": "1",
+            },
+        ),
+        "tokio": crate.annotation(
+            gen_build_script = True,
+            build_script_env = {
+                "CARGO_FEATURE_FULL": "1",
+            },
+        ),
+    },
+)
+use_repo(crate, "sentinel_crates")
+
+# ---------------------------------------------------------------------------
+# macOS SDK integration
+# ---------------------------------------------------------------------------
+apple_cc = use_extension("@rules_cc//cc:extensions.bzl", "apple_cc")
+apple_cc.macos_sdk(
+    name = "macos_sdk",
+    version = "15.4",
+    frameworks = [
+        "CoreFoundation",
+        "CoreServices",
+        "Security",
+        "SystemConfiguration",
+        "Foundation",
+        "AppKit",
+        "IOKit",
+        "DiskArbitration",
+        "CFNetwork",
+        "UniformTypeIdentifiers",
+    ],
+)
+use_repo(apple_cc, "macos_sdk")
+
+# ---------------------------------------------------------------------------
+# V8 / Chromium deps for optional JS runtime sandbox
+# ---------------------------------------------------------------------------
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+
+http_archive(
+    name = "rusty_v8_libcxx",
+    urls = ["https://chromium.googlesource.com/chromium/src/third_party/libcxx/+/refs/heads/main/source.tar.gz?format=TAR"],
+    strip_prefix = "source",
+    build_file_content = """
+cc_library(
+    name = "libcxx",
+    visibility = ["//visibility:public"],
+)
+""",
+)
+
+http_archive(
+    name = "rusty_v8_libcxxabi",
+    urls = ["https://chromium.googlesource.com/chromium/src/third_party/libcxxabi/+/refs/heads/main/source.tar.gz?format=TAR"],
+    strip_prefix = "source",
+    build_file_content = """
+cc_library(
+    name = "libcxxabi",
+    visibility = ["//visibility:public"],
+)
+""",
+)
+
+http_archive(
+    name = "rusty_v8_llvm_libc",
+    urls = ["https://chromium.googlesource.com/chromium/src/third_party/llvm-libc/+/refs/heads/main/source.tar.gz?format=TAR"],
+    strip_prefix = "source",
+    build_file_content = """
+cc_library(
+    name = "llvm_libc",
+    visibility = ["//visibility:public"],
+)
+""",
+)
+
+http_archive(
+    name = "rusty_v8",
+    urls = ["https://github.com/denoland/rusty_v8/releases/download/v0.110.0/rusty_v8.tar.gz"],
+    build_file = "@//:third_party/rusty_v8.BUILD",
+    patch_cmds = select({
+        "@platforms//os:windows": ["patch -p1 < $(rootpath //patches:rusty_v8_windows.patch)"],
+        "//conditions:default": [],
+    }),
+)

@@ -1,0 +1,43 @@
+# ---------------------------------------------------------------------------
+# Sentinel AI — Bazel configuration
+# ---------------------------------------------------------------------------
+
+# Rust
+build --@rules_rust//:rust_edition=2021
+
+# Use the project's Cargo.lock for deterministic builds
+build --@rules_rust//crate_universe:lockfile=//:Cargo.lock
+
+# Enable repository mappings for hermetic builds
+common --enable_bzlmod
+
+# Platform detection — automatic
+build --incompatible_enable_cc_toolchain_resolution
+
+# Output
+build --verbose_failures
+build --sandbox_debug
+
+# Test output
+test --test_output=errors
+test --test_verbose_timeout_warnings
+
+# Use remote cache if available
+# build --remote_cache=grpc://localhost:9092
+
+# Platform-specific settings (applied via --config)
+build:linux   --platforms=//:linux_x86_64_gnu.2.28
+build:windows --platforms=//:windows_x86_64_msvc
+build:macos   --platforms=//:darwin_arm64
+
+# Cross-compilation configs
+build:gnullvm   --platforms=//:windows_x86_64_gnullvm
+build:arm64     --platforms=//:windows_arm64_msvc
+
+# Release optimisations
+build:release --compilation_mode=opt
+build:release --strip=always
+
+# CI-specific
+build:ci --keep_going
+build:ci --test_tag_filters=-skip_ci

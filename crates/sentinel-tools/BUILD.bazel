@@ -1,0 +1,20 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+    name = "sentinel-tools",
+    srcs = glob(["src/**/*.rs"]),
+    edition = "2021",
+    deps = [
+        "@sentinel_crates//:serde",
+        "@sentinel_crates//:serde_json",
+        "@sentinel_crates//:anyhow",
+        "@sentinel_crates//:tokio",
+        "@sentinel_crates//:tracing",
+        "@sentinel_crates//:async-trait",
+        "@sentinel_crates//:reqwest",
+        "@sentinel_crates//:glob",
+        "//crates/sentinel-protocol",
+        "//crates/sentinel-sandbox",
+    ],
+    visibility = ["//visibility:public"],
+)

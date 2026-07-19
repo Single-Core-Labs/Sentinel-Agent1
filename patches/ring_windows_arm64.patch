@@ -1,0 +1,11 @@
+--- a/build.rs
++++ b/build.rs
+@@ -95,7 +95,7 @@ fn pregenerate_perlasm_assembly(
+         // arm64-Neon is assumed to be available on every aarch64 target.
+         // No perlasm run needed; the pregenerated .S files are used directly.
+     }
+-    if target_arch == "aarch64" {
++    if target_arch == "aarch64" || target_arch == "aarch64_64" {
+         // ARM64 Windows uses a different ABI for stack unwinding.
+         // Override to use the .S files and skip perlasm entirely.
+         return;

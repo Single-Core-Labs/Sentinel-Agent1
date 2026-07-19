@@ -1,0 +1,22 @@
+--- a/build.rs
++++ b/build.rs
+@@ -45,7 +45,7 @@ fn main() {
+     // MSVC needs stack alignment for SSE instructions used by the SQLite
+     // amalgamation.  Without this, bundled builds on x86_64 Windows crash
+     // at runtime with EXCEPTION_ILLEGAL_INSTRUCTION.
+-    if cfg!(target_os = "windows") && cfg!(target_arch = "x86_64") {
++    if cfg!(all(target_os = "windows", target_arch = "x86_64", target_env = "msvc")) {
+         println!("cargo:rustc-cfg=rusqlite_msvc_stack_align");
+     }
+ }
+--- a/libsqlite3-sys/build.rs
++++ b/libsqlite3-sys/build.rs
+@@ -87,7 +87,7 @@ fn main() {
+     // On Windows x86_64 MSVC, force 16-byte stack alignment for the
+     // SQLite C amalgamation.  MinGW / gnullvm targets use the standard
+     // ABI and do not need this workaround.
+-    if cfg!(all(windows, target_arch = "x86_64")) {
++    if cfg!(all(target_os = "windows", target_arch = "x86_64", target_env = "msvc")) {
+         println!("cargo:rustc-cfg=rusqlite_msvc_stack_align");
+     }
+ }

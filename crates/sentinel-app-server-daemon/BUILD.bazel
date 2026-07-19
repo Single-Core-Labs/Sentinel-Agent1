@@ -1,0 +1,19 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+    name = "sentinel-app-server-daemon",
+    srcs = glob(["src/**/*.rs"]),
+    edition = "2021",
+    deps = [
+        "@sentinel_crates//:serde",
+        "@sentinel_crates//:serde_json",
+        "@sentinel_crates//:tokio",
+        "@sentinel_crates//:thiserror",
+        "@sentinel_crates//:tracing",
+        "@sentinel_crates//:uuid",
+        "//crates/sentinel-app-server",
+        "//crates/sentinel-app-server-protocol",
+        "//crates/sentinel-app-server-transport",
+    ],
+    visibility = ["//visibility:public"],
+)

@@ -1,0 +1,20 @@
+--- a/cc/private/toolchain/osx_cc_toolchain_config.bzl
++++ b/cc/private/toolchain/osx_cc_toolchain_config.bzl
+@@ -112,6 +112,17 @@ def _macos_toolchain_config_impl(ctx):
+         # frameworks required by Security.framework (used by reqwest native-tls)
+         "-framework",
+         "CoreFoundation",
++        "-framework",
++        "CoreServices",
++        "-framework",
++        "Security",
++        "-framework",
++        "SystemConfiguration",
++        "-framework",
++        "CFNetwork",
++        "-framework",
++        "UniformTypeIdentifiers",
++        "-Wl,-rpath,/usr/lib/swift",
+     ]
+ 
+     features = [

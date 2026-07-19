@@ -1,0 +1,29 @@
+--- a/rust/private/rustc.bzl
++++ b/rust/private/rustc.bzl
+@@ -210,7 +210,7 @@ def _process_build_script_output(ctx, script_output, crate_info, toolchain):
+ def _build_rustc_command(ctx, toolchain, crate_info, output, dep_info, rustc_env):
+     """Assembles the rustc invocation command."""
+
+-    args = ctx.actions.args()
++    args = ctx.actions.args(use_gnu_style = "windows" not in ctx.var.get("TARGET_CPU", ""))
+     args.add("--edition", crate_info.edition)
+ 
+     # Point rustc at the correct sysroot for cross-compilation
+@@ -370,7 +370,7 @@ def _rustc_test_builder(ctx, toolchain, crate_info):
+ def _build_rustc_args_for_linking(ctx, toolchain, crate_info, dep_info):
+     """Builds the intermediate Args for linking."""
+
+-    args = ctx.actions.args()
++    args = ctx.actions.args(use_gnu_style = "windows" not in ctx.var.get("TARGET_CPU", ""))
+     args.add_all(crate_info.lib.name, format = "--crate-name=%s")
+     args.add("--crate-type", crate_info.type)
+ 
+@@ -412,4 +412,4 @@ def _build_rustc_args_for_linking(ctx, toolchain, crate_info, dep_info):
+ def _make_dep_info(ctx, toolchain, crate_info, dep_infos):
+     """Collects dependency information."""
+     dep_info = DepInfo(
+-        dep_variant_info = dep_info.dep_variant_info,
++        dep_variant_info = dep_info.dep_variant_info if hasattr(dep_info, "dep_variant_info") else None,
+         transitive_crate_outputs = depset(),
+         transitive_noncrate_outputs = depset(),
+     )

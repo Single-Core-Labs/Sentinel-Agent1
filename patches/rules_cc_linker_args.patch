@@ -1,0 +1,22 @@
+--- a/cc/private/toolchain/windows_cc_toolchain_config.bzl
++++ b/cc/private/toolchain/windows_cc_toolchain_config.bzl
+@@ -55,6 +55,9 @@ def _msvc_toolchain_config_impl(ctx):
+         executable_path = toolchain_path(ctx, link.exe if use_linker else lld_link.exe),
+     )
+
++    # Increase the default stack reserve size for Rust crates that use
++    # recursive SQLite or regex compilation.
++    link_env["BAZEL_LINKOPTS"] = "/STACK:8388608 /HEAP:8388608"
++
+     # Build the feature list with MSVC-specific flags.
+     features = [
+         feature(
+@@ -310,7 +313,7 @@ def _gnu_toolchain_config_impl(ctx):
+     )
+ 
+     link_env = {}
+-    link_env["BAZEL_LINKOPTS"] = "-Wl,--gc-sections"
++    link_env["BAZEL_LINKOPTS"] = "-Wl,--gc-sections -Wl,--stack,8388608"
+ 
+     features = [
+         feature(

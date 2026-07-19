@@ -1,0 +1,11 @@
+--- a/openssl-sys/build/main.rs
++++ b/openssl-sys/build/main.rs
+@@ -72,7 +72,7 @@ fn main() {
+     // On Windows, OpenSSL configure scripts expect Perl in a specific
+     // location.  When building via Bazel's sandbox, use the vendored
+     // NASM and Perl from the toolchain rather than searching PATH.
+-    if cfg!(windows) {
++    if cfg!(target_os = "windows") {
+         let nasm = std::env::var("BAZEL_NASM_PATH")
+             .or_else(|_| which("nasm"))
+             .unwrap_or_default();

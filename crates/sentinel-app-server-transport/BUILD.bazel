@@ -1,0 +1,23 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+    name = "sentinel-app-server-transport",
+    srcs = glob(["src/**/*.rs"]),
+    edition = "2021",
+    deps = [
+        "@sentinel_crates//:serde",
+        "@sentinel_crates//:serde_json",
+        "@sentinel_crates//:tokio",
+        "@sentinel_crates//:thiserror",
+        "@sentinel_crates//:tracing",
+        "@sentinel_crates//:anyhow",
+        "@sentinel_crates//:futures-util",
+        "@sentinel_crates//:tokio-tungstenite",
+        "@sentinel_crates//:tokio-stream",
+        "@sentinel_crates//:uuid",
+        "@sentinel_crates//:jsonwebtoken",
+        "@sentinel_crates//:async-trait",
+        "//crates/sentinel-app-server-protocol",
+    ],
+    visibility = ["//visibility:public"],
+)

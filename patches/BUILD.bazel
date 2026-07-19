@@ -1,0 +1,77 @@
+# ---------------------------------------------------------------------------
+# Patches — platform-specific fixes for third-party dependencies.
+#
+# Each filegroup exposes a patch file that can be referenced by
+# crate.annotation(patch_template = ...) in MODULE.bazel or by
+# patch_args / patch_cmds in http_archive / http_jar rules.
+#
+# When adding a new patch, add it to the appropriate filegroup below
+# and export it with the `exports_files` glob so other Bazel packages
+# can reference it via //patches:filename.patch.
+# ---------------------------------------------------------------------------
+
+exports_files(glob(["*.patch"]))
+
+# ---------------------------------------------------------------------------
+# Windows MSVC patches
+# ---------------------------------------------------------------------------
+filegroup(
+    name = "windows_msvc_patches",
+    srcs = [
+        "rusqlite_windows.patch",
+        "ring_windows_msvc.patch",
+        "openssl_windows.patch",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# ---------------------------------------------------------------------------
+# Windows GNU-LLVM (MinGW) patches
+# ---------------------------------------------------------------------------
+filegroup(
+    name = "windows_gnullvm_patches",
+    srcs = [
+        "rusqlite_windows.patch",
+        "ring_windows_gnullvm.patch",
+        "rules_rust_gnullvm.patch",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# ---------------------------------------------------------------------------
+# Windows ARM64 patches
+# ---------------------------------------------------------------------------
+filegroup(
+    name = "windows_arm64_patches",
+    srcs = [
+        "rusqlite_windows.patch",
+        "ring_windows_arm64.patch",
+        "rules_rust_arm64.patch",
+    ],
+    visibility = ["//visibility:public",
+    ],
+)
+
+# ---------------------------------------------------------------------------
+# Bazel rules patches (applied to rules_rust / rules_cc / rules_rs)
+# ---------------------------------------------------------------------------
+filegroup(
+    name = "rules_patches",
+    srcs = [
+        "rules_rust_process_wrapper.patch",
+        "rules_cc_linker_args.patch",
+        "rules_rs_build_script.patch",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# ---------------------------------------------------------------------------
+# macOS-specific patches
+# ---------------------------------------------------------------------------
+filegroup(
+    name = "macos_patches",
+    srcs = [
+        "macos_sdk_frameworks.patch",
+    ],
+    visibility = ["//visibility:public"],
+)

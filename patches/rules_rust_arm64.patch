@@ -1,0 +1,27 @@
+--- a/rust/platform/platform.bzl
++++ b/rust/platform/platform.bzl
+@@ -28,7 +28,8 @@ _RUST_TOOLCHAIN_TRIPLES = {
+     "aarch64-apple-darwin":  "aarch64-apple-darwin",
+     "aarch64-unknown-linux-gnu": "aarch64-unknown-linux-gnu",
+     "x86_64-pc-windows-msvc": "x86_64-pc-windows-msvc",
+-    "aarch64-pc-windows-msvc": "aarch64-pc-windows-msvc",
++    "aarch64-pc-windows-msvc":  "aarch64-pc-windows-msvc",
++    "aarch64-pc-windows-gnullvm": "aarch64-pc-windows-gnullvm",
+ }
+ 
+ _SUPPORTED_CPU_VALUES = {
+@@ -85,6 +86,14 @@ def _cpu_from_triple(triple):
+ def _os_from_triple(triple):
+     if "windows" in triple:
+         return "windows"
++    return "unknown"
++
++def _abi_from_triple(triple):
++    if "msvc" in triple:
++        return "msvc"
++    if "gnullvm" in triple:
++        return "gnullvm"
++    return "gnu"
+ 
+ def _toolchain_name(triple):
+     """Generate a Rust toolchain name for the given triple."""

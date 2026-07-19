@@ -1,0 +1,24 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+    name = "sentinel-agent-identity",
+    srcs = glob(["src/**/*.rs"]),
+    edition = "2021",
+    crate_features = [],
+    deps = [
+        "@sentinel_crates//:serde",
+        "@sentinel_crates//:serde_json",
+        "@sentinel_crates//:thiserror",
+        "@sentinel_crates//:tracing",
+        "@sentinel_crates//:uuid",
+        "@sentinel_crates//:jsonwebtoken",
+        "@sentinel_crates//:ed25519-dalek",
+        "@sentinel_crates//:rand",
+        "@sentinel_crates//:tokio",
+        "@sentinel_crates//:chrono",
+        "@sentinel_crates//:reqwest",
+        "@sentinel_crates//:base64",
+        "//crates/sentinel-protocol",
+    ],
+    visibility = ["//visibility:public"],
+)

@@ -1,0 +1,12 @@
+--- a/build.rs
++++ b/build.rs
+@@ -120,7 +120,9 @@ fn configure_perlasm(
+ fn perlasm_format_detected() -> &'static str {
+     let target_os = std::env::var("CARGO_CFG_TARGET_OS").unwrap();
+     let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap();
++    let target_env = std::env::var("CARGO_CFG_TARGET_ENV").unwrap();
+     match (target_os.as_str(), target_arch.as_str()) {
++        ("windows", "x86_64") if target_env == "msvc" => "win64",
+         ("windows", "x86_64") => "win64",
+         ("windows", "aarch64") => "win64",
+         _ => "elf",

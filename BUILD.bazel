@@ -1,0 +1,112 @@
+# ---------------------------------------------------------------------------
+# Platform definitions
+# ---------------------------------------------------------------------------
+
+# Linux on x86_64 with glibc 2.28 (standard manylinux baseline)
+platform(
+    name = "linux_x86_64_gnu.2.28",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+        "@rules_cc//cc:glibc_2.28",
+        "@rules_rust//rust:channel_stable",
+    ],
+)
+
+# Windows MSVC (x86_64) — the primary Windows build target
+platform(
+    name = "windows_x86_64_msvc",
+    constraint_values = [
+        "@platforms//os:windows",
+        "@platforms//cpu:x86_64",
+        "@rules_cc//cc:compiler_msvc",
+        "@rules_rust//rust:channel_stable",
+    ],
+)
+
+# Windows GNU-LLVM (x86_64) — MinGW-style toolchain via LLVM
+platform(
+    name = "windows_x86_64_gnullvm",
+    constraint_values = [
+        "@platforms//os:windows",
+        "@platforms//cpu:x86_64",
+        "@rules_cc//cc:compiler_gnu",
+        "@rules_rust//rust:channel_stable",
+    ],
+)
+
+# Windows ARM64 (MSVC) — for native ARM64 Windows builds
+platform(
+    name = "windows_arm64_msvc",
+    constraint_values = [
+        "@platforms//os:windows",
+        "@platforms//cpu:arm64",
+        "@rules_cc//cc:compiler_msvc",
+        "@rules_rust//rust:channel_stable",
+    ],
+)
+
+# macOS ARM64 (Apple Silicon)
+platform(
+    name = "darwin_arm64",
+    constraint_values = [
+        "@platforms//os:macos",
+        "@platforms//cpu:arm64",
+        "@rules_rust//rust:channel_stable",
+    ],
+)
+
+# macOS x86_64 (Intel)
+platform(
+    name = "darwin_x86_64",
+    constraint_values = [
+        "@platforms//os:macos",
+        "@platforms//cpu:x86_64",
+        "@rules_rust//rust:channel_stable",
+    ],
+)
+
+# ---------------------------------------------------------------------------
+# Cross-compilation test support
+# ---------------------------------------------------------------------------
+#
+# Allow tests compiled for the gnullvm Windows target to run on the
+# MSVC host environment. This is essential for CI where the host
+# toolchain is MSVC but we need to validate gnullvm codegen.
+#
+toolchain(
+    name = "gnullvm_to_msvc_test_toolchain",
+    target_settings = [":windows_x86_64_gnullvm"],
+    exec_compatible_with = [":windows_x86_64_msvc"],
+    toolchain_type = "@rules_rust//rust:toolchain_type",
+    toolchain = "@rust_toolchains//:rust_linux_x86_64",  # cross-compile via host
+)
+
+# ---------------------------------------------------------------------------
+# Sentinel workspace-level aliases
+# ---------------------------------------------------------------------------
+
+alias(
+    name = "sentinel-cli",
+    actual = "//crates/sentinel-cli",
+)
+
+alias(
+    name = "sentinel-agent-identity",
+    actual = "//crates/sentinel-agent-identity",
+)
+
+alias(
+    name = "sentinel-agent-graph-store",
+    actual = "//crates/sentinel-agent-graph-store",
+)
+
+# ---------------------------------------------------------------------------
+# Sentinel AI — top-level build targets
+# ---------------------------------------------------------------------------
+
+filegroup(
+    name = "sentinel_example_config",
+    srcs = ["sentinel.example.toml"],
+    visibility = ["//visibility:public"],
+)

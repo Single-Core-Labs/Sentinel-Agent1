@@ -1,0 +1,17 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+    name = "sentinel-analytics",
+    srcs = glob(["src/**/*.rs"]),
+    edition = "2021",
+    deps = [
+        "@sentinel_crates//:serde",
+        "@sentinel_crates//:serde_json",
+        "@sentinel_crates//:tracing",
+        "@sentinel_crates//:chrono",
+        "@sentinel_crates//:uuid",
+        "@sentinel_crates//:tokio",
+        "//crates/sentinel-protocol",
+    ],
+    visibility = ["//visibility:public"],
+)

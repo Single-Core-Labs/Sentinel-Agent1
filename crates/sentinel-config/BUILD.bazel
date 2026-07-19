@@ -1,0 +1,17 @@
+load("@rules_rust//rust:defs.bzl", "rust_library")
+
+rust_library(
+    name = "sentinel-config",
+    srcs = glob(["src/**/*.rs"]),
+    edition = "2021",
+    deps = [
+        "@sentinel_crates//:serde",
+        "@sentinel_crates//:toml",
+        "@sentinel_crates//:anyhow",
+        "@sentinel_crates//:thiserror",
+        "@sentinel_crates//:dirs",
+        "//crates/sentinel-provider-info",
+        "//crates/sentinel-mcp",
+    ],
+    visibility = ["//visibility:public"],
+)

@@ -1,0 +1,23 @@
+--- a/rust/private/build_script_runner.bzl
++++ b/rust/private/build_script_runner.bzl
+@@ -88,7 +88,7 @@ def _build_script_runner_impl(ctx):
+     if toolchain.os == "windows":
+         env["BAZEL_SH"] = ctx.var.get("BAZEL_SH", "")
+         env["PATH"] = ctx.configuration.default_shell_env.get("PATH", "")
+-        env["SYSTEMROOT"] = ctx.var.get("SYSTEMROOT", "C:\\Windows")
++        env["SYSTEMROOT"] = ctx.var.get("SYSTEMROOT", "") or "C:\\Windows"
+ 
+     runfiles = ctx.runfiles(
+         files = ctx.files.data + [toolchain.rustc],
+@@ -145,7 +145,10 @@ def _build_script_runner_impl(ctx):
+         mnemonic = "RustBuildScript",
+         progress_message = "Running Rust build script for %s" % ctx.label.name,
+         env = env,
+-        use_default_shell_env = True,
++        use_default_shell_env = toolchain.os != "windows",
++        # On Windows, propagate the full environment to allow NASM, Perl,
++        # and MSVC tools to be found through PATH when running build scripts
++        # for crates like ring, openssl-sys, and libsqlite3-sys.
+     )
+ 
+     return [
