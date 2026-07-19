@@ -361,7 +361,7 @@ impl Tool for GitStatusTool {
     async fn execute(&self, args: serde_json::Value, ctx: &ToolContext) -> ToolOutput {
         let path = args["path"].as_str().unwrap_or(".");
         if let Some(err) = sandbox_check_exec(ctx, "git") { return err; }
-        run_git(path, &["status", "--short"])
+        run_git(path, &["status", "--short"]).await
     }
 }
 
@@ -387,9 +387,9 @@ impl Tool for GitDiffTool {
         if let Some(err) = sandbox_check_exec(ctx, "git") { return err; }
         let staged = args["staged"].as_bool().unwrap_or(false);
         if staged {
-            run_git(path, &["diff", "--cached"])
+            run_git(path, &["diff", "--cached"]).await
         } else {
-            run_git(path, &["diff"])
+            run_git(path, &["diff"]).await
         }
     }
 }
@@ -417,7 +417,7 @@ impl Tool for GitCommitTool {
         let message = args["message"].as_str().unwrap_or("");
         if message.is_empty() { return ToolOutput::err("commit message is required"); }
         if let Some(err) = sandbox_check_exec(ctx, "git") { return err; }
-        run_git(path, &["commit", "-m", message])
+        run_git(path, &["commit", "-m", message]).await
     }
 }
 
@@ -442,15 +442,16 @@ impl Tool for GitLogTool {
         let path = args["path"].as_str().unwrap_or(".");
         let max_count = args["max_count"].as_u64().unwrap_or(10);
         if let Some(err) = sandbox_check_exec(ctx, "git") { return err; }
-        run_git(path, &["log", "--oneline", &format!("-{}", max_count)])
+        run_git(path, &["log", "--oneline", &format!("-{}", max_count)]).await
     }
 }
 
-fn run_git(path: &str, args: &[&str]) -> ToolOutput {
-    let result = std::process::Command::new("git")
+async fn run_git(path: &str, args: &[&str]) -> ToolOutput {
+    let result = tokio::process::Command::new("git")
         .args(args)
         .current_dir(path)
-        .output();
+        .output()
+        .await;
     match result {
         Ok(output) => {
             let stdout = String::from_utf8_lossy(&output.stdout);

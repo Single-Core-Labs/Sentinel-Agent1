@@ -55,7 +55,7 @@ impl SentinelConfig {
         for path in &paths {
             if let Ok(content) = std::fs::read_to_string(path) {
                 let file_config: SentinelConfig = toml::from_str(&content)
-                    .map_err(|e| ConfigError::ParseError(e.to_string()))?;
+                    .map_err(ConfigError::from)?;
                 config.merge(file_config);
                 break;
             }
@@ -68,7 +68,7 @@ impl SentinelConfig {
         let content = std::fs::read_to_string(path)
             .map_err(|e| ConfigError::ReadError { path: path.into(), source: e })?;
         toml::from_str(&content)
-            .map_err(|e| ConfigError::ParseError(e.to_string()))
+            .map_err(ConfigError::from)
     }
 
     fn merge(&mut self, other: SentinelConfig) {

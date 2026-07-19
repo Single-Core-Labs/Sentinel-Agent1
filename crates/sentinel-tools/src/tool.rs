@@ -3,11 +3,17 @@ use async_trait::async_trait;
 use sentinel_protocol::ToolDef;
 use sentinel_sandbox::SandboxPolicy;
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct ToolContext {
     pub workspace_dir: Option<String>,
     pub env_vars: std::collections::HashMap<String, String>,
     pub sandbox: Option<Arc<SandboxPolicy>>,
+}
+
+impl Default for ToolContext {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ToolContext {

@@ -6,6 +6,7 @@ use sentinel_provider_info::ProviderInfo;
 use crate::error::ProviderError;
 use crate::provider::ModelProvider;
 
+#[derive(Debug)]
 pub struct OpenAIProvider {
     info: ProviderInfo,
     client: reqwest::Client,
@@ -24,11 +25,11 @@ impl OpenAIProvider {
                 let mut h = reqwest::header::HeaderMap::new();
                 h.insert(
                     reqwest::header::CONTENT_TYPE,
-                    "application/json".parse().unwrap(),
+                    "application/json".parse().expect("valid header value"),
                 );
                 h.insert(
                     reqwest::header::AUTHORIZATION,
-                    format!("Bearer {}", api_key).parse().unwrap(),
+                    format!("Bearer {}", api_key).parse().expect("valid header value"),
                 );
                 for (k, v) in &info.extra_headers {
                     if let (Ok(name), Ok(val)) = (
@@ -41,7 +42,7 @@ impl OpenAIProvider {
                 h
             })
             .build()
-            .map_err(|e| ProviderError::RequestError(e.to_string()))?;
+            .map_err(ProviderError::Reqwest)?;
 
         Ok(Self { info, client, api_key })
     }
@@ -146,7 +147,7 @@ impl ModelProvider for OpenAIProvider {
             .json(&body)
             .send()
             .await
-            .map_err(|e| ProviderError::RequestError(e.to_string()))?;
+            .map_err(ProviderError::Reqwest)?;
 
         let status = resp.status();
         if !status.is_success() {
@@ -158,7 +159,7 @@ impl ModelProvider for OpenAIProvider {
         }
 
         let data: serde_json::Value = resp.json().await
-            .map_err(|e| ProviderError::RequestError(e.to_string()))?;
+            .map_err(ProviderError::Reqwest)?;
 
         self.parse_response(data)
     }
@@ -175,7 +176,7 @@ impl ModelProvider for OpenAIProvider {
             .json(&body)
             .send()
             .await
-            .map_err(|e| ProviderError::RequestError(e.to_string()))?;
+            .map_err(ProviderError::Reqwest)?;
 
         let status = resp.status();
         if !status.is_success() {

@@ -12,6 +12,15 @@ pub struct McpClient {
     process: Arc<Mutex<Option<McpProcess>>>,
 }
 
+impl std::fmt::Debug for McpClient {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("McpClient")
+            .field("id", &self.id)
+            .field("transport", &self.transport)
+            .finish_non_exhaustive()
+    }
+}
+
 struct McpProcess {
     child: Child,
     stdin: ChildStdin,
@@ -153,7 +162,11 @@ impl McpClient {
 
 impl Drop for McpClient {
     fn drop(&mut self) {
-        // Process will be cleaned up by tokio when the runtime drops
+        // Best-effort kill of the child process; this is a blocking call
+        // but it only runs during shutdown.
+        if let Some(mut proc) = self.process.try_lock().ok().and_then(|mut g| g.take()) {
+            drop(proc.child.kill());
+        }
     }
 }
 

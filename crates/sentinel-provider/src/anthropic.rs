@@ -8,6 +8,7 @@ use sentinel_provider_info::ProviderInfo;
 use crate::error::ProviderError;
 use crate::provider::ModelProvider;
 
+#[derive(Debug)]
 pub struct AnthropicProvider {
     info: ProviderInfo,
     client: reqwest::Client,
@@ -21,9 +22,9 @@ impl AnthropicProvider {
             .ok_or_else(|| ProviderError::MissingApiKey { provider: info.id.clone() })?;
 
         let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert("x-api-key", api_key.parse().unwrap());
-        headers.insert("anthropic-version", "2023-06-01".parse().unwrap());
-        headers.insert(reqwest::header::CONTENT_TYPE, "application/json".parse().unwrap());
+        headers.insert("x-api-key", api_key.parse().expect("valid API key"));
+        headers.insert("anthropic-version", "2023-06-01".parse().expect("valid header value"));
+        headers.insert(reqwest::header::CONTENT_TYPE, "application/json".parse().expect("valid header value"));
         for (k, v) in &info.extra_headers {
             if let (Ok(name), Ok(val)) = (
                 reqwest::header::HeaderName::from_bytes(k.as_bytes()),
@@ -37,7 +38,7 @@ impl AnthropicProvider {
             .timeout(std::time::Duration::from_secs(info.timeout_secs))
             .default_headers(headers)
             .build()
-            .map_err(|e| ProviderError::RequestError(e.to_string()))?;
+            .map_err(ProviderError::Reqwest)?;
 
         Ok(Self { info, client, api_key })
     }
@@ -178,7 +179,7 @@ impl ModelProvider for AnthropicProvider {
             .json(&body)
             .send()
             .await
-            .map_err(|e| ProviderError::RequestError(e.to_string()))?;
+            .map_err(ProviderError::Reqwest)?;
 
         let status = resp.status();
         if !status.is_success() {
@@ -190,7 +191,7 @@ impl ModelProvider for AnthropicProvider {
         }
 
         let data: serde_json::Value = resp.json().await
-            .map_err(|e| ProviderError::RequestError(e.to_string()))?;
+            .map_err(ProviderError::Reqwest)?;
 
         self.parse_response(data)
     }
@@ -207,7 +208,7 @@ impl ModelProvider for AnthropicProvider {
             .json(&body)
             .send()
             .await
-            .map_err(|e| ProviderError::RequestError(e.to_string()))?;
+            .map_err(ProviderError::Reqwest)?;
 
         let status = resp.status();
         if !status.is_success() {

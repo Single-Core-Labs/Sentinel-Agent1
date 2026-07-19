@@ -12,12 +12,14 @@ pub enum ThreadStatus {
     Error(String),
 }
 
+#[derive(Debug)]
 pub struct ApprovalRequest {
     pub tool_name: String,
     pub args: serde_json::Value,
     pub prompt: String,
 }
 
+#[derive(Debug)]
 pub struct AgentThread {
     pub id: Uuid,
     pub status: ThreadStatus,

@@ -34,8 +34,13 @@ async fn main() -> anyhow::Result<()> {
         }
     }
 
-    let config = Arc::new(sentinel_config::SentinelConfig::load()
-        .unwrap_or_default());
+    let config = Arc::new(match sentinel_config::SentinelConfig::load() {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("{} Warning: config error: {}; using defaults", "⚠".yellow(), e);
+            sentinel_config::SentinelConfig::default()
+        }
+    });
 
     let model_id = if args.len() >= 2 && !args[1].starts_with('-') {
         args[1].clone()

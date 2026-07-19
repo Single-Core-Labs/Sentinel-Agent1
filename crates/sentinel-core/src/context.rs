@@ -1,5 +1,6 @@
 use sentinel_protocol::Message;
 
+#[derive(Debug)]
 pub struct ContextManager {
     messages: Vec<Message>,
     max_tokens: usize,

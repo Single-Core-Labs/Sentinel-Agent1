@@ -4,6 +4,8 @@ use thiserror::Error;
 pub enum ProviderError {
     #[error("API request failed: {0}")]
     RequestError(String),
+    #[error("HTTP client error: {0}")]
+    Reqwest(#[from] reqwest::Error),
     #[error("API returned error: {status} - {body}")]
     ApiError { status: u16, body: String },
     #[error("No API key configured for provider {provider}")]

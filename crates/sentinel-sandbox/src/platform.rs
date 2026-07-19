@@ -1,5 +1,6 @@
 use crate::policy::SandboxPolicy;
 
+#[derive(Debug)]
 pub struct Sandbox {
     policy: SandboxPolicy,
 }

@@ -56,11 +56,7 @@ async fn test_bash_echo() {
     let registry = ToolRegistry::new();
     let ctx = ToolContext::new();
 
-    let args = if cfg!(windows) {
-        serde_json::json!({ "command": "echo hello" })
-    } else {
-        serde_json::json!({ "command": "echo hello" })
-    };
+    let args = serde_json::json!({ "command": "echo hello" });
 
     let result = registry.execute("bash", args, &ctx).await;
     assert!(result.text.contains("hello"), "bash echo failed: {}", result.text);

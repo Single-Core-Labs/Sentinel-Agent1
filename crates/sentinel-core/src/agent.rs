@@ -32,6 +32,17 @@ pub struct Agent {
     pub total_completion_tokens: AtomicU64,
 }
 
+impl std::fmt::Debug for Agent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Agent")
+            .field("tools", &self.tools)
+            .field("config", &self.config)
+            .field("total_prompt_tokens", &self.total_prompt_tokens)
+            .field("total_completion_tokens", &self.total_completion_tokens)
+            .finish_non_exhaustive()
+    }
+}
+
 impl Agent {
     pub fn new(
         provider: Arc<dyn ModelProvider>,
@@ -413,6 +424,7 @@ impl AgentOutput {
 pub type AgentResult = Result<AgentOutput, AgentError>;
 pub type AgentOutputStream = Box<dyn tokio_stream::Stream<Item = Result<sentinel_protocol::StreamChunk, ProviderError>> + Send + Unpin>;
 
+#[derive(Debug)]
 pub enum AgentEvent {
     Thinking { text: String },
     ToolCall { name: String, args: serde_json::Value },
@@ -442,6 +454,7 @@ pub trait EventHandler: Send + Sync {
     async fn handle_event(&self, event: AgentEvent);
 }
 
+#[derive(Debug)]
 pub struct NullEventHandler;
 #[async_trait::async_trait]
 impl EventHandler for NullEventHandler {
@@ -455,12 +468,14 @@ pub trait ApprovalGate: Send + Sync {
     async fn request_approval(&self, req: &ApprovalRequest) -> ApprovalDecision;
 }
 
+#[derive(Debug)]
 pub enum ApprovalDecision {
     Approved,
     Rejected(String),
     Modify { tool_name: String, args: serde_json::Value },
 }
 
+#[derive(Debug)]
 pub struct AutoApprovalGate;
 #[async_trait::async_trait]
 impl ApprovalGate for AutoApprovalGate {

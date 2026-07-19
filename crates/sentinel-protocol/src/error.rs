@@ -5,7 +5,7 @@ pub enum ProtocolError {
     #[error("Empty stream chunk")]
     EmptyStreamChunk,
     #[error("Serialization error: {0}")]
-    Serialization(String),
+    Serialization(#[from] serde_json::Error),
     #[error("Unexpected content block type")]
     UnexpectedContentBlock,
 }
