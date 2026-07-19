@@ -22,10 +22,12 @@ async fn main() -> anyhow::Result<()> {
     };
 
     // Get prompt from remaining args or stdin
-    let prompt = if args.len() > 2 {
-        args[2..].join(" ")
-    } else if args.len() == 2 && args[1].starts_with('-') {
-        args[1..].join(" ")
+    let prompt = if args.len() >= 2 {
+        if args[1].starts_with('-') {
+            args[1..].join(" ")
+        } else {
+            args[1..].join(" ")
+        }
     } else {
         let mut input = String::new();
         println!("Enter prompt (Ctrl+D to submit):");
