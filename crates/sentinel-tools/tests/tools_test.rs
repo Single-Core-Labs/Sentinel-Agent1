@@ -1,4 +1,5 @@
 use sentinel_tools::{ToolRegistry, ToolContext};
+use std::path::PathBuf;
 
 #[tokio::test]
 async fn test_read_write_roundtrip() {
@@ -102,5 +103,5 @@ async fn test_tool_defs() {
     assert!(names.contains(&"bash"), "bash tool missing");
     assert!(names.contains(&"glob"), "glob tool missing");
     assert!(names.contains(&"grep"), "grep tool missing");
-    assert_eq!(defs.len(), 7, "expected 7 built-in tools, got {}", defs.len());
+    assert_eq!(defs.len(), 11, "expected 11 built-in tools, got {}", defs.len());
 }

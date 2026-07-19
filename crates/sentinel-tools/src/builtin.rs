@@ -12,6 +12,10 @@ pub fn builtin_tools() -> Vec<Arc<dyn Tool>> {
         Arc::new(GrepTool),
         Arc::new(BashTool),
         Arc::new(WebSearchTool),
+        Arc::new(GitStatusTool),
+        Arc::new(GitDiffTool),
+        Arc::new(GitCommitTool),
+        Arc::new(GitLogTool),
     ]
 }
 
@@ -329,6 +333,133 @@ impl Tool for WebSearchTool {
             }
             Err(e) => ToolOutput::err(format!("Search request failed: {}", e)),
         }
+    }
+}
+
+// ── Git Status ─────────────────────────────────────────────────
+pub struct GitStatusTool;
+#[async_trait]
+impl Tool for GitStatusTool {
+    fn name(&self) -> &str { "git_status" }
+    fn description(&self) -> &str { "Show the working tree status" }
+    fn is_mutating(&self) -> bool { false }
+    fn input_schema(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "path": { "type": "string", "description": "Path to git repo" }
+            }
+        })
+    }
+
+    async fn execute(&self, args: serde_json::Value, _ctx: &ToolContext) -> ToolOutput {
+        let path = args["path"].as_str().unwrap_or(".");
+        run_git(path, &["status", "--short"])
+    }
+}
+
+// ── Git Diff ───────────────────────────────────────────────────
+pub struct GitDiffTool;
+#[async_trait]
+impl Tool for GitDiffTool {
+    fn name(&self) -> &str { "git_diff" }
+    fn description(&self) -> &str { "Show changes in the working tree" }
+    fn is_mutating(&self) -> bool { false }
+    fn input_schema(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "path": { "type": "string", "description": "Path to git repo" },
+                "staged": { "type": "boolean", "description": "Show staged changes only" }
+            }
+        })
+    }
+
+    async fn execute(&self, args: serde_json::Value, _ctx: &ToolContext) -> ToolOutput {
+        let path = args["path"].as_str().unwrap_or(".");
+        let staged = args["staged"].as_bool().unwrap_or(false);
+        if staged {
+            run_git(path, &["diff", "--cached"])
+        } else {
+            run_git(path, &["diff"])
+        }
+    }
+}
+
+// ── Git Commit ─────────────────────────────────────────────────
+pub struct GitCommitTool;
+#[async_trait]
+impl Tool for GitCommitTool {
+    fn name(&self) -> &str { "git_commit" }
+    fn description(&self) -> &str { "Create a git commit with staged changes" }
+    fn is_mutating(&self) -> bool { true }
+    fn input_schema(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "path": { "type": "string", "description": "Path to git repo" },
+                "message": { "type": "string", "description": "Commit message" }
+            },
+            "required": ["message"]
+        })
+    }
+
+    async fn execute(&self, args: serde_json::Value, _ctx: &ToolContext) -> ToolOutput {
+        let path = args["path"].as_str().unwrap_or(".");
+        let message = args["message"].as_str().unwrap_or("");
+        if message.is_empty() {
+            return ToolOutput::err("commit message is required");
+        }
+        run_git(path, &["commit", "-m", message])
+    }
+}
+
+// ── Git Log ────────────────────────────────────────────────────
+pub struct GitLogTool;
+#[async_trait]
+impl Tool for GitLogTool {
+    fn name(&self) -> &str { "git_log" }
+    fn description(&self) -> &str { "Show commit logs" }
+    fn is_mutating(&self) -> bool { false }
+    fn input_schema(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "path": { "type": "string", "description": "Path to git repo" },
+                "max_count": { "type": "integer", "description": "Number of commits to show" }
+            }
+        })
+    }
+
+    async fn execute(&self, args: serde_json::Value, _ctx: &ToolContext) -> ToolOutput {
+        let path = args["path"].as_str().unwrap_or(".");
+        let max_count = args["max_count"].as_u64().unwrap_or(10);
+        run_git(path, &["log", "--oneline", &format!("-{}", max_count)])
+    }
+}
+
+fn run_git(path: &str, args: &[&str]) -> ToolOutput {
+    let result = std::process::Command::new("git")
+        .args(args)
+        .current_dir(path)
+        .output();
+    match result {
+        Ok(output) => {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let mut text = String::new();
+            if !stdout.is_empty() { text.push_str(&stdout); }
+            if !stderr.is_empty() {
+                if !text.is_empty() { text.push('\n'); }
+                text.push_str(&stderr);
+            }
+            if output.status.success() {
+                ToolOutput::ok(text.trim())
+            } else {
+                ToolOutput::err(text.trim())
+            }
+        }
+        Err(e) => ToolOutput::err(format!("git command failed: {}", e)),
     }
 }
 

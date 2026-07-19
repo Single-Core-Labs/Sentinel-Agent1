@@ -11,4 +11,4 @@ thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 glob.workspace = true
-async-trait = "0.1"
+async-trait.workspace = true

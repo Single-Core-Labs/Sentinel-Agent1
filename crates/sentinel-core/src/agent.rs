@@ -1,11 +1,12 @@
 use std::sync::Arc;
+use std::fmt;
 use sentinel_protocol::{
     CompletionRequest, Message, ContentBlock, Role, ToolResult,
 };
 use sentinel_provider::{ModelProvider, ProviderError};
 use sentinel_tools::{ToolRegistry, ToolContext};
 use sentinel_config::SentinelConfig;
-use crate::thread::{AgentThread, ThreadStatus};
+use crate::thread::{AgentThread, ThreadStatus, ApprovalRequest};
 
 const SYSTEM_PROMPT: &str = r#"You are Sentinel, a coding agent. You help users with software engineering tasks.
 
@@ -24,6 +25,7 @@ pub struct Agent {
     provider: Arc<dyn ModelProvider>,
     tools: Arc<ToolRegistry>,
     config: Arc<SentinelConfig>,
+    events: Arc<dyn EventHandler>,
 }
 
 impl Agent {
@@ -32,10 +34,24 @@ impl Agent {
         tools: Arc<ToolRegistry>,
         config: Arc<SentinelConfig>,
     ) -> Self {
-        Self { provider, tools, config }
+        Self { provider, tools, config, events: Arc::new(NullEventHandler) }
+    }
+
+    pub fn with_event_handler(mut self, handler: Arc<dyn EventHandler>) -> Self {
+        self.events = handler;
+        self
     }
 
     pub async fn run(&self, thread: &mut AgentThread, user_input: &str) -> AgentResult {
+        self.run_with_approval(thread, user_input, &AutoApprovalGate).await
+    }
+
+    pub async fn run_with_approval(
+        &self,
+        thread: &mut AgentThread,
+        user_input: &str,
+        approval: &dyn ApprovalGate,
+    ) -> AgentResult {
         thread.status = ThreadStatus::Running;
         thread.add_message(Message::user(user_input));
 
@@ -69,6 +85,7 @@ impl Agent {
 
             thread.add_message(choice.message.clone());
             let last_text = choice.message.extract_text();
+            self.events.handle_event(AgentEvent::Thinking { text: last_text.clone() }).await;
 
             let tool_calls: Vec<_> = choice.message.content.iter()
                 .filter_map(|b| {
@@ -80,6 +97,7 @@ impl Agent {
 
             if tool_calls.is_empty() {
                 thread.status = ThreadStatus::Completed;
+                self.events.handle_event(AgentEvent::Completed { text: last_text.clone() }).await;
                 return Ok(AgentOutput::success(last_text));
             }
 
@@ -87,11 +105,47 @@ impl Agent {
             let mut tool_results = Vec::new();
 
             for (tool_call_id, name, args) in &tool_calls {
+                self.events.handle_event(AgentEvent::ToolCall {
+                    name: name.clone(),
+                    args: args.clone(),
+                }).await;
+
                 if !thread.yolo_mode {
                     thread.status = ThreadStatus::AwaitingApproval;
+                    let approval_req = ApprovalRequest {
+                        tool_name: name.clone(),
+                        args: args.clone(),
+                        prompt: format!("Execute {} with the given arguments?", name),
+                    };
+                    match approval.request_approval(&approval_req).await {
+                        ApprovalDecision::Approved => {}
+                        ApprovalDecision::Rejected(reason) => {
+                            tool_results.push(ToolResult {
+                                tool_call_id: tool_call_id.clone(),
+                                name: name.clone(),
+                                output: format!("User rejected: {}", reason),
+                                is_error: true,
+                            });
+                            continue;
+                        }
+                        ApprovalDecision::Modify { .. } => {
+                            tool_results.push(ToolResult {
+                                tool_call_id: tool_call_id.clone(),
+                                name: name.clone(),
+                                output: "User modified the request".into(),
+                                is_error: true,
+                            });
+                            continue;
+                        }
+                    }
                 }
 
                 let output = self.tools.execute(name, args.clone(), &ctx).await;
+                self.events.handle_event(AgentEvent::ToolResult {
+                    name: name.clone(),
+                    output: output.text.clone(),
+                    is_error: output.is_error,
+                }).await;
                 tool_results.push(ToolResult {
                     tool_call_id: tool_call_id.clone(),
                     name: name.clone(),
@@ -113,6 +167,10 @@ impl Agent {
             if !thread.increment_turn() {
                 return Ok(AgentOutput::error("Max turns reached"));
             }
+            self.events.handle_event(AgentEvent::TurnEnd {
+                turn: thread.turn,
+                iteration: thread.iterations,
+            }).await;
 
             if thread.is_doom_loop() {
                 return Ok(AgentOutput::error("Doom loop detected"));
@@ -171,7 +229,61 @@ impl AgentOutput {
 pub type AgentResult = Result<AgentOutput, AgentError>;
 pub type AgentOutputStream = Box<dyn tokio_stream::Stream<Item = Result<sentinel_protocol::StreamChunk, ProviderError>> + Send + Unpin>;
 
+pub enum AgentEvent {
+    Thinking { text: String },
+    ToolCall { name: String, args: serde_json::Value },
+    ToolResult { name: String, output: String, is_error: bool },
+    Completed { text: String },
+    Error { message: String },
+    TurnEnd { turn: u32, iteration: u32 },
+}
+
+impl fmt::Display for AgentEvent {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AgentEvent::Thinking { text } => write!(f, "→ {}", text),
+            AgentEvent::ToolCall { name, .. } => write!(f, "⚡ {}", name),
+            AgentEvent::ToolResult { name, is_error, .. } => {
+                if *is_error { write!(f, "✖ {}", name) } else { write!(f, "✔ {}", name) }
+            }
+            AgentEvent::Completed { .. } => write!(f, "Done"),
+            AgentEvent::Error { message } => write!(f, "Error: {}", message),
+            AgentEvent::TurnEnd { turn, iteration } => write!(f, "Turn {}/{}", turn, iteration),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+pub trait EventHandler: Send + Sync {
+    async fn handle_event(&self, event: AgentEvent);
+}
+
+pub struct NullEventHandler;
+#[async_trait::async_trait]
+impl EventHandler for NullEventHandler {
+    async fn handle_event(&self, _event: AgentEvent) {}
+}
+
 use thiserror::Error;
+
+#[async_trait::async_trait]
+pub trait ApprovalGate: Send + Sync {
+    async fn request_approval(&self, req: &ApprovalRequest) -> ApprovalDecision;
+}
+
+pub enum ApprovalDecision {
+    Approved,
+    Rejected(String),
+    Modify { tool_name: String, args: serde_json::Value },
+}
+
+pub struct AutoApprovalGate;
+#[async_trait::async_trait]
+impl ApprovalGate for AutoApprovalGate {
+    async fn request_approval(&self, _req: &ApprovalRequest) -> ApprovalDecision {
+        ApprovalDecision::Approved
+    }
+}
 
 #[derive(Debug, Error)]
 pub enum AgentError {

@@ -1,36 +1,38 @@
 use std::sync::Arc;
+use colored::*;
 use tracing_subscriber::EnvFilter;
+
+mod approval;
+mod display;
+mod handler;
+
+use approval::CliApprovalGate;
+use display::{print_banner, print_divider};
+use handler::CliEventHandler;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env()
-            .add_directive(tracing::Level::INFO.into()))
+            .add_directive(tracing::Level::WARN.into()))
         .init();
 
     let args: Vec<String> = std::env::args().collect();
 
-    // Load config
     let config = Arc::new(sentinel_config::SentinelConfig::load()
         .unwrap_or_default());
 
-    // Get model from CLI arg or config
-    let model_id = if args.len() > 1 && !args[1].starts_with('-') {
+    let model_id = if args.len() >= 2 && !args[1].starts_with('-') {
         args[1].clone()
     } else {
         config.agent.default_model.clone()
     };
 
-    // Get prompt from remaining args or stdin
     let prompt = if args.len() >= 2 {
-        if args[1].starts_with('-') {
-            args[1..].join(" ")
-        } else {
-            args[1..].join(" ")
-        }
+        args[1..].join(" ")
     } else {
         let mut input = String::new();
-        println!("Enter prompt (Ctrl+D to submit):");
+        eprintln!("{}", "Enter prompt (Ctrl+D to submit):".yellow());
         for line in std::io::stdin().lines() {
             match line {
                 Ok(l) => {
@@ -45,67 +47,65 @@ async fn main() -> anyhow::Result<()> {
     };
 
     if prompt.is_empty() {
-        eprintln!("Usage: sentinel [model] \"your prompt\"");
-        eprintln!("   or: sentinel [model] (reads from stdin)");
+        eprintln!("{} sentinel [model] \"your prompt\"", "Usage:".yellow().bold());
         std::process::exit(1);
     }
 
-    // Find provider for the requested model
     let provider_info = config.providers()
         .iter()
         .find(|p| p.models.iter().any(|m| m.id == model_id))
-        .or_else(|| config.providers().first());
+        .or_else(|| config.providers().first())
+        .cloned();
 
     let provider_info = match provider_info {
-        Some(p) => p.clone(),
+        Some(p) => p,
         None => {
-            eprintln!("No provider found for model '{}'", model_id);
+            eprintln!("{} No provider found for model '{}'", "Error:".red().bold(), model_id);
             std::process::exit(1);
         }
     };
 
-    // Create provider
     let provider = Arc::new(
-        sentinel_provider::OpenAIProvider::new(provider_info)?
+        sentinel_provider::ProviderKind::from_info(provider_info)?
     );
 
-    // Create tool registry
     let tools = Arc::new(sentinel_tools::ToolRegistry::new());
+    let agent = sentinel_core::Agent::new(provider, tools, config.clone())
+        .with_event_handler(Arc::new(CliEventHandler));
 
-    // Create agent
-    let agent = sentinel_core::Agent::new(provider, tools, config.clone());
-
-    // Create thread
     let mut thread = sentinel_core::AgentThread::new(
         config.agent.max_turns,
         config.agent.max_iterations,
         config.agent.yolo_mode,
     );
 
-    // Run agent
-    println!("\n╔══════════════════════════════════════╗");
-    println!("║        Sentinel Agent v0.1.0         ║");
-    println!("╚══════════════════════════════════════╝\n");
+    print_banner();
+    println!(" Model:  {}", model_id.green().bold());
+    println!(" Yolo:   {}", if config.agent.yolo_mode { "yes".green() } else { "no".yellow() });
+    print_divider();
 
-    let result = agent.run(&mut thread, &prompt).await;
-
-    match result {
-        Ok(output) => {
-            match output {
-                sentinel_core::AgentOutput::Success { text } => {
-                    println!("{}", text);
-                }
-                sentinel_core::AgentOutput::Error { message } => {
-                    eprintln!("Error: {}", message);
-                    std::process::exit(1);
-                }
+    if config.agent.yolo_mode {
+        let result = agent.run(&mut thread, &prompt).await?;
+        match result {
+            sentinel_core::AgentOutput::Success { .. } => {}
+            sentinel_core::AgentOutput::Error { message } => {
+                eprintln!("{} {}", "Error:".red().bold(), message);
+                std::process::exit(1);
             }
         }
-        Err(e) => {
-            eprintln!("Agent failed: {}", e);
-            std::process::exit(1);
+    } else {
+        let approval = CliApprovalGate;
+        let result = agent.run_with_approval(&mut thread, &prompt, &approval).await?;
+        match result {
+            sentinel_core::AgentOutput::Success { .. } => {}
+            sentinel_core::AgentOutput::Error { message } => {
+                eprintln!("{} {}", "Error:".red().bold(), message);
+                std::process::exit(1);
+            }
         }
     }
 
+    let stats = format!("(turns: {}, iterations: {})", thread.turn, thread.iterations);
+    println!("\n{} {}", "Done.".green().bold(), stats.dimmed());
     Ok(())
 }
