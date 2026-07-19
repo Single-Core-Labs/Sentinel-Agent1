@@ -1,0 +1,51 @@
+"""Build rules for libcxxabi — LLVM C++ ABI library (Chromium fork).
+
+This BUILD file is used by the `@rusty_v8_libcxxabi` http_archive repository.
+It provides the C++ ABI layer that libc++ depends on, including
+personality routines, exception handling, and typeinfo support.
+
+The Chromium fork aligns with libc++ ABI v2 and disables vendor-specific
+availability annotations.
+"""
+
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+licenses(["notice"])
+
+cc_library(
+    name = "libcxxabi",
+    hdrs = glob(["include/**/*.h"]),
+    includes = ["include"],
+    defines = [
+        "_LIBCXXABI_ABI_VERSION=2",
+        "_LIBCXXABI_HAS_NO_VENDOR_AVAILABILITY",
+        "_LIBCXXABI_DISABLE_VISIBILITY_ANNOTATIONS",
+        "_LIBCPP_HAS_NO_VENDOR_AVAILABILITY",
+    ],
+    deps = [
+        "@rusty_v8_libcxx//:libcxx",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
+    name = "libcxxabi_static",
+    srcs = glob(["src/**/*.cpp"]),
+    hdrs = glob(["include/**/*.h"]),
+    includes = ["include"],
+    defines = [
+        "_LIBCXXABI_ABI_VERSION=2",
+        "_LIBCXXABI_HAS_NO_VENDOR_AVAILABILITY",
+        "_LIBCXXABI_DISABLE_VISIBILITY_ANNOTATIONS",
+        "_LIBCPP_HAS_NO_VENDOR_AVAILABILITY",
+        "_LIBCXXABI_BUILDING_LIBRARY",
+    ],
+    linkopts = select({
+        "@platforms//os:linux": ["-ldl"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "@rusty_v8_libcxx//:libcxx_static",
+    ],
+    visibility = ["//visibility:public"],
+)

@@ -1,10 +1,49 @@
+"""Sentinel AI — Third-party tool integration hub.
+
+Wires together all externally-managed tools (PowerShell, V8, Wine)
+under a single `third_party` filegroup so that consuming Bazel targets
+can depend on everything with one label.
+
+Each sub-directory defines its own BUILD rules; this file re-exports
+their public targets.
+"""
+
+package(default_visibility = ["//visibility:public"])
+
+# ---------------------------------------------------------------------------
+# Top-level convenience group — all third-party tools
+# ---------------------------------------------------------------------------
 filegroup(
     name = "third_party",
     srcs = [
         "//third_party/powershell:powershell_binaries",
-        "//third_party/wine:wine_files",
+        "//third_party/powershell:powershell_runtime_deps",
         "//third_party/v8:v8",
+        "//third_party/v8:v8_headers",
         "//third_party/v8:libcxx",
+        "//third_party/v8:libcxx_config",
+        "//third_party/v8:v8_with_libcxx",
+        "//third_party/wine:wine_files",
+        "//third_party/wine:wine_runtime_deps",
+        "//third_party/wine:wine_libraries",
     ],
-    visibility = ["//visibility:public"],
+)
+
+# ---------------------------------------------------------------------------
+# Per-tool aliases for convenience
+# ---------------------------------------------------------------------------
+
+alias(
+    name = "pwsh",
+    actual = "//third_party/powershell:pwsh",
+)
+
+alias(
+    name = "wine",
+    actual = "//third_party/wine:wine",
+)
+
+alias(
+    name = "wineserver",
+    actual = "//third_party/wine:wineserver",
 )

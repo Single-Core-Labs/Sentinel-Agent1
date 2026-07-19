@@ -1,0 +1,35 @@
+// libc++ configuration site header — generated for V8's build.
+//
+// This file is placed in the libc++ include path to override
+// platform-detection logic in `__config` with V8-specific settings.
+// It must be present and correct for ABI compatibility between
+// rusty_v8's prebuilt libc++ and the rest of the Rust/C++ binary.
+
+// Use the new ABI (v2) that Chromium's libc++ fork ships.
+#ifndef _LIBCPP_ABI_VERSION
+#define _LIBCPP_ABI_VERSION 2
+#endif
+
+// Disable vendor availability attributes — Chromium's libc++ may
+// reference availability macros that don't exist on non-Apple platforms.
+#ifndef _LIBCPP_HAS_NO_VENDOR_AVAILABILITY
+#define _LIBCPP_HAS_NO_VENDOR_AVAILABILITY
+#endif
+
+// Enable hardened libc++ mode for V8's security model.
+#ifndef _LIBCPP_ENABLE_HARDENED_MODE
+#define _LIBCPP_ENABLE_HARDENED_MODE 1
+#endif
+
+// Disable aligned allocation (not available on all Linux toolchains
+// that V8 targets).
+#ifndef _LIBCPP_HAS_NO_LIBRARY_ALIGNED_ALLOCATION
+#define _LIBCPP_HAS_NO_LIBRARY_ALIGNED_ALLOCATION
+#endif
+
+// Assert that debug mode is off in release builds.
+#ifndef _LIBCPP_DEBUG
+#define _LIBCPP_DEBUG 0
+#endif
+
+// No threading API override — use the default (pthreads on Linux).

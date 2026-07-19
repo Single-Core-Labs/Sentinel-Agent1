@@ -1,0 +1,90 @@
+"""Build rules for PowerShell (Windows x86_64).
+
+Provides `pwsh.exe` as a Bazel executable and groups its runtime
+dependencies (managed assemblies, native DLLs, .NET runtime) for
+use in Wine-based cross-platform testing.
+
+Usage:
+    bazel build //third_party/powershell:pwsh
+    bazel build //third_party/powershell:powershell_runtime_deps
+"""
+
+load("@rules_sh//sh:defs.bzl", "sh_binary")
+
+licenses(["notice"])
+
+exports_files(["pwsh.exe"])
+
+# ---------------------------------------------------------------------------
+# Convenience alias for the raw executable
+# ---------------------------------------------------------------------------
+alias(
+    name = "pwsh",
+    actual = ":pwsh_exe",
+    visibility = ["//visibility:public"],
+)
+
+sh_binary(
+    name = "pwsh_exe",
+    srcs = ["pwsh.exe"],
+    data = [":powershell_runtime_deps"],
+    visibility = ["//visibility:public"],
+)
+
+# ---------------------------------------------------------------------------
+# Runtime dependency group — everything needed to run pwsh.exe
+# ---------------------------------------------------------------------------
+filegroup(
+    name = "powershell_runtime_deps",
+    srcs = glob(
+        include = [
+            "**/*.dll",
+            "**/*.exe",
+            "**/*.json",
+            "**/*.ps1",
+            "**/*.psm1",
+            "**/*.psd1",
+            "**/*.cdxml",
+            "**/*.xml",
+            "**/*.xaml",
+            "**/*.dll.config",
+            "**/*.exe.config",
+            "**/*.pdb",
+        ],
+        exclude = [
+            # Documentation, symbols, and redistributable markers
+            # are not required at runtime.
+            "**/*.chm",
+            "**/*.htm",
+            "**/*.html",
+            "**/*.md",
+            "**/ThirdPartyNotices*",
+            "**/LICENSE*",
+            "**/nuget*",
+        ],
+    ),
+    visibility = ["//visibility:public",
+    ],
+)
+
+# ---------------------------------------------------------------------------
+# Complete file tree for introspection / packaging
+# ---------------------------------------------------------------------------
+filegroup(
+    name = "powershell_binaries",
+    srcs = glob(["**/*"]),
+    visibility = ["//visibility:public",
+    ],
+)
+
+# ---------------------------------------------------------------------------
+# Dotnet runtime store — trimmed assemblies used by PowerShell
+# ---------------------------------------------------------------------------
+filegroup(
+    name = "dotnet_assemblies",
+    srcs = glob([
+        "**/*.ni.dll",
+        "**/*.ni.exe",
+    ]),
+    visibility = ["//visibility:public"],
+)

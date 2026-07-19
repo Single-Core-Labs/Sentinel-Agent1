@@ -1,0 +1,22 @@
+"""libc++ configuration site header.
+
+Provides the `__config_site` header that V8's libc++ fork uses to
+override ABI, hardening, and platform-detection settings.  This is
+injected into the include path of `@rusty_v8_libcxx//:libcxx` so
+that all translation units see consistent C++ standard library config.
+
+Usage:
+    cc_library(
+        name = "my_target",
+        deps = ["//third_party/v8/libcxx_config"],
+    )
+"""
+
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+cc_library(
+    name = "libcxx_config",
+    hdrs = ["__config_site"],
+    includes = ["."],
+    visibility = ["//visibility:public"],
+)

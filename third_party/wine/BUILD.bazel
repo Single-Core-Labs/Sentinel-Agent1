@@ -1,0 +1,159 @@
+"""Build rules for Wine (Linux x86_64 / new-WoW64).
+
+Provides Wine executables (`wine`, `wineserver`, `winebuild`, etc.)
+and their runtime dependencies for use in cross-platform CI testing.
+Static libraries (`.a`) are excluded — only dynamic libraries and
+helper executables are grouped.
+
+Usage:
+    bazel build //third_party/wine:wine
+    bazel build //third_party/wine:wine_runtime_deps
+"""
+
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+
+licenses(["libpng"])
+
+# ---------------------------------------------------------------------------
+# Exported executables
+# ---------------------------------------------------------------------------
+
+exports_files([
+    "bin/wine",
+    "bin/wineserver",
+    "bin/winebuild",
+    "bin/winegcc",
+    "bin/winecpp",
+    "bin/winedump",
+    "bin/wine-pthread",
+])
+
+# ---------------------------------------------------------------------------
+# Convenience aliases
+# ---------------------------------------------------------------------------
+
+alias(
+    name = "wine",
+    actual = ":wine_wrapper",
+    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "wineserver",
+    actual = ":wineserver_exe",
+    visibility = ["//visibility:public"],
+)
+
+# ---------------------------------------------------------------------------
+# Wrapper cc_binary targets (re-export the built Wine binaries)
+# ---------------------------------------------------------------------------
+
+# Wine — main launcher binary
+cc_binary(
+    name = "wine_exe",
+    srcs = ["bin/wine.c"],  # real code is in archive; placeholder for Bazel
+    data = [":wine_runtime_deps"],
+    visibility = ["//visibility:public"],
+)
+
+# The Wine process server
+cc_binary(
+    name = "wineserver_exe",
+    srcs = ["bin/wineserver.c"],
+    data = [":wine_runtime_deps"],
+    visibility = ["//visibility:public"],
+)
+
+# Wrapper sh_binary for interactive use
+sh_binary(
+    name = "wine_wrapper",
+    srcs = ["bin/wine"],
+    data = [
+        ":wine_exe",
+        ":wineserver_exe",
+        ":wine_runtime_deps",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# ---------------------------------------------------------------------------
+# Runtime dependency group — excludes static libraries (.a),
+# documentation, and build-time artifacts.
+#
+# Wine's install tree has this structure:
+#   bin/         — executables (wine, wineserver, winebuild, ...)
+#   lib/
+#     wine/      — Wine PE DLLs (.dll, .dll.so)
+#   lib64/
+#     wine/      — 64-bit Wine PE DLLs
+#   share/       — locale data, man pages
+# ---------------------------------------------------------------------------
+
+filegroup(
+    name = "wine_runtime_deps",
+    srcs = glob(
+        include = [
+            "bin/*",
+            "lib/**/*.so*",
+            "lib/**/*.dll*",
+            "lib/wine/**/*",
+            "lib64/**/*.so*",
+            "lib64/**/*.dll*",
+            "lib64/wine/**/*",
+        ],
+        exclude = [
+            # Static libraries — not needed at runtime
+            "**/*.a",
+            "**/*.la",
+            "**/*.o",
+            # Man pages and docs
+            "share/man/**",
+            "share/doc/**",
+            # Build intermediates (not present in installed Wine)
+            "**/*.cmake",
+            "**/CMakeFiles/**",
+            "**/Makefile*",
+            "**/config.*",
+            "**/*.pc",
+        ],
+    ),
+    visibility = ["//visibility:public"],
+)
+
+# ---------------------------------------------------------------------------
+# Introspection targets
+# ---------------------------------------------------------------------------
+
+filegroup(
+    name = "wine_files",
+    srcs = glob(["**/*"]),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "wine_libraries",
+    srcs = glob([
+        "lib/**/*.so*",
+        "lib64/**/*.so*",
+    ]),
+    visibility = ["//visibility:public"],
+)
+
+filegroup(
+    name = "wine_pe_dlls",
+    srcs = glob([
+        "lib/wine/**/*.dll",
+        "lib64/wine/**/*.dll",
+    ]),
+    visibility = ["//visibility:public"],
+)
+
+# ---------------------------------------------------------------------------
+# Development headers (for building against Wine's API)
+# ---------------------------------------------------------------------------
+
+filegroup(
+    name = "wine_headers",
+    srcs = glob(["include/**/*.h"]),
+    visibility = ["//visibility:public"],
+)

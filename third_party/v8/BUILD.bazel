@@ -1,0 +1,258 @@
+"""Build rules for V8 JavaScript engine (via rusty_v8).
+
+Manages platform-specific prebuilt V8 archives, V8 version selection,
+and the V8 in-process sandbox feature.  Integrates with the custom C++
+standard library stack (libc++, libcxxabi, llvm-libc) that rusty_v8
+requires on Linux.
+
+V8 versions
+-----------
+Each V8 release corresponds to a rusty_v8 crate release:
+
+  rusty_v8  | V8 tag
+  ----------|---------
+  v0.110.x  | 12.0   (default)
+  v0.120.x  | 12.8
+  v0.128.x  | 13.0
+
+Select a version at build time:
+    bazel build --define v8_version=v0.120.0 //...
+
+Enable the V8 in-process sandbox:
+    bazel build --define v8_sandbox=1 //...
+
+Usage:
+    cc_library(
+        name = "my_target",
+        deps = ["//third_party/v8"],
+    )
+"""
+
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_import")
+
+# ============================================================================
+# Architecture aliases
+# ============================================================================
+_ARCH_X86_64 = "@platforms//cpu:x86_64"
+_ARCH_AARCH64 = "@platforms//cpu:aarch64"
+_OS_LINUX = "@platforms//os:linux"
+_OS_MACOS = "@platforms//os:macos"
+_OS_WINDOWS = "@platforms//os:windows"
+
+# ============================================================================
+# V8 version selection (via --define v8_version=...)
+# ============================================================================
+config_setting(
+    name = "v8_120",
+    define_values = {"v8_version": "v0.120.0"},
+    visibility = ["//visibility:private"],
+)
+
+config_setting(
+    name = "v8_128",
+    define_values = {"v8_version": "v0.128.0"},
+    visibility = ["//visibility:private"],
+)
+
+# ============================================================================
+# V8 in-process sandbox (via --define v8_sandbox=1)
+# ============================================================================
+config_setting(
+    name = "sandbox_enabled",
+    define_values = {"v8_sandbox": "1"},
+    visibility = ["//visibility:private"],
+)
+
+# ============================================================================
+# Platform × architecture config settings
+# ============================================================================
+config_setting(
+    name = "linux_x86_64",
+    constraint_values = [_OS_LINUX, _ARCH_X86_64],
+    visibility = ["//visibility:private"],
+)
+
+config_setting(
+    name = "linux_aarch64",
+    constraint_values = [_OS_LINUX, _ARCH_AARCH64],
+    visibility = ["//visibility:private"],
+)
+
+config_setting(
+    name = "macos_x86_64",
+    constraint_values = [_OS_MACOS, _ARCH_X86_64],
+    visibility = ["//visibility:private"],
+)
+
+config_setting(
+    name = "macos_aarch64",
+    constraint_values = [_OS_MACOS, _ARCH_AARCH64],
+    visibility = ["//visibility:private"],
+)
+
+config_setting(
+    name = "windows_x86_64",
+    constraint_values = [_OS_WINDOWS, _ARCH_X86_64],
+    visibility = ["//visibility:private"],
+)
+
+config_setting(
+    name = "windows_aarch64",
+    constraint_values = [_OS_WINDOWS, _ARCH_AARCH64],
+    visibility = ["//visibility:private"],
+)
+
+# ============================================================================
+# Platform-specific V8 version + sandbox combinations
+# ============================================================================
+# Each config_setting below merges a platform constraint with optional
+# version-override and sandbox flags.  The most-specific match wins.
+
+# --- Linux x86_64 ----------------------------------------------------------
+config_setting(
+    name = "linux_x86_64_v8_120",
+    constraint_values = [_OS_LINUX, _ARCH_X86_64],
+    define_values = {"v8_version": "v0.120.0"},
+    visibility = ["//visibility:private"],
+)
+
+config_setting(
+    name = "linux_x86_64_v8_128",
+    constraint_values = [_OS_LINUX, _ARCH_X86_64],
+    define_values = {"v8_version": "v0.128.0"},
+    visibility = ["//visibility:private"],
+)
+
+config_setting(
+    name = "linux_x86_64_sandbox",
+    constraint_values = [_OS_LINUX, _ARCH_X86_64],
+    define_values = {"v8_sandbox": "1"},
+    visibility = ["//visibility:private"],
+)
+
+config_setting(
+    name = "linux_x86_64_v8_120_sandbox",
+    constraint_values = [_OS_LINUX, _ARCH_X86_64],
+    define_values = {
+        "v8_version": "v0.120.0",
+        "v8_sandbox": "1",
+    },
+    visibility = ["//visibility:private"],
+)
+
+config_setting(
+    name = "linux_x86_64_v8_128_sandbox",
+    constraint_values = [_OS_LINUX, _ARCH_X86_64],
+    define_values = {
+        "v8_version": "v0.128.0",
+        "v8_sandbox": "1",
+    },
+    visibility = ["//visibility:private"],
+)
+
+# --- macOS x86_64 ----------------------------------------------------------
+config_setting(
+    name = "macos_x86_64_v8_120",
+    constraint_values = [_OS_MACOS, _ARCH_X86_64],
+    define_values = {"v8_version": "v0.120.0"},
+    visibility = ["//visibility:private"],
+)
+
+config_setting(
+    name = "macos_x86_64_v8_128",
+    constraint_values = [_OS_MACOS, _ARCH_X86_64],
+    define_values = {"v8_version": "v0.128.0"},
+    visibility = ["//visibility:private"],
+)
+
+# --- macOS aarch64 (Apple Silicon) -----------------------------------------
+config_setting(
+    name = "macos_aarch64_v8_120",
+    constraint_values = [_OS_MACOS, _ARCH_AARCH64],
+    define_values = {"v8_version": "v0.120.0"},
+    visibility = ["//visibility:private"],
+)
+
+config_setting(
+    name = "macos_aarch64_v8_128",
+    constraint_values = [_OS_MACOS, _ARCH_AARCH64],
+    define_values = {"v8_version": "v0.128.0"},
+    visibility = ["//visibility:private"],
+)
+
+# ============================================================================
+# V8 static library targets
+# ============================================================================
+# rusty_v8 ships prebuilt V8 static libraries for each platform.
+# The @rusty_v8 http_archive defines targets like:
+#   v8_linux_x86_64, v8_linux_aarch64, v8_macos_x86_64, v8_macos_aarch64,
+#   v8_windows_x86_64, v8_windows_aarch64
+# and sandbox variants:
+#   v8_linux_x86_64_sandbox, v8_linux_x86_64_v8_120_sandbox, etc.
+
+# --------------------------------------------------------------------------
+# Top-level V8 target — use this in your BUILD deps
+# --------------------------------------------------------------------------
+cc_library(
+    name = "v8",
+    visibility = ["//visibility:public"],
+    deps = select({
+        # --- Linux x86_64 ---
+        ":linux_x86_64_v8_128_sandbox": ["@rusty_v8//:v8_linux_x86_64_v8_128_sandbox"],
+        ":linux_x86_64_v8_120_sandbox": ["@rusty_v8//:v8_linux_x86_64_v8_120_sandbox"],
+        ":linux_x86_64_sandbox":       ["@rusty_v8//:v8_linux_x86_64_sandbox"],
+        ":linux_x86_64_v8_128":        ["@rusty_v8//:v8_linux_x86_64_v8_128"],
+        ":linux_x86_64_v8_120":        ["@rusty_v8//:v8_linux_x86_64_v8_120"],
+        ":linux_x86_64":               ["@rusty_v8//:v8_linux_x86_64"],
+        # --- Linux aarch64 ---
+        ":linux_aarch64":              ["@rusty_v8//:v8_linux_aarch64"],
+        # --- macOS x86_64 ---
+        ":macos_x86_64_v8_128":        ["@rusty_v8//:v8_macos_x86_64_v8_128"],
+        ":macos_x86_64_v8_120":        ["@rusty_v8//:v8_macos_x86_64_v8_120"],
+        ":macos_x86_64":               ["@rusty_v8//:v8_macos_x86_64"],
+        # --- macOS aarch64 ---
+        ":macos_aarch64_v8_128":       ["@rusty_v8//:v8_macos_aarch64_v8_128"],
+        ":macos_aarch64_v8_120":       ["@rusty_v8//:v8_macos_aarch64_v8_120"],
+        ":macos_aarch64":              ["@rusty_v8//:v8_macos_aarch64"],
+        # --- Windows ---
+        ":windows_x86_64":             ["@rusty_v8//:v8_windows_x86_64"],
+        ":windows_aarch64":            ["@rusty_v8//:v8_windows_aarch64"],
+    }),
+)
+
+# --------------------------------------------------------------------------
+# V8 headers (for tools that just need the API surface without linking)
+# --------------------------------------------------------------------------
+filegroup(
+    name = "v8_headers",
+    srcs = glob(["include/**/*.h"]),
+    visibility = ["//visibility:public"],
+)
+
+# ============================================================================
+# C++ standard library stack required by V8 on Linux
+# ============================================================================
+cc_library(
+    name = "libcxx",
+    visibility = ["//visibility:public"],
+    deps = select({
+        _OS_LINUX: [
+            "@rusty_v8_libcxx//:libcxx",
+            "@rusty_v8_libcxxabi//:libcxxabi",
+            "@rusty_v8_llvm_libc//:llvm_libc",
+        ],
+        "//conditions:default": [],
+    }),
+)
+
+# --------------------------------------------------------------------------
+# Convenience target — V8 + C++ stdlib in one dep
+# --------------------------------------------------------------------------
+cc_library(
+    name = "v8_with_libcxx",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":v8",
+        ":libcxx",
+    ],
+)

@@ -1,0 +1,27 @@
+"""Build rules for llvm-libc — LLVM's libc implementation (headers only).
+
+This BUILD file is used by the `@rusty_v8_llvm_libc` http_archive repository.
+llvm-libc provides a subset of standard C library headers that V8's libc++
+references (e.g. `<stdio.h>`, `<stdlib.h>`, `<string.h>`).  It is
+header-only — the actual symbols are resolved by the system libc or
+by musl in fully static builds.
+
+The Chromium fork of llvm-libc is a trimmed-down snapshot containing
+only the headers needed by V8 and libc++.
+"""
+
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+licenses(["notice"])
+
+cc_library(
+    name = "llvm_libc",
+    hdrs = glob([
+        "include/**/*.h",
+    ]),
+    includes = [
+        "include",
+        "include/llvm-libc",
+    ],
+    visibility = ["//visibility:public"],
+)

@@ -16,5 +16,5 @@ def powershell_windows_x86_64():
         ],
         strip_prefix = "pwsh",
         sha256 = "a1f143e75bcb0b5a98e78f88ffb3c2c8b5abf1d4e7b2d7e5e7f1e7e7e7e7e7e7e",
-        build_file = "@//third_party/powershell:BUILD.powershell.bazel",
+        build_file = "@//third_party/powershell:BUILD.bazel",
     )

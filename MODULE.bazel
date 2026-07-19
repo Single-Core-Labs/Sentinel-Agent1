@@ -144,42 +144,29 @@ http_archive(
     name = "rusty_v8_libcxx",
     urls = ["https://chromium.googlesource.com/chromium/src/third_party/libcxx/+/refs/heads/main/source.tar.gz?format=TAR"],
     strip_prefix = "source",
-    build_file_content = """
-cc_library(
-    name = "libcxx",
-    visibility = ["//visibility:public"],
-)
-""",
+    build_file = "@//third_party/v8:BUILD.libcxx.bazel",
 )
 
 http_archive(
     name = "rusty_v8_libcxxabi",
     urls = ["https://chromium.googlesource.com/chromium/src/third_party/libcxxabi/+/refs/heads/main/source.tar.gz?format=TAR"],
     strip_prefix = "source",
-    build_file_content = """
-cc_library(
-    name = "libcxxabi",
-    visibility = ["//visibility:public"],
-)
-""",
+    build_file = "@//third_party/v8:BUILD.libcxxabi.bazel",
 )
 
 http_archive(
     name = "rusty_v8_llvm_libc",
     urls = ["https://chromium.googlesource.com/chromium/src/third_party/llvm-libc/+/refs/heads/main/source.tar.gz?format=TAR"],
     strip_prefix = "source",
-    build_file_content = """
-cc_library(
-    name = "llvm_libc",
-    visibility = ["//visibility:public"],
-)
-""",
+    build_file = "@//third_party/v8:BUILD.llvm_libc.bazel",
 )
 
 http_archive(
     name = "rusty_v8",
     urls = ["https://github.com/denoland/rusty_v8/releases/download/v0.110.0/rusty_v8.tar.gz"],
-    build_file = "@//:third_party/rusty_v8.BUILD",
+    # No build_file override — rusty_v8 ships its own Bazel BUILD targets
+    # (v8_linux_x86_64, v8_macos_aarch64, etc.) that we re-export from
+    # //third_party/v8.
     patch_cmds = select({
         "@platforms//os:windows": ["patch -p1 < $(rootpath //patches:rusty_v8_windows.patch)"],
         "//conditions:default": [],
