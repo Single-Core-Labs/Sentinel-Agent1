@@ -125,8 +125,7 @@ def resolve_direct_provider_params(
         "api_key": actual_key,
     }
     if base_url:
-        if provider_id == "google-ai-studio":
-            params["api_base"] = base_url
+        params["api_base"] = base_url
 
     logger.debug("Resolved direct provider params for %s: model=%s", provider_id, params["model"])
     return params

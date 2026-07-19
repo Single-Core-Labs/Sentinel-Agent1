@@ -1,7 +1,7 @@
 import { Box, Text, useInput } from 'ink';
 import { useState } from 'react';
 import type { ThemeConfig } from '../theme.js';
-import { getEnvVarForProviderId } from '../providers/index.js';
+import { getEnvVarForProviderId, getProviderSpec } from '../providers/index.js';
 
 interface ProviderModel {
   provider_id: string;
@@ -159,11 +159,8 @@ export function ProviderPicker({ onSelect, onCancel, theme }: Props) {
 
   const handleSubmitApiKey = () => {
     if (!selectedProvider || !apiKeyInput.trim()) return;
-    // DeepSeek, Models.dev, OpenAI etc. are openai-compatible
-    // But since STATIC_PROVIDERS doesn't have kind, we just ask for all api_key if they want a base url?
-    // Let's just ask for base url for all if they want, but actually OpenAI-compatible only makes sense.
-    // We can just add base-url-input phase.
-    if (selectedProvider.id !== 'google-ai-studio' && selectedProvider.id !== 'anthropic' && selectedProvider.id !== 'github-copilot') {
+    const spec = getProviderSpec(selectedProvider.id);
+    if (spec?.kind === 'openai-compatible') {
       setPhase('base-url-input');
     } else {
       setPhase('models');
