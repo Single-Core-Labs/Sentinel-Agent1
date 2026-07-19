@@ -1,0 +1,18 @@
+[package]
+name = "sentinel-agent-identity"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+jsonwebtoken.workspace = true
+ed25519-dalek.workspace = true
+rand.workspace = true
+tokio.workspace = true
+chrono.workspace = true
+
+sentinel-protocol = { path = "../sentinel-protocol" }

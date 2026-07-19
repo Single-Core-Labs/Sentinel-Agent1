@@ -1,0 +1,15 @@
+[package]
+name = "sentinel-agent-graph-store"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+rusqlite.workspace = true
+
+sentinel-protocol = { path = "../sentinel-protocol" }

@@ -1,0 +1,20 @@
+[package]
+name = "sentinel-app-server-transport"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
+futures-util.workspace = true
+tokio-tungstenite.workspace = true
+tokio-stream.workspace = true
+uuid.workspace = true
+jsonwebtoken.workspace = true
+async-trait.workspace = true
+
+sentinel-app-server-protocol = { path = "../sentinel-app-server-protocol" }
