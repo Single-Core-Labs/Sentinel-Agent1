@@ -26,11 +26,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: Build & cache
-        run: python3 .github/scripts/run_bazel_with_buildbuddy.py build //...
+        run: bash .github/scripts/run-bazel-ci.sh --prewarm build //...
       - name: Test & cache
-        run: python3 .github/scripts/run_bazel_with_buildbuddy.py test //... --test_output=errors
-      - name: Verify clippy lints
+        run: bash .github/scripts/run-bazel-ci.sh test //... --test_output=errors
+      - name: Verify clippy lints (Bazel)
         run: python3 .github/scripts/verify_bazel_clippy_lints.py
+      - name: Verify rusty_v8 checksums
+        run: python3 .github/scripts/rusty_v8_bazel.py verify
 
   # ---------------------------------------------------------------------------
   # Clippy matrix — stable + nightly on all tier-1 platforms
@@ -113,6 +115,74 @@ jobs:
         working-directory: tools/argument-comment-lint
 
   # ---------------------------------------------------------------------------
+  # Workspace manifest verification (enhanced)
+  # ---------------------------------------------------------------------------
+  verify-manifests:
+    name: Verify manifests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - run: python3 .github/scripts/verify_cargo_workspace_manifests.py
+      - run: python3 .github/scripts/verify_tui_core_boundary.py
+
+  # ---------------------------------------------------------------------------
+  # V8 canary change detection
+  # ---------------------------------------------------------------------------
+  v8-canary-check:
+    name: V8 canary change detect
+    runs-on: ubuntu-latest
+    outputs:
+      needs_canary: ${{ steps.check.outputs.needs_canary }}
+      needs_windows: ${{ steps.check.outputs.needs_windows }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - id: check
+        run: |
+          python3 .github/scripts/v8_canary_changes.py --range HEAD~1..HEAD
+          exit_code=$?
+          echo "needs_canary=$(( exit_code & 1 ))" >> $GITHUB_OUTPUT
+          echo "needs_windows=$(( exit_code & 2 ))" >> $GITHUB_OUTPUT
+
+  # ---------------------------------------------------------------------------
+  # V8 canary build (general)
+  # ---------------------------------------------------------------------------
+  v8-canary:
+    name: V8 canary build
+    needs: [v8-canary-check]
+    if: needs.v8-canary-check.outputs.needs_canary == '1'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: bash .github/scripts/run-bazel-ci.sh build //third_party/v8/...
+      - name: Verify rusty_v8 module checksums
+        run: python3 .github/scripts/rusty_v8_module_bazel.py verify
+      - name: Resolve current V8 version
+        run: |
+          VERSION=$(python3 .github/scripts/rusty_v8_bazel.py resolve-version)
+          echo "V8_VERSION=${VERSION}" >> $GITHUB_ENV
+
+  # ---------------------------------------------------------------------------
+  # Windows rusty_v8 source build (triggered by V8-relevant Windows changes)
+  # ---------------------------------------------------------------------------
+  v8-windows-build:
+    name: Windows rusty_v8 source build
+    needs: [v8-canary-check]
+    if: needs.v8-canary-check.outputs.needs_windows == '1'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Compute Windows PATH
+        run: pwsh -File .github/scripts/compute-bazel-windows-path.ps1
+      - name: Setup MSVC env
+        uses: ./.github/actions/setup-msvc-env
+      - run: bash .github/scripts/run-bazel-ci.sh build //third_party/v8/... --config=windows
+      - name: Stage artifacts
+        run: python3 .github/scripts/rusty_v8_bazel.py stage --artifact-dir ./out --version $(python3 .github/scripts/rusty_v8_bazel.py resolve-version)
+
+  # ---------------------------------------------------------------------------
   # Release build — full matrix
   # ---------------------------------------------------------------------------
   release-build:
@@ -188,14 +258,3 @@ jobs:
         with:
           name: sentinel-${{ runner.os }}
           path: dist/
-
-  # ---------------------------------------------------------------------------
-  # Workspace manifest verification
-  # ---------------------------------------------------------------------------
-  verify-manifests:
-    name: Verify manifests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-      - run: python3 .github/scripts/verify_cargo_workspace_manifests.py

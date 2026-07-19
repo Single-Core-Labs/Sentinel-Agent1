@@ -92,7 +92,7 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
   # ---------------------------------------------------------------------------
-  # Bazel test — hermetic cross-platform build
+  # Bazel test — hermetic cross-platform build with BuildBuddy
   # ---------------------------------------------------------------------------
   bazel:
     name: Bazel (${{ matrix.os }})
@@ -109,8 +109,32 @@ jobs:
           path: ~/.cache/bazel
           key: bazel-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'Cargo.lock') }}
           restore-keys: bazel-${{ runner.os }}-
-      - name: Test
-        run: bazel test //... --test_output=errors
+      - name: Compute Windows PATH (Windows only)
+        if: runner.os == 'Windows'
+        run: pwsh -File .github/scripts/compute-bazel-windows-path.ps1
+      - name: Test via Bazel CI wrapper
+        run: bash .github/scripts/run-bazel-ci.sh test //... --test_output=errors
+
+  # ---------------------------------------------------------------------------
+  # Workspace manifest verification
+  # ---------------------------------------------------------------------------
+  verify-manifests:
+    name: Verify manifests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - run: python3 .github/scripts/verify_cargo_workspace_manifests.py
+
+  # ---------------------------------------------------------------------------
+  # TUI / Core architectural boundary
+  # ---------------------------------------------------------------------------
+  verify-tui-boundary:
+    name: Verify TUI boundary
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: python3 .github/scripts/verify_tui_core_boundary.py
 
   # ---------------------------------------------------------------------------
   # Python checks
