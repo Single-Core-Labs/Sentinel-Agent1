@@ -46,21 +46,9 @@ async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     logger.info("Starting Agent backend...")
     await session_manager.start()
-    try:
-        import kpis_scheduler
-
-        kpis_scheduler.start()
-    except Exception as e:
-        logger.warning("KPI scheduler failed to start: %s", e)
     yield
 
     logger.info("Shutting down Agent backend...")
-    try:
-        import kpis_scheduler
-
-        await kpis_scheduler.shutdown()
-    except Exception as e:
-        logger.warning("KPI scheduler shutdown failed: %s", e)
 
     # Final-flush: save every still-active session so we don't lose traces on
     # server restart. Billing refreshes are timeboxed and bounded; uploads are

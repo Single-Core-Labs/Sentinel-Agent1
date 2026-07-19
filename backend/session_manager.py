@@ -356,21 +356,8 @@ class SessionManager:
                 str(cache.get("billing_source") or "app_telemetry_session"),
             )
 
-        from usage import build_usage_response
-
-        response = await build_usage_response(
-            self,
-            user_id=agent_session.user_id,
-            session_id=agent_session.session_id,
-            timezone_name="UTC",
-        )
-        session_bucket = response.get("session")
-        if isinstance(session_bucket, dict):
-            spend = session_bucket.get("total_usd", 0.0)
-            billing_source = "app_telemetry_session"
-        else:
-            spend = 0.0
-            billing_source = "app_telemetry_session"
+        spend = 0.0
+        billing_source = "app_telemetry_session"
         agent_session.usage_warning_spend_cache = {
             "spend_usd": spend,
             "billing_source": billing_source,
@@ -381,33 +368,7 @@ class SessionManager:
 
     @staticmethod
     def _runtime_session_usage_spend(agent_session: AgentSession) -> float:
-        from usage import aggregate_usage_events, event_created_at
-
-        window_start = agent_session.usage_window_started_at
-        if isinstance(window_start, datetime):
-            if window_start.tzinfo is None:
-                window_start = window_start.replace(tzinfo=UTC)
-            else:
-                window_start = window_start.astimezone(UTC)
-        events = []
-        for raw_event in getattr(agent_session.session, "logged_events", []) or []:
-            if raw_event.get("event_type") not in {
-                "llm_call",
-                "hf_job_complete",
-                "sandbox_create",
-                "sandbox_destroy",
-            }:
-                continue
-            if isinstance(window_start, datetime):
-                created_at = event_created_at(raw_event, timezone_name="UTC")
-                if created_at is not None and created_at < window_start:
-                    continue
-            events.append(raw_event)
-        bucket = aggregate_usage_events(
-            events,
-            session_id=agent_session.session_id,
-        )
-        return float(bucket.get("total_usd") or 0.0)
+        return 0.0
 
     async def _maybe_request_usage_threshold_approval(
         self,

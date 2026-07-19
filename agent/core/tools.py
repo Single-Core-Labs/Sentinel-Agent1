@@ -34,34 +34,7 @@ from agent.tools.git_tools import (
     _git_diff_handler,
     _git_status_handler,
 )
-from agent.tools.terraform_tools import (
-    TERRAFORM_APPLY_TOOL_SPEC,
-    TERRAFORM_PLAN_TOOL_SPEC,
-    TERRAFORM_STATE_TOOL_SPEC,
-    _terraform_apply_handler,
-    _terraform_plan_handler,
-    _terraform_state_read_handler,
-)
-from agent.tools.observability_tools import (
-    GRAFANA_PANEL_TOOL_SPEC,
-    OTEL_TRACES_TOOL_SPEC,
-    _query_grafana_panel_handler,
-    _query_otel_traces_handler,
-)
-from agent.tools.cloud_tools import (
-    READ_IAM_STATE_TOOL_SPEC,
-    RESTART_SERVICE_TOOL_SPEC,
-    REWIND_CLOUD_ACTION_TOOL_SPEC,
-    SCALE_DEPLOYMENT_TOOL_SPEC,
-    _read_iam_state_handler,
-    _restart_service_handler,
-    _rewind_cloud_action_handler,
-    _scale_deployment_handler,
-)
-from agent.tools.deploy_observability import (
-    DEPLOY_OBSERVABILITY_TOOL_SPEC,
-    deploy_grafana_dashboard_handler,
-)
+
 from agent.tools.plan_tool import PLAN_TOOL_SPEC, plan_tool_handler
 from agent.tools.research_tool import RESEARCH_TOOL_SPEC, research_handler
 from agent.tools.subagent_tools import (
@@ -268,39 +241,32 @@ class ToolRouter:
         For MCP tools, converts the CallToolResult content blocks to a string.
         For built-in tools, calls their handler directly.
         """
-        tool_type = "builtin" if (self.tools.get(tool_name) and self.tools[tool_name].handler) else "mcp"
-        from agent.observability.instrumentation import instrument_tool_call
+        # Check if this is a built-in tool with a handler
+        tool = self.tools.get(tool_name)
+        if tool and tool.handler:
+            import inspect
 
-        with instrument_tool_call(
-            tool_name=tool_name,
-            tool_type=tool_type,
-        ):
-            # Check if this is a built-in tool with a handler
-            tool = self.tools.get(tool_name)
-            if tool and tool.handler:
-                import inspect
+            # Check if handler accepts session argument
+            sig = inspect.signature(tool.handler)
+            if "session" in sig.parameters:
+                if "tool_call_id" in sig.parameters:
+                    return await tool.handler(
+                        arguments, session=session, tool_call_id=tool_call_id
+                    )
+                return await tool.handler(arguments, session=session)
+            return await tool.handler(arguments)
 
-                # Check if handler accepts session argument
-                sig = inspect.signature(tool.handler)
-                if "session" in sig.parameters:
-                    if "tool_call_id" in sig.parameters:
-                        return await tool.handler(
-                            arguments, session=session, tool_call_id=tool_call_id
-                        )
-                    return await tool.handler(arguments, session=session)
-                return await tool.handler(arguments)
+        # Otherwise, use MCP client
+        if self._mcp_initialized:
+            try:
+                result = await self.mcp_client.call_tool(tool_name, arguments)
+                output = convert_mcp_content_to_string(result.content)
+                return output, not result.is_error
+            except ToolError as e:
+                error_msg = f"Tool error: {str(e)}"
+                return error_msg, False
 
-            # Otherwise, use MCP client
-            if self._mcp_initialized:
-                try:
-                    result = await self.mcp_client.call_tool(tool_name, arguments)
-                    output = convert_mcp_content_to_string(result.content)
-                    return output, not result.is_error
-                except ToolError as e:
-                    error_msg = f"Tool error: {str(e)}"
-                    return error_msg, False
-
-            return "MCP client not initialized", False
+        return "MCP client not initialized", False
 
 
 # ============================================================================
@@ -406,72 +372,7 @@ def create_builtin_tools(local_mode: bool = False) -> list[ToolSpec]:
             parameters=GIT_COMMIT_TOOL_SPEC["parameters"],
             handler=_git_commit_handler,
         ),
-        # Terraform tools
-        ToolSpec(
-            name=TERRAFORM_PLAN_TOOL_SPEC["name"],
-            description=TERRAFORM_PLAN_TOOL_SPEC["description"],
-            parameters=TERRAFORM_PLAN_TOOL_SPEC["parameters"],
-            handler=_terraform_plan_handler,
-        ),
-        ToolSpec(
-            name=TERRAFORM_STATE_TOOL_SPEC["name"],
-            description=TERRAFORM_STATE_TOOL_SPEC["description"],
-            parameters=TERRAFORM_STATE_TOOL_SPEC["parameters"],
-            handler=_terraform_state_read_handler,
-        ),
-        ToolSpec(
-            name=TERRAFORM_APPLY_TOOL_SPEC["name"],
-            description=TERRAFORM_APPLY_TOOL_SPEC["description"],
-            parameters=TERRAFORM_APPLY_TOOL_SPEC["parameters"],
-            handler=_terraform_apply_handler,
-        ),
-        # Observability tools (read-only)
-        ToolSpec(
-            name=OTEL_TRACES_TOOL_SPEC["name"],
-            description=OTEL_TRACES_TOOL_SPEC["description"],
-            parameters=OTEL_TRACES_TOOL_SPEC["parameters"],
-            handler=_query_otel_traces_handler,
-        ),
-        ToolSpec(
-            name=GRAFANA_PANEL_TOOL_SPEC["name"],
-            description=GRAFANA_PANEL_TOOL_SPEC["description"],
-            parameters=GRAFANA_PANEL_TOOL_SPEC["parameters"],
-            handler=_query_grafana_panel_handler,
-        ),
-        # Cloud infrastructure tools (read-only)
-        ToolSpec(
-            name=READ_IAM_STATE_TOOL_SPEC["name"],
-            description=READ_IAM_STATE_TOOL_SPEC["description"],
-            parameters=READ_IAM_STATE_TOOL_SPEC["parameters"],
-            handler=_read_iam_state_handler,
-        ),
-        # Cloud infrastructure tools (approval-gated mutating)
-        ToolSpec(
-            name=RESTART_SERVICE_TOOL_SPEC["name"],
-            description=RESTART_SERVICE_TOOL_SPEC["description"],
-            parameters=RESTART_SERVICE_TOOL_SPEC["parameters"],
-            handler=_restart_service_handler,
-        ),
-        ToolSpec(
-            name=SCALE_DEPLOYMENT_TOOL_SPEC["name"],
-            description=SCALE_DEPLOYMENT_TOOL_SPEC["description"],
-            parameters=SCALE_DEPLOYMENT_TOOL_SPEC["parameters"],
-            handler=_scale_deployment_handler,
-        ),
-        # Cloud rewind tool (read-only, no approval)
-        ToolSpec(
-            name=REWIND_CLOUD_ACTION_TOOL_SPEC["name"],
-            description=REWIND_CLOUD_ACTION_TOOL_SPEC["description"],
-            parameters=REWIND_CLOUD_ACTION_TOOL_SPEC["parameters"],
-            handler=_rewind_cloud_action_handler,
-        ),
-        # Grafana observability dashboard deployment
-        ToolSpec(
-            name=DEPLOY_OBSERVABILITY_TOOL_SPEC["name"],
-            description=DEPLOY_OBSERVABILITY_TOOL_SPEC["description"],
-            parameters=DEPLOY_OBSERVABILITY_TOOL_SPEC["parameters"],
-            handler=deploy_grafana_dashboard_handler,
-        ),
+
     ]
 
     # Local tools (highest priority)

@@ -53,7 +53,6 @@ from agent.core.model_ids import (
     MINIMAX_M3_MODEL_ID,
 )
 from agent.core.prompt_caching import with_prompt_cache_params
-from usage import build_usage_response
 
 logger = logging.getLogger(__name__)
 
@@ -527,12 +526,10 @@ async def get_usage(
             request,
             preload_sandbox=False,
         )
-    usage = await build_usage_response(
-        session_manager,
-        user_id=user["user_id"],
-        session_id=session_id,
-        timezone_name=tz,
-    )
+    usage = {
+        "user_id": user["user_id"],
+        "session_id": session_id,
+    }
     if session_id:
         auto_approval = (
             await session_manager.reconcile_session_auto_approval_from_usage(
