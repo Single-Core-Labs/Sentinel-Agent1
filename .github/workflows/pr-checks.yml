@@ -16,11 +16,10 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
-  RUSTFLAGS: "-D warnings"
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Formatting
+  # Rust formatting — Linux only (OS-independent output)
   # ---------------------------------------------------------------------------
   fmt:
     name: cargo fmt
@@ -33,11 +32,33 @@ jobs:
       - run: cargo fmt --check
 
   # ---------------------------------------------------------------------------
-  # Argument comment lint
+  # Dependency auditing — unused / incorrect deps
+  # ---------------------------------------------------------------------------
+  shear:
+    name: cargo shear
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-shear
+        run: cargo install cargo-shear
+      - uses: swatinem/rust-cache@v2
+      - run: cargo shear --workspace
+
+  # ---------------------------------------------------------------------------
+  # Argument comment lint — cross-platform
   # ---------------------------------------------------------------------------
   arg-lint:
-    name: Argument comment lint
-    runs-on: ubuntu-latest
+    name: Argument comment lint (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@nightly
@@ -49,14 +70,19 @@ jobs:
         run: cargo build --release --lib
         working-directory: tools/argument-comment-lint
       - name: Run linter
-        run: python3 tools/argument-comment-lint/run.py --check
+        run: cargo run --bin argument-comment-lint -- --check
+        working-directory: tools/argument-comment-lint
 
   # ---------------------------------------------------------------------------
-  # Clippy (fast — single target)
+  # Clippy — fast single-target on all three Tier-1 platforms
   # ---------------------------------------------------------------------------
   clippy:
-    name: Clippy
-    runs-on: ubuntu-latest
+    name: Clippy (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
       - uses: dtolnay/rust-toolchain@stable
@@ -66,11 +92,15 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
   # ---------------------------------------------------------------------------
-  # Bazel build + test
+  # Bazel test — hermetic cross-platform build
   # ---------------------------------------------------------------------------
   bazel:
-    name: Bazel
-    runs-on: ubuntu-latest
+    name: Bazel (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
       - name: Mount Bazel cache

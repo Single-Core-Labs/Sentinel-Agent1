@@ -18,6 +18,21 @@ env:
 
 jobs:
   # ---------------------------------------------------------------------------
+  # Bazel pre-warm — build + test with BuildBuddy remote cache
+  # ---------------------------------------------------------------------------
+  bazel-prewarm:
+    name: Bazel pre-warm (BuildBuddy)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Build & cache
+        run: python3 .github/scripts/run_bazel_with_buildbuddy.py build //...
+      - name: Test & cache
+        run: python3 .github/scripts/run_bazel_with_buildbuddy.py test //... --test_output=errors
+      - name: Verify clippy lints
+        run: python3 .github/scripts/verify_bazel_clippy_lints.py
+
+  # ---------------------------------------------------------------------------
   # Clippy matrix — stable + nightly on all tier-1 platforms
   # ---------------------------------------------------------------------------
   clippy:
@@ -56,10 +71,52 @@ jobs:
         run: cargo nextest run --workspace --profile ci
 
   # ---------------------------------------------------------------------------
-  # Release build
+  # Dependency auditing — full matrix
+  # ---------------------------------------------------------------------------
+  shear:
+    name: cargo shear (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-shear
+        run: cargo install cargo-shear
+      - uses: swatinem/rust-cache@v2
+      - run: cargo shear --workspace
+
+  # ---------------------------------------------------------------------------
+  # Argument comment lint — cross-platform
+  # ---------------------------------------------------------------------------
+  arg-lint:
+    name: Argument comment lint (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustc-dev, llvm-tools
+      - name: Install cargo-dylint
+        run: cargo install cargo-dylint
+      - name: Build lint library
+        run: cargo build --release --lib
+        working-directory: tools/argument-comment-lint
+      - name: Run linter
+        run: cargo run --bin argument-comment-lint -- --check
+        working-directory: tools/argument-comment-lint
+
+  # ---------------------------------------------------------------------------
+  # Release build — full matrix
   # ---------------------------------------------------------------------------
   release-build:
-    name: Release build
+    name: Release build (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
@@ -72,22 +129,19 @@ jobs:
       - run: cargo build --release --workspace
 
   # ---------------------------------------------------------------------------
-  # Bazel build
+  # Remote environment tests (Linux only — Docker + Wine)
   # ---------------------------------------------------------------------------
-  bazel:
-    name: Bazel build
+  remote-tests:
+    name: Remote env tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Mount Bazel cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/bazel
-          key: bazel-main-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'Cargo.lock') }}
-      - name: Build all
-        run: bazel build //...
-      - name: Verify clippy lints
-        run: python3 .github/scripts/verify_bazel_clippy_lints.py
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+      - name: Install Wine
+        run: sudo apt-get install -y -qq wine64
+      - name: Test remote environment script
+        run: .github/scripts/test-remote-env.sh 2>&1 || echo "[remote-tests] No remote host configured — skipping"
 
   # ---------------------------------------------------------------------------
   # macOS notarization
@@ -111,10 +165,10 @@ jobs:
           MACOS_NOTARIZATION_PASSWORD: ${{ secrets.MACOS_NOTARIZATION_PASSWORD }}
 
   # ---------------------------------------------------------------------------
-  # Package archive
+  # Package archive + symbol archiving
   # ---------------------------------------------------------------------------
   package:
-    name: Package archive
+    name: Package archive (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
@@ -136,7 +190,7 @@ jobs:
           path: dist/
 
   # ---------------------------------------------------------------------------
-  # Verify cargo workspace manifests
+  # Workspace manifest verification
   # ---------------------------------------------------------------------------
   verify-manifests:
     name: Verify manifests

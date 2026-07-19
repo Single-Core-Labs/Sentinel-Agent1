@@ -8,40 +8,55 @@ post-merge validation.
 
 | Workflow | Trigger | Scope | Runtime |
 |----------|---------|-------|---------|
-| `pr-checks.yml` | Pull request | fmt, lint, fast clippy, Bazel test | ~5 min |
-| `main-branch.yml` | Push to `main` | Full clippy matrix, nextest, release build, notarization, packaging | ~20 min |
+| `pr-checks.yml` | Pull request | fmt, shear, arg-lint, clippy, Bazel, Python — all ×3 OS | ~8 min |
+| `main-branch.yml` | Push to `main` | Bazel pre-warm, full clippy matrix, nextest, shear, arg-lint, release build, remote tests, notarization, packaging | ~25 min |
 
 ## PR verification (`pr-checks.yml`)
 
-Fast gate that runs on every PR commit:
+Fast, cross-platform gate on every PR commit:
 
-1. **cargo fmt --check** — formatting compliance.
-2. **argument-comment-lint** — `/*param*/` comment correctness.
-3. **cargo clippy -- -D warnings** — single-target lint.
-4. **Bazel test //...** — cross-platform build + test.
-5. **Ruff** — Python lint + format.
-6. **uv run pytest** — Python tests.
-
-Failures block merge via branch protection.
+| Job | OS | Tool |
+|-----|----|------|
+| `fmt` | Linux | `cargo fmt --check` |
+| `shear` | Linux + macOS + Windows | `cargo shear --workspace` |
+| `arg-lint` | Linux + macOS + Windows | `argument-comment-lint` (dylint) |
+| `clippy` | Linux + macOS + Windows | `cargo clippy -- -D warnings` |
+| `bazel` | Linux + macOS + Windows | `bazel test //...` |
+| `python` | Linux | Ruff check + format + pytest |
 
 ## Main branch checks (`main-branch.yml`)
 
-Comprehensive validation after merge:
+Comprehensive validation after merge to `main`:
 
-1. **Clippy matrix** — `stable`, `nightly`, `windows`, `macos`, `linux`.
-2. **Cargo nextest** — parallel test execution across the full matrix.
-3. **Release build** — `cargo build --release` with LTO.
-4. **Bazel build //...** — hermetic build verification.
-5. **Bazel clippy** — Bazel-level lint enforcement.
-6. **macOS notarization** — RCodesign signing + Apple notarization.
-7. **Package archive** — `build-package-archive.sh` produces release tarballs.
-8. **Symbol archiving** — stripped debug symbols stored as build artifacts.
+| Job | OS | Tool |
+|-----|----|------|
+| `bazel-prewarm` | Linux | BuildBuddy remote cache warm, Bazel build + test + clippy verify |
+| `clippy` | 3 × 2 | `stable` + `nightly` on Linux, macOS, Windows |
+| `nextest` | 3 | Cargo nextest on all platforms |
+| `shear` | 3 | Dependency audit |
+| `arg-lint` | 3 | Cross-platform argument comment lint |
+| `release-build` | 3 | `cargo build --release` |
+| `remote-tests` | Linux | Docker + Wine integration tests |
+| `notarize` | macOS | RCodesign signing + Apple notarization |
+| `package` | 3 | Release archive + symbols |
+| `verify-manifests` | Linux | Cargo workspace consistency |
 
 ## Build environments
 
-- **Linux**: Ubuntu 24.04, musl for fully static builds.
-- **macOS**: macOS 14 (M1 runners), Xcode 16.
-- **Windows**: Windows Server 2025, MSVC 2025, fast Dev Drive.
+- **Linux**: Ubuntu 24.04, musl + zig cc/cxx wrappers for static builds.
+- **macOS**: macOS 14 (M1 runners), Xcode 16, rcodesign notarization.
+- **Windows**: Windows Server 2025, MSVC 2025 (x86_64 + aarch64), Dev Drive (ReFS).
+
+## Repository conventions
+
+| File | Purpose |
+|------|---------|
+| `.github/pull_request_template.md` | PR title/body format for contributors |
+| `.github/codex/labels/codex-review.md` | Code review checklist |
+| `.github/codex/labels/codex-rust-review.md` | Rust-specific review checklist |
+| `.github/codex/labels/codex-triage.md` | Issue triage template |
+| `.github/codex/labels/codex-attempt.md` | Issue resolution plan template |
+| `.github/blob-size-allowlist.txt` | Paths exempt from Git blob size limits |
 
 ## Secrets
 

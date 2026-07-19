@@ -1,0 +1,34 @@
+# Blob size allowlist
+#
+# Paths listed here are exempt from the Git blob size limit (default 5 MB).
+# Only add entries for intentionally large, checked-in assets such as
+# vendor snapshots, test fixtures, or platform-specific binaries.
+#
+# Format: glob pattern
+
+# Prebuilt V8 static libraries (bundled from rusty_v8 releases)
+third_party/v8/prebuilt/*.a
+third_party/v8/prebuilt/*.lib
+
+# Test fixtures — large sample datasets
+tests/fixtures/**/*.bin
+tests/fixtures/**/*.zst
+
+# Vendor snapshots of third-party dependencies (pinned for hermetic builds)
+vendor/**/*.tar.gz
+
+# Platform-specific Wine binaries for cross-platform testing
+third_party/wine/bin/*
+third_party/wine/lib/**/*.so
+third_party/wine/lib64/**/*.so
+
+# Platform-specific PowerShell binaries
+third_party/powershell/pwsh.exe
+third_party/powershell/**/*.dll
+
+# Documentation assets (diagrams, screenshots)
+docs/assets/**/*.png
+docs/assets/**/*.pdf
+
+# Model files used in integration tests
+tests/models/**/*.gguf
