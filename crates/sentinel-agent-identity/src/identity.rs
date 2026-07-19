@@ -84,14 +84,18 @@ impl AgentIdentity {
             session_id: None,
         };
 
-        let key = EncodingKey::from_ed_der(&self.keypair.secret_key_bytes());
-        encode(&Header::default(), &claims, &key)
+        let key = EncodingKey::from_ed_der(&pkcs8_private_key_der(&self.keypair));
+        let header = Header {
+            alg: Algorithm::EdDSA,
+            ..Default::default()
+        };
+        encode(&header, &claims, &key)
             .map_err(|e| IdentityError::JwtError(e.to_string()))
     }
 
     /// Verify a JWT against this agent's public key.
     pub fn verify_jwt(&self, token: &str) -> Result<AgentClaims, IdentityError> {
-        let key = DecodingKey::from_ed_der(&self.keypair.public_key_bytes());
+        let key = DecodingKey::from_ed_der(&self.keypair.verifying_key.to_bytes());
         let mut validation = Validation::new(Algorithm::EdDSA);
         validation.validate_exp = true;
         let token_data = decode::<AgentClaims>(token, &key, &validation)
@@ -166,6 +170,41 @@ impl AgentIdentity {
     pub async fn registration(&self) -> Option<AgentRegistration> {
         self.registration.lock().await.clone()
     }
+}
+
+/// Build a PKCS#8 v2 DER-encoded Ed25519 private key (Ring-compatible).
+///
+/// Ring expects the PKCS#8 v2 (OneAsymmetricKey) format with the public
+/// key embedded in a `[1] EXPLICIT` context-tagged field.
+///
+/// Format:
+///   SEQUENCE {
+///     INTEGER 1,               -- version v2
+///     SEQUENCE { OID 1.3.101.112 },
+///     OCTET STRING { OCTET STRING { <seed> } },
+///     [1] { BIT STRING { <pubkey> } }
+///   }
+fn pkcs8_private_key_der(keypair: &KeyPair) -> Vec<u8> {
+    let seed = keypair.signing_key.to_bytes();
+    let pubkey = keypair.verifying_key.to_bytes();
+    let mut der = Vec::with_capacity(85);
+    der.extend_from_slice(&[
+        0x30, 0x53,             // SEQUENCE (83 bytes)
+        0x02, 0x01, 0x01,       // INTEGER 1 (v2)
+        0x30, 0x05,             // SEQUENCE (5 bytes)
+        0x06, 0x03,             // OID (3 bytes)
+        0x2b, 0x65, 0x70,       // 1.3.101.112 (Ed25519)
+        0x04, 0x22,             // OCTET STRING (34 bytes)
+        0x04, 0x20,             // OCTET STRING (32 bytes) — seed
+    ]);
+    der.extend_from_slice(&seed);
+    der.extend_from_slice(&[
+        0xa1, 0x23,             // [1] EXPLICIT (35 bytes)
+        0x03, 0x21,             // BIT STRING (33 bytes)
+        0x00,                   // 0 unused bits
+    ]);
+    der.extend_from_slice(&pubkey);
+    der
 }
 
 impl Default for AgentIdentity {
