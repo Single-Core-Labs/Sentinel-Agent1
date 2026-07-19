@@ -14,5 +14,7 @@ ed25519-dalek.workspace = true
 rand.workspace = true
 tokio.workspace = true
 chrono.workspace = true
+reqwest.workspace = true
+base64.workspace = true
 
 sentinel-protocol = { path = "../sentinel-protocol" }

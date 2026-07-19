@@ -1,6 +1,10 @@
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
 use rand::RngCore;
 
+/// Ed25519 key pair for an agent's cryptographic identity.
+///
+/// Used for signing assertions, JWTs, and verifying signatures
+/// from other agents or backend services.
 #[derive(Debug)]
 pub struct KeyPair {
     pub signing_key: SigningKey,
@@ -43,6 +47,12 @@ impl KeyPair {
     pub fn secret_key_bytes(&self) -> Vec<u8> {
         self.signing_key.to_bytes().to_vec()
     }
+}
+
+/// Generate fresh Ed25519 key material for a new agent.
+/// This is the primary entry point for creating agent identities.
+pub fn generate_agent_key_material() -> KeyPair {
+    KeyPair::generate()
 }
 
 use thiserror::Error;

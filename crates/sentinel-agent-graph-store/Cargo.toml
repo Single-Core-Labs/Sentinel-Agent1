@@ -11,5 +11,7 @@ tracing.workspace = true
 uuid.workspace = true
 chrono.workspace = true
 rusqlite.workspace = true
+async-trait.workspace = true
+tokio.workspace = true
 
 sentinel-protocol = { path = "../sentinel-protocol" }
