@@ -1468,10 +1468,15 @@ dependencies = [
 name = "sentinel-analytics"
 version = "0.1.0"
 dependencies = [
+ "base64",
  "chrono",
+ "hex",
+ "reqwest",
  "sentinel-protocol",
  "serde",
  "serde_json",
+ "sha1",
+ "thiserror 2.0.19",
  "tokio",
  "tracing",
  "uuid",

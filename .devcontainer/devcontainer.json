@@ -1,0 +1,44 @@
+{
+  "name": "Sentinel AI — Development",
+  "image": "mcr.microsoft.com/devcontainers/universal:2",
+  "features": {
+    "ghcr.io/devcontainers/features/rust:1": {
+      "version": "1.85.0",
+      "profile": "complete"
+    },
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.12"
+    },
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "22"
+    },
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "rust-lang.rust-analyzer",
+        "tamasfe.even-better-toml",
+        "ms-python.python",
+        "ms-python.black-formatter",
+        "bazelbuild.vscode-bazel",
+        "GitHub.vscode-github-actions"
+      ],
+      "settings": {
+        "rust-analyzer.cargo.features": "all",
+        "rust-analyzer.check.command": "clippy",
+        "editor.formatOnSave": true
+      }
+    }
+  },
+  "postCreateCommand": "python3 .devcontainer/post_install.py",
+  "mounts": [
+    "source=sentinel-bashhistory,target=/commandhistory,type=volume",
+    "source=sentinel-cargocache,target=/usr/local/cargo/registry,type=volume"
+  ],
+  "remoteUser": "vscode",
+  "containerEnv": {
+    "SENTINEL_DEVCONTAINER": "1",
+    "CARGO_NET_GIT_FETCH_WITH_CLI": "true"
+  }
+}

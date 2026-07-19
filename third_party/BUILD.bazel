@@ -1,0 +1,10 @@
+filegroup(
+    name = "third_party",
+    srcs = [
+        "//third_party/powershell:powershell_binaries",
+        "//third_party/wine:wine_files",
+        "//third_party/v8:v8",
+        "//third_party/v8:libcxx",
+    ],
+    visibility = ["//visibility:public"],
+)

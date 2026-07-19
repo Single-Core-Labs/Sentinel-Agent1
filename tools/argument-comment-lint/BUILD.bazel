@@ -1,0 +1,25 @@
+load("@rules_rust//rust:defs.bzl", "rust_library", "rust_proc_macro")
+
+# Build the dylint plugin as a dynamic library
+rust_library(
+    name = "argument_comment_lint",
+    srcs = glob(["src/**/*.rs"]),
+    edition = "2021",
+    crate_type = "cdylib",
+    deps = [
+        "@sentinel_crates//:dylint_linting",
+        "@sentinel_crates//:serde",
+        "@sentinel_crates//:serde_json",
+        "@rust_toolchains//:rustc_ast",
+        "@rust_toolchains//:rustc_ast_pretty",
+        "@rust_toolchains//:rustc_errors",
+        "@rust_toolchains//:rustc_hir",
+        "@rust_toolchains//:rustc_lint",
+        "@rust_toolchains//:rustc_middle",
+        "@rust_toolchains//:rustc_session",
+        "@rust_toolchains//:rustc_span",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+exports_files(["lint_config.json"])

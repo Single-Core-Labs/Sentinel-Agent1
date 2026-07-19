@@ -1,0 +1,15 @@
+"""Build rules for Wine (Linux x86_64)."""
+
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+
+filegroup(
+    name = "wine_files",
+    srcs = glob(["**/*"]),
+    visibility = ["//visibility:public"],
+)
+
+cc_binary(
+    name = "wine",
+    srcs = ["wine.c"],  # placeholder — real build uses Wine's configure/make
+    visibility = ["//visibility:public"],
+)

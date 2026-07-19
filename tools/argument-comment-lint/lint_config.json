@@ -1,0 +1,7 @@
+{
+  "name": "argument-comment-lint",
+  "version": "0.1.0",
+  "description": "Enforces /*param*/ argument comment convention",
+  "categories": ["clippy::restriction"],
+  "minimum_rust_version": "1.85.0"
+}

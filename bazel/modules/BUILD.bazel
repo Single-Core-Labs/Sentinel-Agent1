@@ -1,0 +1,11 @@
+load(":wine_linux_x86_64.bzl", "WINE_LINUX_X86_64")
+load(":powershell_windows_x86_64.bzl", "POWERSHELL_WINDOWS_X86_64")
+
+filegroup(
+    name = "modules",
+    srcs = [
+        "wine_linux_x86_64.bzl",
+        "powershell_windows_x86_64.bzl",
+    ],
+    visibility = ["//visibility:public"],
+)
