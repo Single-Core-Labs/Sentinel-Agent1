@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+#[cfg(feature = "sqlite")]
 use rusqlite::{params, Connection};
 use std::sync::{Arc, Mutex};
 use chrono::Utc;
@@ -115,18 +116,12 @@ impl ThreadStore for JsonFileThreadStore {
         let mut ids = Vec::new();
         let mut read_dir = tokio::fs::read_dir(&self.dir).await
             .map_err(|e| ThreadStoreError::Io(e.to_string()))?;
-        loop {
-            let entry = read_dir.next_entry().await
-                .map_err(|e| ThreadStoreError::Io(e.to_string()))?;
-            match entry {
-                Some(entry) => {
-                    if entry.path().extension().map_or(false, |e| e == "json") {
-                        if let Some(stem) = entry.path().file_stem() {
-                            ids.push(stem.to_string_lossy().to_string());
-                        }
-                    }
+        while let Some(entry) = read_dir.next_entry().await
+            .map_err(|e| ThreadStoreError::Io(e.to_string()))? {
+            if entry.path().extension().map_or(false, |e| e == "json") {
+                if let Some(stem) = entry.path().file_stem() {
+                    ids.push(stem.to_string_lossy().to_string());
                 }
-                None => break,
             }
         }
         ids.sort();
@@ -151,11 +146,13 @@ impl ThreadStore for JsonFileThreadStore {
 }
 
 // SQLite-backed implementation
+#[cfg(feature = "sqlite")]
 #[derive(Debug, Clone)]
 pub struct SqliteThreadStore {
     conn: Arc<Mutex<Connection>>,
 }
 
+#[cfg(feature = "sqlite")]
 impl SqliteThreadStore {
     /// Open or create the SQLite database at the given path.
     pub fn new(path: impl Into<std::path::PathBuf>) -> Result<Self, ThreadStoreError> {
@@ -186,6 +183,7 @@ impl SqliteThreadStore {
 }
 
 #[async_trait]
+#[cfg(feature = "sqlite")]
 impl ThreadStore for SqliteThreadStore {
     async fn save_thread(&self, thread: &AgentThread) -> Result<(), ThreadStoreError> {
         let saved: SavedThread = thread.into();
@@ -209,7 +207,7 @@ impl ThreadStore for SqliteThreadStore {
             .map_err(|e| ThreadStoreError::Store(e.to_string()))?;
         let mut rows = stmt.query(params![thread_id])
             .map_err(|e| ThreadStoreError::Store(e.to_string()))?;
-        if let Some(row) = rows.next()? {
+        if let Some(row) = rows.next().map_err(|e| ThreadStoreError::Store(e.to_string()))? {
             let data: String = row.get(0)
                 .map_err(|e| ThreadStoreError::Store(e.to_string()))?;
             let saved: SavedThread = serde_json::from_str(&data)
@@ -257,7 +255,7 @@ impl ThreadStore for SqliteThreadStore {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "sqlite"))]
 mod tests {
     use super::*;
     use uuid::Uuid;
