@@ -19,6 +19,8 @@ members = [
     "crates/sentinel-analytics",
     "crates/sentinel-agent-identity",
     "crates/sentinel-agent-graph-store",
+    "crates/codex-core",
+    "crates/codex-tui",
 ]
 
 [workspace.package]

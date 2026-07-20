@@ -1,0 +1,17 @@
+[package]
+name = "codex-exec"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+
+[dependencies]
+clap = { version = "4.4", features = ["derive"] }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+colored = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Integration with the Sentinel app server (can be swapped for a real Codex server)
+sentinel-app-server-client = { path = "../sentinel-app-server-client" }

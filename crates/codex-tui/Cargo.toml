@@ -1,0 +1,17 @@
+[package]
+name = "codex-tui"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+
+[dependencies]
+colored = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync"] }
+tokio-stream = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+thiserror = { workspace = true }
+# Use the mock client from codex-exec
+codex-exec = { path = "../codex-exec" }
