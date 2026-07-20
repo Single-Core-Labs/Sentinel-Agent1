@@ -21,7 +21,7 @@ impl ExecOutput {
 
 #[async_trait]
 pub trait Executor: Send + Sync {
-    async fn exec(&self, command: &str, args: &[&str], env: Option<Vec<(String, String)>>) -> ExecOutput;
+    async fn exec(&self, command: &str, args: &[&str], env: Option<Vec<(String, String)>>) -> Result<ExecOutput, ExecError>;
     async fn read_file(&self, path: &str) -> Result<String, ExecError>;
     async fn write_file(&self, path: &str, content: &str) -> Result<(), ExecError>;
     async fn exists(&self, path: &str) -> bool;
@@ -35,4 +35,6 @@ pub enum ExecError {
     Io(#[from] std::io::Error),
     #[error("Not found: {0}")]
     NotFound(String),
+    #[error("Permission denied: {0}")]
+    PermissionDenied(String),
 }
