@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use serde_json::Value;
 use sentinel_app_server_protocol::rpc::{JsonRpcRequest, JsonRpcResponse, JsonRpcError};
-use sentinel_app_server_protocol::api::{self, methods, FsReadParams, FsWriteParams, FsGlobParams, CommandExecParams};
+use sentinel_app_server_protocol::api::{self, methods};
 use sentinel_config::SentinelConfig;
 use sentinel_tools::ToolRegistry;
 use sentinel_provider::{ModelProvider, ProviderKind};
