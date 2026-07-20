@@ -15,3 +15,9 @@ serde_json = { workspace = true }
 
 # Integration with the Sentinel app server (can be swapped for a real Codex server)
 sentinel-app-server-client = { path = "../sentinel-app-server-client" }
+sentinel-app-server = { path = "../sentinel-app-server" }
+sentinel-config = { path = "../sentinel-config" }
+sentinel-analytics = { path = "../sentinel-analytics" }
+sentinel-tools = { path = "../sentinel-tools" }
+sentinel-app-server-protocol = { path = "../sentinel-app-server-protocol" }
+uuid = { workspace = true }

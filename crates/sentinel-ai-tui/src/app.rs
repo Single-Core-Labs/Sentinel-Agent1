@@ -4,7 +4,7 @@ use tokio::sync::{mpsc, Mutex};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tokio_stream::StreamExt;
 use colored::*;
-use sentinel_ai_exec::MockClient;
+use tokio::io::AsyncBufReadExt;
 use crate::{app_event::AppEvent, app_event_sender::AppEventSender, chatwidget::ChatWidget, app_server_session::AppServerSession};
 
 /// Central state manager for the TUI.
@@ -42,7 +42,7 @@ impl App {
         let user_sender = self.sender.clone();
         tokio::spawn(async move {
             let mut stdin = tokio::io::BufReader::new(tokio::io::stdin()).lines();
-            while let Some(Ok(line)) = stdin.next_line().await {
+            while let Ok(Some(line)) = stdin.next_line().await {
                 if line.trim().eq_ignore_ascii_case("exit") {
                     user_sender.send(AppEvent::Shutdown);
                     break;
@@ -69,7 +69,7 @@ impl App {
                             }
                             Err(e) => {
                                 sender.send(AppEvent::ServerNotification(
-                                    codex_exec::exec_events::ThreadEvent::new(
+                                    sentinel_ai_exec::ThreadEvent::new(
                                         "error",
                                         serde_json::json!({ "message": e.to_string() }),
                                     ),

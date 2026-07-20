@@ -1,5 +1,5 @@
-use sentinel_ai_exec::event_processor::{EventProcessor, HumanProcessor, JsonlProcessor};
-use sentinel_ai_exec::exec_events::ThreadEvent;
+use sentinel_ai_exec::{EventProcessor, HumanProcessor, JsonlProcessor};
+use sentinel_ai_exec::ThreadEvent;
 use serde_json::json;
 
 #[test]

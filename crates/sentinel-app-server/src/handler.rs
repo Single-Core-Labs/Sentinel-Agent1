@@ -294,13 +294,10 @@ impl RequestHandler {
     }
 
     async fn handle_fs_grep(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
-        let p: api::FsReadParams = parse_params(params)?; // Reuse FsReadParams for path/pattern? Actually FsGrep not defined; using a generic struct.
-        // We'll treat params as { "pattern": String, "path": Option<String>, "include": Option<String> }
-        // Since there is no dedicated struct, parse as serde_json::Value.
+        // Forward the raw params to the grep tool.
         let ctx = sentinel_tools::ToolContext::new();
-        let args = p; // placeholder, but this is wrong.
-        // Instead, just forward the raw params to the grep tool.
-        let output = self.tools.execute("grep", params.unwrap_or_default(), &ctx).await;
+        let args = params.clone().unwrap_or_default();
+        let output = self.tools.execute("grep", args, &ctx).await;
         if output.is_error {
             Err(JsonRpcError::internal_error(output.text))
         } else {

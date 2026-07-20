@@ -4,9 +4,9 @@
 //! dependencies. They are primarily intended for the test suites in `sentinel-ai-core`,
 //! `sentinel-ai-exec`, and `sentinel-ai-tui`.
 
-use anyhow::Result;
+
 use sentinel_ai_exec::MockClient;
-use sentinel_ai_exec::exec_events::ThreadEvent;
+use sentinel_ai_exec::ThreadEvent;
 
 
 /// Helper that returns a deterministic set of mock events.

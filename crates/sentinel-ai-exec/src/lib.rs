@@ -20,6 +20,14 @@ pub use exec_events::{ThreadEvent, ThreadItemDetails};
 
 
 
+use std::sync::Arc;
+use sentinel_config::SentinelConfig;
+use sentinel_analytics::AnalyticsPipeline;
+use sentinel_tools::ToolRegistry;
+use sentinel_app_server::RequestHandler;
+use sentinel_app_server_client::{AppServerConnection, embedded::EmbeddedClient};
+use sentinel_app_server_protocol::api;
+
 /// Run the core application logic.
 ///
 /// This function is invoked by `src/main.rs` after the command‑line has been
@@ -27,10 +35,13 @@ pub use exec_events::{ThreadEvent, ThreadItemDetails};
 /// readable or JSON‑L), and drives a simple one‑turn interaction with the mock
 /// agent.
 pub async fn run_main(cli: Cli) -> anyhow::Result<()> {
-    // In a real implementation we would instantiate an in‑process server client
-    // that talks to the Sentinel/Codex backend. For now we use a deterministic
-    // mock that returns a short event sequence.
-    let client = MockClient::default();
+    // Instantiate an in-process server client that talks to the Sentinel backend.
+    let config = Arc::new(SentinelConfig::default());
+    let analytics = Arc::new(AnalyticsPipeline::new());
+    let tools = Arc::new(ToolRegistry::new());
+    let handler = Arc::new(RequestHandler::new(config, analytics, tools));
+    let embedded = EmbeddedClient::new(handler);
+    let client = AppServerConnection::Embedded(embedded);
 
     let processor: Box<dyn EventProcessor> = if cli.json {
         Box::new(JsonlProcessor::new())
@@ -52,16 +63,19 @@ pub async fn run_main(cli: Cli) -> anyhow::Result<()> {
         }
     } else {
         // No subcommand – read the prompt from stdin.
+        use std::io::Read;
         let mut buf = String::new();
         std::io::stdin().read_to_string(&mut buf)?;
         buf
     };
 
-    // Simulate a session lifecycle with the mock client.
-    let session_id = client.create_session(None).await?;
-    let events = client.chat(&session_id, &prompt).await?;
-    for ev in events {
-        processor.process_event(&ev)?;
-    }
+    // Create session
+    let session_res = client.call(api::methods::CREATE_SESSION, Some(serde_json::json!({ "model": null }))).await?;
+    let session_id = session_res["session_id"].as_str().unwrap_or_default().to_string();
+
+    let response = client.chat(&session_id, &prompt).await?;
+    let completed = ThreadEvent::new("completed", serde_json::json!({ "text": response }));
+    processor.process_event(&completed)?;
+
     Ok(())
 }

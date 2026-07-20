@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
-use futures::StreamExt;
+use tokio_stream::StreamExt;
 use sentinel_core::{Agent, AgentThread, AgentOutput};
 use sentinel_tools::ToolRegistry;
 use sentinel_provider::ModelProvider;
@@ -71,7 +71,7 @@ impl AppSession {
         while let Some(chunk) = stream.next().await {
             match chunk {
                 Ok(chunk) => {
-                    let _ = event_tx.send(Ok(chunk)).await;
+                    let _ = event_tx.send(Ok(chunk.clone())).await;
                     // Also broadcast as server event
                     for choice in &chunk.choices {
                         if let Some(ref text) = choice.delta.content {

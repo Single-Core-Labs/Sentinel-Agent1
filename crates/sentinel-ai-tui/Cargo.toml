@@ -13,5 +13,11 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 thiserror = { workspace = true }
-# Use the mock client from codex-exec
+# Use the exec crate for shared logic
 sentinel-ai-exec = { path = "../sentinel-ai-exec" }
+sentinel-app-server-client = { path = "../sentinel-app-server-client" }
+sentinel-app-server = { path = "../sentinel-app-server" }
+sentinel-config = { path = "../sentinel-config" }
+sentinel-analytics = { path = "../sentinel-analytics" }
+sentinel-tools = { path = "../sentinel-tools" }
+sentinel-app-server-protocol = { path = "../sentinel-app-server-protocol" }

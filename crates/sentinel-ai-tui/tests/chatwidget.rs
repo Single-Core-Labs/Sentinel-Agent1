@@ -1,5 +1,5 @@
-use codex_tui::chatwidget::ChatWidget;
-use sentinel_ai_exec::exec_events::ThreadEvent;
+use sentinel_ai_tui::ChatWidget;
+use sentinel_ai_exec::ThreadEvent;
 use serde_json::json;
 
 #[test]

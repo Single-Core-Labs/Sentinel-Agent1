@@ -1,5 +1,5 @@
 use anyhow::Result;
-use codex_tui::App;
+use sentinel_ai_tui::App;
 use tokio::signal;
 
 #[tokio::main]

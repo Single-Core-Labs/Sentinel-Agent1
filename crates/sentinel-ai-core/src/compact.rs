@@ -20,7 +20,7 @@ pub struct CompactionResult {
 ///
 /// Returns the number of tokens that would have been removed.  The stub simply
 /// pretends to drop `excess = current - target` tokens, never going below zero.
-pub fn compact_thread(thread: &mut AgentThread, current_tokens: usize, target_token_budget: usize) -> CompactionResult {
+pub fn compact_thread(_thread: &mut AgentThread, current_tokens: usize, target_token_budget: usize) -> CompactionResult {
     let excess = current_tokens.saturating_sub(target_token_budget);
     // In a real implementation we would mutate the thread's conversation history
     // here.  For the stub we only report the hypothetical removal.

@@ -1,5 +1,6 @@
 use colored::*;
-use sentinel_ai_exec::exec_events::ThreadEvent;
+use sentinel_ai_exec::ThreadEvent;
+use std::io::Write;
 use serde_json::Value;
 
 /// Basic chat widget that stores a history of `ThreadEvent`s.

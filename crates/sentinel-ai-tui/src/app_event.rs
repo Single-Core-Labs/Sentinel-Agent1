@@ -1,4 +1,4 @@
-use sentinel_ai_exec::exec_events::ThreadEvent;
+use sentinel_ai_exec::ThreadEvent;
 
 /// Internal events used by the TUI.
 #[derive(Debug, Clone)]
