@@ -7,6 +7,7 @@ mod sandbox;
 mod plugin;
 mod server;
 mod diagnostics;
+mod tui;
 
 use colored::*;
 
@@ -38,6 +39,7 @@ async fn main() -> anyhow::Result<()> {
         "plugin" => plugin::run(sub_args).await?,
         "server" => server::run(sub_args).await?,
         "diagnostics" => diagnostics::run(sub_args).await?,
+        "tui" => tui::run(sub_args).await?,
         other => {
             eprintln!("{} Unknown subcommand: '{}'", "Error:".red().bold(), other);
             eprintln!("Run 'sentinel --help' for usage.");
@@ -60,6 +62,7 @@ fn print_help() {
     println!("  sandbox check|config     Sandbox environment tools");
     println!("  plugin list|add|remove   Plugin and marketplace management");
     println!("  server start|stop|status App server control");
+    println!("  tui [--port <addr>]     Terminal UI interactive session");
     println!("  diagnostics              System diagnostic checks");
     println!();
     println!("{}", "Examples:".yellow().bold());

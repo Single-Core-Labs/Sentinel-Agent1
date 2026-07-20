@@ -22,21 +22,30 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
 }
 
 async fn cmd_start(args: &[String]) -> anyhow::Result<()> {
-    let addr = if args.len() >= 2 && args[0] == "--addr" {
-        args[1].clone()
+    // Accept either "--addr" or "--port" flag for the listening address.
+    // If not provided, default to stdio mode (pipe JSON-RPC over stdin/stdout).
+    let maybe_addr: Option<String> = if args.len() >= 2 && (args[0] == "--addr" || args[0] == "--port") {
+        Some(args[1].clone())
     } else {
-        "127.0.0.1:7860".to_string()
+        None
     };
-
-    println!(" Starting app server on {}...", addr.cyan());
-    println!(" {}", "Running in stdio mode (pipe JSON-RPC to stdin/stdout)".yellow());
-    println!("   To use TCP mode, run with --addr 127.0.0.1:PORT");
-    println!();
 
     let config = sentinel_config::SentinelConfig::load().unwrap_or_default();
     let server = sentinel_app_server::AppServer::new(config);
-    if let Err(e) = server.run_stdio().await {
-        eprintln!("{} Server error: {}", "Error:".red().bold(), e);
+
+    match maybe_addr {
+        Some(addr) => {
+            println!(" Starting app server on {} (TCP)...", addr.cyan());
+            if let Err(e) = server.run_tcp(&addr).await {
+                eprintln!("{} Server error: {}", "Error:".red().bold(), e);
+            }
+        }
+        None => {
+            println!(" Starting app server in stdio mode (pipe JSON-RPC to stdin/stdout) ...");
+            if let Err(e) = server.run_stdio().await {
+                eprintln!("{} Server error: {}", "Error:".red().bold(), e);
+            }
+        }
     }
 
     Ok(())

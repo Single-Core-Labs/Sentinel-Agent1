@@ -7,6 +7,9 @@ use sentinel_tools::ToolRegistry;
 use sentinel_provider::{ModelProvider, ProviderKind};
 use sentinel_provider_info::ProviderInfo;
 use sentinel_analytics::{AnalyticsPipeline, AnalyticsEvent, EventKind};
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::ReceiverStream;
+use tokio_stream::StreamExt;
 
 pub struct RequestHandler {
     sessions: tokio::sync::Mutex<std::collections::HashMap<String, Arc<crate::session::AppSession>>>,
@@ -29,7 +32,6 @@ impl RequestHandler {
         }
     }
 
-    /// Find a provider info that supports the given model ID.
     fn find_provider_for_model(&self, model_id: &str) -> Option<ProviderInfo> {
         for p in self.config.providers() {
             if p.models.iter().any(|m| m.id == model_id) {
@@ -45,12 +47,15 @@ impl RequestHandler {
             methods::PING => self.handle_ping(),
             methods::CREATE_SESSION => self.handle_create_session(req.params).await,
             methods::DESTROY_SESSION => self.handle_destroy_session(req.params).await,
+            methods::GET_SESSION => self.handle_get_session(req.params).await,
             methods::CHAT => self.handle_chat(req.params).await,
+            methods::CHAT_STREAM => self.handle_chat_stream(req.params).await,
+            methods::GET_HISTORY => self.handle_get_history(req.params).await,
             methods::TOOLS_LIST => {
                 let tool_defs = self.tools.list();
                 Ok(serde_json::to_value(tool_defs).unwrap_or_default())
             }
-            methods::TOOLS_CALL => Err(JsonRpcError::internal_error("Not implemented")),
+            methods::TOOLS_CALL => self.handle_tools_call(req.params).await,
             methods::CONFIG_GET => self.handle_config_get(),
             methods::DIAGNOSTICS => self.handle_diagnostics().await,
             methods::AUTH_STATUS => Ok(serde_json::json!({ "authenticated": false })),
@@ -81,7 +86,6 @@ impl RequestHandler {
         let p: api::CreateSessionParams = parse_params(params)?;
         let model_id = p.model.unwrap_or_else(|| self.config.agent.default_model.clone());
 
-        // Find the provider that can serve this model
         let provider_info = self.find_provider_for_model(&model_id)
             .ok_or_else(|| {
                 JsonRpcError::invalid_params(format!(
@@ -94,12 +98,10 @@ impl RequestHandler {
                 ))
             })?;
 
-        // Create the provider
         let provider = ProviderKind::from_info(provider_info)
             .map_err(|e| JsonRpcError::internal_error(format!("Failed to create provider: {}", e)))?;
         let provider: Arc<dyn ModelProvider> = Arc::new(provider);
 
-        // Build the session
         let session = Arc::new(crate::session::AppSession::new(
             Some(model_id.clone()),
             provider,
@@ -134,6 +136,27 @@ impl RequestHandler {
         Ok(serde_json::json!({ "destroyed": true, "session_id": session_id }))
     }
 
+    async fn handle_get_session(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
+        let session_id: String = parse_params::<serde_json::Value>(params)?
+            .get("session_id")
+            .and_then(|v| v.as_str().map(String::from))
+            .ok_or_else(|| JsonRpcError::invalid_params("Missing session_id"))?;
+
+        let sessions = self.sessions.lock().await;
+        let session = sessions.get(&session_id)
+            .ok_or_else(|| JsonRpcError::invalid_params(format!("Session not found: {}", session_id)))?;
+
+        let thread = session.thread.lock().await;
+        Ok(serde_json::json!({
+            "session_id": session_id,
+            "turn": thread.turn,
+            "iterations": thread.iterations,
+            "status": format!("{:?}", thread.status),
+            "turn_count": thread.conversation.turn_count(),
+            "total_items": thread.conversation.total_items(),
+        }))
+    }
+
     async fn handle_chat(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
         let p: api::ChatParams = parse_params(params)?;
         let sessions = self.sessions.lock().await;
@@ -157,6 +180,70 @@ impl RequestHandler {
             }
             Err(e) => Err(JsonRpcError::internal_error(e)),
         }
+    }
+
+    async fn handle_chat_stream(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
+        let p: api::ChatStreamParams = parse_params(params)?;
+        let sessions = self.sessions.lock().await;
+        let session = sessions.get(&p.session_id)
+            .ok_or_else(|| JsonRpcError::invalid_params(format!(
+                "Session not found: {}", p.session_id
+            )))?;
+
+        let (tx, rx) = mpsc::channel(64);
+        let msg = p.message.clone();
+        tokio::spawn({
+            let session = session.clone();
+            async move {
+                session.chat_stream(&msg, tx).await;
+            }
+        });
+
+        let stream = ReceiverStream::new(rx);
+        let chunks: Vec<serde_json::Value> = stream
+            .filter_map(|r| match r {
+                Ok(chunk) => Some(serde_json::to_value(chunk).unwrap_or_default()),
+                Err(e) => Some(serde_json::json!({ "error": e })),
+            })
+            .collect()
+            .await;
+
+        Ok(serde_json::json!({ "chunks": chunks }))
+    }
+
+    async fn handle_get_history(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
+        let session_id: String = parse_params::<serde_json::Value>(params)?
+            .get("session_id")
+            .and_then(|v| v.as_str().map(String::from))
+            .ok_or_else(|| JsonRpcError::invalid_params("Missing session_id"))?;
+
+        let sessions = self.sessions.lock().await;
+        let session = sessions.get(&session_id)
+            .ok_or_else(|| JsonRpcError::invalid_params(format!("Session not found: {}", session_id)))?;
+
+        let thread = session.thread.lock().await;
+        let conversation = &thread.conversation;
+
+        Ok(serde_json::json!({
+            "session_id": session_id,
+            "conversation": serde_json::to_value(conversation).unwrap_or_default(),
+        }))
+    }
+
+    async fn handle_tools_call(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
+        let p: api::ToolCallParams = parse_params(params)?;
+        let ctx = sentinel_tools::ToolContext::new();
+        let output = self.tools.execute(&p.tool_name, p.arguments, &ctx).await;
+
+        self.analytics.emit(
+            AnalyticsEvent::new(EventKind::ToolCalled, None)
+                .with_metadata(serde_json::json!({ "tool": p.tool_name }))
+        );
+
+        Ok(serde_json::json!({
+            "output": output.text,
+            "is_error": output.is_error,
+        }))
     }
 
     fn handle_config_get(&self) -> Result<Value, JsonRpcError> {

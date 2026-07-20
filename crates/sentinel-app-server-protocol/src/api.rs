@@ -17,6 +17,7 @@ pub mod methods {
     pub const CHAT: &str = "chat";
     pub const CHAT_STREAM: &str = "chat/stream";
     pub const GET_HISTORY: &str = "chat/getHistory";
+    pub const GET_SESSION: &str = "session/get";
 
     // Filesystem
     pub const FS_READ_FILE: &str = "fs/readFile";

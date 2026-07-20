@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use uuid::Uuid;
+use futures::StreamExt;
 use sentinel_core::{Agent, AgentThread, AgentOutput};
 use sentinel_tools::ToolRegistry;
 use sentinel_provider::ModelProvider;
@@ -49,6 +50,40 @@ impl AppSession {
         match result {
             AgentOutput::Success { text } => Ok(text),
             AgentOutput::Error { message } => Err(message),
+        }
+    }
+
+    pub async fn chat_stream(
+        &self,
+        message: &str,
+        event_tx: tokio::sync::mpsc::Sender<Result<sentinel_protocol::StreamChunk, String>>,
+    ) {
+        let mut thread = self.thread.lock().await;
+        let stream = match self.agent.run_stream(&mut thread, message).await {
+            Ok(s) => s,
+            Err(e) => {
+                let _ = event_tx.send(Err(e.to_string())).await;
+                return;
+            }
+        };
+
+        tokio::pin!(stream);
+        while let Some(chunk) = stream.next().await {
+            match chunk {
+                Ok(chunk) => {
+                    let _ = event_tx.send(Ok(chunk)).await;
+                    // Also broadcast as server event
+                    for choice in &chunk.choices {
+                        if let Some(ref text) = choice.delta.content {
+                            let _ = self.events.send(ServerEvent::Thinking { text: text.clone() });
+                        }
+                    }
+                }
+                Err(e) => {
+                    let _ = event_tx.send(Err(e.to_string())).await;
+                    break;
+                }
+            }
         }
     }
 }

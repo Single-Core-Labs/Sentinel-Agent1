@@ -9,12 +9,13 @@ serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true
-tokio.workspace = true
 tokio-stream = "0.1"
+tokio.workspace = true
 futures = "0.3"
 tracing.workspace = true
 uuid.workspace = true
 async-trait.workspace = true
+chrono.workspace = true
 
 sentinel-protocol = { path = "../sentinel-protocol" }
 sentinel-provider = { path = "../sentinel-provider" }

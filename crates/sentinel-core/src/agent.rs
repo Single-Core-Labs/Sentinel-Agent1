@@ -9,25 +9,14 @@ use sentinel_provider::{ModelProvider, ProviderError};
 use sentinel_tools::{ToolRegistry, ToolContext};
 use sentinel_config::SentinelConfig;
 use crate::thread::{AgentThread, ThreadStatus, ApprovalRequest};
-
-const SYSTEM_PROMPT: &str = r#"You are Sentinel, a coding agent. You help users with software engineering tasks.
-
-You have access to tools that let you read, write, and edit files, execute commands, search code, and search the web.
-
-When you need to use a tool, respond with a tool call. When you have completed the task, provide a summary of what you did.
-
-Guidelines:
-- Read files before editing them to understand their content
-- Run tests after making changes to verify correctness
-- Ask for clarification when instructions are ambiguous
-- Use the bash tool for running commands, building, testing
-- Use web_search for finding information"#;
+use crate::prompt::SystemPromptManager;
 
 pub struct Agent {
     provider: Arc<dyn ModelProvider>,
     tools: Arc<ToolRegistry>,
     config: Arc<SentinelConfig>,
     events: Arc<dyn EventHandler>,
+    prompt_manager: SystemPromptManager,
     pub total_prompt_tokens: AtomicU64,
     pub total_completion_tokens: AtomicU64,
 }
@@ -52,6 +41,7 @@ impl Agent {
         Self {
             provider, tools, config,
             events: Arc::new(NullEventHandler),
+            prompt_manager: SystemPromptManager::new(),
             total_prompt_tokens: AtomicU64::new(0),
             total_completion_tokens: AtomicU64::new(0),
         }
@@ -63,6 +53,19 @@ impl Agent {
     pub fn with_event_handler(mut self, handler: Arc<dyn EventHandler>) -> Self {
         self.events = handler;
         self
+    }
+
+    pub fn with_prompt_manager(mut self, manager: SystemPromptManager) -> Self {
+        self.prompt_manager = manager;
+        self
+    }
+
+    pub fn prompt_manager(&self) -> &SystemPromptManager {
+        &self.prompt_manager
+    }
+
+    pub fn prompt_manager_mut(&mut self) -> &mut SystemPromptManager {
+        &mut self.prompt_manager
     }
 
     pub async fn run(&self, thread: &mut AgentThread, user_input: &str) -> AgentResult {
@@ -77,9 +80,10 @@ impl Agent {
     ) -> AgentResult {
         thread.status = ThreadStatus::Running;
         thread.add_message(Message::user(user_input));
+        thread.conversation.add_user_message(user_input);
 
         if !thread.context.messages().iter().any(|m| m.role == Role::System) {
-            thread.add_message(Message::system(SYSTEM_PROMPT));
+            thread.add_message(Message::system(self.prompt_manager.render()));
         }
 
         loop {
@@ -113,6 +117,7 @@ impl Agent {
 
             thread.add_message(choice.message.clone());
             let last_text = choice.message.extract_text();
+            thread.conversation.add_assistant_text(&last_text);
             self.events.handle_event(AgentEvent::Thinking { text: last_text.clone() }).await;
 
             let tool_calls: Vec<_> = choice.message.content.iter()
@@ -133,6 +138,7 @@ impl Agent {
             let mut tool_results = Vec::new();
 
             for (tool_call_id, name, args) in &tool_calls {
+                thread.conversation.add_tool_call(tool_call_id, name, args.clone());
                 self.events.handle_event(AgentEvent::ToolCall {
                     name: name.clone(),
                     args: args.clone(),
@@ -169,6 +175,7 @@ impl Agent {
                 }
 
                 let output = self.tools.execute(name, args.clone(), &ctx).await;
+                thread.conversation.add_tool_result(tool_call_id, &output.text, output.is_error);
                 self.events.handle_event(AgentEvent::ToolResult {
                     name: name.clone(),
                     output: output.text.clone(),
@@ -221,7 +228,7 @@ impl Agent {
         thread.add_message(Message::user(user_input));
 
         if !thread.context.messages().iter().any(|m| m.role == Role::System) {
-            thread.add_message(Message::system(SYSTEM_PROMPT));
+            thread.add_message(Message::system(self.prompt_manager.render()));
         }
 
         let req = self.build_request(thread);
@@ -246,7 +253,7 @@ impl Agent {
         thread.status = ThreadStatus::Running;
         thread.add_message(Message::user(user_input));
         if !thread.context.messages().iter().any(|m| m.role == Role::System) {
-            thread.add_message(Message::system(SYSTEM_PROMPT));
+            thread.add_message(Message::system(self.prompt_manager.render()));
         }
 
         loop {
@@ -402,7 +409,7 @@ impl Agent {
 
     fn build_request(&self, _thread: &AgentThread) -> CompletionRequest {
         CompletionRequest::new(&self.config.agent.default_model)
-            .with_system(SYSTEM_PROMPT)
+            .with_system(self.prompt_manager.render())
     }
 }
 
