@@ -16,3 +16,4 @@ glob.workspace = true
 
 sentinel-protocol = { path = "../sentinel-protocol" }
 sentinel-sandbox = { path = "../sentinel-sandbox" }
+sentinel-ai-core = { path = "../sentinel-ai-core" }

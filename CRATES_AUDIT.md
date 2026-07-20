@@ -200,10 +200,10 @@ MISSING: Plugin loading is stub. No shell auto-completion. Cargo dep fix needed 
 Lightweight headless runner. run_main() initializes stack + EmbeddedClient (wired this session).
 MockClient for testing. MISSING: No real REPL loop in run_main(). No integration test.
 
-### sentinel-ai-core [STUB - IMPORTANT GAPS]
-apply_patch.rs: workspace boundary check + ASCII-only overwrite (NOT a real diff patch).
+### sentinel-ai-core [PARTIAL - IMPORTANT GAPS]
+apply_patch.rs: Real unified-diff applier with workspace bounds & UTF-8 support (completed this session).
 agents_md.rs: loads AGENTS.md raw string (no parsing).
-compact.rs: compact_thread() is entirely a no-op stub. No tests for any module.
+compact.rs: compact_thread() is entirely a no-op stub. No tests for these modules.
 
 ### sentinel-ai-tui [PARTIAL - CRITICAL GAP]
 App event loop + AppServerSession (wired to EmbeddedClient this session). ChatWidget renders
@@ -220,8 +220,7 @@ no mock server.
 
 ### CRITICAL (blocks production use)
 - No persistent session storage (sentinel-core, sentinel-app-server)
-- apply_patch is an overwrite, not a real diff (sentinel-ai-core)
-- No OS sandbox enforcement (sentinel-sandbox, sentinel-exec)
+- No OS sandbox enforcement (policy layer is wired, but Seccomp missing) (sentinel-sandbox, sentinel-exec)
 - No Gemini/other providers (sentinel-provider)
 - TUI has no real interactive rendering (sentinel-ai-tui)
 
@@ -246,8 +245,7 @@ no mock server.
 ## Build Health
 
   cargo check:  PASS (1 warning: unused imports in handler.rs)
-  cargo test:   NOT RUN -- tests exist in: sentinel-core, sentinel-tools,
-                sentinel-analytics, sentinel-agent-identity, sentinel-ai-tui
+  cargo test:   PASS (all unit and E2E tests passing across crates)
   cargo clippy: NOT RUN
 
 ## Fixes Applied This Session
@@ -259,6 +257,9 @@ no mock server.
   6. sentinel-ai-core::compact -- renamed thread to _thread (warning fix)
   7. sentinel-cli -- added sentinel-app-server-protocol dependency
   8. sentinel-app-server::handler -- cleaned up handle_fs_grep placeholder
+  9. sentinel-ai-core::apply_patch -- implemented unified-diff patch applier with UTF-8 support and atomic writes
+  10. sentinel-exec::local -- wired SandboxPolicy end-to-end to reject unauthorized read/write/exec
+  11. sentinel-tools::tests -- added e2e_test to verify SandboxPolicy and apply_patch behavior offline
 
 ---
 
@@ -266,8 +267,7 @@ no mock server.
 
 Week 1 - Reliability:
   1. Persistent sessions: SqliteThreadStore in sentinel-core
-  2. Real apply_patch: line-by-line diff, remove ASCII restriction
-  3. Fix web_search: call real search API
+  2. Fix web_search: call real search API
 
 Week 2 - Completeness:
   4. Gemini provider in sentinel-provider

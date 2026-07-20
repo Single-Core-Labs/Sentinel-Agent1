@@ -1902,6 +1902,7 @@ dependencies = [
  "async-trait",
  "glob",
  "reqwest",
+ "sentinel-ai-core",
  "sentinel-protocol",
  "sentinel-sandbox",
  "serde",
