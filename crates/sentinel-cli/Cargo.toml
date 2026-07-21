@@ -28,6 +28,5 @@ sentinel-app-server-client = { path = "../sentinel-app-server-client" }
 sentinel-app-server-transport = { path = "../sentinel-app-server-transport" }
 sentinel-app-server-protocol = { path = "../sentinel-app-server-protocol" }
 sentinel-agent-identity = { path = "../sentinel-agent-identity" }
-sentinel-sandbox = { path = "../sentinel-sandbox" }
 hex.workspace = true
 reqwest.workspace = true

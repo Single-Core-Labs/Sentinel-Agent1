@@ -562,7 +562,7 @@ class Session:
 
         saved_path: str | None = None
         if self.config.save_sessions and previous_non_system_count:
-            saved_path = self.save_and_upload_detached(self.config.session_dataset_repo)
+            saved_path = self.save_and_upload_detached("")
 
         from agent.tools.plan_tool import reset_current_plan
 
@@ -637,7 +637,7 @@ class Session:
         if turns_since_last_save >= interval:
             logger.info(f"Auto-saving session (turn {self.turn_count})...")
             # Fire-and-forget save - returns immediately
-            self.save_and_upload_detached(self.config.session_dataset_repo)
+            self.save_and_upload_detached("")
             self.last_auto_save_turn = self.turn_count
 
     def get_trajectory(self) -> dict:
@@ -746,14 +746,5 @@ class Session:
             logger.error(f"Failed to save session locally: {e}")
             return None
 
-    def save_and_upload_detached(self, repo_id: str) -> Optional[str]:
-        """
-        Save session locally.
-
-        Args:
-            repo_id: Ignored (kept for backward compatibility).
-
-        Returns:
-            Path to local save file
-        """
+    def save_and_upload_detached(self, repo_id: str = "") -> Optional[str]:
         return self.save_trajectory_local(upload_status="success")

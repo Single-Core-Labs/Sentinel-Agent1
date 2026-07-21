@@ -61,18 +61,12 @@ CLI_CONFIG_PATH = Path(__file__).parent.parent / "configs" / "cli_agent_config.j
 logger = logging.getLogger(__name__)
 
 
-def _apply_tool_runtime_override(config: Any, *, sandbox_tools: bool) -> str:
-    if sandbox_tools:
-        config.tool_runtime = "sandbox"
-    return getattr(config, "tool_runtime", "local")
-
-
 def _is_local_tool_runtime(config: Any) -> bool:
-    return getattr(config, "tool_runtime", "local") == "local"
+    return True
 
 
 def _tool_runtime_label(local_mode: bool) -> str:
-    return "local filesystem" if local_mode else "HF sandbox"
+    return "local filesystem"
 
 
 def _normalize_config_model(config: Any) -> None:
@@ -88,20 +82,6 @@ def _validate_cli_model_override(model: str) -> str:
             "'zai-org/GLM-5.2:novita' or a supported local prefix."
         )
     return model.removeprefix("sentinel-ai/")
-
-
-async def _wait_for_initial_sandbox_preload(session_holder: list | None) -> None:
-    session = session_holder[0] if session_holder else None
-    task = getattr(session, "sandbox_preload_task", None)
-    if not task:
-        return
-    try:
-        await asyncio.shield(task)
-    except asyncio.CancelledError:
-        raise
-    except Exception:
-        # The sandbox tool will surface the stored preload error on first use.
-        return
 
 
 def _configure_runtime_logging() -> None:
@@ -1265,7 +1245,7 @@ async def _handle_share_traces_command(arg: str, config, session) -> None:
     console.print("[dim]Trace sharing is no longer available.[/dim]")
 
 
-async def main(model: str | None = None, sandbox_tools: bool = False):
+async def main(model: str | None = None):
     """Interactive chat with the agent"""
 
     # Clear screen
@@ -1278,8 +1258,7 @@ async def main(model: str | None = None, sandbox_tools: bool = False):
     _normalize_config_model(config)
     if model:
         config.model_name = _validate_cli_model_override(model)
-    _apply_tool_runtime_override(config, sandbox_tools=sandbox_tools)
-    local_mode = _is_local_tool_runtime(config)
+    local_mode = True
 
     hf_token = resolve_token()
 
@@ -1343,8 +1322,6 @@ async def main(model: str | None = None, sandbox_tools: bool = False):
     )
 
     await ready_event.wait()
-    if not local_mode:
-        await _wait_for_initial_sandbox_preload(session_holder)
 
     await _model_picker(config, session_holder, prompt_session)
 
@@ -1504,7 +1481,6 @@ async def headless_main(
     model: str | None = None,
     max_iterations: int | None = None,
     stream: bool = True,
-    sandbox_tools: bool = False,
 ) -> None:
     """Run a single prompt headlessly and exit."""
     import logging
@@ -1522,8 +1498,7 @@ async def headless_main(
         except ValueError as e:
             print(f"ERROR: {e}", file=sys.stderr)
             sys.exit(1)
-    _apply_tool_runtime_override(config, sandbox_tools=sandbox_tools)
-    local_mode = _is_local_tool_runtime(config)
+    local_mode = True
 
     hf_token = resolve_token()
     if hf_token:
@@ -1802,7 +1777,7 @@ async def _ipc_input_reader(submission_queue: asyncio.Queue, config, session_hol
             break
 
 
-async def ipc_main(model: str | None = None, sandbox_tools: bool = False):
+async def ipc_main(model: str | None = None):
     """IPC JSON loop for external frontends."""
     import logging
 
@@ -1816,8 +1791,7 @@ async def ipc_main(model: str | None = None, sandbox_tools: bool = False):
             config.model_name = _validate_cli_model_override(model)
         except ValueError:
             pass
-    _apply_tool_runtime_override(config, sandbox_tools=sandbox_tools)
-    local_mode = _is_local_tool_runtime(config)
+    local_mode = True
 
     hf_token = resolve_token()
     user, _ = await _get_user_identity(hf_token)
@@ -1867,7 +1841,7 @@ async def ipc_main(model: str | None = None, sandbox_tools: bool = False):
         await notification_gateway.close()
 
 
-def _launch_ink_ui(model: str | None, sandbox_tools: bool) -> int:
+def _launch_ink_ui(model: str | None) -> int:
     """Launch the Node/Ink terminal UI. Returns process exit code."""
     import shutil
     import subprocess
@@ -1896,8 +1870,6 @@ def _launch_ink_ui(model: str | None, sandbox_tools: bool) -> int:
     cmd = [tsx, entry]
     if model:
         cmd += ["--model", model]
-    if sandbox_tools:
-        cmd += ["--sandbox-tools"]
 
     try:
         result = subprocess.run(
@@ -1939,11 +1911,6 @@ def cli():
         help="Disable token streaming (use non-streaming LLM calls)",
     )
     parser.add_argument(
-        "--sandbox-tools",
-        action="store_true",
-        help="Use HF Space sandbox tools instead of local filesystem tools",
-    )
-    parser.add_argument(
         "--json-ipc",
         action="store_true",
         help="Run in JSON IPC mode for the Ink UI (internal use)",
@@ -1957,7 +1924,7 @@ def cli():
 
     try:
         if args.json_ipc:
-            asyncio.run(ipc_main(model=args.model, sandbox_tools=args.sandbox_tools))
+            asyncio.run(ipc_main(model=args.model))
         elif args.prompt:
             max_iter = args.max_iterations
             if max_iter is not None and max_iter < 0:
@@ -1968,17 +1935,16 @@ def cli():
                     model=args.model,
                     max_iterations=max_iter,
                     stream=not args.no_stream,
-                    sandbox_tools=args.sandbox_tools,
                 )
             )
         elif args.python_repl:
-            asyncio.run(main(model=args.model, sandbox_tools=args.sandbox_tools))
+            asyncio.run(main(model=args.model))
         else:
             # Default interactive mode: launch the Ink UI
-            code = _launch_ink_ui(args.model, args.sandbox_tools)
+            code = _launch_ink_ui(args.model)
             if code == -1:
                 # Ink UI unavailable — fall back to Python REPL
-                asyncio.run(main(model=args.model, sandbox_tools=args.sandbox_tools))
+                asyncio.run(main(model=args.model))
             elif code != 0:
                 sys.exit(code)
     except KeyboardInterrupt:

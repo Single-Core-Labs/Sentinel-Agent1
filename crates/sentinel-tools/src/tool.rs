@@ -1,7 +1,6 @@
 use std::sync::Arc;
 use async_trait::async_trait;
 use sentinel_protocol::ToolDef;
-use sentinel_sandbox::SandboxPolicy;
 
 #[derive(Debug, Clone)]
 pub struct ToolContext {

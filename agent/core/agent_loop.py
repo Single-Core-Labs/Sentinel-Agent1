@@ -38,27 +38,8 @@ from agent.core.yolo_budget import (
     yolo_budget_pending_to_tool,
 )
 from agent.messaging.gateway import NotificationGateway
-from agent.observability import (
-    init_observability,
-    record_session_start,
-    shutdown_observability,
-)
-from agent.tools.cloud_tools import (
-    render_cloud_action_preview,
-)
 
 from ._agent_helpers import *  # noqa: F403
-
-DEFAULT_CPU_SANDBOX_HARDWARE = "cpu-basic"
-
-
-def start_cpu_sandbox_preload(session) -> None:
-    pass
-
-
-async def teardown_session_sandbox(session) -> None:
-    pass
-
 
 logger = logging.getLogger(__name__)
 
@@ -666,7 +647,6 @@ class Handlers:
                                         },
                                     )
                                 )
-                        await _cleanup_on_cancel(session)
                         break
 
                     cancel_task.cancel()
@@ -721,15 +701,6 @@ class Handlers:
                             "arguments": tool_args,
                             "tool_call_id": tc.id,
                         }
-                        # Pre-action preview for cloud mutating tools
-                        if _mandatory_approval_tool(tool_name):
-                            try:
-                                preview = render_cloud_action_preview(
-                                    tool_name, tool_args
-                                )
-                                tool_payload["action_preview"] = preview
-                            except Exception:
-                                pass
                         if decision.auto_approval_blocked:
                             tool_payload.update(
                                 {
@@ -808,7 +779,6 @@ class Handlers:
                 break
 
         if session.is_cancelled:
-            await _cleanup_on_cancel(session)
             await session.send_event(Event(event_type="interrupted"))
         elif not errored:
             if await _maybe_pause_for_usage_threshold(
@@ -1252,18 +1222,6 @@ class Handlers:
             )
             return
 
-        # ── Pre-action checkpoint: snapshot session before any approved mutation ──
-        # This enables rewind if the cloud action causes issues.
-        has_cloud_mutation = any(
-            _mandatory_approval_tool(tool_name) for _, tool_name, _, _ in approved_tasks
-        )
-        if has_cloud_mutation:
-            session.checkpoint()
-            logger.info(
-                "Pre-action checkpoint saved for %d approved cloud mutation(s)",
-                sum(1 for _, n, _, _ in approved_tasks if _mandatory_approval_tool(n)),
-            )
-
         # Clear pending approval immediately so a page refresh during
         # execution won't re-show the approval dialog.
         session.pending_approval = None
@@ -1368,9 +1326,8 @@ class Handlers:
                                 "tool": tool_name,
                                 "state": "cancelled",
                             },
+                            )
                         )
-                    )
-                await _cleanup_on_cancel(session)
                 await session.send_event(Event(event_type="interrupted"))
                 session.increment_turn()
                 await session.auto_save_if_needed()
@@ -1468,16 +1425,13 @@ class Handlers:
 
     @staticmethod
     async def shutdown(session: Session) -> bool:
-        """Handle shutdown (like shutdown in codex.rs:1329)"""
+        """Handle shutdown"""
         # Save session trajectory if enabled (fire-and-forget, returns immediately)
         if session.config.save_sessions:
             logger.info("Saving session...")
-            repo_id = session.config.session_dataset_repo
-            _ = session.save_and_upload_detached(repo_id)
+            _ = session.save_and_upload_detached()
 
         session.is_running = False
-        if not getattr(session, "local_mode", False):
-            await teardown_session_sandbox(session)
         await session.send_event(Event(event_type="shutdown"))
         return True
 
@@ -1572,13 +1526,6 @@ async def submission_loop(
     )
     if session_holder is not None:
         session_holder[0] = session
-    # ── Initialise OpenTelemetry ────────────────────────────────────────
-    init_observability(config.observability)
-    record_session_start({"mode": "local" if local_mode else "sandbox"})
-    logger.info("Agent observability initialised")
-
-    if not local_mode:
-        start_cpu_sandbox_preload(session)
     logger.info("Agent loop started")
 
     try:
@@ -1614,13 +1561,10 @@ async def submission_loop(
         logger.info("Agent loop exited")
 
     finally:
-        shutdown_observability()
         if session.config.save_sessions and session.is_running:
             logger.info("Emergency save: preserving session before exit...")
             try:
-                local_path = session.save_and_upload_detached(
-                    session.config.session_dataset_repo
-                )
+                local_path = session.save_and_upload_detached()
                 if local_path:
                     logger.info("Emergency save successful, upload in progress")
             except Exception as e:

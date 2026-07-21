@@ -3,7 +3,6 @@ mod display;
 mod handler;
 mod exec;
 mod auth;
-mod sandbox;
 mod plugin;
 mod server;
 mod diagnostics;

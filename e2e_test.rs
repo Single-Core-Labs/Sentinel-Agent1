@@ -1,6 +1,5 @@
 use std::sync::Arc;
 use sentinel_tools::{ToolRegistry, ToolContext};
-use sentinel_sandbox::SandboxPolicy;
 use serde_json::json;
 
 #[tokio::main]

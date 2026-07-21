@@ -1,8 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::*;
-    use sentinel_sandbox::SandboxPolicy;
-
+    
     #[tokio::test]
     async fn test_local_executor_policy_denied() {
         let mut policy = SandboxPolicy::default();
