@@ -78,12 +78,13 @@ export interface ProviderSpec {
 
 export const PROVIDERS: ProviderSpec[] = [
   { id: 'anthropic', name: 'Anthropic', envVar: 'ANTHROPIC_API_KEY', kind: 'anthropic', prefixes: ['anthropic/', 'claude-'] },
-  { id: 'openai', name: 'OpenAI', envVar: 'OPENAI_API_KEY', kind: 'openai-compatible', baseUrl: 'https://api.openai.com/v1', prefixes: ['openai/', 'gpt-', 'o'] },
+  { id: 'openai', name: 'OpenAI', envVar: 'OPENAI_API_KEY', kind: 'openai-compatible', baseUrl: 'https://api.openai.com/v1', prefixes: ['openai/', 'gpt-', 'o1', 'o3', 'o-'] },
   { id: 'google-ai-studio', name: 'Google', envVar: 'GOOGLE_AI_STUDIO_API_KEY', kind: 'google', prefixes: ['google/', 'gemini/', 'gemini-', 'models/'] },
   { id: 'deepseek', name: 'DeepSeek', envVar: 'DEEPSEEK_API_KEY', kind: 'openai-compatible', baseUrl: 'https://api.deepseek.com/v1', prefixes: ['deepseek-ai/', 'deepseek-'] },
   { id: 'nvidia-nim', name: 'NVIDIA NIM', envVar: 'NVIDIA_NIM_API_KEY', kind: 'openai-compatible', baseUrl: 'https://integrate.api.nvidia.com/v1', prefixes: ['nvidia/'] },
   { id: 'models-dev', name: 'Models.dev', envVar: 'MODELS_DEV_API_KEY', kind: 'openai-compatible', baseUrl: 'https://api.models.dev/v1', prefixes: ['moonshotai/', 'zai-org/'] },
   { id: 'github-copilot', name: 'GitHub Copilot', envVar: 'GITHUB_COPILOT_TOKEN', kind: 'openai-compatible', baseUrl: 'https://api.githubcopilot.com/v1', prefixes: ['copilot-'] },
+  { id: 'openrouter', name: 'OpenRouter', envVar: 'OPENROUTER_API_KEY', kind: 'openai-compatible', baseUrl: 'https://openrouter.ai/api/v1', prefixes: ['openrouter/'] },
 ];
 
 function findProvider(modelId: string): ProviderSpec | undefined {
@@ -98,7 +99,7 @@ export function getProviderForModel(modelId: string): ModelProvider {
     case 'anthropic':
       return new AnthropicProvider();
     case 'google':
-      return new GoogleProvider();
+      return new GoogleProvider(env(spec.envVar));
     case 'openai-compatible': {
       const customBaseUrl = getBaseUrl(spec.envVar);
       const baseUrl = customBaseUrl || spec.baseUrl;

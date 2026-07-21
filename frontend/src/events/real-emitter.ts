@@ -56,7 +56,8 @@ export class RealEventEmitter extends EventEmitter {
   private maxDoomLoopRepetitions = 3;
   private destructiveActionOccurred = false;
 
-  start(modelId?: string, _apiKey?: string, _providerId?: string) {
+  start(modelId?: string, apiKey?: string, providerId?: string) {
+    void apiKey; void providerId;
     if (this._running) return;
     this._running = true;
     this.modelId = modelId || '';

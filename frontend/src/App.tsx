@@ -89,7 +89,7 @@ export default function App() {
           if (idx === -1) return [...p, { kind: 'step', id: uid('step'), content, stepId }];
           const realIdx = p.length - 1 - idx;
           const newItems = [...p];
-          newItems[realIdx] = { kind: 'plan', id: (p[realIdx]! as any).id, items: planRef.current.slice() };
+          newItems[realIdx] = { kind: 'plan', id: p[realIdx]!.id, items: planRef.current.slice() };
           return [...newItems, { kind: 'step', id: uid('step'), content, stepId }];
         });
         break;
@@ -277,7 +277,7 @@ export default function App() {
     emitterRef.current = emitter;
     emitter.on('event', handleEvent);
     emitter.start(selectedModel, apiKey, model?.provider);
-  }, [handleEvent, apiKey]);
+  }, [handleEvent, apiKey, model?.provider]);
 
   // ── Slash commands / send ──────────────────────────────────────
 
@@ -372,7 +372,7 @@ export default function App() {
     setItems(p => [...p, { kind: 'user', id: uid('user'), text }]);
     emitterRef.current?.send?.(text);
     setMode('executing');
-  }, [startSession, exit]);
+  }, [startSession, exit, model]);
 
   // ── Approval handling ──────────────────────────────────────────
 
@@ -437,12 +437,13 @@ export default function App() {
             });
             setApiKey(key);
 
-            if (baseUrl) {
-              const { getEnvVarForProviderId, saveBaseUrl } = await import('./providers/index.js');
-              const envVar = getEnvVarForProviderId(selectedModel.provider_id);
-              if (envVar) {
-                saveBaseUrl(envVar, baseUrl);
-              }
+            const { getEnvVarForProviderId, saveKey, saveBaseUrl } = await import('./providers/index.js');
+            const envVar = getEnvVarForProviderId(selectedModel.provider_id);
+            if (envVar && key) {
+              saveKey(envVar, key);
+            }
+            if (envVar && baseUrl) {
+              saveBaseUrl(envVar, baseUrl);
             }
 
             setPhase('main');

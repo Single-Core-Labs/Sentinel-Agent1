@@ -38,6 +38,7 @@ const TAG_COLORS: Record<string, string> = {
   efficient:    '#F59E0B',
   nim:          '#76B900',
   copilot:      '#8957E5',
+  free:         '#10B981',
 };
 
 const STATIC_PROVIDERS: ProviderInfo[] = [
@@ -100,6 +101,19 @@ const STATIC_PROVIDERS: ProviderInfo[] = [
     api_key_instructions: 'Log in with GitHub to use your Copilot account',
     models: [
       { provider_id: 'github-copilot', model_id: 'copilot-gpt-4o', name: 'Copilot GPT-4o', description: 'GitHub Copilot hosted model', tag: 'copilot' },
+    ],
+  },
+  {
+    id: 'openrouter', name: 'OpenRouter', auth_type: 'api_key',
+    docs_url: 'https://openrouter.ai/',
+    api_key_instructions: 'Get your key at https://openrouter.ai/keys',
+    models: [
+      { provider_id: 'openrouter', model_id: 'openrouter/auto', name: 'Auto (best model)', description: 'Routes to best available model for your plan', tag: 'recommended' },
+      { provider_id: 'openrouter', model_id: 'openrouter/google/gemma-4-31b-it:free', name: 'Gemma 4 31B (Free)', description: 'Free tier, strong Google open model', tag: 'free' },
+      { provider_id: 'openrouter', model_id: 'openrouter/meta-llama/llama-3.3-70b-instruct:free', name: 'Llama 3.3 70B (Free)', description: 'Free tier, strong reasoning & coding', tag: 'free' },
+      { provider_id: 'openrouter', model_id: 'openrouter/qwen/qwen-2.5-72b-instruct:free', name: 'Qwen 2.5 72B (Free)', description: 'Free tier, strong multilingual & code', tag: 'free' },
+      { provider_id: 'openrouter', model_id: 'openrouter/anthropic/claude-sonnet-4', name: 'Claude Sonnet 4', description: 'Best balance of speed and capability', tag: 'powerful' },
+      { provider_id: 'openrouter', model_id: 'openrouter/openai/gpt-4o', name: 'GPT-4o', description: 'Fast multimodal, strong coding', tag: 'fast' },
     ],
   },
 ];

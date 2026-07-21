@@ -86,7 +86,7 @@ export class IPCEventEmitter extends EventEmitter {
           data: parsed.data,
           timestamp: Date.now(),
         } as AgentEvent);
-      } catch (err) {
+      } catch {
         // Ignore non-json lines or log them to debug
       }
     });
@@ -127,7 +127,7 @@ export class IPCEventEmitter extends EventEmitter {
     });
   }
 
-  sendApproval(approvals: any[]) {
+  sendApproval(approvals: Array<{ id: string; approved: boolean }>) {
     this.sendRaw({
       op_type: 'EXEC_APPROVAL',
       data: { approvals },

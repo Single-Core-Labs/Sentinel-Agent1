@@ -36,7 +36,7 @@ describe('RealEventEmitter — no silent failures', () => {
     delete process.env['OPENAI_API_KEY'];
     const emitter = new RealEventEmitter();
     emitter.start('openai/gpt-4o');
-    const event = await new Promise<any>((resolve, reject) => {
+    const event = await new Promise<import('./ipc-emitter.js').AgentEvent>((resolve, reject) => {
       const start = Date.now();
       const events: string[] = [];
       const timer = setInterval(() => {

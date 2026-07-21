@@ -14,9 +14,9 @@ interface Particle {
 }
 
 const COLS = ['#F97316','#0EA5E9','#A78BFA','#22C55E','#E2E8F0','#64748B'];
-const W = 74;
-const H = 10;
-const MAX_PARTICLES = 55;
+const W = 30;
+const H = 5;
+const MAX_PARTICLES = 15;
 
 function makeParticle(chars: string[]): Particle {
   return {
@@ -61,9 +61,8 @@ export function StartupSequence({ onComplete, theme }: Props) {
   useInput(() => {
     if (skipped.current) return;
     skipped.current = true;
-    setPhase('boot');
-    setBootIndex(BOOT_LINES.length);
-    setTimeout(onComplete, 80);
+    setPhase('done');
+    onComplete();
   });
 
   // Particle animation tick
@@ -71,7 +70,7 @@ export function StartupSequence({ onComplete, theme }: Props) {
     if (phase !== 'particles') return;
     const interval = setInterval(() => {
       setParticles(prev => {
-        let next = prev
+        const next = prev
           .map(p => ({ ...p, age: p.age + 1 }))
           .filter(p => p.age < p.maxAge);
         while (next.length < MAX_PARTICLES) {
@@ -79,13 +78,13 @@ export function StartupSequence({ onComplete, theme }: Props) {
         }
         return next;
       });
-    }, 80);
+    }, 200);
 
-    // Advance to boot phase after 6s
+    // Advance to boot phase after 2.5s
     const advance = setTimeout(() => {
       if (skipped.current) return;
       setPhase('boot');
-    }, 6000);
+    }, 2500);
 
     return () => { clearInterval(interval); clearTimeout(advance); };
   }, [phase, theme.particleChars]);
@@ -94,10 +93,10 @@ export function StartupSequence({ onComplete, theme }: Props) {
   useEffect(() => {
     if (phase !== 'boot') return;
     if (bootIndex >= BOOT_LINES.length) {
-      const t = setTimeout(() => { setPhase('done'); onComplete(); }, 600);
+      const t = setTimeout(() => { setPhase('done'); onComplete(); }, 400);
       return () => clearTimeout(t);
     }
-    const t = setTimeout(() => setBootIndex(i => i + 1), bootIndex === 0 ? 900 : 1100);
+    const t = setTimeout(() => setBootIndex(i => i + 1), bootIndex === 0 ? 400 : 500);
     return () => clearTimeout(t);
   }, [phase, bootIndex, onComplete]);
 
@@ -124,6 +123,8 @@ export function StartupSequence({ onComplete, theme }: Props) {
     }
     return rows;
   };
+
+  if (phase === 'done') return null;
 
   if (phase === 'particles') {
     return (
