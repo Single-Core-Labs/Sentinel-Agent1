@@ -1,0 +1,22 @@
+[agent]
+default_model = "openrouter/auto"
+max_turns = 50
+max_iterations = 100
+yolo_mode = false
+verbose = false
+
+[[providers]]
+id = "openrouter"
+name = "OpenRouter"
+base_url = "https://openrouter.ai/api/v1"
+auth = { type = "env_key", var = "OPENROUTER_API_KEY" }
+[providers.extra_headers]
+HTTP-Referer = "https://sentinel-ai.local"
+X-Title = "Sentinel-AI"
+
+[[providers.models]]
+id = "openrouter/auto"
+name = "OpenRouter Auto (best free model)"
+context_window = 128000
+supports_streaming = true
+supports_tools = true
