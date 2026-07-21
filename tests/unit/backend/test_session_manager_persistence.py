@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import sys
-import threading
 import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -48,10 +47,6 @@ class FakeRuntimeSession:
         self.usage_threshold_checker = None
         self.yolo_budget_checker = None
         self.logged_events = []
-        self.sandbox = None
-        self.sandbox_hardware = None
-        self.sandbox_preload_task = None
-        self.sandbox_preload_cancel_event = None
         self.events = []
         self.session_id = "s1"
 
@@ -623,85 +618,6 @@ async def _cancel_runtime_tasks(manager: SessionManager) -> None:
 
 
 @pytest.mark.asyncio
-async def test_close_cancels_preload_and_deletes_owned_sandbox(monkeypatch):
-    deleted: list[str] = []
-
-    async def fake_record_sandbox_destroy(*args, **kwargs):
-        pass
-
-    monkeypatch.setattr(
-        "agent.core.telemetry.record_sandbox_destroy",
-        fake_record_sandbox_destroy,
-    )
-
-    store = NoopSessionStore()
-    manager = _manager_with_store(store)
-    gateway = CloseableResource()
-    persistence = CloseableResource()
-    manager.messaging_gateway = gateway  # type: ignore[assignment]
-    manager.persistence_store = persistence  # type: ignore[assignment]
-
-    cancel_event = asyncio.Event()
-    preload_cancel_event = threading.Event()
-
-    async def preload():
-        while not preload_cancel_event.is_set():
-            await asyncio.sleep(0)
-        cancel_event.set()
-
-    session = FakeRuntimeSession()
-    session.session_id = "s1"
-    session.persistence_store = NoopSessionStore()
-    session.sandbox = SimpleNamespace(
-        space_id="owner/sandbox-12345678",
-        _owns_space=True,
-        delete=lambda log=None: deleted.append("owner/sandbox-12345678"),
-    )
-    session.sandbox_hardware = "cpu-basic"
-    session.sandbox_preload_cancel_event = preload_cancel_event
-    session.sandbox_preload_task = asyncio.create_task(preload())
-    manager.sessions["s1"] = AgentSession(
-        session_id="s1",
-        session=session,  # type: ignore[arg-type]
-        tool_router=object(),  # type: ignore[arg-type]
-        submission_queue=asyncio.Queue(),
-        user_id="owner",
-    )
-
-    await manager.close()
-
-    assert preload_cancel_event.is_set()
-    assert cancel_event.is_set()
-    assert deleted == ["owner/sandbox-12345678"]
-    assert gateway.closed is True
-    assert persistence.closed is True
-
-
-@pytest.mark.asyncio
-async def test_close_closes_resources_when_sandbox_cleanup_fails():
-    manager = _manager_with_store(NoopSessionStore())
-    gateway = CloseableResource()
-    persistence = CloseableResource()
-    manager.messaging_gateway = gateway  # type: ignore[assignment]
-    manager.persistence_store = persistence  # type: ignore[assignment]
-    manager.sessions["s1"] = _runtime_agent_session("s1")
-    manager.sessions["s2"] = _runtime_agent_session("s2")
-    cleaned: list[str] = []
-
-    async def fake_cleanup(session):
-        cleaned.append(session)
-        raise RuntimeError("boom")
-
-    manager._cleanup_sandbox = fake_cleanup  # type: ignore[method-assign]
-
-    await manager.close()
-
-    assert len(cleaned) == 2
-    assert gateway.closed is True
-    assert persistence.closed is True
-
-
-@pytest.mark.asyncio
 async def test_existing_session_updates_plan_after_access_check():
     manager = _manager_with_store(NoopSessionStore())
     existing = _runtime_agent_session("s1", user_id="owner", user_plan="free")
@@ -719,12 +635,6 @@ async def test_concurrent_lazy_restore_starts_only_one_agent_task():
     store = RestoreStore(delay=0.01)
     manager = _manager_with_store(store)
     stop = _install_fake_runtime(manager)
-    scheduled: list[str] = []
-
-    def fake_start_cpu_sandbox_preload(agent_session: AgentSession) -> None:
-        scheduled.append(agent_session.session_id)
-
-    manager._start_cpu_sandbox_preload = fake_start_cpu_sandbox_preload  # type: ignore[method-assign]
 
     try:
         first, second = await asyncio.gather(
@@ -736,156 +646,7 @@ async def test_concurrent_lazy_restore_starts_only_one_agent_task():
         assert first is second
         assert list(manager.sessions) == ["persisted-session"]
         assert manager.run_calls == 1  # type: ignore[attr-defined]
-        assert scheduled == ["persisted-session"]
         assert not stop.is_set()
-    finally:
-        stop.set()
-        await _cancel_runtime_tasks(manager)
-
-
-@pytest.mark.asyncio
-async def test_create_session_schedules_cpu_sandbox_preload():
-    manager = _manager_with_store(NoopSessionStore())
-    stop = _install_fake_runtime(manager)
-    scheduled: list[str] = []
-
-    def fake_start_cpu_sandbox_preload(agent_session: AgentSession) -> None:
-        scheduled.append(agent_session.session_id)
-
-    manager._start_cpu_sandbox_preload = fake_start_cpu_sandbox_preload  # type: ignore[method-assign]
-
-    try:
-        session_id = await manager.create_session(
-            user_id="owner",
-            user_plan="pro",
-        )
-
-        assert scheduled == [session_id]
-        assert session_id in manager.sessions
-        assert manager.sessions[session_id].user_plan == "pro"
-        runtime_session = manager.sessions[session_id].session
-        assert runtime_session.user_plan == "pro"
-        assert not hasattr(runtime_session, "_sentinel_ai_artifact_collection_task")
-        assert not hasattr(runtime_session, "_sentinel_ai_artifact_collection_slug")
-    finally:
-        stop.set()
-        await _cancel_runtime_tasks(manager)
-
-
-@pytest.mark.asyncio
-async def test_lazy_restore_schedules_cpu_sandbox_preload():
-    manager = _manager_with_store(RestoreStore())
-    stop = _install_fake_runtime(manager)
-    scheduled: list[str] = []
-
-    def fake_start_cpu_sandbox_preload(agent_session: AgentSession) -> None:
-        scheduled.append(agent_session.session_id)
-
-    manager._start_cpu_sandbox_preload = fake_start_cpu_sandbox_preload  # type: ignore[method-assign]
-
-    try:
-        restored = await manager.ensure_session_loaded(
-            "persisted-session",
-            user_id="owner",
-            user_plan="free",
-        )
-
-        assert restored is not None
-        assert scheduled == ["persisted-session"]
-        assert "persisted-session" in manager.sessions
-        assert restored.user_plan == "free"
-        assert restored.session.user_plan == "free"
-        assert not hasattr(restored.session, "_sentinel_ai_artifact_collection_task")
-        assert not hasattr(restored.session, "_sentinel_ai_artifact_collection_slug")
-    finally:
-        stop.set()
-        await _cancel_runtime_tasks(manager)
-
-
-@pytest.mark.asyncio
-async def test_lazy_restore_deletes_persisted_sandbox_before_preload(monkeypatch):
-    deleted: list[tuple[str, str, str]] = []
-
-    class FakeApi:
-        def delete_repo(self, repo_id, repo_type):
-            deleted.append((repo_id, repo_type))
-
-    store = RestoreStore(
-        metadata={
-            "session_id": "persisted-session",
-            "user_id": "owner",
-            "model": "test-model",
-            "created_at": datetime.now(UTC),
-            "sandbox_space_id": "owner/sandbox-12345678",
-            "sandbox_hardware": "cpu-basic",
-            "sandbox_owner": "owner",
-            "sandbox_created_at": datetime.now(UTC),
-            "sandbox_status": "active",
-        }
-    )
-    manager = _manager_with_store(store)
-    stop = _install_fake_runtime(manager)
-    scheduled: list[str] = []
-
-    def fake_start_cpu_sandbox_preload(agent_session: AgentSession) -> None:
-        scheduled.append(agent_session.session_id)
-
-    manager._start_cpu_sandbox_preload = fake_start_cpu_sandbox_preload  # type: ignore[method-assign]
-
-    try:
-        restored = await manager.ensure_session_loaded(
-            "persisted-session",
-            user_id="owner",
-        )
-
-        assert restored is not None
-        assert deleted == [("owner/sandbox-12345678", "space")]
-        assert scheduled == ["persisted-session"]
-        assert store.metadata["sandbox_space_id"] is None
-        assert store.metadata["sandbox_status"] == "destroyed"
-    finally:
-        stop.set()
-        await _cancel_runtime_tasks(manager)
-
-
-@pytest.mark.asyncio
-async def test_lazy_restore_can_skip_cpu_sandbox_preload_after_cleanup(monkeypatch):
-    deleted: list[str] = []
-
-    class FakeApi:
-        def delete_repo(self, repo_id, repo_type):
-            deleted.append(repo_id)
-
-    store = RestoreStore(
-        metadata={
-            "session_id": "persisted-session",
-            "user_id": "owner",
-            "model": "test-model",
-            "created_at": datetime.now(UTC),
-            "sandbox_space_id": "owner/sandbox-87654321",
-            "sandbox_status": "active",
-        }
-    )
-    manager = _manager_with_store(store)
-    stop = _install_fake_runtime(manager)
-    scheduled: list[str] = []
-
-    def fake_start_cpu_sandbox_preload(agent_session: AgentSession) -> None:
-        scheduled.append(agent_session.session_id)
-
-    manager._start_cpu_sandbox_preload = fake_start_cpu_sandbox_preload  # type: ignore[method-assign]
-
-    try:
-        restored = await manager.ensure_session_loaded(
-            "persisted-session",
-            user_id="owner",
-            preload_sandbox=False,
-        )
-
-        assert restored is not None
-        assert deleted == ["owner/sandbox-87654321"]
-        assert scheduled == []
-        assert store.metadata["sandbox_space_id"] is None
     finally:
         stop.set()
         await _cancel_runtime_tasks(manager)
@@ -987,87 +748,6 @@ async def test_update_session_auto_approval_seeds_existing_session_usage(monkeyp
         "estimated_spend_usd": 2.75,
         "remaining_usd": 2.25,
     }
-
-
-@pytest.mark.asyncio
-async def test_lazy_restore_injects_sandbox_reset_note_when_session_had_sandbox():
-    store = RestoreStore(
-        metadata={
-            "session_id": "had-sandbox",
-            "user_id": "owner",
-            "model": "test-model",
-            "sandbox_status": "destroyed",
-        }
-    )
-    manager = _manager_with_store(store)
-    stop = _install_fake_runtime(manager)
-
-    try:
-        restored = await manager.ensure_session_loaded("had-sandbox", user_id="owner")
-
-        assert restored is not None
-        items = restored.session.context_manager.items
-        assert len(items) == 1
-        assert "sandbox was reset" in items[0].content
-    finally:
-        stop.set()
-        await _cancel_runtime_tasks(manager)
-
-
-@pytest.mark.asyncio
-async def test_lazy_restore_skips_sandbox_reset_note_when_no_sandbox():
-    store = RestoreStore(
-        metadata={
-            "session_id": "no-sandbox",
-            "user_id": "owner",
-            "model": "test-model",
-        }
-    )
-    manager = _manager_with_store(store)
-    stop = _install_fake_runtime(manager)
-
-    try:
-        restored = await manager.ensure_session_loaded("no-sandbox", user_id="owner")
-
-        assert restored is not None
-        assert restored.session.context_manager.items == []
-    finally:
-        stop.set()
-        await _cancel_runtime_tasks(manager)
-
-
-@pytest.mark.asyncio
-async def test_lazy_restore_skips_sandbox_note_when_pending_approval():
-    """The sandbox-reset note must be skipped when an approval is pending: it
-    would land between the restored assistant tool-calls and their results,
-    orphaning the tool results on approval (the provider rejects the ordering)."""
-    store = RestoreStore(
-        metadata={
-            "session_id": "had-sandbox-pending",
-            "user_id": "owner",
-            "model": "test-model",
-            "sandbox_status": "destroyed",
-            "pending_approval": [
-                {"tool": "bash", "tool_call_id": "call_1", "arguments": {}}
-            ],
-        }
-    )
-    manager = _manager_with_store(store)
-    stop = _install_fake_runtime(manager)
-
-    try:
-        restored = await manager.ensure_session_loaded(
-            "had-sandbox-pending", user_id="owner"
-        )
-
-        assert restored is not None
-        items = restored.session.context_manager.items
-        assert not any("sandbox was reset" in getattr(m, "content", "") for m in items)
-        # The pending approval itself is still restored.
-        assert restored.session.pending_approval is not None
-    finally:
-        stop.set()
-        await _cancel_runtime_tasks(manager)
 
 
 @pytest.mark.asyncio

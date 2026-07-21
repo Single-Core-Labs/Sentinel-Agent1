@@ -27,7 +27,6 @@ def _session(*, cap=5.0, spent=0.0, enabled=True):
         auto_approval_enabled=enabled,
         auto_approval_cost_cap_usd=cap,
         auto_approval_estimated_spend_usd=spent,
-        sandbox=None,
     )
 
 
@@ -68,8 +67,8 @@ async def test_unknown_cost_falls_back_to_approval(monkeypatch):
     monkeypatch.setattr(agent_loop, "estimate_tool_cost", fake_estimate)
 
     decision = await agent_loop._approval_decision(
-        "sandbox_create",
-        {"hardware": "mystery-gpu"},
+        "file_write",
+        {"hardware": "high-cost-operation"},
         _session(),
     )
 
@@ -94,8 +93,8 @@ async def test_manual_approval_does_not_record_spend_when_session_yolo_disabled(
 
     await agent_loop._record_manual_approved_spend_if_needed(
         session,
-        "sandbox_create",
-        {"hardware": "a10g-large"},
+        "file_write",
+        {"hardware": "large-file"},
     )
 
     assert called is False
@@ -112,8 +111,8 @@ async def test_manual_approval_records_spend_when_session_yolo_enabled(monkeypat
 
     await agent_loop._record_manual_approved_spend_if_needed(
         session,
-        "sandbox_create",
-        {"hardware": "a10g-large"},
+        "file_write",
+        {"hardware": "large-file"},
     )
 
     assert session.auto_approval_estimated_spend_usd == 1.75
@@ -129,8 +128,8 @@ async def test_manual_approval_blocks_over_cap_without_recording_spend(monkeypat
 
     decision = await agent_loop._record_manual_approved_spend_if_needed(
         session,
-        "sandbox_create",
-        {"hardware": "a10g-large"},
+        "file_write",
+        {"hardware": "large-file"},
     )
 
     assert decision.allowed is False
@@ -148,8 +147,8 @@ async def test_exec_approval_keeps_tool_pending_when_budget_blocks(monkeypatch):
         id="call_1",
         type="function",
         function={
-            "name": "sandbox_create",
-            "arguments": json.dumps({"hardware": "a10g-large"}),
+            "name": "file_write",
+            "arguments": json.dumps({"hardware": "large-file"}),
         },
     )
     session = FakeApprovalSession(tool_call)

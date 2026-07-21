@@ -957,9 +957,9 @@ class SessionManager:
         """Select idle candidates under the lock, then tear each down.
 
         Candidates are non-dev sessions that are live, not processing, not
-        awaiting tool approval (those are "approve later", not idle — reaping
-        would destroy the sandbox the approved tool needs), and untouched for
-        the idle window. We only snapshot IDs under the lock; the actual
+        awaiting tool approval (those are "approve later", not idle), and
+        untouched for the idle window. We only snapshot IDs under the lock;
+        the actual
         teardown in _reap_one re-acquires it, because tearing a session down
         while holding the lock would deadlock (the lock is non-reentrant).
         """
@@ -1000,7 +1000,7 @@ class SessionManager:
         active in the gap since selection), marks the session reaping, persists
         a resumable snapshot outside the lock, then does one final locked
         re-check before eviction. The runtime task is cancelled *outside* the
-        lock: its own ``finally`` frees the sandbox, and its identity-gated
+        lock: the runtime task is already popped from the sessions dict, so its
         persist no-ops because the session is already popped — so it can't
         overwrite our resumable snapshot with ``"ended"`` and there's no
         deadlock. Returns True if the session was reaped.
@@ -1057,7 +1057,6 @@ class SessionManager:
                 return False
             self.sessions.pop(session_id, None)
             task = agent_session.task
-            session = agent_session.session
 
         if task is not None and not task.done():
             task.cancel()
@@ -1070,8 +1069,7 @@ class SessionManager:
             done, _pending = await asyncio.wait({task}, timeout=REAP_TEARDOWN_TIMEOUT_S)
             if not done:
                 logger.warning(
-                    "Reaper teardown timed out after %.0fs for %s; orphan "
-                    "sweeper will handle any sandbox straggler",
+                    "Reaper teardown timed out after %.0fs for %s",
                     REAP_TEARDOWN_TIMEOUT_S,
                     session_id,
                 )

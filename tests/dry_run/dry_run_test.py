@@ -132,7 +132,7 @@ def _approval_gate_test():
     print("=" * 60)
     from agent.core.tools import is_mutating_tool
     readonly = ["web_search", "execute_local", "read", "grep", "glob"]
-    mutating = ["edit", "write", "bash", "git_commit", "terraform_apply"]
+    mutating = ["edit", "write", "bash", "git_commit"]
     for t in readonly:
         assert not is_mutating_tool(t), f"{t} should not be mutating"
     for t in mutating:

@@ -165,11 +165,6 @@ class Session:
         self._plan_mode: bool = False
         self._cancelled = asyncio.Event()
         self.pending_approval: Optional[dict[str, Any]] = None
-        self.sandbox = None
-        self.sandbox_hardware: Optional[str] = None
-        self.sandbox_preload_task: Optional[asyncio.Task] = None
-        self.sandbox_preload_error: Optional[str] = None
-        self.sandbox_preload_cancel_event: Any | None = None
         self.notification_gateway = notification_gateway
         self.notification_destinations = list(notification_destinations or [])
         self.defer_turn_complete_notification = defer_turn_complete_notification
@@ -188,8 +183,7 @@ class Session:
         self.turn_count: int = 0
         self.last_auto_save_turn: int = 0
         # Stable local save path so heartbeat saves overwrite one file instead
-        # of spamming session_logs/. ``_last_heartbeat_ts`` is owned by
-        # ``agent.core.telemetry.HeartbeatSaver`` and lazily initialised there.
+        # of spamming session_logs/.
         self._local_save_path: Optional[str] = None
         self._last_heartbeat_ts: Optional[float] = None
 
@@ -279,10 +273,7 @@ class Session:
         await self.event_queue.put(event)
         await self._enqueue_auto_notification_requests(event)
 
-        # Mid-turn heartbeat flush (owned by telemetry module).
-        from agent.core.telemetry import HeartbeatSaver
 
-        HeartbeatSaver.maybe_fire(self)
 
     def _schedule_trace_message(self, message: Any) -> None:
         """Best-effort append-only trace save for SFT/KPI export."""
@@ -590,7 +581,7 @@ class Session:
         self.reset_cancel()
 
         # Previous-session metadata is intentionally included for event
-        # consumers and telemetry, even though the CLI currently prints only
+        # consumers, even though the CLI currently prints only
         # the optional save path.
         return {
             "session_id": self.session_id,

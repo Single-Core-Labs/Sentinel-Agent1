@@ -521,7 +521,6 @@ async def get_usage(
             session_id,
             user,
             request,
-            preload_sandbox=False,
         )
     usage = {
         "user_id": user["user_id"],

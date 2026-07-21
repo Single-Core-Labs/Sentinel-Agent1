@@ -135,18 +135,6 @@ def test_tool_runtime_defaults_to_local(tmp_path):
     assert config.tool_runtime == "local"
 
 
-def test_user_config_can_set_sandbox_tool_runtime(tmp_path, monkeypatch):
-    config_path = tmp_path / "config.json"
-    user_config_path = tmp_path / "user-config.json"
-    _write_json(config_path, {"model_name": "moonshotai/Kimi-K2.7-Code"})
-    _write_json(user_config_path, {"tool_runtime": "sandbox"})
-    monkeypatch.setenv("SENTINEL_AI_CLI_CONFIG", str(user_config_path))
-
-    config = config_module.load_config(str(config_path), include_user_defaults=True)
-
-    assert config.tool_runtime == "sandbox"
-
-
 def test_invalid_tool_runtime_is_rejected(tmp_path):
     config_path = tmp_path / "config.json"
     _write_json(
