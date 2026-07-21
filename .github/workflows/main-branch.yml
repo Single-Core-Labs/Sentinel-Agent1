@@ -24,7 +24,7 @@ jobs:
     name: Bazel pre-warm (BuildBuddy)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Build & cache
         run: bash .github/scripts/run-bazel-ci.sh --prewarm build //...
       - name: Test & cache
@@ -46,7 +46,7 @@ jobs:
         toolchain: [stable, nightly]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@${{ matrix.toolchain }}
         with:
           components: clippy
@@ -64,7 +64,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
       - name: Install nextest
@@ -83,7 +83,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - name: Install cargo-shear
         run: cargo install cargo-shear
@@ -101,7 +101,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@nightly
         with:
           components: rustc-dev, llvm-tools
@@ -121,7 +121,7 @@ jobs:
     name: Verify manifests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - run: python3 .github/scripts/verify_cargo_workspace_manifests.py
       - run: python3 .github/scripts/verify_tui_core_boundary.py
@@ -136,7 +136,7 @@ jobs:
       needs_canary: ${{ steps.check.outputs.needs_canary }}
       needs_windows: ${{ steps.check.outputs.needs_windows }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - id: check
@@ -155,7 +155,7 @@ jobs:
     if: needs.v8-canary-check.outputs.needs_canary == '1'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - run: bash .github/scripts/run-bazel-ci.sh build //third_party/v8/...
       - name: Verify rusty_v8 module checksums
         run: python3 .github/scripts/rusty_v8_module_bazel.py verify
@@ -173,7 +173,7 @@ jobs:
     if: needs.v8-canary-check.outputs.needs_windows == '1'
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Compute Windows PATH
         run: pwsh -File .github/scripts/compute-bazel-windows-path.ps1
       - name: Setup MSVC env
@@ -193,7 +193,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
       - run: cargo build --release --workspace
@@ -205,7 +205,7 @@ jobs:
     name: Remote env tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
       - name: Install Wine
@@ -222,7 +222,7 @@ jobs:
     needs: [release-build]
     if: ${{ github.ref == 'refs/heads/main' }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
       - run: cargo build --release --workspace
@@ -246,7 +246,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     needs: [release-build]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
       - run: cargo build --release --workspace
@@ -254,7 +254,7 @@ jobs:
         run: .github/scripts/build-package-archive.sh
       - name: Archive symbols
         run: .github/scripts/archive-release-symbols-and-strip-binaries.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: sentinel-${{ runner.os }}
           path: dist/
