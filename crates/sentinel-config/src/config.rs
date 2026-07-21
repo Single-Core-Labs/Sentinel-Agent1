@@ -11,14 +11,14 @@ pub struct AgentSettings {
     pub max_turns: u32,
     #[serde(default)]
     pub max_iterations: u32,
-    #[serde(default = "default_true")]
+    #[serde(default = "default_false")]
     pub yolo_mode: bool,
     #[serde(default)]
     pub verbose: bool,
 }
 
 fn default_model() -> String { "gpt-4o".into() }
-fn default_true() -> bool { true }
+fn default_false() -> bool { false }
 
 fn default_thread_store() -> String { "memory".into() }
 
@@ -28,7 +28,7 @@ impl Default for AgentSettings {
             default_model: default_model(),
             max_turns: 50,
             max_iterations: 100,
-            yolo_mode: true,
+            yolo_mode: false,
             verbose: false,
         }
     }
