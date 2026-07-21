@@ -80,7 +80,6 @@ class SessionManager:
             except asyncio.CancelledError:
                 pass
             self._reaper_task = None
-        await self._cleanup_all_sandboxes_on_close()
         await self.messaging_gateway.close()
         if self.persistence_store is not None:
             await self.persistence_store.close()
@@ -533,44 +532,12 @@ class SessionManager:
         return agent_session
 
     @staticmethod
-    def _start_cpu_sandbox_preload(agent_session: AgentSession) -> None:
-        """Kick off a best-effort cpu-basic sandbox for the session."""
-        try:
-            from agent.tools.sandbox_tool import start_cpu_sandbox_preload
-
-            start_cpu_sandbox_preload(agent_session.session)
-        except Exception as e:
-            logger.warning(
-                "Failed to start CPU sandbox preload for %s: %s",
-                agent_session.session_id,
-                e,
-            )
-
-    @staticmethod
     def _can_access_session(agent_session: AgentSession, user_id: str) -> bool:
         return (
             user_id == "dev"
             or agent_session.user_id == "dev"
             or agent_session.user_id == user_id
         )
-
-    @staticmethod
-    def _has_active_sandbox_preload(agent_session: AgentSession) -> bool:
-        task = getattr(agent_session.session, "sandbox_preload_task", None)
-        return bool(task and not task.done())
-
-    async def _clear_persisted_sandbox_metadata(self, session_id: str) -> None:
-        try:
-            await self._store().update_session_fields(
-                session_id,
-                sandbox_space_id=None,
-                sandbox_hardware=None,
-                sandbox_owner=None,
-                sandbox_created_at=None,
-                sandbox_status="destroyed",
-            )
-        except Exception as e:
-            logger.warning("Failed to clear sandbox metadata for %s: %s", session_id, e)
 
     async def persist_session_snapshot(
         self,
@@ -650,7 +617,6 @@ class SessionManager:
         self,
         session_id: str,
         user_id: str,
-        preload_sandbox: bool = True,
     ) -> AgentSession | None:
         """Return a live runtime session, lazily restoring it from Mongo."""
         async with self._lock:
@@ -713,32 +679,6 @@ class SessionManager:
                 *restored_messages,
             ]
 
-        # If this session ever had a sandbox, its container did not survive the
-        # resume (a fresh, empty one is lazily recreated). Tell the agent so it
-        # recreates files/packages instead of assuming /app/train.py et al. still
-        # exist. Gated on sandbox_status so pure Q&A chats get no note. Mirrors
-        # the seed_from_summary note convention.
-        #
-        # Skip it when an approval is pending: the restored context ends with an
-        # assistant tool-call message awaiting results, so injecting a user
-        # message here would sit between the tool_calls and their results. On
-        # approval the real results get appended after the note, leaving them
-        # orphaned (the context manager stubs the "missing" result right after
-        # the assistant message) — which the provider rejects. The agent still
-        # learns the sandbox is empty when the approved tool runs against it.
-        if meta.get("sandbox_status") and not meta.get("pending_approval"):
-            session.context_manager.items.append(
-                Message(
-                    role="user",
-                    content=(
-                        "[SYSTEM: This session was resumed and its sandbox was "
-                        "reset. Any files, installed packages, or running "
-                        "processes from earlier are gone — recreate what you "
-                        "need before using the sandbox.]"
-                    ),
-                )
-            )
-
         self._restore_pending_approval(session, meta.get("pending_approval") or [])
         session.turn_count = int(meta.get("turn_count") or 0)
         session.auto_approval_enabled = bool(meta.get("auto_approval_enabled", False))
@@ -791,8 +731,6 @@ class SessionManager:
         )
         if started is not agent_session:
             return started
-        if preload_sandbox:
-            self._start_cpu_sandbox_preload(agent_session)
         logger.info("Restored session %s for user %s", session_id, owner or user_id)
         return agent_session
 
@@ -893,7 +831,6 @@ class SessionManager:
                 reserved = False
 
             await self.persist_session_snapshot(agent_session, runtime_state="idle")
-            self._start_cpu_sandbox_preload(agent_session)
 
             if is_pro is not None and user_id and user_id != "dev":
                 await self._track_pro_status(agent_session, is_pro=is_pro)
@@ -1000,54 +937,6 @@ class SessionManager:
         await self.persist_session_snapshot(agent_session, runtime_state="idle")
         return len(parsed)
 
-    @staticmethod
-    async def _cleanup_sandbox(session: Session) -> None:
-        """Delete the sandbox Space if one was created for this session.
-
-        Retries on transient failures (HF API 5xx, rate-limit, network blips)
-        with exponential backoff. A single missed delete = a permanently
-        orphaned Space, so the cost of an extra retry beats the alternative.
-        """
-        from agent.tools.sandbox_tool import teardown_session_sandbox
-
-        await teardown_session_sandbox(session)
-
-    async def _cleanup_all_sandboxes_on_close(self) -> None:
-        """Best-effort sandbox cleanup for graceful backend shutdown."""
-        async with self._lock:
-            agent_sessions = list(self.sessions.values())
-        if not agent_sessions:
-            return
-
-        semaphore = asyncio.Semaphore(SANDBOX_SHUTDOWN_CLEANUP_CONCURRENCY)
-
-        async def _cleanup_one(agent_session: AgentSession) -> None:
-            async with semaphore:
-                try:
-                    await self._cleanup_sandbox(agent_session.session)
-                except Exception as e:
-                    logger.warning(
-                        "Shutdown sandbox cleanup failed for %s: %s",
-                        agent_session.session_id,
-                        e,
-                    )
-
-        tasks = [
-            asyncio.create_task(_cleanup_one(agent_session))
-            for agent_session in agent_sessions
-        ]
-        try:
-            await asyncio.wait_for(
-                asyncio.gather(*tasks, return_exceptions=True),
-                timeout=SANDBOX_SHUTDOWN_CLEANUP_TIMEOUT_S,
-            )
-        except asyncio.TimeoutError:
-            logger.warning(
-                "Timed out after %.0fs cleaning up sandboxes on shutdown; "
-                "orphan sweeper will handle any stragglers",
-                SANDBOX_SHUTDOWN_CLEANUP_TIMEOUT_S,
-            )
-
     async def _reaper_loop(self) -> None:
         """Periodically release resources held by idle sessions.
 
@@ -1068,9 +957,9 @@ class SessionManager:
         """Select idle candidates under the lock, then tear each down.
 
         Candidates are non-dev sessions that are live, not processing, not
-        awaiting tool approval (those are "approve later", not idle — reaping
-        would destroy the sandbox the approved tool needs), and untouched for
-        the idle window. We only snapshot IDs under the lock; the actual
+        awaiting tool approval (those are "approve later", not idle), and
+        untouched for the idle window. We only snapshot IDs under the lock;
+        the actual
         teardown in _reap_one re-acquires it, because tearing a session down
         while holding the lock would deadlock (the lock is non-reentrant).
         """
@@ -1111,7 +1000,7 @@ class SessionManager:
         active in the gap since selection), marks the session reaping, persists
         a resumable snapshot outside the lock, then does one final locked
         re-check before eviction. The runtime task is cancelled *outside* the
-        lock: its own ``finally`` frees the sandbox, and its identity-gated
+        lock: the runtime task is already popped from the sessions dict, so its
         persist no-ops because the session is already popped — so it can't
         overwrite our resumable snapshot with ``"ended"`` and there's no
         deadlock. Returns True if the session was reaped.
@@ -1168,7 +1057,6 @@ class SessionManager:
                 return False
             self.sessions.pop(session_id, None)
             task = agent_session.task
-            session = agent_session.session
 
         if task is not None and not task.done():
             task.cancel()
@@ -1181,8 +1069,7 @@ class SessionManager:
             done, _pending = await asyncio.wait({task}, timeout=REAP_TEARDOWN_TIMEOUT_S)
             if not done:
                 logger.warning(
-                    "Reaper teardown timed out after %.0fs for %s; orphan "
-                    "sweeper will handle any sandbox straggler",
+                    "Reaper teardown timed out after %.0fs for %s",
                     REAP_TEARDOWN_TIMEOUT_S,
                     session_id,
                 )
@@ -1192,10 +1079,6 @@ class SessionManager:
                 exc = task.exception()
                 if exc is not None:
                     logger.warning("Reaper teardown error for %s: %s", session_id, exc)
-        else:
-            # No live task to run the cleanup finally — free the sandbox here so
-            # a reaped session never leaves an orphaned Space behind.
-            await self._cleanup_sandbox(session)
         return True
 
     async def _run_session(
@@ -1264,16 +1147,12 @@ class SessionManager:
             except asyncio.CancelledError:
                 pass
 
-            await self._cleanup_sandbox(session)
-
             # Final-flush: always save on session death so we capture ended
             # sessions even if the client disconnects without /shutdown.
             # Idempotent via session_id key; detached subprocess.
             if session.config.save_sessions:
                 try:
-                    session.save_and_upload_detached(
-                        session.config.session_dataset_repo
-                    )
+                    session.save_and_upload_detached()
                 except Exception as e:
                     logger.warning(f"Final-flush failed for {session_id}: {e}")
 
@@ -1385,9 +1264,6 @@ class SessionManager:
 
         await self._store().soft_delete_session(session_id)
 
-        # Clean up sandbox Space before cancelling the task
-        await self._cleanup_sandbox(agent_session.session)
-
         # Cancel the task if running
         if agent_session.task and not agent_session.task.done():
             agent_session.task.cancel()
@@ -1396,18 +1272,6 @@ class SessionManager:
             except asyncio.CancelledError:
                 pass
 
-        return True
-
-    async def teardown_sandbox(self, session_id: str) -> bool:
-        """Delete only this session's sandbox runtime, preserving chat state."""
-        async with self._lock:
-            agent_session = self.sessions.get(session_id)
-
-        if not agent_session or not agent_session.is_active:
-            return False
-
-        await self._cleanup_sandbox(agent_session.session)
-        await self.persist_session_snapshot(agent_session, runtime_state="idle")
         return True
 
     async def update_session_title(self, session_id: str, title: str | None) -> None:

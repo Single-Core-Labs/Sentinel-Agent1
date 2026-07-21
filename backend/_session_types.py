@@ -158,13 +158,10 @@ class SessionCapacityError(Exception):
 MAX_SESSIONS: int = 200
 MAX_SESSIONS_PER_USER: int = 10
 DEFAULT_YOLO_COST_CAP_USD: float = 5.0
-SANDBOX_SHUTDOWN_CLEANUP_CONCURRENCY: int = 10
-SANDBOX_SHUTDOWN_CLEANUP_TIMEOUT_S: float = 60.0
 
 # ── Idle-session reaper ─────────────────────────────────────────────
-# A live session idle ≥ REAPER_IDLE_MINUTES with no in-flight work has its
-# sandbox + RAM released and is evicted from the live pool, while staying
-# fully resumable from Mongo (it reappears as a normal chat, never "ended").
+# A live session idle ≥ REAPER_IDLE_MINUTES with no in-flight work is
+# evicted from the live pool, while staying fully resumable from Mongo.
 # This frees both the global pool and the user's concurrent slots.
 REAPER_IDLE_MINUTES: float = float(os.environ.get("REAPER_IDLE_MINUTES", "15"))
 REAPER_INTERVAL_S: float = float(os.environ.get("REAPER_INTERVAL_S", "300"))

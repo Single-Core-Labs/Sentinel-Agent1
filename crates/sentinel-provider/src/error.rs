@@ -16,4 +16,6 @@ pub enum ProviderError {
     StreamError(String),
     #[error("JSON parse error: {0}")]
     JsonError(#[from] serde_json::Error),
+    #[error("All providers in the router failed")]
+    AllProvidersFailed,
 }

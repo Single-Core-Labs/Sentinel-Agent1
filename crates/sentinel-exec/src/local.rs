@@ -3,25 +3,31 @@ use crate::executor::{ExecOutput, ExecError, Executor};
 
 pub struct LocalExecutor;
 
+impl LocalExecutor {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
 #[async_trait]
 impl Executor for LocalExecutor {
-    async fn exec(&self, command: &str, args: &[&str], _env: Option<Vec<(String, String)>>) -> ExecOutput {
+    async fn exec(&self, command: &str, args: &[&str], _env: Option<Vec<(String, String)>>) -> Result<ExecOutput, ExecError> {
         let result = tokio::process::Command::new(command)
             .args(args)
             .output()
             .await;
 
         match result {
-            Ok(output) => ExecOutput {
+            Ok(output) => Ok(ExecOutput {
                 stdout: String::from_utf8_lossy(&output.stdout).to_string(),
                 stderr: String::from_utf8_lossy(&output.stderr).to_string(),
                 exit_code: output.status.code().unwrap_or(-1),
-            },
-            Err(e) => ExecOutput {
+            }),
+            Err(e) => Ok(ExecOutput {
                 stdout: String::new(),
                 stderr: format!("Failed to execute command: {}", e),
                 exit_code: -1,
-            },
+            }),
         }
     }
 

@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/index.tsx","./src/theme.ts","./src/vite-env.d.ts","./src/components/chat-view.tsx","./src/components/input-bar.tsx","./src/components/model-picker.tsx","./src/components/startup-sequence.tsx","./src/components/status-bar.tsx","./src/events/ipc-emitter.ts","./src/events/mock-emitter.ts"],"errors":true,"version":"5.6.3"}

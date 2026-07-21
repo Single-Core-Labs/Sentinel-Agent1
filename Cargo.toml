@@ -9,7 +9,6 @@ members = [
     "crates/sentinel-tools",
     "crates/sentinel-exec",
     "crates/sentinel-mcp",
-    "crates/sentinel-sandbox",
     "crates/sentinel-cli",
     "crates/sentinel-app-server",
     "crates/sentinel-app-server-protocol",

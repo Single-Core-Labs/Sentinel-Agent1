@@ -1,5 +1,6 @@
 use uuid::Uuid;
 use sentinel_protocol::Message;
+use crate::budget::BudgetGuard;
 use crate::context::ContextManager;
 use crate::conversation::Conversation;
 
@@ -32,6 +33,7 @@ pub struct AgentThread {
     pub max_iterations: u32,
     pub yolo_mode: bool,
     pub parent_thread_id: Option<String>,
+    pub budget: BudgetGuard,
 }
 
 impl AgentThread {
@@ -47,6 +49,7 @@ impl AgentThread {
             max_iterations,
             yolo_mode,
             parent_thread_id: None,
+            budget: BudgetGuard::new(None, yolo_mode),
         }
     }
 
@@ -72,6 +75,14 @@ impl AgentThread {
         self.turn < self.max_turns
     }
 
+    /// Create a thread with a specific budget cap (for YOLO mode with cost limits).
+    pub fn with_budget(max_turns: u32, max_iterations: u32, yolo_mode: bool, cost_cap_usd: Option<f64>) -> Self {
+        Self {
+            budget: BudgetGuard::new(cost_cap_usd, yolo_mode),
+            ..Self::new(max_turns, max_iterations, yolo_mode)
+        }
+    }
+
     pub fn fork(&self) -> Self {
         let forked_conversation = self.conversation.clone();
         Self {
@@ -85,6 +96,7 @@ impl AgentThread {
             max_iterations: self.max_iterations,
             yolo_mode: self.yolo_mode,
             parent_thread_id: Some(self.id.to_string()),
+            budget: BudgetGuard::new(self.budget.cost_cap_usd, self.budget.auto_approval_enabled),
         }
     }
 
@@ -101,6 +113,7 @@ impl AgentThread {
             max_iterations: self.max_iterations,
             yolo_mode: self.yolo_mode,
             parent_thread_id: Some(self.id.to_string()),
+            budget: BudgetGuard::new(self.budget.cost_cap_usd, self.budget.auto_approval_enabled),
         }
     }
 }

@@ -49,7 +49,6 @@ crate.from_cargo(
         "//crates/sentinel-tools:Cargo.toml",
         "//crates/sentinel-exec:Cargo.toml",
         "//crates/sentinel-mcp:Cargo.toml",
-        "//crates/sentinel-sandbox:Cargo.toml",
         "//crates/sentinel-cli:Cargo.toml",
         "//crates/sentinel-app-server:Cargo.toml",
         "//crates/sentinel-app-server-protocol:Cargo.toml",

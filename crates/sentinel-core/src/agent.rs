@@ -108,6 +108,15 @@ impl Agent {
             if let Some(ref usage) = response.usage {
                 self.total_prompt_tokens.fetch_add(usage.prompt_tokens as u64, Ordering::Relaxed);
                 self.total_completion_tokens.fetch_add(usage.completion_tokens as u64, Ordering::Relaxed);
+                let cost = crate::cost::estimate_llm_cost(&self.provider.name(), &crate::cost::Usage::new(
+                    usage.prompt_tokens, usage.completion_tokens,
+                ));
+                thread.budget.record_spend(cost);
+            }
+
+            if thread.budget.exhausted {
+                thread.status = ThreadStatus::Completed;
+                return Ok(AgentOutput::success("[Budget exhausted — spend cap reached]"));
             }
 
             let choice = match response.choices.into_iter().next() {
@@ -143,6 +152,16 @@ impl Agent {
                     name: name.clone(),
                     args: args.clone(),
                 }).await;
+
+                if thread.budget.exhausted {
+                    tool_results.push(ToolResult {
+                        tool_call_id: tool_call_id.clone(),
+                        name: name.clone(),
+                        output: "Budget exhausted — tool execution skipped".into(),
+                        is_error: true,
+                    });
+                    continue;
+                }
 
                 if !thread.yolo_mode {
                     thread.status = ThreadStatus::AwaitingApproval;
@@ -334,6 +353,16 @@ impl Agent {
                     name: name.clone(),
                     args: args.clone(),
                 }).await;
+
+                if thread.budget.exhausted {
+                    tool_results.push(ToolResult {
+                        tool_call_id: tool_call_id.clone(),
+                        name: name.clone(),
+                        output: "Budget exhausted — tool execution skipped".into(),
+                        is_error: true,
+                    });
+                    continue;
+                }
 
                 if !thread.yolo_mode {
                     thread.status = ThreadStatus::AwaitingApproval;

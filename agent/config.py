@@ -13,7 +13,6 @@ from fastmcp.mcp_config import (
 from pydantic import BaseModel
 
 from agent.messaging.models import MessagingConfig
-from agent.observability.config import ObservabilityConfig
 
 logger = logging.getLogger(__name__)
 
@@ -30,23 +29,9 @@ class Config(BaseModel):
     model_name: str
     mcpServers: dict[str, MCPServerConfig] = {}
     save_sessions: bool = True
-    session_dataset_repo: str = ""
     auto_save_interval: int = 1  # Save every N user turns (0 = disabled)
-    # Mid-turn heartbeat: save + upload every N seconds while events are being
-    # emitted. 0 = disabled. Consumed by agent.core.telemetry.HeartbeatSaver.
-    heartbeat_interval_s: int = 60
     yolo_mode: bool = False  # Auto-approve all tool calls without confirmation
     max_iterations: int = 300  # Max LLM calls per agent turn (-1 = unlimited)
-
-    # Permission control parameters
-    confirm_cpu_jobs: bool = True
-    auto_file_upload: bool = False
-    tool_runtime: Literal["local", "sandbox"] = "local"
-
-    # OpenTelemetry observability configuration.
-    # Set ``enabled: true`` to start exporting traces, metrics, and logs.
-    # All fields can be overridden via ``PLATFORM_AGENT_TELEMETRY_*`` env vars.
-    observability: ObservabilityConfig = ObservabilityConfig()
 
     # Reasoning effort *preference* — the ceiling the user wants. The probe
     # on `/model` walks a cascade down from here (``max`` → ``xhigh`` → ``high``

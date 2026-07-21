@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 serde.workspace = true
+rusqlite = { workspace = true, optional = true }
 serde_json.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true
@@ -22,3 +23,7 @@ sentinel-provider = { path = "../sentinel-provider" }
 sentinel-provider-info = { path = "../sentinel-provider-info" }
 sentinel-tools = { path = "../sentinel-tools" }
 sentinel-config = { path = "../sentinel-config" }
+
+[features]
+default = []
+sqlite = ["rusqlite"]

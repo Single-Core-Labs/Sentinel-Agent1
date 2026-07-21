@@ -152,7 +152,6 @@ def _install_fake_create(manager: SessionManager) -> asyncio.Event:
 
     manager._create_session_sync = fake_create_session_sync  # type: ignore[method-assign]
     manager._run_session = fake_run_session  # type: ignore[method-assign]
-    manager._start_cpu_sandbox_preload = lambda _agent_session: None  # type: ignore[method-assign]
     return stop
 
 
@@ -174,25 +173,16 @@ async def _cancel_tasks(manager: SessionManager) -> None:
 @pytest.mark.asyncio
 async def test_reaper_evicts_idle_session_as_resumable():
     manager = _manager()
-    cleaned: list[Any] = []
 
-    async def fake_cleanup(session: Any) -> None:
-        cleaned.append(session)
-
-    manager._cleanup_sandbox = fake_cleanup  # type: ignore[method-assign]
-
-    agent_session = await _start_real_run_session(
+    await _start_real_run_session(
         manager,
         "stale",
         last_active_at=datetime.utcnow() - timedelta(hours=3),
     )
-    session = agent_session.session
 
     await manager._reap_idle_sessions()
 
-    # Evicted from the live pool, sandbox torn down by the task's finally.
     assert "stale" not in manager.sessions
-    assert cleaned == [session]
 
     # Persisted resumable (status="active", runtime_state="idle"), never "ended".
     store = manager.persistence_store
@@ -284,11 +274,6 @@ async def test_turn_finish_restamps_activity(monkeypatch):
     """A turn that runs longer than the idle window must not be reaped the
     instant it finishes — the turn-finish stamp resets the idle clock."""
     manager = _manager()
-
-    async def fake_cleanup(session: Any) -> None:
-        return None
-
-    manager._cleanup_sandbox = fake_cleanup  # type: ignore[method-assign]
 
     agent_session = await _start_real_run_session(
         manager, "longturn", last_active_at=datetime.utcnow()
@@ -474,94 +459,4 @@ async def test_reap_aborts_when_message_write_fails_silently():
     assert agent_session.is_reaping is False
 
 
-# ── Reap / restore race ──────────────────────────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_old_reaped_task_does_not_end_freshly_restored_session():
-    """If a user reopens after the reaper pops the old wrapper but before the
-    old task finishes sandbox cleanup, the old finally must not mark the fresh
-    wrapper ended."""
-    manager = _manager()
-    cleanup_started = asyncio.Event()
-    release_cleanup = asyncio.Event()
-
-    async def slow_cleanup(session: Any) -> None:
-        cleanup_started.set()
-        await release_cleanup.wait()
-
-    manager._cleanup_sandbox = slow_cleanup  # type: ignore[method-assign]
-
-    old = await _start_real_run_session(
-        manager,
-        "restore-race",
-        last_active_at=datetime.utcnow() - timedelta(hours=3),
-    )
-    cutoff = datetime.utcnow() - sm.REAPER_IDLE
-    reap_task = asyncio.create_task(manager._reap_one("restore-race", cutoff))
-
-    for _ in range(100):
-        await asyncio.sleep(0.01)
-        if "restore-race" not in manager.sessions and cleanup_started.is_set():
-            break
-
-    assert "restore-race" not in manager.sessions
-    assert cleanup_started.is_set()
-
-    fresh = _make_agent_session("restore-race")
-    async with manager._lock:
-        manager.sessions["restore-race"] = fresh
-
-    release_cleanup.set()
-    assert await reap_task is True
-    if old.task is not None:
-        assert old.task.done()
-
-    assert manager.sessions["restore-race"] is fresh
-    assert fresh.is_active is True
-    assert all(
-        snapshot.get("status") != "ended"
-        for snapshot in manager.persistence_store.snapshots_for("restore-race")
-    )
-
-
 # ── Shutdown safety (cancellation must propagate) ────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_reaper_teardown_propagates_outer_cancellation():
-    """Cancelling the reaper while it awaits a slow teardown must propagate, so
-    close() can't hang. Regression for the CancelledError-conflation bug: the
-    old wait_for + bare-except swallowed the reaper's own cancellation."""
-    manager = _manager()
-
-    release = asyncio.Event()
-
-    async def slow_cleanup(session: Any) -> None:
-        await release.wait()  # block teardown so _reap_one parks in the wait
-
-    manager._cleanup_sandbox = slow_cleanup  # type: ignore[method-assign]
-
-    agent_session = await _start_real_run_session(
-        manager, "slow", last_active_at=datetime.utcnow() - timedelta(hours=3)
-    )
-    cutoff = datetime.utcnow() - sm.REAPER_IDLE
-
-    reap_task = asyncio.create_task(manager._reap_one("slow", cutoff))
-    # Let _reap_one persist + pop, then enter the teardown wait (the session
-    # task is stuck in slow_cleanup, so the wait won't complete on its own).
-    for _ in range(100):
-        await asyncio.sleep(0.01)
-        if "slow" not in manager.sessions:
-            break
-    await asyncio.sleep(0.02)
-
-    # Simulate close() cancelling the reaper mid-teardown.
-    reap_task.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await reap_task
-
-    # Unblock the stuck teardown and reap the orphaned session task.
-    release.set()
-    if agent_session.task is not None:
-        await asyncio.gather(agent_session.task, return_exceptions=True)

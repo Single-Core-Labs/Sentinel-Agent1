@@ -1680,7 +1680,6 @@ dependencies = [
  "sentinel-protocol",
  "sentinel-provider",
  "sentinel-provider-info",
- "sentinel-sandbox",
  "sentinel-tools",
  "serde",
  "serde_json",
@@ -1774,7 +1773,6 @@ dependencies = [
  "sentinel-core",
  "sentinel-mcp",
  "sentinel-provider",
- "sentinel-sandbox",
  "sentinel-tools",
  "serde_json",
  "tokio",
@@ -1803,6 +1801,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "futures",
+ "rusqlite",
  "sentinel-config",
  "sentinel-protocol",
  "sentinel-provider",
@@ -1883,17 +1882,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sentinel-sandbox"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "serde",
- "serde_json",
- "thiserror 2.0.19",
- "tracing",
-]
-
-[[package]]
 name = "sentinel-tools"
 version = "0.1.0"
 dependencies = [
@@ -1901,8 +1889,8 @@ dependencies = [
  "async-trait",
  "glob",
  "reqwest",
+ "sentinel-ai-core",
  "sentinel-protocol",
- "sentinel-sandbox",
  "serde",
  "serde_json",
  "tokio",

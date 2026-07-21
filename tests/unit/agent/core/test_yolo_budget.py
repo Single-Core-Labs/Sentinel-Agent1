@@ -32,14 +32,14 @@ def test_reservation_reconcile_replaces_estimate_with_actual_cost():
     decision = yolo_budget.reserve_session_budget(
         session,
         CostEstimate(estimated_cost_usd=1.25, billable=True),
-        spend_kind="sandbox",
-        reservation_id="sandbox-1",
+        spend_kind="llm_call",
+        reservation_id="llm-1",
     )
 
     assert decision.allowed is True
     assert session.auto_approval_estimated_spend_usd == 2.25
 
-    yolo_budget.reconcile_budget_reservation(session, "sandbox-1", 0.5)
+    yolo_budget.reconcile_budget_reservation(session, "llm-1", 0.5)
 
     assert session.auto_approval_estimated_spend_usd == 1.5
 
@@ -65,13 +65,13 @@ def test_zero_cost_reconcile_can_release_measured_zero_runtime_cost():
     yolo_budget.reserve_session_budget(
         session,
         CostEstimate(estimated_cost_usd=1.25, billable=True),
-        spend_kind="sandbox",
-        reservation_id="sandbox-1",
+        spend_kind="llm_call",
+        reservation_id="llm-2",
     )
 
     yolo_budget.reconcile_budget_reservation(
         session,
-        "sandbox-1",
+        "llm-2",
         0.0,
         allow_zero_actual=True,
     )

@@ -23,8 +23,6 @@ MAX_BSON_BYTES = 15 * 1024 * 1024
 USAGE_EVENT_TYPES = (
     "llm_call",
     "hf_job_complete",
-    "sandbox_create",
-    "sandbox_destroy",
 )
 
 

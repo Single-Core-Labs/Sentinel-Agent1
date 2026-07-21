@@ -3,8 +3,6 @@ mod display;
 mod handler;
 mod exec;
 mod auth;
-mod sandbox;
-mod plugin;
 mod server;
 mod diagnostics;
 mod tui;
@@ -35,8 +33,8 @@ async fn main() -> anyhow::Result<()> {
         "--version" | "-V" => println!("Sentinel v{}", env!("CARGO_PKG_VERSION")),
         "exec" => exec::run(sub_args).await?,
         "auth" => auth::run(sub_args).await?,
-        "sandbox" => sandbox::run(sub_args).await?,
-        "plugin" => plugin::run(sub_args).await?,
+
+
         "server" => server::run(sub_args).await?,
         "diagnostics" => diagnostics::run(sub_args).await?,
         "tui" => tui::run(sub_args).await?,
@@ -59,8 +57,6 @@ fn print_help() {
     println!("{}", "Subcommands:".yellow().bold());
     println!("  exec <model> <prompt>    Run the agent with a prompt");
     println!("  auth login|logout|status Authentication management");
-    println!("  sandbox check|config     Sandbox environment tools");
-    println!("  plugin list|add|remove   Plugin and marketplace management");
     println!("  server start|stop|status App server control");
     println!("  tui [--port <addr>]     Terminal UI interactive session");
     println!("  diagnostics              System diagnostic checks");

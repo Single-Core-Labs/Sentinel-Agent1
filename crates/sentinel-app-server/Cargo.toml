@@ -22,7 +22,6 @@ sentinel-tools = { path = "../sentinel-tools" }
 sentinel-provider = { path = "../sentinel-provider" }
 sentinel-provider-info = { path = "../sentinel-provider-info" }
 sentinel-config = { path = "../sentinel-config" }
-sentinel-sandbox = { path = "../sentinel-sandbox" }
 sentinel-exec = { path = "../sentinel-exec" }
 sentinel-mcp = { path = "../sentinel-mcp" }
 sentinel-app-server-protocol = { path = "../sentinel-app-server-protocol" }
@@ -30,3 +29,6 @@ sentinel-app-server-transport = { path = "../sentinel-app-server-transport" }
 sentinel-analytics = { path = "../sentinel-analytics" }
 sentinel-agent-identity = { path = "../sentinel-agent-identity" }
 sentinel-agent-graph-store = { path = "../sentinel-agent-graph-store" }
+
+[features]
+sqlite = ["sentinel-core/sqlite"]

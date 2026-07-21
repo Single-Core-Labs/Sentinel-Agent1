@@ -35,7 +35,7 @@ async def _flush_session_on_shutdown(sid: str, agent_session, semaphore) -> None
         return
     try:
         async with semaphore:
-            sess.save_and_upload_detached(sess.config.session_dataset_repo)
+            sess.save_and_upload_detached()
             logger.info("Flushed session %s on shutdown", sid)
     except Exception as e:
         logger.warning("Failed to flush session %s: %s", sid, e)

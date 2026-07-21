@@ -14,7 +14,6 @@ rust_library(
         "@sentinel_crates//:reqwest",
         "@sentinel_crates//:glob",
         "//crates/sentinel-protocol",
-        "//crates/sentinel-sandbox",
     ],
     visibility = ["//visibility:public"],
 )

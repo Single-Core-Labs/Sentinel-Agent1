@@ -73,7 +73,7 @@ async def _reset_usage_window(session_id: str) -> dict[str, Any] | None:
 async def _save_session(agent_session: AgentSession) -> None:
     session = agent_session.session
     try:
-        session.save_and_upload_detached(session.config.session_dataset_repo)
+        session.save_and_upload_detached()
     except Exception as e:
         logger.warning(
             "Background session save failed for %s: %s",
@@ -148,13 +148,11 @@ async def _check_session_access(
     session_id: str,
     user: dict[str, Any],
     request: Request | None = None,
-    preload_sandbox: bool = True,
 ) -> AgentSession:
     """Verify and lazily load the user's session. Raises 403 or 404."""
     agent_session = await session_manager.ensure_session_loaded(
         session_id,
         user["user_id"],
-        preload_sandbox=preload_sandbox,
     )
     if not agent_session:
         raise HTTPException(status_code=404, detail="Session not found")
@@ -398,7 +396,6 @@ async def restore_session_summary(
         session_id,
         user,
         request,
-        preload_sandbox=False,
     )
     try:
         summarized = await session_manager.seed_from_summary(session_id, messages)
@@ -524,7 +521,6 @@ async def get_usage(
             session_id,
             user,
             request,
-            preload_sandbox=False,
         )
     usage = {
         "user_id": user["user_id"],
@@ -549,24 +545,12 @@ async def list_sessions(user: dict = Depends(get_current_user)) -> list[SessionI
     return [SessionInfo(**s) for s in sessions]
 
 
-@router.post("/session/{session_id}/sandbox/teardown")
-async def teardown_session_sandbox(
-    session_id: str, user: dict = Depends(get_current_user)
-) -> dict:
-    """Best-effort sandbox teardown that preserves durable chat history."""
-    await _check_session_access(session_id, user, preload_sandbox=False)
-    task = asyncio.create_task(session_manager.teardown_sandbox(session_id))
-    _background_route_tasks.add(task)
-    task.add_done_callback(_background_route_tasks.discard)
-    return {"status": "teardown_requested", "session_id": session_id}
-
-
 @router.delete("/session/{session_id}")
 async def delete_session(
     session_id: str, user: dict = Depends(get_current_user)
 ) -> dict:
     """Delete a session. Only accessible by the session owner."""
-    await _check_session_access(session_id, user, preload_sandbox=False)
+    await _check_session_access(session_id, user)
     success = await session_manager.delete_session(session_id)
     if not success:
         raise HTTPException(status_code=404, detail="Session not found")

@@ -18,7 +18,6 @@ from agent.core.approval_policy import (
     normalize_tool_operation,
 )
 from agent.core.cost_estimation import CostEstimate, estimate_tool_cost
-from agent.core import telemetry
 from agent.core.llm_params import _resolve_llm_params
 from agent.core.prompt_caching import (
     router_session_id_for,
@@ -34,22 +33,9 @@ from agent.core.yolo_budget import (
     check_session_budget,
     reserve_session_budget,
 )
-from agent.tools.cloud_tools import (
-    MUTATING_CLOUD_TOOLS,
-)
+
 
 logger = logging.getLogger(__name__)
-
-DEFAULT_CPU_SANDBOX_HARDWARE = "cpu-basic"
-
-
-def start_cpu_sandbox_preload(session) -> None:
-    pass
-
-
-async def teardown_session_sandbox(session) -> None:
-    pass
-
 
 ToolCall = ChatCompletionMessageToolCall
 
@@ -228,30 +214,6 @@ def _operation(tool_args: dict) -> str:
     return normalize_tool_operation(tool_args.get("operation"))
 
 
-def _is_budgeted_auto_approval_target(tool_name: str, tool_args: dict) -> bool:
-    return tool_name == "sandbox_create"
-
-
-# ── Cloud mutating tools — mandatory approval, NO config can bypass ──
-
-MANDATORY_APPROVAL_TOOLS: frozenset[str] = frozenset(
-    {
-        "terraform_apply",
-        *MUTATING_CLOUD_TOOLS,
-    }
-)
-
-
-def _mandatory_approval_tool(tool_name: str) -> bool:
-    """Return True if this tool is in the mandatory-approval set.
-
-    These tools: restart_service, scale_deployment, terraform_apply
-    ALWAYS require user approval regardless of yolo_mode, auto_approval,
-    budget settings, or any other config.  No bypass is possible.
-    """
-    return tool_name in MANDATORY_APPROVAL_TOOLS
-
-
 def _base_needs_approval(
     tool_name: str, tool_args: dict, config: Config | None = None
 ) -> bool:
@@ -261,14 +223,6 @@ def _base_needs_approval(
     args_valid, _ = _validate_tool_args(tool_args)
     if not args_valid:
         return False
-
-    if tool_name == "sandbox_create":
-        hardware = tool_args.get("hardware") or DEFAULT_CPU_SANDBOX_HARDWARE
-        return hardware != DEFAULT_CPU_SANDBOX_HARDWARE
-
-    # ── Mandatory-approval tools (terraform_apply + cloud mutating) ──
-    if _mandatory_approval_tool(tool_name):
-        return True
 
     return False
 
@@ -636,15 +590,7 @@ async def _compact_and_notify(session: Session) -> None:
         )
 
 
-async def _cleanup_on_cancel(session: Session) -> None:
-    """Kill sandbox processes when the user interrupts."""
-    sandbox = getattr(session, "sandbox", None)
-    if sandbox:
-        try:
-            await asyncio.to_thread(sandbox.kill_all)
-            logger.info("Killed sandbox processes on cancel")
-        except Exception as e:
-            logger.warning("Failed to kill sandbox processes: %s", e)
+
 
 
 @dataclass
