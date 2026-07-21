@@ -1,0 +1,3 @@
+[console_scripts]
+platform-agent = agent.main:cli
+sentinel-ai = agent.main:cli

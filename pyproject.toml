@@ -47,7 +47,13 @@ dev = [
 
 # All dependencies (eval + dev)
 all = [
-    "platform-agent[eval,dev]",
+    "inspect-ai>=0.3.149",
+    "pandas>=2.3.3",
+    "datasets>=4.3.0",
+    "tenacity>=8.0.0",
+    "pytest>=9.0.2",
+    "pytest-asyncio>=1.2.0",
+    "ruff>=0.15.12",
 ]
 
 [project.scripts]
