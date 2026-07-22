@@ -7,12 +7,15 @@ license = "Apache-2.0"
 [dependencies]
 colored = { workspace = true }
 anyhow = { workspace = true }
-tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "signal"] }
 tokio-stream = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_yaml = { workspace = true }
 thiserror = { workspace = true }
+ratatui = "0.26"
+crossterm = "0.27"
+futures = "0.3"
 # Use the exec crate for shared logic
 sentinel-ai-exec = { path = "../sentinel-ai-exec" }
 sentinel-app-server-client = { path = "../sentinel-app-server-client" }

@@ -1,53 +1,87 @@
-use colored::*;
 use sentinel_ai_exec::ThreadEvent;
-use std::io::Write;
 use serde_json::Value;
 
-/// Basic chat widget that stores a history of `ThreadEvent`s.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone)]
+pub struct ChatMessage {
+    pub event_type: String,
+    pub text: String,
+    pub is_error: bool,
+}
+
+#[derive(Debug)]
 pub struct ChatWidget {
-    history: Vec<ThreadEvent>,
+    pub messages: Vec<ChatMessage>,
+    pub scroll_offset: usize,
 }
 
 impl ChatWidget {
     pub fn new() -> Self {
-        Self { history: Vec::new() }
-    }
-
-    /// Append a new event to the history.
-    pub fn append(&mut self, ev: ThreadEvent) {
-        self.history.push(ev);
-    }
-
-    /// Render the full chat history to stdout.
-    pub fn render(&self) {
-        // Clear the screen (simple approach).
-        print!("{}[2J", 27 as char); // ANSI escape to clear screen.
-        println!("{}", "╔══════════════════════════════════╗".green());
-        println!("{}", "║          Sentinel AI TUI Session        ║".green().bold());
-        println!("{}", "╚══════════════════════════════════╝".green());
-        for ev in &self.history {
-            match ev.event_type.as_str() {
-                "thinking" => {
-                    let txt = ev.data.get("text").and_then(Value::as_str).unwrap_or("");
-                    println!("{} {}", "🤔".yellow(), txt);
-                }
-                "completed" => {
-                    let txt = ev.data.get("text").and_then(Value::as_str).unwrap_or("");
-                    println!("{} {}", "🏁".magenta(), txt);
-                }
-                "error" => {
-                    let msg = ev.data.get("message").and_then(Value::as_str).unwrap_or("unknown");
-                    eprintln!("{} {}", "✖ Error:".red().bold(), msg);
-                }
-                _ => {
-                    // Fallback for any other event type.
-                    println!("{}: {}", ev.event_type, ev.data);
-                }
-            }
+        Self {
+            messages: Vec::new(),
+            scroll_offset: 0,
         }
-        // Prompt for next input.
-        print!("{} ", ">".cyan().bold());
-        let _ = std::io::stdout().flush();
+    }
+
+    pub fn clear(&mut self) {
+        self.messages.clear();
+        self.scroll_offset = 0;
+    }
+
+    pub fn append(&mut self, ev: ThreadEvent) {
+        let text = match ev.event_type.as_str() {
+            "thinking" => ev.data.get("text").and_then(Value::as_str).unwrap_or("").to_string(),
+            "completed" => ev.data.get("text").and_then(Value::as_str).unwrap_or("Done").to_string(),
+            "error" => ev.data.get("message").and_then(Value::as_str).unwrap_or("unknown error").to_string(),
+            "tool_call" => {
+                let name = ev.data.get("name").and_then(Value::as_str).unwrap_or("tool");
+                format!("🔧 Tool call: {name}")
+            }
+            "tool_result" => {
+                let output = ev.data.get("output").and_then(Value::as_str).unwrap_or("");
+                format!("✅ Tool result: {output}")
+            }
+            other => format!("[{other}]: {}", ev.data),
+        };
+
+        self.messages.push(ChatMessage {
+            event_type: ev.event_type.clone(),
+            text,
+            is_error: ev.event_type == "error",
+        });
+
+        self.scroll_to_bottom();
+    }
+
+    pub fn scroll_up(&mut self) {
+        if self.scroll_offset < self.messages.len().saturating_sub(1) {
+            self.scroll_offset += 1;
+        }
+    }
+
+    pub fn scroll_down(&mut self) {
+        self.scroll_offset = self.scroll_offset.saturating_sub(1);
+    }
+
+    pub fn scroll_to_bottom(&mut self) {
+        self.scroll_offset = 0;
+    }
+
+    pub fn visible_messages(&self, max_height: usize) -> &[ChatMessage] {
+        let msg_count = self.messages.len();
+        if msg_count == 0 {
+            return &[];
+        }
+        let start = msg_count.saturating_sub(max_height + self.scroll_offset);
+        let end = msg_count.saturating_sub(self.scroll_offset);
+        if start >= end {
+            return &[];
+        }
+        &self.messages[start..end]
+    }
+}
+
+impl Default for ChatWidget {
+    fn default() -> Self {
+        Self::new()
     }
 }
