@@ -21,6 +21,31 @@ The following tool calls were lost. \
 IMPORTANT: Do NOT retry with the same large content. Instead: \
 use bash with cat<<'HEREDOC' to write files, or split into several smaller tool calls.";
 
+const MALFORMED_TOOL_CALL_HINT: &str = "\
+Your previous response contained malformed tool calls that could not be executed. \
+Issues found: \
+- Empty or missing tool call ID \
+- Empty or missing tool name \
+- Invalid JSON in tool call arguments (must be valid JSON object) \
+Please correct the tool calls and retry. Do NOT repeat the same malformed calls.";
+
+/// Validate tool calls and return OK or describe the malformation.
+fn validate_tool_calls(tool_calls: &[(String, String, serde_json::Value)]) -> Result<(), Vec<String>> {
+    let mut errors = Vec::new();
+    for (i, (id, name, args)) in tool_calls.iter().enumerate() {
+        if id.is_empty() {
+            errors.push(format!("Tool call #{}: missing id", i));
+        }
+        if name.is_empty() {
+            errors.push(format!("Tool call #{}: missing name", i));
+        }
+        if !args.is_object() && !args.is_null() {
+            errors.push(format!("Tool call #{} ('{}'): arguments must be a JSON object", i, name));
+        }
+    }
+    if errors.is_empty() { Ok(()) } else { Err(errors) }
+}
+
 pub struct Agent {
     provider: Arc<dyn ModelProvider>,
     tools: Arc<ToolRegistry>,
@@ -191,6 +216,24 @@ impl Agent {
                     } else { None }
                 })
                 .collect();
+
+            // Malformed tool call recovery
+            if !tool_calls.is_empty() {
+                if let Err(validation_errors) = validate_tool_calls(&tool_calls) {
+                    tracing::warn!(
+                        "Malformed tool calls detected: {:?}",
+                        validation_errors,
+                    );
+                    let error_detail = validation_errors.join("; ");
+                    let hint = Message::user(format!(
+                        "[SYSTEM: Malformed tool calls detected — {}]\n\n{}",
+                        error_detail,
+                        MALFORMED_TOOL_CALL_HINT,
+                    ));
+                    thread.add_message(hint);
+                    continue;
+                }
+            }
 
             // Truncation recovery: finish_reason=length with partial tool calls
             if finish_reason == Some("length") && !tool_calls.is_empty() {
@@ -417,6 +460,24 @@ impl Agent {
             let msg = Message::new(Role::Assistant, content);
             thread.add_message(msg);
             self.events.handle_event(AgentEvent::Thinking { text: last_text.clone() }).await;
+
+            // Malformed tool call recovery
+            if is_tool_call {
+                if let Err(validation_errors) = validate_tool_calls(&tool_calls) {
+                    tracing::warn!(
+                        "Malformed tool calls in streaming response: {:?}",
+                        validation_errors,
+                    );
+                    let error_detail = validation_errors.join("; ");
+                    let hint = Message::user(format!(
+                        "[SYSTEM: Malformed tool calls detected — {}]\n\n{}",
+                        error_detail,
+                        MALFORMED_TOOL_CALL_HINT,
+                    ));
+                    thread.add_message(hint);
+                    continue;
+                }
+            }
 
             // Truncation recovery: if tool calls exist but output was truncated,
             // inject truncation hint and retry iteration

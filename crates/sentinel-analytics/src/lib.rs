@@ -7,6 +7,7 @@ pub mod accepted_lines;
 pub mod client;
 pub mod queue;
 pub mod capture;
+pub mod crash;
 
 pub use event::*;
 pub use fact::*;
@@ -16,6 +17,7 @@ pub use pipeline::*;
 pub use client::*;
 pub use queue::*;
 pub use capture::*;
+pub use crash::*;
 
 // accepted_lines re-exports LineStats manually (ambiguous with events::LineStats)
 pub use accepted_lines::line_stats;

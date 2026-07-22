@@ -95,6 +95,13 @@ pub enum FactKind {
         source: String,
         message: String,
     },
+    /// A process crash / panic was captured.
+    Crash {
+        crash_id: String,
+        message: String,
+        location: Option<String>,
+        backtrace_snippet: String,
+    },
 }
 
 impl AnalyticsFact {

@@ -220,6 +220,24 @@ impl AnalyticsEventsClient {
         );
     }
 
+    /// Record a crash/panic event.
+    pub fn record_crash(
+        &self,
+        crash_id: impl Into<String>,
+        message: impl Into<String>,
+        location: Option<String>,
+        backtrace_snippet: impl Into<String>,
+    ) {
+        self.queue.enqueue(
+            AnalyticsFact::new(FactKind::Crash {
+                crash_id: crash_id.into(),
+                message: message.into(),
+                location,
+                backtrace_snippet: backtrace_snippet.into(),
+            })
+        );
+    }
+
     /// Record an error.
     pub fn record_error(
         &self,

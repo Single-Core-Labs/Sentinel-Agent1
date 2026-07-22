@@ -12,6 +12,7 @@ pub mod messaging;
 pub mod uploader;
 pub mod phase;
 pub mod snapshot;
+pub mod sanitize;
 
 pub use agent::*;
 pub use approval::*;

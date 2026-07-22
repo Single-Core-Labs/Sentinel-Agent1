@@ -25,6 +25,7 @@ sentinel-provider = { path = "../sentinel-provider" }
 sentinel-provider-info = { path = "../sentinel-provider-info" }
 sentinel-tools = { path = "../sentinel-tools" }
 sentinel-config = { path = "../sentinel-config" }
+regex.workspace = true
 
 [features]
 default = []

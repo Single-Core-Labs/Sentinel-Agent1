@@ -6,6 +6,7 @@ use uuid::Uuid;
 use crate::budget::BudgetGuard;
 use crate::thread::AgentThread;
 use crate::conversation::Conversation;
+use crate::sanitize::SecretSanitizer;
 
 /// Thread persisted representation
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -40,6 +41,33 @@ impl From<&AgentThread> for SavedThread {
 }
 
 impl SavedThread {
+    /// Return a sanitized copy with potential secrets redacted.
+    pub fn sanitized(&self) -> Self {
+        let sanitizer = SecretSanitizer::new();
+        let mut sanitized = self.clone();
+
+        // Sanitize conversation text fields
+        for turn in &mut sanitized.conversation.turns {
+            for item in &mut turn.items {
+                match item {
+                    crate::conversation::Item::UserMessage { ref mut text, .. }
+                    | crate::conversation::Item::AssistantText { ref mut text, .. } => {
+                        let cleaned = sanitizer.sanitize_text(text);
+                        *text = cleaned;
+                    }
+                    crate::conversation::Item::ToolResult { ref mut content, .. } => {
+                        let cleaned = sanitizer.sanitize_text(content);
+                        *content = cleaned;
+                    }
+                    crate::conversation::Item::AssistantToolCall { ref mut arguments, .. } => {
+                        sanitizer.sanitize_value(arguments);
+                    }
+                }
+            }
+        }
+        sanitized
+    }
+
     pub fn into_thread(self) -> AgentThread {
         let mut budget = BudgetGuard::new(self.budget_cost_cap_usd, self.yolo_mode);
         budget.total_spend_usd = self.budget_total_spend_usd;
@@ -107,7 +135,8 @@ impl JsonFileThreadStore {
 impl ThreadStore for JsonFileThreadStore {
     async fn save_thread(&self, thread: &AgentThread) -> Result<(), ThreadStoreError> {
         let saved: SavedThread = thread.into();
-        let json = serde_json::to_string_pretty(&saved)
+        let sanitized = saved.sanitized();
+        let json = serde_json::to_string_pretty(&sanitized)
             .map_err(|e| ThreadStoreError::Serialization(e.to_string()))?;
         tokio::fs::create_dir_all(&self.dir).await
             .map_err(|e| ThreadStoreError::Io(e.to_string()))?;
@@ -199,7 +228,8 @@ impl SqliteThreadStore {
 impl ThreadStore for SqliteThreadStore {
     async fn save_thread(&self, thread: &AgentThread) -> Result<(), ThreadStoreError> {
         let saved: SavedThread = thread.into();
-        let json = serde_json::to_string_pretty(&saved)
+        let sanitized = saved.sanitized();
+        let json = serde_json::to_string_pretty(&sanitized)
             .map_err(|e| ThreadStoreError::Serialization(e.to_string()))?;
         let thread_id = saved.id;
         let now = Utc::now().to_rfc3339();
