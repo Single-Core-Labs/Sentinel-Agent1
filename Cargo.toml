@@ -24,6 +24,7 @@ members = [
     "crates/sentinel-ai-test-support",
     "crates/sentinel-plugin-system",
     "crates/sentinel-lsp",
+    "crates/sentinel-headroom",
 ]
 
 [workspace.package]
@@ -58,4 +59,7 @@ chrono = { version = "0.4", features = ["serde"] }
 hex = "0.4"
 base64 = "0.22"
 sha1 = "0.10"
+sha2 = "0.10"
 regex = "1"
+futures = "0.3"
+lru = "0.12"

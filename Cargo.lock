@@ -2085,6 +2085,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "sentinel-headroom"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "futures",
+ "hex",
+ "lru",
+ "regex",
+ "sentinel-core",
+ "sentinel-tools",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2",
+ "thiserror 2.0.19",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
 name = "sentinel-lsp"
 version = "0.1.0"
 dependencies = [
