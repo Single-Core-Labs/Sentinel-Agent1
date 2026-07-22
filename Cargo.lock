@@ -1801,6 +1801,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "futures",
+ "reqwest",
  "rusqlite",
  "sentinel-config",
  "sentinel-protocol",

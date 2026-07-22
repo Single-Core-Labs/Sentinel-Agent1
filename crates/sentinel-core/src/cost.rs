@@ -13,6 +13,8 @@ static MODEL_PRICING: LazyLock<HashMap<&'static str, ModelPrice>> = LazyLock::ne
     m.insert("gemini-2.0-flash", ModelPrice { input_per_1k: 0.0001, output_per_1k: 0.0004 });
     m.insert("deepseek-chat", ModelPrice { input_per_1k: 0.0003, output_per_1k: 0.0015 });
     m.insert("deepseek-v4-pro", ModelPrice { input_per_1k: 0.002, output_per_1k: 0.008 });
+    m.insert("openai/gpt-4o", ModelPrice { input_per_1k: 0.01, output_per_1k: 0.03 });
+    m.insert("openai/gpt-4o-mini", ModelPrice { input_per_1k: 0.0015, output_per_1k: 0.006 });
     m
 });
 

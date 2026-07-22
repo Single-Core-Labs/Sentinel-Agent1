@@ -62,7 +62,46 @@ impl AgentThread {
         let tool_call_count = msgs.iter()
             .filter(|m| m.is_tool_call())
             .count();
-        tool_call_count > 20 && tool_call_count == self.iterations as usize
+
+        let is_all_tool_calls = tool_call_count > 20 && tool_call_count == self.iterations as usize;
+
+        let is_repeated_tool = if msgs.len() >= 6 {
+            let recent: Vec<&sentinel_protocol::Message> = msgs.iter().rev().take(6).collect();
+            let tool_names: Vec<&str> = recent.iter()
+                .filter_map(|m| {
+                    if m.is_tool_call() {
+                        m.content.iter().find_map(|b| {
+                            if let sentinel_protocol::ContentBlock::ToolCall { name, .. } = b {
+                                Some(name.as_str())
+                            } else { None }
+                        })
+                    } else { None }
+                })
+                .collect();
+            tool_names.len() >= 3 && tool_names.windows(3).all(|w| w[0] == w[1] && w[1] == w[2])
+        } else {
+            false
+        };
+
+        let is_same_tool_result = if msgs.len() >= 4 {
+            let recent: Vec<&sentinel_protocol::Message> = msgs.iter().rev().take(4).collect();
+            let errors: Vec<bool> = recent.iter()
+                .filter_map(|m| {
+                    if m.role == sentinel_protocol::Role::Tool {
+                        m.content.iter().find_map(|b| {
+                            if let sentinel_protocol::ContentBlock::ToolResult { is_error, .. } = b {
+                                Some(is_error.unwrap_or(false))
+                            } else { None }
+                        })
+                    } else { None }
+                })
+                .collect();
+            errors.len() >= 3 && errors.iter().all(|e| *e)
+        } else {
+            false
+        };
+
+        is_all_tool_calls || is_repeated_tool || is_same_tool_result
     }
 
     pub fn increment_iteration(&mut self) -> bool {

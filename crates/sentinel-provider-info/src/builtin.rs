@@ -54,3 +54,99 @@ pub fn default_providers() -> Vec<ProviderInfo> {
         },
     ]
 }
+
+pub fn local_model_providers() -> Vec<(ProviderInfo, LocalModelConfig)> {
+    vec![
+        (
+            ProviderInfo {
+                id: "ollama".into(),
+                name: "Ollama".into(),
+                base_url: "http://localhost:11434".into(),
+                auth: AuthConfig::EnvKey { var: "OLLAMA_API_KEY".into() },
+                models: vec![],
+                timeout_secs: 300,
+                extra_headers: HashMap::new(),
+            },
+            LocalModelConfig { prefix: "ollama/".into(), base_url_env: "OLLAMA_BASE_URL".into(), api_key_env: "OLLAMA_API_KEY".into(), base_url_default: "http://localhost:11434".into() },
+        ),
+        (
+            ProviderInfo {
+                id: "vllm".into(),
+                name: "vLLM".into(),
+                base_url: "http://localhost:8000".into(),
+                auth: AuthConfig::EnvKey { var: "VLLM_API_KEY".into() },
+                models: vec![],
+                timeout_secs: 300,
+                extra_headers: HashMap::new(),
+            },
+            LocalModelConfig { prefix: "vllm/".into(), base_url_env: "VLLM_BASE_URL".into(), api_key_env: "VLLM_API_KEY".into(), base_url_default: "http://localhost:8000".into() },
+        ),
+        (
+            ProviderInfo {
+                id: "lm-studio".into(),
+                name: "LM Studio".into(),
+                base_url: "http://127.0.0.1:1234".into(),
+                auth: AuthConfig::None,
+                models: vec![],
+                timeout_secs: 300,
+                extra_headers: HashMap::new(),
+            },
+            LocalModelConfig { prefix: "lm-studio/".into(), base_url_env: "LMSTUDIO_BASE_URL".into(), api_key_env: "LMSTUDIO_API_KEY".into(), base_url_default: "http://127.0.0.1:1234".into() },
+        ),
+        (
+            ProviderInfo {
+                id: "llamacpp".into(),
+                name: "llama.cpp".into(),
+                base_url: "http://localhost:8080".into(),
+                auth: AuthConfig::None,
+                models: vec![],
+                timeout_secs: 300,
+                extra_headers: HashMap::new(),
+            },
+            LocalModelConfig { prefix: "llamacpp/".into(), base_url_env: "LLAMACPP_BASE_URL".into(), api_key_env: "LLAMACPP_API_KEY".into(), base_url_default: "http://localhost:8080".into() },
+        ),
+    ]
+}
+
+#[derive(Debug, Clone)]
+pub struct LocalModelConfig {
+    pub prefix: String,
+    pub base_url_env: String,
+    pub api_key_env: String,
+    pub base_url_default: String,
+}
+
+impl LocalModelConfig {
+    pub fn resolve_base_url(&self) -> String {
+        std::env::var(&self.base_url_env)
+            .or_else(|_| std::env::var("LOCAL_LLM_BASE_URL"))
+            .unwrap_or_else(|_| self.base_url_default.clone())
+    }
+
+    pub fn resolve_api_key(&self) -> String {
+        std::env::var(&self.api_key_env)
+            .or_else(|_| std::env::var("LOCAL_LLM_API_KEY"))
+            .unwrap_or_else(|_| "sk-local-no-key-required".into())
+    }
+
+    pub fn strip_prefix<'a>(&self, model_id: &'a str) -> Option<&'a str> {
+        model_id.strip_prefix(&self.prefix)
+    }
+}
+
+pub fn find_local_config(model_id: &str) -> Option<LocalModelConfig> {
+    local_model_providers().into_iter().find_map(|(_, config)| {
+        if model_id.starts_with(&config.prefix) {
+            Some(config)
+        } else {
+            None
+        }
+    })
+}
+
+pub fn is_local_model_id(model_id: &str) -> bool {
+    if model_id.is_empty() || model_id.contains(char::is_whitespace) {
+        return false;
+    }
+    local_model_providers().iter().any(|(_, config)| model_id.starts_with(&config.prefix))
+}
