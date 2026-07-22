@@ -4,6 +4,17 @@ use crate::budget::BudgetGuard;
 use crate::context::ContextManager;
 use crate::conversation::Conversation;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Phase {
+    Plan,
+    Act,
+}
+
+impl Phase {
+    pub fn is_plan(self) -> bool { self == Phase::Plan }
+    pub fn is_act(self) -> bool { self == Phase::Act }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum ThreadStatus {
     Idle,
@@ -25,6 +36,7 @@ pub struct ApprovalRequest {
 pub struct AgentThread {
     pub id: Uuid,
     pub status: ThreadStatus,
+    pub phase: Phase,
     pub conversation: Conversation,
     pub context: ContextManager,
     pub turn: u32,
@@ -41,6 +53,7 @@ impl AgentThread {
         Self {
             id: Uuid::new_v4(),
             status: ThreadStatus::Idle,
+            phase: Phase::Plan,
             conversation: Conversation::new(),
             context: ContextManager::new(128000),
             turn: 0,
@@ -51,6 +64,10 @@ impl AgentThread {
             parent_thread_id: None,
             budget: BudgetGuard::new(None, yolo_mode),
         }
+    }
+
+    pub fn enter_act_phase(&mut self) {
+        self.phase = Phase::Act;
     }
 
     pub fn add_message(&mut self, msg: Message) {
@@ -115,11 +132,17 @@ impl AgentThread {
     }
 
     /// Create a thread with a specific budget cap (for YOLO mode with cost limits).
-    pub fn with_budget(max_turns: u32, max_iterations: u32, yolo_mode: bool, cost_cap_usd: Option<f64>) -> Self {
+    pub fn with_budget(max_turns: u32, max_iterations: u32, yolo_mode: bool, cost_cap_usd: Option<f64>, phase: Phase) -> Self {
         Self {
             budget: BudgetGuard::new(cost_cap_usd, yolo_mode),
+            phase,
             ..Self::new(max_turns, max_iterations, yolo_mode)
         }
+    }
+
+    pub fn with_phase(mut self, phase: Phase) -> Self {
+        self.phase = phase;
+        self
     }
 
     pub fn fork(&self) -> Self {
@@ -127,6 +150,7 @@ impl AgentThread {
         Self {
             id: Uuid::new_v4(),
             status: ThreadStatus::Idle,
+            phase: self.phase,
             conversation: forked_conversation,
             context: ContextManager::new(128000),
             turn: 0,
@@ -144,6 +168,7 @@ impl AgentThread {
         Self {
             id: Uuid::new_v4(),
             status: ThreadStatus::Idle,
+            phase: self.phase,
             conversation: forked_conversation,
             context: ContextManager::new(128000),
             turn: 0,

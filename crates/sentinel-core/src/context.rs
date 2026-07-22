@@ -5,11 +5,12 @@ pub struct ContextManager {
     messages: Vec<Message>,
     max_tokens: usize,
     compaction_count: usize,
+    summary_count: usize,
 }
 
 impl ContextManager {
     pub fn new(max_tokens: usize) -> Self {
-        Self { messages: Vec::new(), max_tokens, compaction_count: 0 }
+        Self { messages: Vec::new(), max_tokens, compaction_count: 0, summary_count: 0 }
     }
 
     pub fn add(&mut self, msg: Message) {
@@ -26,6 +27,37 @@ impl ContextManager {
 
     pub fn needs_compaction(&self) -> bool {
         self.estimated_tokens() > self.max_tokens
+    }
+
+    pub fn should_summarize(&self) -> bool {
+        self.compaction_count >= 2 && self.summary_count < self.compaction_count
+    }
+
+    pub fn summary_count(&self) -> usize {
+        self.summary_count
+    }
+
+    /// Insert an LLM-generated summary into the context.
+    /// Called by the agent loop after generating a summary via the provider.
+    pub fn insert_summary(&mut self, summary_text: &str) {
+        self.summary_count += 1;
+        let summary = Message::new(Role::User, vec![
+            ContentBlock::Text {
+                text: format!(
+                    "[Conversation summary: {}]",
+                    summary_text,
+                ),
+            }
+        ]);
+        // Replace the first user message (placeholder summary) with the real one
+        let pos = self.messages.iter().position(|m| {
+            m.role == Role::User && m.extract_text().contains("Earlier context compacted")
+        });
+        if let Some(idx) = pos {
+            self.messages[idx] = summary;
+        } else {
+            self.messages.insert(0, summary);
+        }
     }
 
     pub fn compact(&mut self) {
@@ -66,6 +98,8 @@ impl ContextManager {
         if keep_start > 0 {
             let removed = keep_start;
             if self.compaction_count >= 2 {
+                let kept = non_system.split_off(keep_start);
+                // Use placeholder summary; caller can replace via insert_summary
                 let summary = Message::new(Role::User, vec![
                     ContentBlock::Text {
                         text: format!(
@@ -74,7 +108,6 @@ impl ContextManager {
                         ),
                     }
                 ]);
-                let kept = non_system.split_off(keep_start);
                 non_system = vec![summary];
                 non_system.extend(kept);
             } else {
@@ -93,6 +126,7 @@ impl ContextManager {
     pub fn clear(&mut self) {
         self.messages.clear();
         self.compaction_count = 0;
+        self.summary_count = 0;
     }
 
     pub fn compaction_count(&self) -> usize {

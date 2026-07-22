@@ -10,6 +10,7 @@ pub mod thread_store;
 pub mod prompt;
 pub mod messaging;
 pub mod uploader;
+pub mod phase;
 
 pub use agent::*;
 pub use approval::*;

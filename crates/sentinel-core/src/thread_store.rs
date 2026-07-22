@@ -51,6 +51,7 @@ impl SavedThread {
         AgentThread {
             id: Uuid::parse_str(&self.id).unwrap_or_else(|_| Uuid::new_v4()),
             status: crate::thread::ThreadStatus::Idle,
+            phase: crate::thread::Phase::Plan,
             conversation: self.conversation,
             context: crate::context::ContextManager::new(128000),
             turn: self.turn,

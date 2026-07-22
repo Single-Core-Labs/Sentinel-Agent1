@@ -15,6 +15,12 @@ use crate::thread::{AgentThread, ThreadStatus, ApprovalRequest};
 use crate::prompt::SystemPromptManager;
 use crate::event::{SharedEventStore, SessionEvent};
 
+const TRUNCATION_HINT: &str = "\
+Your previous response was truncated because the output hit the token limit. \
+The following tool calls were lost. \
+IMPORTANT: Do NOT retry with the same large content. Instead: \
+use bash with cat<<'HEREDOC' to write files, or split into several smaller tool calls.";
+
 pub struct Agent {
     provider: Arc<dyn ModelProvider>,
     tools: Arc<ToolRegistry>,
@@ -22,6 +28,7 @@ pub struct Agent {
     events: Arc<dyn EventHandler>,
     event_store: SharedEventStore,
     prompt_manager: SystemPromptManager,
+    phase_callback: Option<Arc<dyn Fn(crate::thread::Phase) + Send + Sync>>,
     pub total_prompt_tokens: AtomicU64,
     pub total_completion_tokens: AtomicU64,
 }
@@ -33,6 +40,7 @@ impl std::fmt::Debug for Agent {
             .field("config", &self.config)
             .field("total_prompt_tokens", &self.total_prompt_tokens)
             .field("total_completion_tokens", &self.total_completion_tokens)
+            .field("has_phase_callback", &self.phase_callback.is_some())
             .finish_non_exhaustive()
     }
 }
@@ -40,7 +48,7 @@ impl std::fmt::Debug for Agent {
 impl Agent {
     pub fn new(
         provider: Arc<dyn ModelProvider>,
-    tools: Arc<ToolRegistry>,
+        tools: Arc<ToolRegistry>,
         config: Arc<SentinelConfig>,
     ) -> Self {
         Self {
@@ -48,9 +56,15 @@ impl Agent {
             events: Arc::new(NullEventHandler),
             event_store: crate::event::create_event_store(),
             prompt_manager: SystemPromptManager::new(),
+            phase_callback: None,
             total_prompt_tokens: AtomicU64::new(0),
             total_completion_tokens: AtomicU64::new(0),
         }
+    }
+
+    pub fn with_phase_callback(mut self, cb: Arc<dyn Fn(crate::thread::Phase) + Send + Sync>) -> Self {
+        self.phase_callback = Some(cb);
+        self
     }
 
     pub fn prompt_tokens(&self) -> u64 { self.total_prompt_tokens.load(Ordering::Relaxed) }
@@ -111,6 +125,11 @@ impl Agent {
                 return Ok(AgentOutput::error("Max iterations reached"));
             }
 
+            // Notify phase callback (for PlanActRouter support)
+            if let Some(ref cb) = self.phase_callback {
+                cb(thread.phase);
+            }
+
             let req = self.build_request(thread);
             let tool_defs = self.tools.tool_defs_for_model(true);
 
@@ -153,6 +172,7 @@ impl Agent {
 
             let now = chrono::Utc::now();
             let last_text = choice.message.extract_text();
+            let finish_reason = choice.finish_reason.as_deref();
 
             self.event_store.append(SessionEvent::AssistantText {
                 session_id: sid.to_string(),
@@ -172,10 +192,30 @@ impl Agent {
                 })
                 .collect();
 
+            // Truncation recovery: finish_reason=length with partial tool calls
+            if finish_reason == Some("length") && !tool_calls.is_empty() {
+                let dropped: Vec<String> = tool_calls.iter().map(|(_, n, _)| n.clone()).collect();
+                tracing::warn!(
+                    "Output truncated (finish_reason=length) — dropping tool calls: {:?}",
+                    dropped,
+                );
+                let hint = Message::user(format!("[SYSTEM: {}]", TRUNCATION_HINT));
+                thread.add_message(hint);
+                continue;
+            }
+
             if tool_calls.is_empty() {
                 thread.status = ThreadStatus::Completed;
                 self.events.handle_event(AgentEvent::Completed { text: last_text.clone() }).await;
                 return Ok(AgentOutput::success(last_text));
+            }
+
+            // Switch to Act phase after first tool call execution
+            if thread.phase.is_plan() {
+                thread.enter_act_phase();
+                if let Some(ref cb) = self.phase_callback {
+                    cb(thread.phase);
+                }
             }
 
             let cancel = CancellationToken::new();
@@ -232,8 +272,44 @@ impl Agent {
 
             if thread.context.needs_compaction() {
                 thread.context.compact();
+                if thread.context.should_summarize() {
+                    if let Ok(summary) = self.summarize_context(thread).await {
+                        thread.context.insert_summary(&summary);
+                    }
+                }
             }
         }
+    }
+
+    /// Generate a summary of the current conversation context using the LLM.
+    pub async fn summarize_context(&self, thread: &mut AgentThread) -> Result<String, ProviderError> {
+        let context_text: String = thread.context.messages().iter()
+            .map(|m| {
+                let role = format!("{:?}", m.role);
+                let text = m.extract_text();
+                if text.is_empty() { String::new() }
+                else { format!("<{}>\n{}\n</{}>", role, text, role) }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
+
+        let prompt = format!(
+            "Summarize the following conversation concisely, focusing on: \
+             key decisions made, problems solved, code/files created or modified, \
+             and any important context needed for continuing the work.\n\n{}",
+            context_text,
+        );
+
+        let req = CompletionRequest::new(&self.config.agent.default_model)
+            .with_message(Message::user(prompt))
+            .with_system("You are a conversation summarizer. Produce a concise 2-3 paragraph summary.");
+
+        let response = self.provider.complete(&req).await?;
+        let summary = response.choices.first()
+            .map(|c| c.message.extract_text())
+            .unwrap_or_default();
+
+        Ok(summary)
     }
 
     /// Run agent with streaming output for the first response.
@@ -280,6 +356,11 @@ impl Agent {
                 return Ok(AgentOutput::error("Max iterations reached"));
             }
 
+            // Notify phase callback
+            if let Some(ref cb) = self.phase_callback {
+                cb(thread.phase);
+            }
+
             let req = self.build_request(thread);
             let tool_defs = self.tools.tool_defs_for_model(true);
             let req = if let Some(tools) = tool_defs { req.with_tools(tools) } else { req };
@@ -318,7 +399,6 @@ impl Agent {
                 }
             }
 
-            // Check for finish reason
             let is_tool_call = !tool_calls.is_empty();
             let last_text = accumulated_text.clone();
 
@@ -338,10 +418,29 @@ impl Agent {
             thread.add_message(msg);
             self.events.handle_event(AgentEvent::Thinking { text: last_text.clone() }).await;
 
+            // Truncation recovery: if tool calls exist but output was truncated,
+            // inject truncation hint and retry iteration
+            if is_tool_call && last_text.trim().is_empty() {
+                // Streaming responses don't surface finish_reason reliably per-chunk,
+                // but empty text with tool calls on first chunk suggests truncation.
+                tracing::warn!("Streaming response had tool calls with empty text — possible truncation");
+                let hint = Message::user(format!("[SYSTEM: {}]", TRUNCATION_HINT));
+                thread.add_message(hint);
+                continue;
+            }
+
             if !is_tool_call {
                 thread.status = ThreadStatus::Completed;
                 self.events.handle_event(AgentEvent::Completed { text: last_text.clone() }).await;
                 return Ok(AgentOutput::success(last_text));
+            }
+
+            // Switch to Act phase after first tool call execution
+            if thread.phase.is_plan() {
+                thread.enter_act_phase();
+                if let Some(ref cb) = self.phase_callback {
+                    cb(thread.phase);
+                }
             }
 
             // Execute tool calls concurrently
@@ -381,6 +480,11 @@ impl Agent {
 
             if thread.context.needs_compaction() {
                 thread.context.compact();
+                if thread.context.should_summarize() {
+                    if let Ok(summary) = self.summarize_context(thread).await {
+                        thread.context.insert_summary(&summary);
+                    }
+                }
             }
         }
     }
