@@ -6,6 +6,8 @@ pub mod router;
 pub mod local;
 pub mod prompt_cache;
 pub mod switcher;
+pub mod route;
+pub mod protocols;
 
 pub use provider::*;
 pub use openai::*;
@@ -15,3 +17,5 @@ pub use router::*;
 pub use local::*;
 pub use prompt_cache::*;
 pub use switcher::*;
+pub use route::*;
+pub use protocols::*;
