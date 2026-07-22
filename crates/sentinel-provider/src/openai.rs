@@ -189,11 +189,26 @@ impl ModelProvider for OpenAIProvider {
 
         use futures::StreamExt;
 
-        let stream = resp.bytes_stream().flat_map(move |chunk| {
-            let items: Vec<Result<StreamChunk, ProviderError>> = match chunk {
-                Ok(bytes) => {
-                    let text = String::from_utf8_lossy(&bytes);
-                    let mut results = Vec::new();
+        let (tx, rx) = futures::channel::mpsc::unbounded();
+
+        tokio::spawn(async move {
+            let mut buffer = Vec::<u8>::new();
+            let mut byte_stream = resp.bytes_stream().map(|chunk| {
+                chunk
+                    .map(|b| b.to_vec())
+                    .map_err(|e| ProviderError::StreamError(e.to_string()))
+            });
+
+            while let Some(chunk_result) = byte_stream.next().await {
+                let bytes = match chunk_result {
+                    Ok(b) => b,
+                    Err(e) => { let _ = tx.unbounded_send(Err(e)); return; }
+                };
+                buffer.extend_from_slice(&bytes);
+                while let Some(pos) = buffer.windows(2).position(|w| w == b"\n\n") {
+                    let event_bytes = buffer[..pos].to_vec();
+                    buffer.drain(..pos + 2);
+                    let text = String::from_utf8_lossy(&event_bytes);
                     for line in text.lines() {
                         let line = line.trim();
                         if line.is_empty() || line == "data: [DONE]" {
@@ -201,19 +216,16 @@ impl ModelProvider for OpenAIProvider {
                         }
                         if let Some(data) = line.strip_prefix("data: ") {
                             match serde_json::from_str::<StreamChunk>(data) {
-                                Ok(chunk) => results.push(Ok(chunk)),
-                                Err(e) => results.push(Err(ProviderError::JsonError(e))),
+                                Ok(chunk) => { if tx.unbounded_send(Ok(chunk)).is_err() { return; } }
+                                Err(e) => { if tx.unbounded_send(Err(ProviderError::JsonError(e))).is_err() { return; } }
                             }
                         }
                     }
-                    results
                 }
-                Err(e) => vec![Err(ProviderError::StreamError(e.to_string()))],
-            };
-            futures::stream::iter(items)
+            }
         });
 
-        Ok(Box::new(stream))
+        Ok(Box::new(rx))
     }
 }
 
