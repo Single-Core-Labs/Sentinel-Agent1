@@ -23,3 +23,6 @@ Thumbs.db
 *.swp
 .codex/
 session_logs/
+session/
+*.egg-info/
+.opencode/
