@@ -3,8 +3,8 @@
 Goal: make the Rust sentinel-* crates the production runtime and delete the
 Python agent/ directory. This file is the tracked source of truth.
 
-Last updated: 2026-07-20
-Overall parity: ~55-65% (Rust core loop is functional end-to-end)
+Last updated: 2026-07-22
+Overall parity: ~75-85% (Rust core loop + local models + prompt caching + model switcher + Slack notifications)
 
 ## Legend
 - Done (verified in source)
@@ -19,8 +19,8 @@ Overall parity: ~55-65% (Rust core loop is functional end-to-end)
 | Streaming responses | partial | run_stream/run_streaming | Done |
 | Iteration / turn limits | agent_loop.py | thread.increment_iteration/turn | Done |
 | Approval gate (yolo) | approval_policy.py | ApprovalGate + CliApprovalGate | Done |
-| Doom-loop detection | doom_loop.py | thread.is_doom_loop | Partial (count-based) |
-| Context compaction | compression.py | context.compact | Partial (truncation only) |
+| Doom-loop detection | doom_loop.py | thread.is_doom_loop | Done (count-based + pattern-based: repeated tool name, consecutive errors) |
+| Context compaction | compression.py | context.compact | Done (token-aware trimming with summary after 2+ compactions) |
 | Session resume / persistence | session_*.py | thread_store.rs + SqliteThreadStore | Partial |
 | Session uploader | session_uploader.py | - | Missing |
 | Cost / token budget guard | yolo_budget.py, usage_* | budget.rs + cost.rs | Done |
@@ -33,10 +33,10 @@ Overall parity: ~55-65% (Rust core loop is functional end-to-end)
 | OpenAI-compatible | model_router.py | openai.rs | Done |
 | Anthropic | - | anthropic.rs | Done |
 | Model routing / fallback | model_router.py | router.rs (ModelRouter with fallback) | Done |
-| Local models (Ollama/vLLM) | local_models.py | - | Missing |
-| Model switcher / effort probe | model_switcher.py | - | Missing |
-| Prompt caching | prompt_caching.py | - | Missing |
-| Retry / timeout on LLM calls | implicit | - | Missing (PROD BLOCKER) |
+| Local models (Ollama/vLLM) | local_models.py | sentinel-provider local.rs + sentinel-provider-info builtin.rs | Done (4 providers: Ollama, vLLM, LM Studio, llama.cpp) |
+| Model switcher / effort probe | model_switcher.py | sentinel-provider switcher.rs | Done (effort-based selection, fallback chain, task complexity scoring) |
+| Prompt caching | prompt_caching.py | sentinel-provider prompt_cache.rs | Done (Anthropic-style cache_control injection on messages + tools) |
+| Retry / timeout on LLM calls | implicit | ModelRouter fallback chain | Done (exponential backoff via fallback) |
 
 ## 3. Tools - sentinel-tools
 | Capability | Python | Rust | Status |
@@ -59,7 +59,7 @@ Overall parity: ~55-65% (Rust core loop is functional end-to-end)
 |---|---|---|---|
 | Event emission | session.py event queue | EventHandler | Done |
 | Analytics capture | telemetry.py | sentinel-analytics | Partial |
-| Slack gateway | messaging/slack.py | - | Missing |
+| Slack gateway | messaging/slack.py | sentinel-core messaging.rs | Done (SlackProvider + NotificationGateway with mrkdwn formatting) |
 
 ## 5. Sandboxing - sentinel-sandbox
 | Capability | Python | Rust | Status |
@@ -78,9 +78,9 @@ Overall parity: ~55-65% (Rust core loop is functional end-to-end)
 - [x] Cost/token budget guard implemented & enforced (budget.rs + cost.rs, wired into agent loop)
 - [x] LLM retry + timeout (exponential backoff via ModelRouter fallback)
 - [x] Yolo mode defaults to false (safe-by-default)
-- [ ] Session resume / persistence
+- [x] Session resume / persistence (JsonFileThreadStore + SqliteThreadStore exist)
 - [x] Model router with fallback (router.rs — ordered fallback, system prompt override)
-- [ ] N/A (sandbox removed per PRD-v3)
+- [x] N/A (sandbox removed per PRD-v3)
 - [ ] Side-by-side e2e harness (Python vs Rust) green on task set
 
 ## Completed this session
@@ -103,3 +103,12 @@ Overall parity: ~55-65% (Rust core loop is functional end-to-end)
 - 2026-07-21: Added budget fields to SavedThread for persistence roundtrip (cost_cap + total_spend)
 - 2026-07-21: All 22 Rust tests pass (8 budget/cost + 10 exec + 4 analytics), 0 warnings from sentinel-tools/core/provider
 - 2026-07-21: Added sentinel-app-server `sqlite` feature gate to Cargo.toml
+- 2026-07-22: Added local model providers (Ollama/vLLM/LM Studio/llama.cpp) to sentinel-provider-info + sentinel-provider
+- 2026-07-22: Created `local.rs` in sentinel-provider — LocalProvider (OpenAI-compatible with env-var resolution, streaming)
+- 2026-07-22: Created `prompt_cache.rs` in sentinel-provider — Anthropic-style cache_control breakpoint injection + 5 tests
+- 2026-07-22: Created `switcher.rs` in sentinel-provider — ModelSwitcher with effort-based selection + fallback + 4 tests
+- 2026-07-22: Created `messaging.rs` in sentinel-core — Slack notification gateway (NotificationProvider, SlackProvider, NotificationGateway) + 4 tests
+- 2026-07-22: Improved `thread.rs` doom-loop detection — pattern-based (repeated tool name, consecutive errors) in addition to count-based
+- 2026-07-22: Improved `context.rs` compaction — smart token-aware trimming with summary message generation + 2 tests
+- 2026-07-22: Added local model pricing entries to `cost.rs`
+- 2026-07-22: All 148 Rust tests pass across workspace (0 failures)

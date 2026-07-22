@@ -47,6 +47,7 @@ export class MockEventEmitter extends EventEmitter {
   private _running = false;
 
   start(_modelId?: string) {
+    void _modelId;
     if (this._running) return;
     this._running = true;
 

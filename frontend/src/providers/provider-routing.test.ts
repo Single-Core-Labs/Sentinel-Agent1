@@ -32,7 +32,7 @@ function clearAllKeys() {
   for (const v of ALL_ENV_VARS) delete process.env[v];
 }
 
-describe('provider routing — all 7 providers reachable and correctly typed', () => {
+describe('provider routing — all 8 providers reachable and correctly typed', () => {
   const cases: Array<{ modelId: string; providerId: string; providerClass: new (...args: never[]) => unknown; apiModel: string }> = [
     { modelId: 'anthropic/claude-sonnet-4', providerId: 'anthropic', providerClass: AnthropicProvider, apiModel: 'claude-sonnet-4' },
     { modelId: 'claude-sonnet-4', providerId: 'anthropic', providerClass: AnthropicProvider, apiModel: 'claude-sonnet-4' },
@@ -45,6 +45,9 @@ describe('provider routing — all 7 providers reachable and correctly typed', (
     { modelId: 'moonshotai/Kimi-K2.7-Code:novita', providerId: 'models-dev', providerClass: OpenAICompatibleProvider, apiModel: 'Kimi-K2.7-Code' },
     { modelId: 'zai-org/GLM-5.2:novita', providerId: 'models-dev', providerClass: OpenAICompatibleProvider, apiModel: 'GLM-5.2' },
     { modelId: 'copilot-gpt-4o', providerId: 'github-copilot', providerClass: OpenAICompatibleProvider, apiModel: 'copilot-gpt-4o' },
+    { modelId: 'openrouter/auto', providerId: 'openrouter', providerClass: OpenAICompatibleProvider, apiModel: 'auto' },
+    { modelId: 'openrouter/google/gemini-2.0-flash-exp:free', providerId: 'openrouter', providerClass: OpenAICompatibleProvider, apiModel: 'google/gemini-2.0-flash-exp' },
+    { modelId: 'openrouter/anthropic/claude-sonnet-4', providerId: 'openrouter', providerClass: OpenAICompatibleProvider, apiModel: 'anthropic/claude-sonnet-4' },
   ];
 
   for (const c of cases) {
@@ -55,7 +58,7 @@ describe('provider routing — all 7 providers reachable and correctly typed', (
     });
   }
 
-  test('all 7 providers from the task spec exist in PROVIDERS with correct env vars', () => {
+  test('all providers exist in PROVIDERS with correct env vars', () => {
     const expected: Record<string, string> = {
       anthropic: 'ANTHROPIC_API_KEY',
       openai: 'OPENAI_API_KEY',
@@ -64,8 +67,9 @@ describe('provider routing — all 7 providers reachable and correctly typed', (
       'nvidia-nim': 'NVIDIA_NIM_API_KEY',
       'models-dev': 'MODELS_DEV_API_KEY',
       'github-copilot': 'GITHUB_COPILOT_TOKEN',
+      openrouter: 'OPENROUTER_API_KEY',
     };
-    assert.equal(PROVIDERS.length, 7);
+    assert.equal(PROVIDERS.length, 8);
     for (const [id, envVar] of Object.entries(expected)) {
       assert.equal(getEnvVarForProviderId(id), envVar, `provider ${id}`);
     }

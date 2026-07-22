@@ -6,6 +6,7 @@ pub struct ProviderInfo {
     pub id: String,
     pub name: String,
     pub base_url: String,
+    #[serde(default)]
     pub auth: AuthConfig,
     pub models: Vec<ModelEntry>,
     #[serde(default = "default_timeout")]
@@ -17,11 +18,17 @@ pub struct ProviderInfo {
 fn default_timeout() -> u64 { 120 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(untagged)]
 pub enum AuthConfig {
     EnvKey { var: String },
     Bearer { token: String },
     None,
+}
+
+impl Default for AuthConfig {
+    fn default() -> Self {
+        AuthConfig::None
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -2,10 +2,6 @@ import { ModelProvider, type ChatMessage, type StreamCallbacks, type ToolDef, ty
 
 const DEBUG = typeof process !== 'undefined' && (process.env['DEBUG'] === '1' || process.argv.includes('--debug'));
 
-function env(name: string): string | undefined {
-  return typeof process !== 'undefined' ? process.env[name] : undefined;
-}
-
 function debugLog(...args: unknown[]) {
   if (DEBUG) console.debug('[Google]', ...args);
 }
@@ -38,9 +34,9 @@ function toGeminiPayload(messages: ChatMessage[]): { contents: unknown[]; system
 export class GoogleProvider extends ModelProvider {
   private apiKey: string | undefined;
 
-  constructor() {
+  constructor(apiKey?: string) {
     super();
-    this.apiKey = env('GOOGLE_AI_STUDIO_API_KEY');
+    this.apiKey = apiKey || (typeof process !== 'undefined' ? process.env['GOOGLE_AI_STUDIO_API_KEY'] : undefined);
   }
 
   async complete(

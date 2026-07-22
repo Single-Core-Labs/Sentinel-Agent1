@@ -1,14 +1,15 @@
-use sentinel_protocol::Message;
+use sentinel_protocol::{Message, ContentBlock, Role};
 
 #[derive(Debug)]
 pub struct ContextManager {
     messages: Vec<Message>,
     max_tokens: usize,
+    compaction_count: usize,
 }
 
 impl ContextManager {
     pub fn new(max_tokens: usize) -> Self {
-        Self { messages: Vec::new(), max_tokens }
+        Self { messages: Vec::new(), max_tokens, compaction_count: 0 }
     }
 
     pub fn add(&mut self, msg: Message) {
@@ -30,23 +31,121 @@ impl ContextManager {
     pub fn compact(&mut self) {
         if self.messages.is_empty() { return; }
 
-        // Keep system message (first), keep last N user/assistant messages
-        let keep_count = 10.min(self.messages.len());
-        let start = if self.messages[0].role == sentinel_protocol::Role::System {
-            1.max(self.messages.len().saturating_sub(keep_count))
-        } else {
-            self.messages.len().saturating_sub(keep_count)
-        };
+        self.compaction_count += 1;
+        let target = self.max_tokens / 2;
 
-        let mut compacted = Vec::new();
-        if self.messages[0].role == sentinel_protocol::Role::System {
-            compacted.push(self.messages[0].clone());
+        let mut system_msg: Option<Message> = None;
+        let mut non_system: Vec<Message> = Vec::new();
+
+        for msg in self.messages.drain(..) {
+            if msg.role == Role::System && system_msg.is_none() {
+                system_msg = Some(msg);
+            } else {
+                non_system.push(msg);
+            }
         }
-        compacted.extend_from_slice(&self.messages[start..]);
-        self.messages = compacted;
+
+        let total = non_system.len();
+        if total == 0 {
+            self.messages = system_msg.into_iter().collect();
+            return;
+        }
+
+        let mut keep_start = total;
+
+        while keep_start > 0 {
+            let kept_count = total - keep_start;
+            let estimated = non_system[keep_start..].iter()
+                .map(|m| m.extract_text().len() / 4).sum::<usize>();
+            if estimated <= target && kept_count >= 4 {
+                break;
+            }
+            keep_start -= 1;
+        }
+
+        if keep_start > 0 {
+            let removed = keep_start;
+            if self.compaction_count >= 2 {
+                let summary = Message::new(Role::User, vec![
+                    ContentBlock::Text {
+                        text: format!(
+                            "[Earlier context compacted: {} messages removed]",
+                            removed,
+                        ),
+                    }
+                ]);
+                let kept = non_system.split_off(keep_start);
+                non_system = vec![summary];
+                non_system.extend(kept);
+            } else {
+                let kept = non_system.split_off(keep_start);
+                non_system = kept;
+            }
+        }
+
+        self.messages.clear();
+        if let Some(sys) = system_msg {
+            self.messages.push(sys);
+        }
+        self.messages.extend(non_system);
     }
 
     pub fn clear(&mut self) {
         self.messages.clear();
+        self.compaction_count = 0;
+    }
+
+    pub fn compaction_count(&self) -> usize {
+        self.compaction_count
+    }
+
+    pub fn set_max_tokens(&mut self, max_tokens: usize) {
+        self.max_tokens = max_tokens;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sentinel_protocol::Message;
+
+    #[test]
+    fn test_no_compaction_needed_when_under_limit() {
+        let ctx = ContextManager::new(1000);
+        assert!(!ctx.needs_compaction());
+    }
+
+    #[test]
+    fn test_compaction_preserves_system_message() {
+        let mut ctx = ContextManager::new(50);
+        ctx.add(Message::system("You are a helpful assistant."));
+        for i in 0..20 {
+            ctx.add(Message::user(format!("Message {}", i)));
+            ctx.add(Message::assistant(format!("Response {}", i)));
+        }
+        assert!(ctx.needs_compaction());
+        ctx.compact();
+        assert!(ctx.messages()[0].role == Role::System);
+        assert!(ctx.messages().len() < 42);
+    }
+
+    #[test]
+    fn test_compaction_summary_after_two_compactions() {
+        let mut ctx = ContextManager::new(30);
+        ctx.add(Message::system("You are a helpful assistant."));
+        for i in 0..30 {
+            ctx.add(Message::user(format!("Message {}", i)));
+            ctx.add(Message::assistant(format!("Response {}", i)));
+        }
+        ctx.compact();
+        for i in 30..60 {
+            ctx.add(Message::user(format!("Message {}", i)));
+            ctx.add(Message::assistant(format!("Response {}", i)));
+        }
+        ctx.compact();
+        let has_summary = ctx.messages().iter().any(|m| {
+            m.role == Role::User && m.extract_text().contains("compacted")
+        });
+        assert!(has_summary);
     }
 }

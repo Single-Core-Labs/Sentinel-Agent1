@@ -42,7 +42,7 @@ USAGE_WARNING_SPEND_CACHE_TTL_SECONDS = 30.0
 USAGE_BILLING_REFRESH_TIMEOUT_SECONDS = 2.0
 
 
-from ._session_types import *  # noqa: F403,F405
+from _session_types import *  # noqa: F403,F405
 
 
 class SessionManager:

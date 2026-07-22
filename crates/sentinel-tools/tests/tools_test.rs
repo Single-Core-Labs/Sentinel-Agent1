@@ -98,5 +98,5 @@ async fn test_tool_defs() {
     assert!(names.contains(&"bash"), "bash tool missing");
     assert!(names.contains(&"glob"), "glob tool missing");
     assert!(names.contains(&"grep"), "grep tool missing");
-    assert_eq!(defs.len(), 11, "expected 11 built-in tools, got {}", defs.len());
+    assert_eq!(defs.len(), 14, "expected 14 built-in tools, got {}", defs.len());
 }
