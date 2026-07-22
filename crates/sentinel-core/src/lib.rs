@@ -1,6 +1,8 @@
 pub mod agent;
+pub mod approval;
 pub mod budget;
 pub mod cost;
+pub mod event;
 pub mod thread;
 pub mod context;
 pub mod conversation;
@@ -10,6 +12,7 @@ pub mod messaging;
 pub mod uploader;
 
 pub use agent::*;
+pub use approval::*;
 pub use budget::*;
 pub use thread::*;
 pub use context::*;

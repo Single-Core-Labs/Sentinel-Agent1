@@ -1,7 +1,10 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::fmt;
+use std::collections::BTreeMap;
 use futures::StreamExt;
+use tokio::task::JoinSet;
+use tokio_util::sync::CancellationToken;
 use sentinel_protocol::{
     CompletionRequest, Message, ContentBlock, Role, ToolResult,
 };
@@ -10,12 +13,14 @@ use sentinel_tools::{ToolRegistry, ToolContext};
 use sentinel_config::SentinelConfig;
 use crate::thread::{AgentThread, ThreadStatus, ApprovalRequest};
 use crate::prompt::SystemPromptManager;
+use crate::event::{SharedEventStore, SessionEvent};
 
 pub struct Agent {
     provider: Arc<dyn ModelProvider>,
     tools: Arc<ToolRegistry>,
     config: Arc<SentinelConfig>,
     events: Arc<dyn EventHandler>,
+    event_store: SharedEventStore,
     prompt_manager: SystemPromptManager,
     pub total_prompt_tokens: AtomicU64,
     pub total_completion_tokens: AtomicU64,
@@ -35,12 +40,13 @@ impl std::fmt::Debug for Agent {
 impl Agent {
     pub fn new(
         provider: Arc<dyn ModelProvider>,
-        tools: Arc<ToolRegistry>,
+    tools: Arc<ToolRegistry>,
         config: Arc<SentinelConfig>,
     ) -> Self {
         Self {
             provider, tools, config,
             events: Arc::new(NullEventHandler),
+            event_store: crate::event::create_event_store(),
             prompt_manager: SystemPromptManager::new(),
             total_prompt_tokens: AtomicU64::new(0),
             total_completion_tokens: AtomicU64::new(0),
@@ -52,6 +58,11 @@ impl Agent {
 
     pub fn with_event_handler(mut self, handler: Arc<dyn EventHandler>) -> Self {
         self.events = handler;
+        self
+    }
+
+    pub fn with_event_store(mut self, store: SharedEventStore) -> Self {
+        self.event_store = store;
         self
     }
 
@@ -78,6 +89,15 @@ impl Agent {
         user_input: &str,
         approval: &dyn ApprovalGate,
     ) -> AgentResult {
+        let now = chrono::Utc::now();
+        let sid = thread.id.clone();
+
+        self.event_store.append(SessionEvent::UserMessage {
+            session_id: sid.to_string(),
+            timestamp: now,
+            content: user_input.to_string(),
+        }).await;
+
         thread.status = ThreadStatus::Running;
         thread.add_message(Message::user(user_input));
         thread.conversation.add_user_message(user_input);
@@ -102,7 +122,14 @@ impl Agent {
 
             let response = match self.provider.complete(&req).await {
                 Ok(r) => r,
-                Err(e) => return Ok(AgentOutput::error(format!("LLM call failed: {}", e))),
+                Err(e) => {
+                    self.event_store.append(SessionEvent::Error {
+                        session_id: sid.to_string(),
+                        timestamp: chrono::Utc::now(),
+                        message: format!("LLM call failed: {}", e),
+                    }).await;
+                    return Ok(AgentOutput::error(format!("LLM call failed: {}", e)));
+                }
             };
 
             if let Some(ref usage) = response.usage {
@@ -124,8 +151,16 @@ impl Agent {
                 None => return Ok(AgentOutput::error("No response from model")),
             };
 
-            thread.add_message(choice.message.clone());
+            let now = chrono::Utc::now();
             let last_text = choice.message.extract_text();
+
+            self.event_store.append(SessionEvent::AssistantText {
+                session_id: sid.to_string(),
+                timestamp: now,
+                text: last_text.clone(),
+            }).await;
+
+            thread.add_message(choice.message.clone());
             thread.conversation.add_assistant_text(&last_text);
             self.events.handle_event(AgentEvent::Thinking { text: last_text.clone() }).await;
 
@@ -143,72 +178,29 @@ impl Agent {
                 return Ok(AgentOutput::success(last_text));
             }
 
+            let cancel = CancellationToken::new();
             let ctx = ToolContext::new();
-            let mut tool_results = Vec::new();
+            let tool_results = execute_tools_concurrent(
+                &tool_calls,
+                Arc::clone(&self.tools),
+                approval,
+                thread,
+                &self.events,
+                &ctx,
+                &cancel,
+            ).await;
 
-            for (tool_call_id, name, args) in &tool_calls {
-                thread.conversation.add_tool_call(tool_call_id, name, args.clone());
-                self.events.handle_event(AgentEvent::ToolCall {
-                    name: name.clone(),
-                    args: args.clone(),
-                }).await;
-
-                if thread.budget.exhausted {
-                    tool_results.push(ToolResult {
-                        tool_call_id: tool_call_id.clone(),
-                        name: name.clone(),
-                        output: "Budget exhausted — tool execution skipped".into(),
-                        is_error: true,
-                    });
-                    continue;
-                }
-
-                if !thread.yolo_mode {
-                    thread.status = ThreadStatus::AwaitingApproval;
-                    let approval_req = ApprovalRequest {
-                        tool_name: name.clone(),
-                        args: args.clone(),
-                        prompt: format!("Execute {} with the given arguments?", name),
-                    };
-                    match approval.request_approval(&approval_req).await {
-                        ApprovalDecision::Approved => {}
-                        ApprovalDecision::Rejected(reason) => {
-                            tool_results.push(ToolResult {
-                                tool_call_id: tool_call_id.clone(),
-                                name: name.clone(),
-                                output: format!("User rejected: {}", reason),
-                                is_error: true,
-                            });
-                            continue;
-                        }
-                        ApprovalDecision::Modify { .. } => {
-                            tool_results.push(ToolResult {
-                                tool_call_id: tool_call_id.clone(),
-                                name: name.clone(),
-                                output: "User modified the request".into(),
-                                is_error: true,
-                            });
-                            continue;
-                        }
-                    }
-                }
-
-                let output = self.tools.execute(name, args.clone(), &ctx).await;
-                thread.conversation.add_tool_result(tool_call_id, &output.text, output.is_error);
-                self.events.handle_event(AgentEvent::ToolResult {
-                    name: name.clone(),
-                    output: output.text.clone(),
-                    is_error: output.is_error,
-                }).await;
-                tool_results.push(ToolResult {
-                    tool_call_id: tool_call_id.clone(),
-                    name: name.clone(),
-                    output: output.text,
-                    is_error: output.is_error,
-                });
-            }
-
+            let now = chrono::Utc::now();
             for result in &tool_results {
+                self.event_store.append(SessionEvent::ToolResult {
+                    session_id: sid.to_string(),
+                    timestamp: now,
+                    tool_call_id: result.tool_call_id.clone(),
+                    name: result.name.clone(),
+                    output: result.output.clone(),
+                    is_error: result.is_error,
+                }).await;
+
                 thread.add_message(Message::new(Role::Tool, vec![
                     ContentBlock::ToolResult {
                         tool_call_id: result.tool_call_id.clone(),
@@ -221,6 +213,14 @@ impl Agent {
             if !thread.increment_turn() {
                 return Ok(AgentOutput::error("Max turns reached"));
             }
+
+            self.event_store.append(SessionEvent::TurnEnd {
+                session_id: sid.to_string(),
+                timestamp: now,
+                turn: thread.turn,
+                iteration: thread.iterations,
+            }).await;
+
             self.events.handle_event(AgentEvent::TurnEnd {
                 turn: thread.turn,
                 iteration: thread.iterations,
@@ -344,69 +344,18 @@ impl Agent {
                 return Ok(AgentOutput::success(last_text));
             }
 
-            // Execute tool calls
+            // Execute tool calls concurrently
+            let cancel = CancellationToken::new();
             let ctx = ToolContext::new();
-            let mut tool_results = Vec::new();
-
-            for (tool_call_id, name, args) in &tool_calls {
-                self.events.handle_event(AgentEvent::ToolCall {
-                    name: name.clone(),
-                    args: args.clone(),
-                }).await;
-
-                if thread.budget.exhausted {
-                    tool_results.push(ToolResult {
-                        tool_call_id: tool_call_id.clone(),
-                        name: name.clone(),
-                        output: "Budget exhausted — tool execution skipped".into(),
-                        is_error: true,
-                    });
-                    continue;
-                }
-
-                if !thread.yolo_mode {
-                    thread.status = ThreadStatus::AwaitingApproval;
-                    let approval_req = ApprovalRequest {
-                        tool_name: name.clone(),
-                        args: args.clone(),
-                        prompt: format!("Execute {} with the given arguments?", name),
-                    };
-                    match approval.request_approval(&approval_req).await {
-                        ApprovalDecision::Approved => {}
-                        ApprovalDecision::Rejected(reason) => {
-                            tool_results.push(ToolResult {
-                                tool_call_id: tool_call_id.clone(),
-                                name: name.clone(),
-                                output: format!("User rejected: {}", reason),
-                                is_error: true,
-                            });
-                            continue;
-                        }
-                        ApprovalDecision::Modify { .. } => {
-                            tool_results.push(ToolResult {
-                                tool_call_id: tool_call_id.clone(),
-                                name: name.clone(),
-                                output: "User modified the request".into(),
-                                is_error: true,
-                            });
-                            continue;
-                        }
-                    }
-                }
-
-                let output = self.tools.execute(name, args.clone(), &ctx).await;
-                self.events.handle_event(AgentEvent::ToolResult {
-                    name: name.clone(),
-                    output: output.text.clone(),
-                    is_error: output.is_error,
-                }).await;
-                tool_results.push(ToolResult {
-                    tool_call_id: tool_call_id.clone(),
-                    name: name.clone(),
-                    output: output.text,
-                    is_error: output.is_error,
-                });
-            }
+            let tool_results = execute_tools_concurrent(
+                &tool_calls,
+                Arc::clone(&self.tools),
+                approval,
+                thread,
+                &self.events,
+                &ctx,
+                &cancel,
+            ).await;
 
             for result in &tool_results {
                 thread.add_message(Message::new(Role::Tool, vec![
@@ -440,6 +389,117 @@ impl Agent {
         CompletionRequest::new(&self.config.agent.default_model)
             .with_system(self.prompt_manager.render())
     }
+}
+
+async fn execute_tools_concurrent(
+    tool_calls: &[(String, String, serde_json::Value)],
+    tools: Arc<ToolRegistry>,
+    approval: &dyn ApprovalGate,
+    thread: &mut AgentThread,
+    events: &Arc<dyn EventHandler>,
+    ctx: &ToolContext,
+    cancel: &CancellationToken,
+) -> Vec<ToolResult> {
+    let mut ordered_results: BTreeMap<usize, ToolResult> = BTreeMap::new();
+    let mut set: JoinSet<(usize, ToolResult)> = JoinSet::new();
+
+    for (i, (tool_call_id, name, args)) in tool_calls.iter().enumerate() {
+        thread.conversation.add_tool_call(tool_call_id, name, args.clone());
+        events.handle_event(AgentEvent::ToolCall {
+            name: name.clone(),
+            args: args.clone(),
+        }).await;
+
+        if thread.budget.exhausted {
+            ordered_results.insert(i, ToolResult {
+                tool_call_id: tool_call_id.clone(),
+                name: name.clone(),
+                output: "Budget exhausted — tool execution skipped".into(),
+                is_error: true,
+            });
+            continue;
+        }
+
+        if !thread.yolo_mode {
+            thread.status = ThreadStatus::AwaitingApproval;
+            let approval_req = ApprovalRequest {
+                tool_name: name.clone(),
+                args: args.clone(),
+                prompt: format!("Execute {} with the given arguments?", name),
+            };
+            match approval.request_approval(&approval_req).await {
+                ApprovalDecision::Approved => {}
+                ApprovalDecision::Rejected(reason) => {
+                    ordered_results.insert(i, ToolResult {
+                        tool_call_id: tool_call_id.clone(),
+                        name: name.clone(),
+                        output: format!("User rejected: {}", reason),
+                        is_error: true,
+                    });
+                    continue;
+                }
+                ApprovalDecision::Modify { .. } => {
+                    ordered_results.insert(i, ToolResult {
+                        tool_call_id: tool_call_id.clone(),
+                        name: name.clone(),
+                        output: "User modified the request".into(),
+                        is_error: true,
+                    });
+                    continue;
+                }
+            }
+        }
+
+        let tools = Arc::clone(&tools);
+        let tool_call_id = tool_call_id.clone();
+        let name = name.clone();
+        let args = args.clone();
+        let ctx = ctx.clone();
+        let cancel = cancel.clone();
+        let events = Arc::clone(events);
+
+        let tool_call_id_cancel = tool_call_id.clone();
+        let name_cancel = name.clone();
+
+        set.spawn(async move {
+            tokio::select! {
+                biased;
+                _ = cancel.cancelled() => {
+                    (i, ToolResult {
+                        tool_call_id: tool_call_id_cancel,
+                        name: name_cancel,
+                        output: "Cancelled".into(),
+                        is_error: true,
+                    })
+                }
+                result = async {
+                    let output = tools.execute(&name, args, &ctx).await;
+                    events.handle_event(AgentEvent::ToolResult {
+                        name: name.clone(),
+                        output: output.text.clone(),
+                        is_error: output.is_error,
+                    }).await;
+                    ToolResult {
+                        tool_call_id,
+                        name,
+                        output: output.text,
+                        is_error: output.is_error,
+                    }
+                } => (i, result)
+            }
+        });
+    }
+
+    while let Some(res) = set.join_next().await {
+        match res {
+            Ok((i, result)) => { ordered_results.insert(i, result); }
+            Err(e) => {
+                tracing::warn!("Tool execution task failed: {}", e);
+            }
+        }
+    }
+
+    ordered_results.into_values().collect()
 }
 
 #[derive(Debug, Clone)]

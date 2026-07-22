@@ -12,6 +12,7 @@ anyhow.workspace = true
 thiserror.workspace = true
 tokio-stream = "0.1"
 tokio.workspace = true
+tokio-util = "0.7"
 futures = "0.3"
 tracing.workspace = true
 uuid.workspace = true
