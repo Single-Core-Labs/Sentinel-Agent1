@@ -25,5 +25,5 @@ pub fn mock_events() -> Vec<ThreadEvent> {
 
 /// Convenience wrapper around the `sentinel_ai_exec::MockClient` for tests.
 pub fn new_mock_client() -> MockClient {
-    MockClient::default()
+    MockClient
 }

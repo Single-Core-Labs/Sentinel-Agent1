@@ -619,7 +619,7 @@ impl Tool for GitHubTool {
                 let body = args["body"].as_str().unwrap_or("");
                 if title.is_empty() { return ToolOutput::err("title is required for create_issue"); }
                 let payload = json!({ "title": title, "body": body });
-                match client.post(&format!("{}/issues", api_base))
+                match client.post(format!("{}/issues", api_base))
                     .header("User-Agent", "SentinelAI")
                     .bearer_auth(&token)
                     .json(&payload)
@@ -637,7 +637,7 @@ impl Tool for GitHubTool {
                 if title.is_empty() { return ToolOutput::err("title is required for create_pr"); }
                 if head.is_empty() { return ToolOutput::err("head branch is required for create_pr"); }
                 let payload = json!({ "title": title, "body": body, "head": head, "base": base });
-                match client.post(&format!("{}/pulls", api_base))
+                match client.post(format!("{}/pulls", api_base))
                     .header("User-Agent", "SentinelAI")
                     .bearer_auth(&token)
                     .json(&payload)

@@ -17,18 +17,13 @@ pub struct ProviderInfo {
 
 fn default_timeout() -> u64 { 120 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum AuthConfig {
     EnvKey { var: String },
     Bearer { token: String },
+    #[default]
     None,
-}
-
-impl Default for AuthConfig {
-    fn default() -> Self {
-        AuthConfig::None
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

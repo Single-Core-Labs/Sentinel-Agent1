@@ -14,15 +14,9 @@ pub struct PermissionRule {
     pub reason: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct PermissionRuleset {
     pub rules: Vec<PermissionRule>,
-}
-
-impl Default for PermissionRuleset {
-    fn default() -> Self {
-        Self { rules: Vec::new() }
-    }
 }
 
 impl PermissionRuleset {

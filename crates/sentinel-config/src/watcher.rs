@@ -11,7 +11,7 @@ pub fn watch_config(
 
     let config_path = path
         .map(|p| p.to_string())
-        .or_else(|| find_config_path())
+        .or_else(find_config_path)
         .unwrap_or_default();
 
     tokio::spawn(async move {

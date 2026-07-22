@@ -74,7 +74,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_discover_openai_models_parse() {
-        let client = reqwest::Client::new();
+        let _client = reqwest::Client::new();
         let body: serde_json::Value = serde_json::from_str(r#"{"data":[{"id":"gpt-4o","object":"model"},{"id":"dall-e-3","object":"model"}]}"#).unwrap();
         let models: Vec<ModelEntry> = body["data"]
             .as_array()

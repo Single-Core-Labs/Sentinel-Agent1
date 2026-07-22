@@ -250,10 +250,8 @@ impl Protocol for AnthropicMessagesProtocol {
             "content_block_delta" => {
                 if let Some(delta) = event.delta {
                     if let Some(text) = delta.text {
-                        if let Some(last) = state.content.last_mut() {
-                            if let AnthropicResponseContent::Text { text: ref mut t, .. } = last {
-                                t.push_str(&text);
-                            }
+                        if let Some(AnthropicResponseContent::Text { text: ref mut t, .. }) = state.content.last_mut() {
+                            t.push_str(&text);
                         }
                     }
                     if delta.stop_reason.is_some() {
@@ -292,9 +290,9 @@ impl Protocol for AnthropicMessagesProtocol {
         }
         let message = sentinel_protocol::Message::new(sentinel_protocol::Role::Assistant, message_content);
         let usage = state.usage.map(|u| Usage {
-            prompt_tokens: u.input_tokens as u32,
-            completion_tokens: u.output_tokens as u32,
-            total_tokens: (u.input_tokens + u.output_tokens) as u32,
+            prompt_tokens: u.input_tokens,
+            completion_tokens: u.output_tokens,
+            total_tokens: u.input_tokens + u.output_tokens,
         });
         CompletionResponse {
             id: state.id,

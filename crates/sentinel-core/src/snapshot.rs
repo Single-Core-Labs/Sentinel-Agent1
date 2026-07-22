@@ -258,7 +258,7 @@ mod tests {
     fn test_update_after_computes_changes() {
         let mut mgr = SnapshotManager::new();
         let reader = |_path: &str| -> Option<String> { None };
-        mgr.take_snapshot(1, Some("."), &reader);
+        mgr.take_snapshot(1, Some("."), reader);
         // In a real scenario update_after would be called with new file state
         let snap = mgr.all_snapshots().last().unwrap();
         assert_eq!(snap.turn, 1);

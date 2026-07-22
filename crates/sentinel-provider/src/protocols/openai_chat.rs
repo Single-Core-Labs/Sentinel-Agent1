@@ -232,7 +232,7 @@ impl Protocol for OpenAIChatProtocol {
         if !state.content.is_empty() {
             content.push(sentinel_protocol::ContentBlock::Text { text: state.content });
         }
-        for (_idx, tc) in &state.tool_calls {
+        for tc in state.tool_calls.values() {
             let args: serde_json::Value = serde_json::from_str(&tc.arguments)
                 .unwrap_or(serde_json::Value::Null);
             content.push(sentinel_protocol::ContentBlock::ToolCall {

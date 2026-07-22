@@ -130,7 +130,7 @@ impl ThreadStore for JsonFileThreadStore {
             .map_err(|e| ThreadStoreError::Io(e.to_string()))?;
         while let Some(entry) = read_dir.next_entry().await
             .map_err(|e| ThreadStoreError::Io(e.to_string()))? {
-            if entry.path().extension().map_or(false, |e| e == "json") {
+            if entry.path().extension().is_some_and(|e| e == "json") {
                 if let Some(stem) = entry.path().file_stem() {
                     ids.push(stem.to_string_lossy().to_string());
                 }

@@ -19,6 +19,12 @@ impl HumanProcessor {
     }
 }
 
+impl Default for HumanProcessor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl EventProcessor for HumanProcessor {
     fn process_event(&self, ev: &ThreadEvent) -> Result<()> {
         match ev.event_type.as_str() {
@@ -70,6 +76,12 @@ pub struct JsonlProcessor;
 impl JsonlProcessor {
     pub fn new() -> Self {
         Self
+    }
+}
+
+impl Default for JsonlProcessor {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

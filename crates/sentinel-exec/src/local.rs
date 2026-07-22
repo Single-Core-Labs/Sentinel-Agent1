@@ -9,6 +9,12 @@ impl LocalExecutor {
     }
 }
 
+impl Default for LocalExecutor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[async_trait]
 impl Executor for LocalExecutor {
     async fn exec(&self, command: &str, args: &[&str], _env: Option<Vec<(String, String)>>) -> Result<ExecOutput, ExecError> {

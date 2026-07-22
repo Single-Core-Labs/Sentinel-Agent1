@@ -17,7 +17,7 @@ pub fn with_prompt_caching(
         return (messages.to_vec(), tools.map(|t| t.to_vec()));
     }
 
-    let cached_tools = tools.map(|t| tools_with_cache_control(t));
+    let cached_tools = tools.map(tools_with_cache_control);
     let idx = cache_target_index(messages);
 
     if let Some(idx) = idx {
@@ -61,7 +61,7 @@ fn has_cacheable_text(content: Option<&Value>) -> bool {
                 block.get("type").and_then(|t| t.as_str()) == Some("text")
                     && block.get("text")
                         .and_then(|t| t.as_str())
-                        .map_or(false, |t| !t.is_empty())
+                        .is_some_and(|t| !t.is_empty())
             })
         }
         _ => false,
@@ -78,7 +78,7 @@ fn content_with_cache_control(content: &Value) -> Value {
             ])
         }
         Value::Array(blocks) => {
-            let mut result: Vec<Value> = blocks.iter().cloned().collect();
+            let mut result: Vec<Value> = blocks.to_vec();
             for idx in (0..result.len()).rev() {
                 if result[idx].get("type").and_then(|t| t.as_str()) == Some("text") {
                     if let Some(obj) = result[idx].as_object_mut() {

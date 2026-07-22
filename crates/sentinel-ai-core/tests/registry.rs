@@ -8,7 +8,7 @@ fn test_registry_basic_flow() {
         let registry = AgentRegistry::new(2);
         // Register two agents.
         let id1 = registry.register("gpt-4o").await.expect("first");
-        let id2 = registry.register("gpt-4o-mini").await.expect("second");
+        let _id2 = registry.register("gpt-4o-mini").await.expect("second");
         // Third should hit capacity.
         match registry.register("gpt-3.5").await {
             Err(RegistryError::CapacityReached(2)) => {}

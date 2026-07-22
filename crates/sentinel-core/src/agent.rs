@@ -104,7 +104,7 @@ impl Agent {
         approval: &dyn ApprovalGate,
     ) -> AgentResult {
         let now = chrono::Utc::now();
-        let sid = thread.id.clone();
+        let sid = thread.id;
 
         self.event_store.append(SessionEvent::UserMessage {
             session_id: sid.to_string(),
@@ -154,7 +154,7 @@ impl Agent {
             if let Some(ref usage) = response.usage {
                 self.total_prompt_tokens.fetch_add(usage.prompt_tokens as u64, Ordering::Relaxed);
                 self.total_completion_tokens.fetch_add(usage.completion_tokens as u64, Ordering::Relaxed);
-                let cost = crate::cost::estimate_llm_cost(&self.provider.name(), &crate::cost::Usage::new(
+                let cost = crate::cost::estimate_llm_cost(self.provider.name(), &crate::cost::Usage::new(
                     usage.prompt_tokens, usage.completion_tokens,
                 ));
                 thread.budget.record_spend(cost);

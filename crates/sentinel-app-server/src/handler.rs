@@ -19,6 +19,7 @@ pub struct RequestHandler {
     config: Arc<SentinelConfig>,
     analytics: Arc<AnalyticsPipeline>,
     tools: Arc<ToolRegistry>,
+    #[allow(dead_code)]
     thread_store: Option<Arc<dyn ThreadStore>>,
 }
 
@@ -343,7 +344,7 @@ impl RequestHandler {
         };
         let args = serde_json::json!({
             "command": full_cmd,
-            "workdir": p.cwd.unwrap_or_else(|| "".to_string()),
+            "workdir": p.cwd.unwrap_or_default(),
             "timeout": 120_000,
         });
         let output = self.tools.execute("bash", args, &ctx).await;
