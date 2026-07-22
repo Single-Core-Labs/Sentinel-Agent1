@@ -10,6 +10,8 @@ toml.workspace = true
 anyhow.workspace = true
 thiserror.workspace = true
 dirs.workspace = true
+tokio.workspace = true
+tracing.workspace = true
 
 sentinel-provider-info = { path = "../sentinel-provider-info" }
 sentinel-mcp = { path = "../sentinel-mcp" }

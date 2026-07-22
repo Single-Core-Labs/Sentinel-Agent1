@@ -8,6 +8,7 @@ pub mod prompt_cache;
 pub mod switcher;
 pub mod route;
 pub mod protocols;
+pub mod discovery;
 
 pub use provider::*;
 pub use openai::*;

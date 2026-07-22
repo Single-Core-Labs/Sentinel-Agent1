@@ -153,6 +153,10 @@ pub struct Conversation {
     pub turns: Vec<Turn>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    #[serde(skip)]
+    pub undo_stack: Vec<Vec<Turn>>,
+    #[serde(skip)]
+    pub redo_stack: Vec<Vec<Turn>>,
 }
 
 impl Conversation {
@@ -163,6 +167,8 @@ impl Conversation {
             turns: Vec::new(),
             created_at: now,
             updated_at: now,
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
         }
     }
 
@@ -173,6 +179,8 @@ impl Conversation {
             turns: Vec::new(),
             created_at: now,
             updated_at: now,
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
         }
     }
 
@@ -180,6 +188,7 @@ impl Conversation {
         let number = self.turns.len() as u32 + 1;
         self.turns.push(Turn::new(number));
         self.updated_at = Utc::now();
+        self.redo_stack.clear();
         self.turns.last_mut().unwrap()
     }
 
@@ -223,6 +232,31 @@ impl Conversation {
         self.turns.iter().map(|t| t.items.len()).sum()
     }
 
+    pub fn undo_last_turn(&mut self) -> Option<Turn> {
+        let turn = self.turns.pop()?;
+        self.undo_stack.push(vec![turn.clone()]);
+        self.updated_at = Utc::now();
+        Some(turn)
+    }
+
+    pub fn redo_last_turn(&mut self) -> Option<Turn> {
+        let turns = self.redo_stack.pop()?;
+        let last = turns.last().cloned();
+        for t in &turns {
+            self.turns.push(t.clone());
+        }
+        self.updated_at = Utc::now();
+        last
+    }
+
+    pub fn can_undo(&self) -> bool {
+        !self.turns.is_empty()
+    }
+
+    pub fn can_redo(&self) -> bool {
+        !self.redo_stack.is_empty()
+    }
+
     pub fn fork_at_turn(&self, turn_number: u32) -> Self {
         let now = Utc::now();
         let fork_turns: Vec<Turn> = self.turns.iter()
@@ -234,6 +268,8 @@ impl Conversation {
             turns: fork_turns,
             created_at: now,
             updated_at: now,
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
         }
     }
 
