@@ -12,6 +12,7 @@ use crate::strategies::{
     search::SearchCompressor,
     diff::DiffCompressor,
     image::ImageCompressor,
+    html::HtmlCompressor,
 };
 
 pub struct CompressionConfig {
@@ -59,11 +60,42 @@ impl ContentCompressor {
         }
     }
 
+    pub fn from_config(cfg: &crate::config::HeadroomConfig) -> Self {
+        let ccr = Arc::new(CcrStore::new(cfg.ccr.max_entries));
+        let rt = &cfg.content_routing;
+        Self {
+            strategies: default_strategies(),
+            ccr,
+            config: CompressionConfig {
+                min_savings_pct: rt.min_savings_pct,
+                max_content_chars: rt.max_content_chars,
+                ccr_max_entries: cfg.ccr.max_entries,
+                parallel_strategies: rt.parallel_strategies,
+                enabled_types: rt.enabled_types.clone(),
+            },
+        }
+    }
+
     pub fn with_ccr(ccr: Arc<CcrStore>) -> Self {
         Self {
             strategies: default_strategies(),
             ccr,
             config: CompressionConfig::default(),
+        }
+    }
+
+    pub fn with_ccr_and_config(ccr: Arc<CcrStore>, cfg: &crate::config::HeadroomConfig) -> Self {
+        let rt = &cfg.content_routing;
+        Self {
+            strategies: default_strategies(),
+            ccr,
+            config: CompressionConfig {
+                min_savings_pct: rt.min_savings_pct,
+                max_content_chars: rt.max_content_chars,
+                ccr_max_entries: cfg.ccr.max_entries,
+                parallel_strategies: rt.parallel_strategies,
+                enabled_types: rt.enabled_types.clone(),
+            },
         }
     }
 
@@ -155,13 +187,14 @@ impl ContentCompressor {
 
 fn default_strategies() -> Vec<Arc<dyn CompressionStrategy>> {
     vec![
-        Arc::new(JsonCompressor),
+        Arc::new(JsonCompressor::with_smart_crusher(crate::strategies::smart_crusher::SmartCrusherConfig::default())),
         Arc::new(CodeCompressor),
         Arc::new(LogCompressor),
         Arc::new(TextCompressor),
         Arc::new(SearchCompressor),
         Arc::new(DiffCompressor),
         Arc::new(ImageCompressor),
+        Arc::new(HtmlCompressor),
     ]
 }
 
@@ -215,8 +248,8 @@ mod tests {
         let content = serde_json::to_string(&rows).unwrap();
         let compressor = ContentCompressor::default();
         let outcome = compressor.compress(&content, None).await;
-        assert!(outcome.is_compressed(), "should compress: {}", outcome.tokens_saved());
-        assert!(outcome.tokens_saved() > 0);
+        assert!(outcome.is_compressed(), "should compress json array: tokens_saved={}", outcome.tokens_saved());
+        assert!(outcome.tokens_saved() > 0, "should save tokens, got: {}", outcome.tokens_saved());
     }
 
     #[tokio::test]

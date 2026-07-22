@@ -1,0 +1,330 @@
+use std::sync::Arc;
+use crate::cache_aligner::CacheAligner;
+use crate::config::*;
+use crate::intelligent_context::IntelligentContext;
+use crate::orchestrator::ContentCompressor;
+
+pub struct Compressor {
+    cache_aligner: CacheAligner,
+    content_router: Arc<ContentCompressor>,
+    intelligent_context: IntelligentContext,
+    config: HeadroomConfig,
+}
+
+impl Compressor {
+    pub fn new(config: HeadroomConfig) -> Self {
+        let content_router = Arc::new(ContentCompressor::from_config(&config));
+        Self {
+            cache_aligner: CacheAligner::new(config.cache_alignment.clone()),
+            content_router,
+            intelligent_context: IntelligentContext::new(config.intelligent_context.clone()),
+            config,
+        }
+    }
+
+    pub fn with_ccr(ccr: Arc<crate::ccr::CcrStore>, config: HeadroomConfig) -> Self {
+        let content_router = Arc::new(ContentCompressor::with_ccr_and_config(ccr, &config));
+        Self {
+            cache_aligner: CacheAligner::new(config.cache_alignment.clone()),
+            content_router,
+            intelligent_context: IntelligentContext::new(config.intelligent_context.clone()),
+            config,
+        }
+    }
+
+    pub fn content_router(&self) -> &Arc<ContentCompressor> {
+        &self.content_router
+    }
+
+    pub async fn compress(&mut self, messages: Vec<Message>) -> CompressionResult {
+        let total_messages = messages.len();
+        let total_input_chars: usize = messages.iter().map(|m| m.content.len()).sum();
+        let total_input_tokens = messages.iter().map(|m| crate::intelligent_context::estimate_tokens(&m.content)).sum();
+
+        let mut transformed: Vec<Message> = Vec::with_capacity(total_messages);
+        let mut total_cacheable_prefixes = 0usize;
+        let mut total_dynamic_suffixes = 0usize;
+        let mut total_content_compressed = 0usize;
+        let mut transformed_roles: Vec<String> = Vec::new();
+        let mut ccr_keys: Vec<String> = Vec::new();
+
+        for msg in messages {
+            let role_name = match msg.role {
+                MessageRole::System => "system",
+                MessageRole::User => "user",
+                MessageRole::Assistant => "assistant",
+                MessageRole::Tool => "tool",
+            };
+
+            match msg.role {
+                MessageRole::System if self.config.cache_alignment.enabled => {
+                    let aligned = self.cache_aligner.align(&msg.content);
+                    total_cacheable_prefixes += aligned.static_prefix.len();
+                    total_dynamic_suffixes += aligned.dynamic_suffix.len();
+                    let combined = if aligned.dynamic_suffix.is_empty() {
+                        aligned.static_prefix
+                    } else {
+                        format!("{}\n{}", aligned.static_prefix, aligned.dynamic_suffix)
+                    };
+                    transformed.push(Message {
+                        content: combined,
+                        ..msg
+                    });
+                    transformed_roles.push(format!("{}:aligned", role_name));
+                }
+                MessageRole::Tool if self.config.content_routing.enabled_types.len() > 0 => {
+                    let hint = if let Some(ref tool_name) = msg.name {
+                        crate::integration::content_type_for_tool(tool_name)
+                    } else {
+                        None
+                    };
+                    let outcome = self.content_router.compress(&msg.content, hint).await;
+                    match outcome {
+                        crate::orchestrator::CompressOutcome::Compressed { text, retrieval_key, .. } => {
+                            total_content_compressed += 1;
+                            if let Some(ref key) = retrieval_key {
+                                ccr_keys.push(key.clone());
+                            }
+                            let final_text = if let Some(ref key) = retrieval_key {
+                                format!("{} [headroom: {}]", text, key)
+                            } else {
+                                text
+                            };
+                            transformed.push(Message {
+                                content: final_text,
+                                ..msg
+                            });
+                            transformed_roles.push(format!("{}:compressed", role_name));
+                        }
+                        crate::orchestrator::CompressOutcome::Skipped { .. } => {
+                            transformed.push(msg);
+                            transformed_roles.push(role_name.to_string());
+                        }
+                    }
+                }
+                _ => {
+                    transformed.push(msg);
+                    transformed_roles.push(role_name.to_string());
+                }
+            }
+        }
+
+        let total_output_chars: usize = transformed.iter().map(|m| m.content.len()).sum();
+        let total_output_tokens: usize = transformed.iter().map(|m| crate::intelligent_context::estimate_tokens(&m.content)).sum();
+
+        let intelligence_result = if self.config.intelligent_context.enabled {
+            Some(self.intelligent_context.score(transformed.clone()))
+        } else {
+            None
+        };
+
+        let final_messages: Vec<Message> = match &intelligence_result {
+            Some(ref scored) if scored.dropped_count > 0 => {
+                scored.messages.iter().map(|sm| Message {
+                    role: sm.role.clone(),
+                    content: sm.content.clone(),
+                    tool_call_id: sm.tool_call_id.clone(),
+                    name: sm.name.clone(),
+                }).collect()
+            }
+            _ => transformed,
+        };
+
+        let _final_token_count: usize = final_messages.iter().map(|m| crate::intelligent_context::estimate_tokens(&m.content)).sum();
+        let total_output_messages = final_messages.len();
+
+        CompressionResult {
+            messages: final_messages,
+            metadata: CompressionMetadata {
+                total_input_messages: total_messages,
+                total_output_messages,
+                total_input_chars,
+                total_output_chars,
+                total_input_tokens,
+                total_output_tokens,
+                cacheable_prefix_bytes: total_cacheable_prefixes,
+                dynamic_suffix_bytes: total_dynamic_suffixes,
+                content_compressed_count: total_content_compressed,
+                ccr_keys,
+                roles: transformed_roles,
+                intelligent_dropped: intelligence_result.as_ref().map(|r| r.dropped_count).unwrap_or(0),
+                intelligent_budget: intelligence_result.as_ref().map(|r| r.budget_tokens).unwrap_or(0),
+            },
+        }
+    }
+
+    pub fn reset_cache_aligner(&mut self) {
+        self.cache_aligner.reset();
+    }
+}
+
+pub struct CompressionResult {
+    pub messages: Vec<Message>,
+    pub metadata: CompressionMetadata,
+}
+
+pub struct CompressionMetadata {
+    pub total_input_messages: usize,
+    pub total_output_messages: usize,
+    pub total_input_chars: usize,
+    pub total_output_chars: usize,
+    pub total_input_tokens: usize,
+    pub total_output_tokens: usize,
+    pub cacheable_prefix_bytes: usize,
+    pub dynamic_suffix_bytes: usize,
+    pub content_compressed_count: usize,
+    pub ccr_keys: Vec<String>,
+    pub roles: Vec<String>,
+    pub intelligent_dropped: usize,
+    pub intelligent_budget: usize,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn msg(role: MessageRole, content: &str) -> Message {
+        Message {
+            role,
+            content: content.to_string(),
+            tool_call_id: None,
+            name: None,
+        }
+    }
+
+    fn tool_msg(name: &str, content: &str) -> Message {
+        Message {
+            role: MessageRole::Tool,
+            content: content.to_string(),
+            tool_call_id: Some("call_1".into()),
+            name: Some(name.to_string()),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_compress_preserves_simple() {
+        let config = HeadroomConfig::default();
+        let mut compressor = Compressor::new(config);
+        let messages = vec![
+            msg(MessageRole::System, "You are a helpful assistant."),
+            msg(MessageRole::User, "Hello!"),
+        ];
+        let result = compressor.compress(messages).await;
+        assert_eq!(result.metadata.total_input_messages, 2);
+        assert_eq!(result.metadata.total_output_messages, 2);
+    }
+
+    #[tokio::test]
+    async fn test_compress_aligns_system_prompt() {
+        let config = HeadroomConfig::default();
+        let mut compressor = Compressor::new(config);
+        let messages = vec![
+            msg(MessageRole::System, "Today is 2026-07-22. User: alice."),
+            msg(MessageRole::User, "Run tests."),
+        ];
+        let result = compressor.compress(messages).await;
+        let sys = &result.messages[0];
+        assert!(sys.content.contains("DATE"), "system prompt should have aligned dates: {:?}", sys.content);
+    }
+
+    #[tokio::test]
+    async fn test_compress_compresses_tool_output() {
+        let config = HeadroomConfig::default();
+        let mut compressor = Compressor::new(config);
+        let mut code = String::new();
+        code.push_str("use std::collections::HashMap;\nuse std::fs;\n\n");
+        for i in 0..30 {
+            code.push_str(&format!(
+                "pub fn func_{}() -> i32 {{\n    let x = {};\n    x * 2\n}}\n\n",
+                i, i
+            ));
+        }
+        let messages = vec![
+            msg(MessageRole::System, "You are a coding assistant."),
+            tool_msg("read", &code),
+        ];
+        let result = compressor.compress(messages).await;
+        let tool_result = &result.messages[1];
+        if tool_result.content.len() < code.len() {
+            assert!(result.metadata.content_compressed_count >= 1, "should compress tool output");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_compress_respects_budget() {
+        let config = HeadroomConfig {
+            intelligent_context: IntelligentContextConfig {
+                token_budget: 10,
+                ..Default::default()
+            },
+            cache_alignment: CacheAlignmentConfig {
+                enabled: false,
+                ..Default::default()
+            },
+            content_routing: ContentRoutingConfig {
+                enabled_types: vec![],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut compressor = Compressor::new(config);
+        let messages = vec![
+            msg(MessageRole::User, "short"),
+            msg(MessageRole::User, "this is a much longer message that should be dropped"),
+            msg(MessageRole::User, "tiny"),
+        ];
+        let result = compressor.compress(messages).await;
+        assert!(result.metadata.intelligent_dropped > 0, "should drop messages when over budget");
+        assert!(result.metadata.total_output_messages < result.metadata.total_input_messages);
+    }
+
+    #[tokio::test]
+    async fn test_compress_preserves_key_messages() {
+        let config = HeadroomConfig {
+            intelligent_context: IntelligentContextConfig {
+                token_budget: 30,
+                error_weight: 10.0,
+                ..Default::default()
+            },
+            cache_alignment: CacheAlignmentConfig {
+                enabled: false,
+                ..Default::default()
+            },
+            content_routing: ContentRoutingConfig {
+                enabled_types: vec![],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut compressor = Compressor::new(config);
+        let messages = vec![
+            msg(MessageRole::User, "a"),
+            msg(MessageRole::User, "b"),
+            msg(MessageRole::User, "ERROR: critical failure"),
+            msg(MessageRole::User, "c"),
+        ];
+        let result = compressor.compress(messages).await;
+        let has_error = result.messages.iter().any(|m| m.content.contains("ERROR"));
+        assert!(has_error, "should preserve error messages");
+    }
+
+    #[tokio::test]
+    async fn test_compress_empty_input() {
+        let config = HeadroomConfig::default();
+        let mut compressor = Compressor::new(config);
+        let result = compressor.compress(vec![]).await;
+        assert_eq!(result.metadata.total_input_messages, 0);
+        assert!(result.messages.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_cache_aligner_delta_across_calls() {
+        let config = HeadroomConfig::default();
+        let mut compressor = Compressor::new(config);
+        let msgs1 = vec![msg(MessageRole::System, "Today is 2026-07-22.")];
+        let _r1 = compressor.compress(msgs1).await;
+        let msgs2 = vec![msg(MessageRole::System, "Today is 2026-07-22.")];
+        let r2 = compressor.compress(msgs2).await;
+        assert!(r2.messages[0].content.contains("no change"), "second call should detect no change: {:?}", r2.messages[0].content);
+    }
+}

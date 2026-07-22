@@ -5,6 +5,8 @@ pub mod text;
 pub mod search;
 pub mod diff;
 pub mod image;
+pub mod html;
+pub mod smart_crusher;
 
 use async_trait::async_trait;
 use crate::classifier::ContentType;

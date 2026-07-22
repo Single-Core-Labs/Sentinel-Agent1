@@ -40,6 +40,7 @@ pub enum ContentType {
     GitDiff,
     PlainText,
     Image,
+    Html,
 }
 
 impl ContentType {
@@ -53,8 +54,14 @@ impl ContentType {
             ContentType::GitDiff => "git_diff",
             ContentType::PlainText => "plain_text",
             ContentType::Image => "image",
+            ContentType::Html => "html",
         }
     }
+}
+
+static HTML_RE: OnceLock<regex::Regex> = OnceLock::new();
+fn html_re() -> &'static regex::Regex {
+    HTML_RE.get_or_init(|| regex::Regex::new(r"(?i)^\s*(<!doctype|<html|<head|<body|<div|<span|<table|<form|<h[1-6])").unwrap())
 }
 
 pub fn classify(content: &str) -> ContentType {
@@ -63,6 +70,10 @@ pub fn classify(content: &str) -> ContentType {
     let line_count = lines.len();
     if line_count == 0 {
         return ContentType::PlainText;
+    }
+
+    if html_re().is_match(first_2k) {
+        return ContentType::Html;
     }
 
     if json_re().is_match(first_2k) {

@@ -112,7 +112,7 @@ impl AgentCompressionPipeline {
     }
 }
 
-fn content_type_for_tool(tool_name: &str) -> Option<ContentType> {
+pub fn content_type_for_tool(tool_name: &str) -> Option<ContentType> {
     match tool_name {
         "read" | "glob" | "grep" => Some(ContentType::SourceCode),
         "bash" if tool_name.contains("test") || tool_name.contains("cargo") => Some(ContentType::BuildLog),
