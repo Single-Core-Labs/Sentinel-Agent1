@@ -78,8 +78,10 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     }
 
     let tools = Arc::new(tool_registry);
+    let headroom_compressor = sentinel_headroom::integration::create_headroom_compressor();
     let agent = sentinel_core::Agent::new(provider, tools, config.clone())
-        .with_event_handler(Arc::new(CliEventHandler));
+        .with_event_handler(Arc::new(CliEventHandler))
+        .with_compressor(headroom_compressor);
 
     let mut thread = sentinel_core::AgentThread::new(
         config.agent.max_turns,

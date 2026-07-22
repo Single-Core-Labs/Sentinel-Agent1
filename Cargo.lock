@@ -2019,6 +2019,7 @@ dependencies = [
  "sentinel-app-server-transport",
  "sentinel-config",
  "sentinel-core",
+ "sentinel-headroom",
  "sentinel-mcp",
  "sentinel-provider",
  "sentinel-tools",

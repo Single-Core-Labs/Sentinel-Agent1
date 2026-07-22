@@ -124,6 +124,60 @@ pub fn content_type_for_tool(tool_name: &str) -> Option<ContentType> {
     }
 }
 
+pub struct HeadroomAgentCompressor {
+    pipeline: Arc<AgentCompressionPipeline>,
+    ccr: Option<Arc<CcrStore>>,
+}
+
+impl HeadroomAgentCompressor {
+    pub fn new(pipeline: Arc<AgentCompressionPipeline>) -> Self {
+        let ccr = Some(Arc::clone(pipeline.ccr()));
+        Self { pipeline, ccr }
+    }
+
+    pub fn ccr(&self) -> Option<Arc<CcrStore>> {
+        self.ccr.clone()
+    }
+}
+
+pub fn create_headroom_compressor() -> Arc<dyn sentinel_core::ContentCompressor> {
+    let compressor = Arc::new(ContentCompressor::default());
+    let pipeline = Arc::new(AgentCompressionPipeline::new(compressor));
+    Arc::new(HeadroomAgentCompressor::new(pipeline))
+}
+
+pub fn create_headroom_compressor_with_config(
+    config: crate::HeadroomConfig,
+) -> Arc<dyn sentinel_core::ContentCompressor> {
+    let rc = crate::ContentRoutingConfig {
+        min_content_chars: 100,
+        ..config.content_routing.clone()
+    };
+    let headroom_config = crate::config::HeadroomConfig {
+        content_routing: rc,
+        cache_alignment: config.cache_alignment.clone(),
+        intelligent_context: config.intelligent_context.clone(),
+        ccr: config.ccr.clone(),
+    };
+    let content_compressor = Arc::new(ContentCompressor::from_config(&headroom_config));
+    let pipeline = Arc::new(AgentCompressionPipeline::new(content_compressor));
+    Arc::new(HeadroomAgentCompressor::new(pipeline))
+}
+
+#[async_trait]
+impl sentinel_core::ContentCompressor for HeadroomAgentCompressor {
+    fn name(&self) -> &'static str { "headroom" }
+
+    async fn compress(&self, tool_name: &str, output: &str, is_error: bool) -> String {
+        let result = self.pipeline.process_tool_output(tool_name, output, is_error).await;
+        if result.retrieval_key.is_some() {
+            format!("{} [headroom: {}]", result.text, result.retrieval_key.unwrap())
+        } else {
+            result.text
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

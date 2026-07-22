@@ -16,6 +16,7 @@ use crate::thread::{AgentThread, ThreadStatus, ApprovalRequest};
 use crate::prompt::SystemPromptManager;
 use crate::event::{SharedEventStore, SessionEvent};
 use crate::uploader::{SessionUploader, SessionPayload, NullUploader, create_uploader};
+use crate::compression::{ContentCompressor, NullCompressor};
 
 const TRUNCATION_HINT: &str = "\
 Your previous response was truncated because the output hit the token limit. \
@@ -60,6 +61,7 @@ pub struct Agent {
     pub total_completion_tokens: AtomicU64,
     uploader: Box<dyn SessionUploader>,
     plugin_registry: Arc<PluginRegistry>,
+    compressor: Arc<dyn ContentCompressor>,
 }
 
 impl std::fmt::Debug for Agent {
@@ -70,6 +72,7 @@ impl std::fmt::Debug for Agent {
             .field("total_prompt_tokens", &self.total_prompt_tokens)
             .field("total_completion_tokens", &self.total_completion_tokens)
             .field("has_phase_callback", &self.phase_callback.is_some())
+            .field("has_compressor", &format_args!("{}", self.compressor.name()))
             .finish_non_exhaustive()
     }
 }
@@ -90,6 +93,7 @@ impl Agent {
             total_completion_tokens: AtomicU64::new(0),
             uploader: Box::new(NullUploader),
             plugin_registry: Arc::new(PluginRegistry::new()),
+            compressor: Arc::new(NullCompressor::new()),
         }
     }
 
@@ -128,6 +132,11 @@ impl Agent {
 
     pub fn with_plugin_registry(mut self, registry: Arc<PluginRegistry>) -> Self {
         self.plugin_registry = registry;
+        self
+    }
+
+    pub fn with_compressor(mut self, compressor: Arc<dyn ContentCompressor>) -> Self {
+        self.compressor = compressor;
         self
     }
 
@@ -323,6 +332,7 @@ impl Agent {
                 &self.events,
                 &ctx,
                 &cancel,
+                &self.compressor,
             ).await;
 
             let now = chrono::Utc::now();
@@ -567,6 +577,7 @@ impl Agent {
                 &self.events,
                 &ctx,
                 &cancel,
+                &self.compressor,
             ).await;
 
             for result in &tool_results {
@@ -638,6 +649,7 @@ async fn execute_tools_concurrent(
     events: &Arc<dyn EventHandler>,
     ctx: &ToolContext,
     cancel: &CancellationToken,
+    compressor: &Arc<dyn ContentCompressor>,
 ) -> Vec<ToolResult> {
     let mut ordered_results: BTreeMap<usize, ToolResult> = BTreeMap::new();
     let mut set: JoinSet<(usize, ToolResult)> = JoinSet::new();
@@ -696,6 +708,7 @@ async fn execute_tools_concurrent(
         let ctx = ctx.clone();
         let cancel = cancel.clone();
         let events = Arc::clone(events);
+        let compressor = Arc::clone(compressor);
 
         let tool_call_id_cancel = tool_call_id.clone();
         let name_cancel = name.clone();
@@ -713,15 +726,16 @@ async fn execute_tools_concurrent(
                 }
                 result = async {
                     let output = tools.execute(&name, args, &ctx).await;
+                    let compressed = compressor.compress(&name, &output.text, output.is_error).await;
                     events.handle_event(AgentEvent::ToolResult {
                         name: name.clone(),
-                        output: output.text.clone(),
+                        output: compressed.clone(),
                         is_error: output.is_error,
                     }).await;
                     ToolResult {
                         tool_call_id,
                         name,
-                        output: output.text,
+                        output: compressed,
                         is_error: output.is_error,
                     }
                 } => (i, result)
