@@ -176,6 +176,19 @@ impl HeadroomAgentCompressor {
     pub fn pipeline(&self) -> &Arc<AgentCompressionPipeline> {
         &self.pipeline
     }
+
+    pub async fn memory_tools(&self) -> Vec<Arc<dyn sentinel_tools::Tool>> {
+        match &self.full_compressor {
+            Some(mtx) => {
+                let guard = mtx.lock().await;
+                match guard.memory() {
+                    Some(memory) => memory.create_tools().await,
+                    None => Vec::new(),
+                }
+            }
+            None => Vec::new(),
+        }
+    }
 }
 
 pub fn create_headroom_compressor() -> Arc<dyn sentinel_core::ContentCompressor> {
@@ -213,6 +226,17 @@ pub fn create_headroom_compressor_and_tool(
     let retrieve_tool = Arc::new(pipeline.create_retrieve_tool());
     let agent_compressor = Arc::new(HeadroomAgentCompressor::with_config(pipeline, config));
     (agent_compressor as Arc<dyn sentinel_core::ContentCompressor>, retrieve_tool)
+}
+
+pub async fn create_headroom_compressor_with_tools(
+) -> (Arc<dyn sentinel_core::ContentCompressor>, Arc<HeadroomRetrieveTool>, Vec<Arc<dyn sentinel_tools::Tool>>) {
+    let config = HeadroomConfig::default();
+    let content_compressor = Arc::new(ContentCompressor::from_config(&config));
+    let pipeline = Arc::new(AgentCompressionPipeline::new(content_compressor));
+    let retrieve_tool = Arc::new(pipeline.create_retrieve_tool());
+    let agent_compressor = HeadroomAgentCompressor::with_config(pipeline, config);
+    let memory_tools = agent_compressor.memory_tools().await;
+    (Arc::new(agent_compressor) as Arc<dyn sentinel_core::ContentCompressor>, retrieve_tool, memory_tools)
 }
 
 #[async_trait]

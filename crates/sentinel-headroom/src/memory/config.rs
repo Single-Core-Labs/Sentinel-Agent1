@@ -18,7 +18,7 @@ pub struct MemoryConfig {
 impl Default for MemoryConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             db_path: None,
             user_id: "default".to_string(),
             max_memories_per_user: 500,

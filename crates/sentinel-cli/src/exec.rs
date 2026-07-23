@@ -77,9 +77,12 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         }
     }
 
-    let (headroom_compressor, headroom_retrieve_tool) =
-        sentinel_headroom::integration::create_headroom_compressor_and_tool();
+    let (headroom_compressor, headroom_retrieve_tool, headroom_memory_tools) =
+        sentinel_headroom::integration::create_headroom_compressor_with_tools().await;
     tool_registry.register(headroom_retrieve_tool as Arc<dyn sentinel_tools::Tool>);
+    for tool in headroom_memory_tools {
+        tool_registry.register(tool);
+    }
     let tools = Arc::new(tool_registry);
     let agent = sentinel_core::Agent::new(provider, tools, config.clone())
         .with_event_handler(Arc::new(CliEventHandler))

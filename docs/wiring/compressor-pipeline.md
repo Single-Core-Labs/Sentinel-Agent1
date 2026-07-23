@@ -97,12 +97,6 @@ pub trait ContentCompressor: Send + Sync {
 
 `NullCompressor` returns `messages.to_vec()` (no-op).
 
-## Full Compressor State
-
-**File:** `crates/sentinel-headroom/src/integration.rs`
-
-`HeadroomAgentCompressor` stores `Option<Mutex<Compressor>>`. Created via `HeadroomAgentCompressor::with_config()` which builds `Compressor::with_ccr()` sharing the same `CcrStore` as the per-tool-output pipeline. Uses `tokio::sync::Mutex` because `Compressor::compress()` is async (cache alignment delta tracking requires mutable access).
-
 ## Memory System Integration
 
 The `Compressor` now includes an optional `PersistentMemory` subsystem:
@@ -114,6 +108,21 @@ Compressor::compress()
   ├─ ContentCompressor (per-tool routing)
   └─ (during build_request)      →  memory.inject_memories(&system, user_id)
 ```
+
+Memory is **enabled by default** (`MemoryConfig::enabled = true`, in-memory
+SQLite store). For persistent storage across restarts, set
+`MemoryConfig::db_path` to a file path.
+
+## Full Compressor State
+
+**File:** `crates/sentinel-headroom/src/integration.rs`
+
+`HeadroomAgentCompressor` stores `Option<Mutex<Compressor>>`. Created via `HeadroomAgentCompressor::with_config()` which builds `Compressor::with_ccr()` sharing the same `CcrStore` as the per-tool-output pipeline. Uses `tokio::sync::Mutex` because `Compressor::compress()` is async (cache alignment delta tracking requires mutable access).
+
+Memory tools (`headroom_memorize`, `headroom_recall`, `headroom_forget`,
+`headroom_memory_stats`) are exposed via `memory_tools()` on
+`HeadroomAgentCompressor` and registered into the agent's `ToolRegistry`
+at the CLI entry point (`sentinel-cli/src/exec.rs`).
 
 See [`docs/memory-system.md`](../memory-system.md) for the full memory module
 documentation.
@@ -129,3 +138,6 @@ documentation.
 | `crates/sentinel-headroom/src/compress.rs` | Added `memory: Option<PersistentMemory>`, extraction on drop, injection on system prompt |
 | `crates/sentinel-headroom/src/config.rs` | Added `memory: MemoryConfig` field |
 | `crates/sentinel-headroom/src/memory/` | Full module: types, store, embeddings, extractor, injector, tool, config |
+| `crates/sentinel-headroom/src/memory/config.rs` | Memory enabled by default, `db_path: None` (in-memory SQLite) |
+| `crates/sentinel-headroom/src/integration.rs` | Added `memory_tools()`, `create_headroom_compressor_with_tools()` async factory |
+| `crates/sentinel-cli/src/exec.rs` | Registers memory tools into agent ToolRegistry |
