@@ -21,31 +21,42 @@ impl HeadroomRetrieveTool {
 impl Tool for HeadroomRetrieveTool {
     fn name(&self) -> &str { "headroom_retrieve" }
     fn description(&self) -> &str {
-        "Retrieve the full original content that was compressed by Headroom. \
-         Use this when you need to see details that were omitted during compression. \
-         Pass the key from a [headroom: <key>] marker."
+        "Retrieve original uncompressed data from Headroom cache. \
+         Use when the compressed preview is insufficient and you need the full content. \
+         Optionally provide a query to search within cached data."
     }
     fn input_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
             "properties": {
-                "key": {
+                "hash": {
                     "type": "string",
-                    "description": "The headroom retrieval key (e.g., ccr:abc123...)"
+                    "description": "The hash key from the compression marker (e.g., ccr:abc123...)"
+                },
+                "query": {
+                    "type": "string",
+                    "description": "Optional: search within the cached data for relevant portions"
                 }
             },
-            "required": ["key"]
+            "required": ["hash"]
         })
     }
 
     async fn execute(&self, args: serde_json::Value, _ctx: &ToolContext) -> ToolOutput {
-        let key = args["key"].as_str().unwrap_or("");
-        if key.is_empty() {
-            return ToolOutput::err("key is required");
+        let hash = args["hash"].as_str().or_else(|| args["key"].as_str()).unwrap_or("");
+        if hash.is_empty() {
+            return ToolOutput::err("hash is required");
         }
-        match self.ccr.retrieve(key).await {
+        let query = args["query"].as_str().filter(|q| !q.trim().is_empty());
+
+        let result = match query {
+            Some(q) => self.ccr.search(hash, q).await,
+            None => self.ccr.retrieve(hash).await,
+        };
+
+        match result {
             Some(original) => ToolOutput::ok(original),
-            None => ToolOutput::err(format!("Content not found or expired: {}", key)),
+            None => ToolOutput::err(format!("Content not found or expired: {}", hash)),
         }
     }
 }
@@ -110,6 +121,14 @@ impl AgentCompressionPipeline {
     pub fn create_retrieve_tool(&self) -> HeadroomRetrieveTool {
         HeadroomRetrieveTool::new(Arc::clone(self.compressor.ccr()))
     }
+
+    pub fn retrieval_tool_schema(&self) -> Option<serde_json::Value> {
+        self.compressor.retrieval_tool_schema()
+    }
+
+    pub async fn proactive_expand(&self, query: &str) -> Option<String> {
+        self.compressor.proactive_expand(query).await
+    }
 }
 
 pub fn content_type_for_tool(tool_name: &str) -> Option<ContentType> {
@@ -138,6 +157,10 @@ impl HeadroomAgentCompressor {
     pub fn ccr(&self) -> Option<Arc<CcrStore>> {
         self.ccr.clone()
     }
+
+    pub fn pipeline(&self) -> &Arc<AgentCompressionPipeline> {
+        &self.pipeline
+    }
 }
 
 pub fn create_headroom_compressor() -> Arc<dyn sentinel_core::ContentCompressor> {
@@ -164,17 +187,22 @@ pub fn create_headroom_compressor_with_config(
     Arc::new(HeadroomAgentCompressor::new(pipeline))
 }
 
+pub fn create_headroom_compressor_and_tool(
+) -> (Arc<dyn sentinel_core::ContentCompressor>, Arc<HeadroomRetrieveTool>) {
+    let compressor = Arc::new(ContentCompressor::default());
+    let pipeline = Arc::new(AgentCompressionPipeline::new(compressor));
+    let retrieve_tool = Arc::new(pipeline.create_retrieve_tool());
+    let agent_compressor = Arc::new(HeadroomAgentCompressor::new(pipeline));
+    (agent_compressor as Arc<dyn sentinel_core::ContentCompressor>, retrieve_tool)
+}
+
 #[async_trait]
 impl sentinel_core::ContentCompressor for HeadroomAgentCompressor {
     fn name(&self) -> &'static str { "headroom" }
 
     async fn compress(&self, tool_name: &str, output: &str, is_error: bool) -> String {
         let result = self.pipeline.process_tool_output(tool_name, output, is_error).await;
-        if result.retrieval_key.is_some() {
-            format!("{} [headroom: {}]", result.text, result.retrieval_key.unwrap())
-        } else {
-            result.text
-        }
+        result.text
     }
 }
 
@@ -187,7 +215,8 @@ mod tests {
         let ccr = Arc::new(CcrStore::new(100));
         let tool = HeadroomRetrieveTool::new(ccr);
         assert_eq!(tool.name(), "headroom_retrieve");
-        assert!(tool.input_schema()["required"].as_array().unwrap().contains(&json!("key")));
+        assert!(tool.input_schema()["required"].as_array().unwrap().contains(&json!("hash")));
+        assert!(tool.input_schema()["properties"].get("query").is_some());
     }
 
     #[tokio::test]
@@ -202,9 +231,29 @@ mod tests {
     async fn test_retrieve_tool_nonexistent() {
         let ccr = Arc::new(CcrStore::new(100));
         let tool = HeadroomRetrieveTool::new(ccr);
-        let result = tool.execute(json!({"key": "ccr:nonexistent"}), &ToolContext::new()).await;
+        let result = tool.execute(json!({"hash": "ccr:nonexistent"}), &ToolContext::new()).await;
         assert!(result.is_error);
         assert!(result.text.contains("not found"));
+    }
+
+    #[tokio::test]
+    async fn test_retrieve_tool_backward_compat_key() {
+        let ccr = Arc::new(CcrStore::new(100));
+        ccr.store_with_key("ccr:test", "original data".into(), "text", "preview".into()).await;
+        let tool = HeadroomRetrieveTool::new(ccr);
+        let result = tool.execute(json!({"key": "ccr:test"}), &ToolContext::new()).await;
+        assert!(!result.is_error);
+        assert_eq!(result.text, "original data");
+    }
+
+    #[tokio::test]
+    async fn test_retrieve_tool_with_query() {
+        let ccr = Arc::new(CcrStore::new(100));
+        ccr.store_with_key("ccr:test_q", "line one\nauthentication failed\nline three".into(), "text", "preview".into()).await;
+        let tool = HeadroomRetrieveTool::new(ccr);
+        let result = tool.execute(json!({"hash": "ccr:test_q", "query": "authentication"}), &ToolContext::new()).await;
+        assert!(!result.is_error);
+        assert!(result.text.contains("authentication"), "should contain matched line: {}", result.text);
     }
 
     #[tokio::test]
@@ -228,5 +277,12 @@ mod tests {
     fn test_content_type_for_tool() {
         assert_eq!(content_type_for_tool("read"), Some(ContentType::SourceCode));
         assert_eq!(content_type_for_tool("bash"), None);
+    }
+
+    #[test]
+    fn test_create_headroom_compressor_and_tool() {
+        let (compressor, tool) = create_headroom_compressor_and_tool();
+        assert_eq!(compressor.name(), "headroom");
+        assert_eq!(tool.name(), "headroom_retrieve");
     }
 }
