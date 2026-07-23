@@ -1,0 +1,27 @@
+[package]
+name = "sentinel-sdk"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Programmatic SDK for building and interacting with Sentinel AI agents"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+tokio.workspace = true
+async-trait.workspace = true
+tracing.workspace = true
+
+sentinel-core = { path = "../sentinel-core" }
+sentinel-provider = { path = "../sentinel-provider" }
+sentinel-tools = { path = "../sentinel-tools" }
+sentinel-config = { path = "../sentinel-config" }
+sentinel-mcp = { path = "../sentinel-mcp" }
+sentinel-protocol = { path = "../sentinel-protocol" }
+sentinel-provider-info = { path = "../sentinel-provider-info" }
+sentinel-headroom = { path = "../sentinel-headroom", optional = true }
+
+[features]
+default = ["headroom"]
+headroom = ["dep:sentinel-headroom"]

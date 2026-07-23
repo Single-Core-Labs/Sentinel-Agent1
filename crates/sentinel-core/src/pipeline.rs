@@ -329,6 +329,8 @@ impl PipelineAgent {
                 &cancel,
                 &self.agent.compressor,
                 &None,
+                &None,
+                &None,
             ).await;
 
             for result in &tool_results {

@@ -2867,6 +2867,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "futures",
+ "rand 0.8.7",
  "reqwest",
  "sentinel-protocol",
  "sentinel-provider-info",
@@ -2884,6 +2885,26 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "sentinel-sdk"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "sentinel-config",
+ "sentinel-core",
+ "sentinel-headroom",
+ "sentinel-mcp",
+ "sentinel-protocol",
+ "sentinel-provider",
+ "sentinel-provider-info",
+ "sentinel-tools",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]

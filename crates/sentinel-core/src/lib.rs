@@ -21,6 +21,8 @@ pub mod sandbox;
 pub mod diff_capture;
 pub mod memory_file;
 pub mod worktree;
+pub mod hooks;
+pub mod event_bus;
 
 pub use agent::*;
 pub use approval::*;

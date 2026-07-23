@@ -18,4 +18,22 @@ pub enum ProviderError {
     JsonError(#[from] serde_json::Error),
     #[error("All providers in the router failed")]
     AllProvidersFailed,
+    #[error("Rate limited: retry after {retry_after}s")]
+    RateLimited { retry_after: u64 },
+    #[error("Rate limit exceeded")]
+    RateLimitExceeded { retry_after: u64 },
+    #[error("Unauthorized: {detail}")]
+    Unauthorized { detail: String },
+    #[error("Forbidden: {detail}")]
+    Forbidden { detail: String },
+    #[error("Invalid request: {0}")]
+    InvalidRequest(String),
+    #[error("Request timed out after {duration}s")]
+    Timeout { duration: u64 },
+    #[error("Network error: {0}")]
+    NetworkError(String),
+    #[error("Server error: {status}")]
+    ServerError { status: u16 },
+    #[error("Service unavailable")]
+    ServiceUnavailable { retry_after: Option<u64> },
 }

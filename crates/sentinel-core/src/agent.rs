@@ -18,6 +18,7 @@ use crate::event::{SharedEventStore, SessionEvent};
 use crate::uploader::{SessionUploader, SessionPayload, NullUploader, create_uploader};
 use crate::compression::{ContentCompressor, NullCompressor};
 use crate::diff_capture::DiffCapture;
+use crate::event_bus::{EventBus, PolicyEngine, PolicyDecision, BusEvent};
 
 pub(crate) const TRUNCATION_HINT: &str = "\
 Your previous response was truncated because the output hit the token limit. \
@@ -335,9 +336,10 @@ impl Agent {
                 &cancel,
                 &self.compressor,
                 &None,
+                &None,
+                &None,
             ).await;
 
-            let now = chrono::Utc::now();
             for result in &tool_results {
                 self.event_store.append(SessionEvent::ToolResult {
                     session_id: sid.to_string(),
@@ -581,6 +583,8 @@ impl Agent {
                 &cancel,
                 &self.compressor,
                 &None,
+                &None,
+                &None,
             ).await;
 
             for result in &tool_results {
@@ -676,6 +680,8 @@ pub(crate) async fn execute_tools_concurrent(
     cancel: &CancellationToken,
     compressor: &Arc<dyn ContentCompressor>,
     sandbox: &Option<crate::sandbox::SharedSandbox>,
+    event_bus: &Option<EventBus>,
+    policy: &Option<Arc<dyn PolicyEngine>>,
 ) -> Vec<ToolResult> {
     let mut ordered_results: BTreeMap<usize, ToolResult> = BTreeMap::new();
     let mut set: JoinSet<(usize, ToolResult)> = JoinSet::new();
@@ -695,6 +701,42 @@ pub(crate) async fn execute_tools_concurrent(
                 is_error: true,
             });
             continue;
+        }
+
+        // Policy check (before user approval)
+        if let Some(ref policy) = policy {
+            let decision = policy.evaluate(&name, &args).await;
+            let correlation_id = format!("tool-{}-{}", i, tool_call_id);
+            if let Some(ref bus) = event_bus {
+                bus.publish(BusEvent::PolicyCheck {
+                    tool_name: name.clone(),
+                    correlation_id: correlation_id.clone(),
+                    args: args.clone(),
+                });
+            }
+            match decision {
+                PolicyDecision::Deny(reason) => {
+                    if let Some(ref bus) = event_bus {
+                        bus.publish(BusEvent::PolicyResult {
+                            correlation_id,
+                            decision: PolicyDecision::Deny(reason.clone()),
+                        });
+                    }
+                    ordered_results.insert(i, ToolResult {
+                        tool_call_id: tool_call_id.clone(),
+                        name: name.clone(),
+                        output: format!("Policy denied: {}", reason),
+                        is_error: true,
+                    });
+                    continue;
+                }
+                PolicyDecision::PromptUser => {
+                    // Fall through to user approval
+                }
+                PolicyDecision::Allow => {
+                    // Allow without prompting if yolo mode
+                }
+            }
         }
 
         let captured_diff = if name == "write" || name == "edit" {

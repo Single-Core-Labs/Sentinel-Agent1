@@ -9,6 +9,7 @@ pub mod switcher;
 pub mod route;
 pub mod protocols;
 pub mod discovery;
+pub mod fallback;
 
 pub use provider::*;
 pub use openai::*;
