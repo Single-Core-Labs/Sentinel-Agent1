@@ -86,7 +86,7 @@ impl Compressor {
                                 ccr_keys.push(key.clone());
                             }
                             let final_text = if let Some(ref key) = retrieval_key {
-                                format!("{} [headroom: {}]", text, key)
+                                format!("{} [headroom: hash={}]", text, key)
                             } else {
                                 text
                             };
@@ -118,14 +118,60 @@ impl Compressor {
             None
         };
 
+        let mut ccr_dropped_refs: Vec<(String, usize)> = Vec::new();
+
         let final_messages: Vec<Message> = match &intelligence_result {
             Some(ref scored) if scored.dropped_count > 0 => {
-                scored.messages.iter().map(|sm| Message {
-                    role: sm.role.clone(),
-                    content: sm.content.clone(),
-                    tool_call_id: sm.tool_call_id.clone(),
-                    name: sm.name.clone(),
-                }).collect()
+                let dropped_msgs: Vec<&Message> = {
+                    let selected_indices: std::collections::HashSet<usize> =
+                        scored.messages.iter().map(|sm| sm.index).collect();
+                    transformed.iter().enumerate()
+                        .filter(|(i, _)| !selected_indices.contains(i))
+                        .map(|(_, m)| m)
+                        .collect()
+                };
+
+                if !dropped_msgs.is_empty() && self.config.ccr.enabled {
+                    for (i, dm) in dropped_msgs.iter().enumerate().take(20) {
+                        let dropped_key = format!("ccr:dropped:msg:{}", i);
+                        let preview = if dm.content.len() > 200 {
+                            format!("{}... [truncated]", &dm.content[..200])
+                        } else {
+                            dm.content.clone()
+                        };
+                        self.content_router.ccr().store_with_key(
+                            &dropped_key,
+                            dm.content.clone(),
+                            "dropped_message",
+                            preview,
+                        ).await;
+                        ccr_dropped_refs.push((dropped_key, dm.content.len()));
+                    }
+
+                    let marker = format!(
+                        "\n\n[headroom: {} message(s) dropped. Cached data available via headroom_retrieve tool]\n",
+                        scored.dropped_count
+                    );
+
+                    let mut result: Vec<Message> = scored.messages.iter().map(|sm| Message {
+                        role: sm.role.clone(),
+                        content: sm.content.clone(),
+                        tool_call_id: sm.tool_call_id.clone(),
+                        name: sm.name.clone(),
+                    }).collect();
+
+                    if let Some(last) = result.last_mut() {
+                        last.content.push_str(&marker);
+                    }
+                    result
+                } else {
+                    scored.messages.iter().map(|sm| Message {
+                        role: sm.role.clone(),
+                        content: sm.content.clone(),
+                        tool_call_id: sm.tool_call_id.clone(),
+                        name: sm.name.clone(),
+                    }).collect()
+                }
             }
             _ => transformed,
         };
@@ -149,6 +195,7 @@ impl Compressor {
                 roles: transformed_roles,
                 intelligent_dropped: intelligence_result.as_ref().map(|r| r.dropped_count).unwrap_or(0),
                 intelligent_budget: intelligence_result.as_ref().map(|r| r.budget_tokens).unwrap_or(0),
+                ccr_dropped_refs: ccr_dropped_refs.iter().map(|(k, _)| k.clone()).collect(),
             },
         }
     }
@@ -177,6 +224,7 @@ pub struct CompressionMetadata {
     pub roles: Vec<String>,
     pub intelligent_dropped: usize,
     pub intelligent_budget: usize,
+    pub ccr_dropped_refs: Vec<String>,
 }
 
 #[cfg(test)]
@@ -326,5 +374,52 @@ mod tests {
         let msgs2 = vec![msg(MessageRole::System, "Today is 2026-07-22.")];
         let r2 = compressor.compress(msgs2).await;
         assert!(r2.messages[0].content.contains("no change"), "second call should detect no change: {:?}", r2.messages[0].content);
+    }
+
+    #[tokio::test]
+    async fn test_ccr_dropped_messages_stored() {
+        let config = HeadroomConfig {
+            intelligent_context: IntelligentContextConfig {
+                token_budget: 10,
+                ..Default::default()
+            },
+            cache_alignment: CacheAlignmentConfig {
+                enabled: false,
+                ..Default::default()
+            },
+            content_routing: ContentRoutingConfig {
+                enabled_types: vec![],
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let mut compressor = Compressor::new(config);
+        let messages = vec![
+            msg(MessageRole::User, "short"),
+            msg(MessageRole::User, "this is a much longer message that should definitely be dropped due to budget constraints"),
+            msg(MessageRole::User, "tiny"),
+        ];
+        let result = compressor.compress(messages).await;
+        assert!(result.metadata.intelligent_dropped > 0, "should drop messages");
+        assert_eq!(result.metadata.ccr_dropped_refs.len(), result.metadata.intelligent_dropped.min(20),
+            "dropped refs count should match dropped messages up to 20");
+    }
+
+    #[tokio::test]
+    async fn test_compressed_tool_output_has_marker() {
+        let mut code = String::new();
+        for i in 0..30 {
+            code.push_str(&format!("pub fn func_{}() -> i32 {{ {} }}\n", i, i));
+        }
+        let config = HeadroomConfig::default();
+        let mut compressor = Compressor::new(config);
+        let messages = vec![
+            msg(MessageRole::System, "help"),
+            tool_msg("read", &code),
+        ];
+        let result = compressor.compress(messages).await;
+        let tool = &result.messages[1];
+        assert!(tool.content.contains("ccr:") || tool.content.contains("headroom"),
+            "compressed tool output should contain ccr reference: {}", tool.content);
     }
 }

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use crate::classifier::{self, ContentType};
-use crate::ccr::CcrStore;
+use crate::ccr::{CcrStore, generate_retrieval_marker, generate_tool_schema};
+use crate::ccr_tracker::CcrContextTracker;
 use crate::metrics::CompressionMetrics;
 use crate::strategies::{
     CompressionStrategy,
@@ -24,6 +25,9 @@ pub struct CompressionConfig {
     pub ccr_max_entries: usize,
     pub parallel_strategies: bool,
     pub enabled_types: Vec<ContentType>,
+    pub inject_retrieval_tool: bool,
+    pub inject_retrieval_markers: bool,
+    pub ccr_feedback_enabled: bool,
 }
 
 impl Default for CompressionConfig {
@@ -43,6 +47,9 @@ impl Default for CompressionConfig {
                 ContentType::PlainText,
                 ContentType::Image,
             ],
+            inject_retrieval_tool: true,
+            inject_retrieval_markers: true,
+            ccr_feedback_enabled: true,
         }
     }
 }
@@ -50,60 +57,103 @@ impl Default for CompressionConfig {
 pub struct ContentCompressor {
     strategies: Vec<Arc<dyn CompressionStrategy>>,
     ccr: Arc<CcrStore>,
+    tracker: CcrContextTracker,
     config: CompressionConfig,
 }
 
 impl ContentCompressor {
     pub fn new(config: CompressionConfig) -> Self {
         let ccr = Arc::new(CcrStore::new(config.ccr_max_entries));
+        let tracker = CcrContextTracker::new(ccr.clone());
         Self {
             strategies: default_strategies(),
             ccr,
+            tracker,
             config,
         }
     }
 
     pub fn from_config(cfg: &crate::config::HeadroomConfig) -> Self {
         let ccr = Arc::new(CcrStore::new(cfg.ccr.max_entries));
+        let tracker = CcrContextTracker::new(ccr.clone());
         let rt = &cfg.content_routing;
         Self {
             strategies: default_strategies(),
             ccr,
+            tracker,
             config: CompressionConfig {
                 min_savings_pct: rt.min_savings_pct,
                 max_content_chars: rt.max_content_chars,
                 ccr_max_entries: cfg.ccr.max_entries,
                 parallel_strategies: rt.parallel_strategies,
                 enabled_types: rt.enabled_types.clone(),
+                inject_retrieval_tool: true,
+                inject_retrieval_markers: true,
+                ccr_feedback_enabled: true,
             },
         }
     }
 
     pub fn with_ccr(ccr: Arc<CcrStore>) -> Self {
+        let tracker = CcrContextTracker::new(ccr.clone());
         Self {
             strategies: default_strategies(),
             ccr,
+            tracker,
             config: CompressionConfig::default(),
         }
     }
 
     pub fn with_ccr_and_config(ccr: Arc<CcrStore>, cfg: &crate::config::HeadroomConfig) -> Self {
+        let tracker = CcrContextTracker::new(ccr.clone());
         let rt = &cfg.content_routing;
         Self {
             strategies: default_strategies(),
             ccr,
+            tracker,
             config: CompressionConfig {
                 min_savings_pct: rt.min_savings_pct,
                 max_content_chars: rt.max_content_chars,
                 ccr_max_entries: cfg.ccr.max_entries,
                 parallel_strategies: rt.parallel_strategies,
                 enabled_types: rt.enabled_types.clone(),
+                inject_retrieval_tool: true,
+                inject_retrieval_markers: true,
+                ccr_feedback_enabled: true,
             },
         }
     }
 
     pub fn ccr(&self) -> &Arc<CcrStore> {
         &self.ccr
+    }
+
+    pub fn tracker(&self) -> &CcrContextTracker {
+        &self.tracker
+    }
+
+    pub fn retrieval_tool_schema(&self) -> Option<serde_json::Value> {
+        if self.config.inject_retrieval_tool {
+            Some(generate_tool_schema())
+        } else {
+            None
+        }
+    }
+
+    pub fn retrieval_tool_markers_enabled(&self) -> bool {
+        self.config.inject_retrieval_markers
+    }
+
+    pub async fn handle_retrieve(&self, hash: &str, query: Option<&str>) -> Option<String> {
+        let ccr = &self.ccr;
+        let result = match query {
+            Some(q) if !q.trim().is_empty() => ccr.search(hash, q).await,
+            _ => ccr.retrieve(hash).await,
+        };
+        let matched = result.is_some();
+        ccr.log_retrieval(hash.to_string(), query.map(|s| s.to_string()), matched).await;
+        self.tracker.learn_from_retrieval(hash, matched).await;
+        result
     }
 
     pub async fn compress(&self, content: &str, hint: Option<ContentType>) -> CompressOutcome {
@@ -162,14 +212,30 @@ impl ContentCompressor {
             });
 
         match best {
-            Some(result) if (result.metrics.savings_pct() >= self.config.min_savings_pct) => {
-                if let Some(ref key) = result.retrieval_key {
-                    self.ccr.store_with_key(key, content.to_string(), content_type.name(), result.text.clone()).await;
+            Some(mut result) if (result.metrics.savings_pct() >= self.config.min_savings_pct) => {
+                let key = self.ccr.store(
+                    content.to_string(),
+                    content_type.name(),
+                    result.text.clone(),
+                ).await;
+
+                if self.config.inject_retrieval_markers {
+                    let marker = generate_retrieval_marker(
+                        &key,
+                        content_type.name(),
+                        content.len(),
+                        result.text.len(),
+                    );
+                    result.text.push_str(&marker);
                 }
+
+                self.tracker.record_query(&content_type.name()).await;
+                self.ccr.log_retrieval(key.clone(), Some(content_type.name().to_string()), true).await;
+
                 CompressOutcome::Compressed {
                     text: result.text,
                     metrics: result.metrics,
-                    retrieval_key: result.retrieval_key,
+                    retrieval_key: Some(key),
                 }
             }
             Some(_result) => CompressOutcome::Skipped {
@@ -185,6 +251,25 @@ impl ContentCompressor {
 
     pub async fn retrieve_original(&self, key: &str) -> Option<String> {
         self.ccr.retrieve(key).await
+    }
+
+    pub async fn search_cached(&self, key: &str, query: &str) -> Option<String> {
+        self.ccr.search(key, query).await
+    }
+
+    pub async fn proactive_expand(&self, query: &str) -> Option<String> {
+        self.tracker.record_query(query).await;
+        let matches = self.tracker.find_relevant_cached(query, self).await;
+        if matches.is_empty() { return None; }
+        let mut result = String::from("‖ Headroom CCR: proactively expanded cached content\n");
+        for (i, (key, data, score)) in matches.iter().enumerate() {
+            let preview: String = data.lines().take(5).collect::<Vec<_>>().join("\n");
+            result.push_str(&format!("‖ [{}. hash={}] relevance={:.2}\n{}\n", i + 1, key, score, preview));
+            if data.lines().count() > 5 {
+                result.push_str(&format!("‖ ... ({} more lines, retrieve via hash={})\n", data.lines().count() - 5, key));
+            }
+        }
+        Some(result)
     }
 }
 
@@ -294,5 +379,66 @@ mod tests {
         let compressor = ContentCompressor::default();
         let outcome = compressor.compress(&code, None).await;
         assert!(outcome.is_compressed(), "code should compress");
+    }
+
+    #[tokio::test]
+    async fn test_retrieval_tool_schema() {
+        let compressor = ContentCompressor::default();
+        let schema = compressor.retrieval_tool_schema();
+        assert!(schema.is_some(), "should generate tool schema");
+        let s = schema.unwrap();
+        assert_eq!(s["name"], "headroom_retrieve");
+    }
+
+    #[tokio::test]
+    async fn test_handle_retrieve_missing() {
+        let compressor = ContentCompressor::default();
+        let result = compressor.handle_retrieve("ccr:nonexistent", None).await;
+        assert!(result.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_handle_retrieve_with_query() {
+        let compressor = ContentCompressor::default();
+        let data = "line one\nerror: authentication failed\nline three\nline four\nline five\nline six\n";
+        let key = compressor.ccr.store(data.into(), "text", "compressed".into()).await;
+        let result = compressor.handle_retrieve(&key, Some("authentication")).await;
+        assert!(result.is_some());
+        let text = result.unwrap();
+        assert!(text.contains("authentication"), "should contain matched line: {}", text);
+    }
+
+    #[tokio::test]
+    async fn test_proactive_expand_empty_cache() {
+        let compressor = ContentCompressor::default();
+        let result = compressor.proactive_expand("anything").await;
+        assert!(result.is_none(), "no cached data should return None");
+    }
+
+    #[tokio::test]
+    async fn test_proactive_expand_finds_matches() {
+        let compressor = ContentCompressor::default();
+        compressor.ccr.store_with_key("test_hash", "authentication error details here".into(), "text", "auth data".into()).await;
+        let result = compressor.proactive_expand("authentication").await;
+        assert!(result.is_some(), "should find auth match");
+        assert!(result.as_ref().unwrap().contains("test_hash"));
+    }
+
+    #[tokio::test]
+    async fn test_compressed_output_contains_marker() {
+        let compressor = ContentCompressor::default();
+        let rows: Vec<serde_json::Value> = (0..50).map(|i| serde_json::json!({"id": i})).collect();
+        let content = serde_json::to_string(&rows).unwrap();
+        let outcome = compressor.compress(&content, Some(ContentType::JsonArray)).await;
+        if let CompressOutcome::Compressed { text, .. } = &outcome {
+            assert!(text.contains("[headroom: hash="), "output should have retrieval marker: {}", text);
+            assert!(text.contains("headroom_retrieve"), "marker should reference retrieve tool");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_tracker_records_query() {
+        let compressor = ContentCompressor::default();
+        compressor.tracker().record_query("find files").await;
     }
 }

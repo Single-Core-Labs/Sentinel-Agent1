@@ -115,6 +115,11 @@ pub struct CcrConfig {
     pub enabled: bool,
     pub max_entries: usize,
     pub default_ttl_secs: u64,
+    pub inject_tool: bool,
+    pub inject_retrieval_marker: bool,
+    pub feedback_enabled: bool,
+    pub store_max_entries: usize,
+    pub store_ttl_seconds: u64,
 }
 
 impl Default for CcrConfig {
@@ -123,6 +128,11 @@ impl Default for CcrConfig {
             enabled: true,
             max_entries: 5000,
             default_ttl_secs: 3600,
+            inject_tool: true,
+            inject_retrieval_marker: true,
+            feedback_enabled: true,
+            store_max_entries: 5000,
+            store_ttl_seconds: 3600,
         }
     }
 }

@@ -1,6 +1,7 @@
 pub mod classifier;
 pub mod strategies;
 pub mod ccr;
+pub mod ccr_tracker;
 pub mod metrics;
 pub mod orchestrator;
 pub mod integration;
@@ -19,6 +20,7 @@ pub use strategies::logs::LogCompressorConfig;
 pub use strategies::diff::DiffCompressorConfig;
 pub use strategies::text::TextCompressorConfig;
 pub use ccr::*;
+pub use ccr_tracker::CcrContextTracker;
 pub use metrics::{CompressionMetrics, estimate_tokens as metrics_estimate_tokens};
 pub use orchestrator::*;
 pub use integration::*;
