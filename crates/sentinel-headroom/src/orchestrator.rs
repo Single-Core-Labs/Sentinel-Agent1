@@ -7,6 +7,7 @@ use crate::strategies::{
     CompressionResult,
     json::JsonCompressor,
     code::CodeCompressor,
+    code_aware::CodeAwareCompressor,
     logs::LogCompressor,
     text::TextCompressor,
     search::SearchCompressor,
@@ -189,6 +190,7 @@ fn default_strategies() -> Vec<Arc<dyn CompressionStrategy>> {
     vec![
         Arc::new(JsonCompressor::with_smart_crusher(crate::strategies::smart_crusher::SmartCrusherConfig::default())),
         Arc::new(CodeCompressor),
+        Arc::new(CodeAwareCompressor::new()),
         Arc::new(LogCompressor),
         Arc::new(TextCompressor),
         Arc::new(SearchCompressor),

@@ -1,5 +1,6 @@
 pub mod json;
 pub mod code;
+pub mod code_aware;
 pub mod logs;
 pub mod text;
 pub mod search;

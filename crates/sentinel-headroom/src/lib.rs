@@ -11,6 +11,7 @@ pub mod compress;
 
 pub use classifier::*;
 pub use strategies::*;
+pub use strategies::code_aware::{CodeAwareCompressor, CodeCompressorConfig, CodeAwareCompressorResult, DocstringMode, is_tree_sitter_available, unload_tree_sitter};
 pub use ccr::*;
 pub use metrics::{CompressionMetrics, estimate_tokens as metrics_estimate_tokens};
 pub use orchestrator::*;
