@@ -29,6 +29,7 @@ sentinel-app-server-transport = { path = "../sentinel-app-server-transport" }
 sentinel-analytics = { path = "../sentinel-analytics" }
 sentinel-agent-identity = { path = "../sentinel-agent-identity" }
 sentinel-agent-graph-store = { path = "../sentinel-agent-graph-store" }
+sentinel-headroom = { path = "../sentinel-headroom" }
 
 [features]
 sqlite = ["sentinel-core/sqlite"]

@@ -38,7 +38,14 @@ pub async fn run_main(cli: Cli) -> anyhow::Result<()> {
     // Instantiate an in-process server client that talks to the Sentinel backend.
     let config = Arc::new(SentinelConfig::default());
     let analytics = Arc::new(AnalyticsPipeline::new());
-    let tools = Arc::new(ToolRegistry::new());
+    let tools = {
+        let mut reg = ToolRegistry::new();
+        let headroom_retrieve = sentinel_headroom::integration::HeadroomRetrieveTool::new(
+            Arc::new(sentinel_headroom::ccr::CcrStore::default())
+        );
+        reg.register(Arc::new(headroom_retrieve));
+        Arc::new(reg)
+    };
     let handler = Arc::new(RequestHandler::new(config, analytics, tools));
     let embedded = EmbeddedClient::new(handler);
     let client = AppServerConnection::Embedded(embedded);

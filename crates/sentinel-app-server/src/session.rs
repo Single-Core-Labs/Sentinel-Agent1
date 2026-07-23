@@ -43,6 +43,34 @@ impl AppSession {
         }
     }
 
+    pub fn new_with_compressor(
+        _model: Option<String>,
+        provider: Arc<dyn ModelProvider>,
+        tools: Arc<ToolRegistry>,
+        config: Arc<SentinelConfig>,
+        analytics: Arc<AnalyticsPipeline>,
+        compressor: Arc<dyn sentinel_core::ContentCompressor>,
+    ) -> Self {
+        let id = Uuid::new_v4().to_string();
+        let agent = Agent::new(provider, tools, config.clone())
+            .with_compressor(compressor);
+        let thread = AgentThread::new(
+            config.agent.max_turns,
+            config.agent.max_iterations,
+            config.agent.yolo_mode,
+        );
+        let (evt_tx, _) = tokio::sync::broadcast::channel(256);
+
+        analytics.emit(AnalyticsEvent::new(EventKind::SessionCreated, Some(id.clone())));
+
+        Self {
+            id,
+            thread: Mutex::new(thread),
+            agent: Arc::new(agent),
+            events: evt_tx,
+        }
+    }
+
     pub async fn chat(&self, message: &str) -> Result<String, String> {
         let mut thread = self.thread.lock().await;
         let result = self.agent.run(&mut thread, message).await
@@ -72,7 +100,6 @@ impl AppSession {
             match chunk {
                 Ok(chunk) => {
                     let _ = event_tx.send(Ok(chunk.clone())).await;
-                    // Also broadcast as server event
                     for choice in &chunk.choices {
                         if let Some(ref text) = choice.delta.content {
                             let _ = self.events.send(ServerEvent::Thinking { text: text.clone() });

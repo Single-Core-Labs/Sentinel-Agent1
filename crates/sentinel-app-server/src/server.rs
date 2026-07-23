@@ -17,7 +17,14 @@ impl AppServer {
     pub fn new(config: SentinelConfig) -> Self {
         let config = Arc::new(config);
         let analytics = Arc::new(AnalyticsPipeline::new());
-        let tools = Arc::new(ToolRegistry::new());
+        let tools = {
+            let mut reg = ToolRegistry::new();
+            let headroom_retrieve = sentinel_headroom::integration::HeadroomRetrieveTool::new(
+                Arc::new(sentinel_headroom::ccr::CcrStore::default())
+            );
+            reg.register(Arc::new(headroom_retrieve));
+            Arc::new(reg)
+        };
         let handler = Arc::new(RequestHandler::new(config.clone(), analytics.clone(), tools));
 
         Self {

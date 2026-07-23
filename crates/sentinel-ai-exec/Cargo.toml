@@ -22,3 +22,4 @@ sentinel-tools = { path = "../sentinel-tools" }
 sentinel-app-server-protocol = { path = "../sentinel-app-server-protocol" }
 sentinel-mcp = { path = "../sentinel-mcp" }
 uuid = { workspace = true }
+sentinel-headroom = { path = "../sentinel-headroom" }

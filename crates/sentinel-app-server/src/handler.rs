@@ -19,6 +19,7 @@ pub struct RequestHandler {
     config: Arc<SentinelConfig>,
     analytics: Arc<AnalyticsPipeline>,
     tools: Arc<ToolRegistry>,
+    headroom_compressor: Option<Arc<dyn sentinel_core::ContentCompressor>>,
     #[allow(dead_code)]
     thread_store: Option<Arc<dyn ThreadStore>>,
 }
@@ -29,7 +30,15 @@ impl RequestHandler {
         analytics: Arc<AnalyticsPipeline>,
         tools: Arc<ToolRegistry>,
     ) -> Self {
-        // Initialize thread store based on config
+        Self::new_with_headroom(config, analytics, tools, None)
+    }
+
+    pub fn new_with_headroom(
+        config: Arc<SentinelConfig>,
+        analytics: Arc<AnalyticsPipeline>,
+        tools: Arc<ToolRegistry>,
+        headroom_compressor: Option<Arc<dyn sentinel_core::ContentCompressor>>,
+    ) -> Self {
         let thread_store: Option<Arc<dyn ThreadStore>> = match config.thread_store.as_str() {
             "sqlite" => {
                 #[cfg(feature = "sqlite")]
@@ -49,13 +58,14 @@ impl RequestHandler {
                     panic!("sqlite feature not enabled for sentinel-app-server");
                 }
             }
-            _ => None, // memory (no persistent store)
+            _ => None,
         };
         Self {
             sessions: tokio::sync::Mutex::new(std::collections::HashMap::new()),
             config,
             analytics,
             tools,
+            headroom_compressor,
             thread_store,
         }
     }
@@ -136,13 +146,23 @@ impl RequestHandler {
             .map_err(|e| JsonRpcError::internal_error(format!("Failed to create provider: {}", e)))?;
         let provider: Arc<dyn ModelProvider> = Arc::new(provider);
 
-        let session = Arc::new(crate::session::AppSession::new(
-            Some(model_id.clone()),
-            provider,
-            self.tools.clone(),
-            self.config.clone(),
-            self.analytics.clone(),
-        ));
+        let session = match &self.headroom_compressor {
+            Some(compressor) => Arc::new(crate::session::AppSession::new_with_compressor(
+                Some(model_id.clone()),
+                provider,
+                self.tools.clone(),
+                self.config.clone(),
+                self.analytics.clone(),
+                compressor.clone(),
+            )),
+            None => Arc::new(crate::session::AppSession::new(
+                Some(model_id.clone()),
+                provider,
+                self.tools.clone(),
+                self.config.clone(),
+                self.analytics.clone(),
+            )),
+        };
 
         let session_id = session.id.clone();
         self.sessions.lock().await.insert(session_id.clone(), session);
@@ -280,7 +300,6 @@ impl RequestHandler {
         }))
     }
 
-    // ── File System Operations ────────────────────────────────────────
     async fn handle_fs_read_file(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
         let p: api::FsReadParams = parse_params(params)?;
         let ctx = sentinel_tools::ToolContext::new();
@@ -308,21 +327,17 @@ impl RequestHandler {
     async fn handle_fs_glob(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
         let p: api::FsGlobParams = parse_params(params)?;
         let ctx = sentinel_tools::ToolContext::new();
-        // The glob tool supports an optional "path" argument, but the API currently only defines "pattern".
-        // We'll forward only the pattern.
         let args = serde_json::json!({ "pattern": p.pattern });
         let output = self.tools.execute("glob", args, &ctx).await;
         if output.is_error {
             Err(JsonRpcError::internal_error(output.text))
         } else {
-            // The glob tool returns a JSON array as a string; parse it.
             let files: Vec<String> = serde_json::from_str(&output.text).unwrap_or_default();
             Ok(serde_json::json!({ "files": files }))
         }
     }
 
     async fn handle_fs_grep(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
-        // Forward the raw params to the grep tool.
         let ctx = sentinel_tools::ToolContext::new();
         let args = params.clone().unwrap_or_default();
         let output = self.tools.execute("grep", args, &ctx).await;
@@ -336,7 +351,6 @@ impl RequestHandler {
     async fn handle_command_exec(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
         let p: api::CommandExecParams = parse_params(params)?;
         let ctx = sentinel_tools::ToolContext::new();
-        // Combine command and args into a single command string.
         let full_cmd = if p.args.is_empty() {
             p.command.clone()
         } else {
@@ -348,7 +362,6 @@ impl RequestHandler {
             "timeout": 120_000,
         });
         let output = self.tools.execute("bash", args, &ctx).await;
-        // Map to CommandExecResult.
         let exit_code = if output.is_error { 1 } else { 0 };
         Ok(serde_json::json!({
             "exit_code": exit_code,
@@ -358,7 +371,6 @@ impl RequestHandler {
     }
 
     async fn handle_command_exec_sandboxed(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
-        // Same as handle_command_exec; sandbox policy enforced by tool.
         self.handle_command_exec(params).await
     }
 
