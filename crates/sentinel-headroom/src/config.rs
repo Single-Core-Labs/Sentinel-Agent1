@@ -39,6 +39,7 @@ pub struct CacheAlignmentConfig {
     pub normalize_whitespace: bool,
     pub collapse_blank_lines: bool,
     pub custom_patterns: Vec<String>,
+    pub date_patterns: Vec<String>,
 }
 
 impl Default for CacheAlignmentConfig {
@@ -54,6 +55,7 @@ impl Default for CacheAlignmentConfig {
             normalize_whitespace: true,
             collapse_blank_lines: true,
             custom_patterns: Vec::new(),
+            date_patterns: Vec::new(),
         }
     }
 }

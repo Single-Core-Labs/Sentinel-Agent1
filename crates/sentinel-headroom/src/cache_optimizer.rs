@@ -26,6 +26,22 @@ impl LlmProvider {
         }
     }
 
+    pub fn cache_write_premium(&self) -> f64 {
+        match self {
+            LlmProvider::Anthropic => 0.25,
+            _ => 0.0,
+        }
+    }
+
+    pub fn cache_ttl_seconds(&self) -> u64 {
+        match self {
+            LlmProvider::Anthropic => 300,
+            LlmProvider::OpenAI => 60,
+            LlmProvider::Google => 3600,
+            LlmProvider::Unknown => 0,
+        }
+    }
+
     pub fn min_cacheable_tokens(&self) -> usize {
         match self {
             LlmProvider::Anthropic => 1,
@@ -215,6 +231,8 @@ impl CacheOptimizer {
     pub fn format_cache_summary(&self, result: &OptimizedMessages, provider: &LlmProvider) -> String {
         let discount = provider.cache_read_discount() * 100.0;
         let savings = (1.0 - result.estimated_cost_ratio) * 100.0;
+        let write_premium = provider.cache_write_premium() * 100.0;
+        let ttl = provider.cache_ttl_seconds();
         let mut out = format!(
             "‖ CacheOptimizer: provider={}, discount={:.0}%, effective_savings={:.1}%\n",
             format!("{:?}", provider).to_lowercase(),
@@ -225,6 +243,10 @@ impl CacheOptimizer {
             result.cacheable_tokens, result.total_input_tokens, result.cache_breakpoints.len()));
         if provider.needs_explicit_markers() && !result.cache_breakpoints.is_empty() {
             out.push_str("‖   cache_control breakpoints inserted for Anthropic\n");
+            out.push_str(&format!("‖   cache TTL: {}s, write premium: {:.0}%\n", ttl, write_premium));
+        }
+        if matches!(provider, LlmProvider::OpenAI) && result.cacheable_tokens >= 1024 {
+            out.push_str("‖   prefix caching active (automatic, >= 1024 tokens)\n");
         }
         if matches!(provider, LlmProvider::Google) && result.cacheable_tokens >= 32768 {
             out.push_str("‖   CachedContent API eligible (>= 32768 tokens)\n");

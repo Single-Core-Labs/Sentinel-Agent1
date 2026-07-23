@@ -287,7 +287,7 @@ mod tests {
         ];
         let result = compressor.compress(messages, "test-model").await;
         let sys = &result.messages[0];
-        assert!(sys.content.contains("DATE"), "system prompt should have aligned dates: {:?}", sys.content);
+        assert!(sys.content.contains("[Context:"), "system prompt should have [Context: ...] suffix: {:?}", sys.content);
     }
 
     #[tokio::test]
@@ -388,7 +388,7 @@ mod tests {
         let _r1 = compressor.compress(msgs1, "test-model").await;
         let msgs2 = vec![msg(MessageRole::System, "Today is 2026-07-22.")];
         let r2 = compressor.compress(msgs2, "test-model").await;
-        assert!(r2.messages[0].content.contains("no change"), "second call should detect no change: {:?}", r2.messages[0].content);
+        assert!(r2.messages[0].content.contains("[Context: no change]"), "second call should detect no change: {:?}", r2.messages[0].content);
     }
 
     #[tokio::test]
