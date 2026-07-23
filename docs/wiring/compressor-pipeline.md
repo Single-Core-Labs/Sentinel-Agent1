@@ -103,11 +103,29 @@ pub trait ContentCompressor: Send + Sync {
 
 `HeadroomAgentCompressor` stores `Option<Mutex<Compressor>>`. Created via `HeadroomAgentCompressor::with_config()` which builds `Compressor::with_ccr()` sharing the same `CcrStore` as the per-tool-output pipeline. Uses `tokio::sync::Mutex` because `Compressor::compress()` is async (cache alignment delta tracking requires mutable access).
 
+## Memory System Integration
+
+The `Compressor` now includes an optional `PersistentMemory` subsystem:
+
+```
+Compressor::compress()
+  ├─ CacheAligner / CacheOptimizer (pre-processing)
+  ├─ IntelligentContext::drop()  →  memory.extract_from_dropped()
+  ├─ ContentCompressor (per-tool routing)
+  └─ (during build_request)      →  memory.inject_memories(&system, user_id)
+```
+
+See [`docs/memory-system.md`](../memory-system.md) for the full memory module
+documentation.
+
 ## Files Changed
 
 | File | Change |
 |------|--------|
 | `crates/sentinel-core/src/compression.rs` | Added `compress_conversation` to trait + NullCompressor |
 | `crates/sentinel-core/src/agent.rs` | Made `build_request` async, compresses messages, passes all to request |
-| `crates/sentinel-headroom/Cargo.toml` | Added `sentinel-protocol` dependency |
+| `crates/sentinel-headroom/Cargo.toml` | Added `sentinel-protocol`, `rusqlite` dependencies |
 | `crates/sentinel-headroom/src/integration.rs` | Stored `Mutex<Compressor>`, implemented `compress_conversation`, updated factories |
+| `crates/sentinel-headroom/src/compress.rs` | Added `memory: Option<PersistentMemory>`, extraction on drop, injection on system prompt |
+| `crates/sentinel-headroom/src/config.rs` | Added `memory: MemoryConfig` field |
+| `crates/sentinel-headroom/src/memory/` | Full module: types, store, embeddings, extractor, injector, tool, config |
