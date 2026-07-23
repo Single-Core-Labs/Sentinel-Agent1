@@ -318,6 +318,7 @@ mod tests {
         let config = HeadroomConfig {
             intelligent_context: IntelligentContextConfig {
                 token_budget: 10,
+                output_buffer_tokens: 0,
                 ..Default::default()
             },
             cache_alignment: CacheAlignmentConfig {
@@ -346,7 +347,11 @@ mod tests {
         let config = HeadroomConfig {
             intelligent_context: IntelligentContextConfig {
                 token_budget: 30,
-                error_weight: 10.0,
+                output_buffer_tokens: 0,
+                scoring_weights: ScoringWeights {
+                    error_indicator: 10.0,
+                    ..Default::default()
+                },
                 ..Default::default()
             },
             cache_alignment: CacheAlignmentConfig {
@@ -396,6 +401,7 @@ mod tests {
         let config = HeadroomConfig {
             intelligent_context: IntelligentContextConfig {
                 token_budget: 10,
+                output_buffer_tokens: 0,
                 ..Default::default()
             },
             cache_alignment: CacheAlignmentConfig {

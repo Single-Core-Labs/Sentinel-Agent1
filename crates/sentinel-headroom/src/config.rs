@@ -111,16 +111,78 @@ impl Default for ContentRoutingConfig {
 }
 
 #[derive(Clone)]
+pub struct ScoringWeights {
+    pub recency: f64,
+    pub semantic_similarity: f64,
+    pub toin_importance: f64,
+    pub error_indicator: f64,
+    pub forward_reference: f64,
+    pub token_density: f64,
+}
+
+impl ScoringWeights {
+    pub fn normalized(&self) -> Vec<f64> {
+        let total: f64 = self.recency + self.semantic_similarity + self.toin_importance
+            + self.error_indicator + self.forward_reference + self.token_density;
+        if total <= 0.0 { return vec![1.0 / 6.0; 6]; }
+        vec![
+            self.recency / total,
+            self.semantic_similarity / total,
+            self.toin_importance / total,
+            self.error_indicator / total,
+            self.forward_reference / total,
+            self.token_density / total,
+        ]
+    }
+}
+
+impl Default for ScoringWeights {
+    fn default() -> Self {
+        Self {
+            recency: 0.20,
+            semantic_similarity: 0.20,
+            toin_importance: 0.25,
+            error_indicator: 0.15,
+            forward_reference: 0.15,
+            token_density: 0.05,
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct RollingWindowConfig {
+    pub enabled: bool,
+    pub keep_system: bool,
+    pub keep_last_turns: usize,
+    pub output_buffer_tokens: usize,
+}
+
+impl Default for RollingWindowConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            keep_system: true,
+            keep_last_turns: 3,
+            output_buffer_tokens: 4000,
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct IntelligentContextConfig {
     pub enabled: bool,
     pub token_budget: usize,
-    pub recency_weight: f64,
-    pub relevance_weight: f64,
-    pub error_weight: f64,
-    pub dependency_weight: f64,
+    pub keep_system: bool,
+    pub keep_last_turns: usize,
+    pub output_buffer_tokens: usize,
+    pub use_importance_scoring: bool,
+    pub scoring_weights: ScoringWeights,
+    pub toin_integration: bool,
+    pub recency_decay_rate: f64,
+    pub compress_threshold: f64,
     pub preserve_errors: bool,
     pub preserve_tool_dependencies: bool,
-    pub recency_decay_half_life: f64,
+    pub rolling_window: RollingWindowConfig,
 }
 
 impl Default for IntelligentContextConfig {
@@ -128,13 +190,17 @@ impl Default for IntelligentContextConfig {
         Self {
             enabled: true,
             token_budget: 128_000,
-            recency_weight: 0.4,
-            relevance_weight: 0.3,
-            error_weight: 0.2,
-            dependency_weight: 0.1,
+            keep_system: true,
+            keep_last_turns: 2,
+            output_buffer_tokens: 4000,
+            use_importance_scoring: true,
+            scoring_weights: ScoringWeights::default(),
+            toin_integration: true,
+            recency_decay_rate: 0.1,
+            compress_threshold: 0.1,
             preserve_errors: true,
             preserve_tool_dependencies: true,
-            recency_decay_half_life: 5.0,
+            rolling_window: RollingWindowConfig::default(),
         }
     }
 }
