@@ -17,6 +17,7 @@ use crate::prompt::SystemPromptManager;
 use crate::event::{SharedEventStore, SessionEvent};
 use crate::uploader::{SessionUploader, SessionPayload, NullUploader, create_uploader};
 use crate::compression::{ContentCompressor, NullCompressor};
+use crate::diff_capture::DiffCapture;
 
 pub(crate) const TRUNCATION_HINT: &str = "\
 Your previous response was truncated because the output hit the token limit. \
@@ -333,6 +334,7 @@ impl Agent {
                 &ctx,
                 &cancel,
                 &self.compressor,
+                &None,
             ).await;
 
             let now = chrono::Utc::now();
@@ -578,6 +580,7 @@ impl Agent {
                 &ctx,
                 &cancel,
                 &self.compressor,
+                &None,
             ).await;
 
             for result in &tool_results {
@@ -647,6 +650,22 @@ impl Agent {
     }
 }
 
+fn simulate_edit_content(path: &str, old_string: &str, new_string: &str, replace_all: bool) -> Result<String, String> {
+    let content = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    if replace_all {
+        Ok(content.replace(old_string, new_string))
+    } else {
+        match content.find(old_string) {
+            Some(pos) => {
+                let mut result = content;
+                result.replace_range(pos..pos + old_string.len(), new_string);
+                Ok(result)
+            }
+            None => Err("old_string not found".to_string()),
+        }
+    }
+}
+
 pub(crate) async fn execute_tools_concurrent(
     tool_calls: &[(String, String, serde_json::Value)],
     tools: Arc<ToolRegistry>,
@@ -656,6 +675,7 @@ pub(crate) async fn execute_tools_concurrent(
     ctx: &ToolContext,
     cancel: &CancellationToken,
     compressor: &Arc<dyn ContentCompressor>,
+    sandbox: &Option<crate::sandbox::SharedSandbox>,
 ) -> Vec<ToolResult> {
     let mut ordered_results: BTreeMap<usize, ToolResult> = BTreeMap::new();
     let mut set: JoinSet<(usize, ToolResult)> = JoinSet::new();
@@ -677,12 +697,34 @@ pub(crate) async fn execute_tools_concurrent(
             continue;
         }
 
+        let captured_diff = if name == "write" || name == "edit" {
+            let path = args["file_path"].as_str().unwrap_or("");
+            if !path.is_empty() {
+                let original = DiffCapture::before_write(std::path::Path::new(path));
+                let proposed = if name == "edit" {
+                    simulate_edit_content(path, args["old_string"].as_str().unwrap_or(""), args["new_string"].as_str().unwrap_or(""), args["replace_all"].as_bool().unwrap_or(false)).ok()
+                } else {
+                    Some(args["content"].as_str().unwrap_or("").to_string())
+                };
+                match (&original, proposed) {
+                    (Ok(orig), Some(prop)) => Some(DiffCapture::diff(std::path::Path::new(path), orig.as_deref(), &prop)),
+                    _ => None,
+                }
+            } else { None }
+        } else { None };
+
+        let estimated = if name == "write" || name == "edit" {
+            captured_diff.as_ref().map(|d| (d.len() as f64) * 0.001)
+        } else { None };
+
         if !thread.yolo_mode {
             thread.status = ThreadStatus::AwaitingApproval;
             let approval_req = ApprovalRequest {
                 tool_name: name.clone(),
                 args: args.clone(),
                 prompt: format!("Execute {} with the given arguments?", name),
+                diff: captured_diff,
+                estimated_cost: estimated,
             };
             match approval.request_approval(&approval_req).await {
                 ApprovalDecision::Approved => {}
@@ -711,7 +753,10 @@ pub(crate) async fn execute_tools_concurrent(
         let tool_call_id = tool_call_id.clone();
         let name = name.clone();
         let args = args.clone();
-        let ctx = ctx.clone();
+        let mut ctx = ctx.clone();
+        if let Some(ref sb) = sandbox {
+            ctx.sandbox_dir = Some(sb.root().to_string_lossy().to_string());
+        }
         let cancel = cancel.clone();
         let events = Arc::clone(events);
         let compressor = Arc::clone(compressor);

@@ -17,6 +17,10 @@ pub mod sub_agent;
 pub mod sub_agent_tool;
 pub mod compression;
 pub mod pipeline;
+pub mod sandbox;
+pub mod diff_capture;
+pub mod memory_file;
+pub mod worktree;
 
 pub use agent::*;
 pub use approval::*;

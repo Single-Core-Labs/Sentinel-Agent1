@@ -30,6 +30,20 @@ pub struct ApprovalRequest {
     pub tool_name: String,
     pub args: serde_json::Value,
     pub prompt: String,
+    pub diff: Option<String>,
+    pub estimated_cost: Option<f64>,
+}
+
+impl ApprovalRequest {
+    pub fn new(tool_name: impl Into<String>, args: serde_json::Value, prompt: impl Into<String>) -> Self {
+        Self {
+            tool_name: tool_name.into(),
+            args,
+            prompt: prompt.into(),
+            diff: None,
+            estimated_cost: None,
+        }
+    }
 }
 
 #[derive(Debug)]

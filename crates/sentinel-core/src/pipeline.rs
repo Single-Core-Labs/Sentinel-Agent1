@@ -7,6 +7,7 @@ use sentinel_tools::ToolContext;
 use crate::agent::*;
 use crate::thread::*;
 use crate::event::SessionEvent;
+use crate::memory_file::MemoryFileManager;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PipelineStage {
@@ -97,6 +98,7 @@ pub struct PipelineConfig {
     pub stages: Vec<PipelineStage>,
     pub save_checkpoints: bool,
     pub rollback_on_error: bool,
+    pub memory_file: Option<MemoryFileManager>,
 }
 
 impl Default for PipelineConfig {
@@ -105,6 +107,7 @@ impl Default for PipelineConfig {
             stages: PipelineStage::all(),
             save_checkpoints: true,
             rollback_on_error: true,
+            memory_file: None,
         }
     }
 }
@@ -121,6 +124,11 @@ impl PipelineAgent {
 
     pub fn with_config(agent: Agent, config: PipelineConfig) -> Self {
         Self { agent, config }
+    }
+
+    pub fn with_memory_file(mut self, mfm: MemoryFileManager) -> Self {
+        self.config.memory_file = Some(mfm);
+        self
     }
 
     pub fn into_inner(self) -> Agent {
@@ -194,6 +202,21 @@ impl PipelineAgent {
         }
 
         thread.status = ThreadStatus::Completed;
+
+        // Flush session memory to file
+        if let Some(ref mfm) = self.config.memory_file {
+            let summary = format!(
+                "Pipeline: {} stages completed across {} turns, {} iterations",
+                stages.len(),
+                thread.turn,
+                thread.iterations,
+            );
+            mfm.record_session(summary).await;
+            if let Err(e) = mfm.flush().await {
+                tracing::warn!("Failed to flush memory file: {}", e);
+            }
+        }
+
         Ok(AgentOutput::success("Pipeline complete"))
     }
 
@@ -305,6 +328,7 @@ impl PipelineAgent {
                 &ctx,
                 &cancel,
                 &self.agent.compressor,
+                &None,
             ).await;
 
             for result in &tool_results {

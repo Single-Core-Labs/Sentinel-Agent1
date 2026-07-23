@@ -4,6 +4,7 @@ use sentinel_protocol::ToolDef;
 #[derive(Debug, Clone)]
 pub struct ToolContext {
     pub workspace_dir: Option<String>,
+    pub sandbox_dir: Option<String>,
     pub env_vars: std::collections::HashMap<String, String>,
 }
 
@@ -17,6 +18,7 @@ impl ToolContext {
     pub fn new() -> Self {
         Self {
             workspace_dir: None,
+            sandbox_dir: None,
             env_vars: std::collections::HashMap::new(),
         }
     }

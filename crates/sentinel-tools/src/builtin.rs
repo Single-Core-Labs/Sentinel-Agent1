@@ -261,6 +261,7 @@ impl Tool for BashTool {
         let _timeout = args["timeout"].as_u64().unwrap_or(120_000);
         let workdir = args["workdir"].as_str()
             .or(ctx.workspace_dir.as_deref())
+            .or(ctx.sandbox_dir.as_deref())
             .unwrap_or(".");
 
         #[cfg(target_os = "windows")]

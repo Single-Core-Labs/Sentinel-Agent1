@@ -88,7 +88,19 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         .with_event_handler(Arc::new(CliEventHandler))
         .with_compressor(headroom_compressor);
 
-    let pipeline_agent = sentinel_core::pipeline::PipelineAgent::new(agent);
+    // Optional: Create sandbox for tool isolation
+    let _sandbox = None::<std::sync::Arc<sentinel_core::sandbox::LocalSandbox>>;
+    // Uncomment to enable sandbox:
+    // let sandbox = std::sync::Arc::new(sentinel_core::sandbox::LocalSandbox::new(&std::env::current_dir().unwrap())?);
+
+    // Configure pipeline with memory file
+    let mfm = sentinel_core::memory_file::MemoryFileManager::new(&std::env::current_dir().unwrap_or_default());
+    let pipeline_agent = sentinel_core::pipeline::PipelineAgent::new(agent)
+        .with_memory_file(mfm);
+
+    // Optional: Set up worktree manager for parallel agents
+    let _wtm = sentinel_core::worktree::WorktreeManager::new(&std::env::current_dir().unwrap_or_default());
+    // Use wtm.create_worktree("agent-1").await for parallel agent isolation
 
     let mut thread = sentinel_core::AgentThread::new(
         config.agent.max_turns,
