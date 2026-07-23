@@ -2778,6 +2778,7 @@ dependencies = [
  "once_cell",
  "regex",
  "sentinel-core",
+ "sentinel-protocol",
  "sentinel-tools",
  "serde",
  "serde_json",

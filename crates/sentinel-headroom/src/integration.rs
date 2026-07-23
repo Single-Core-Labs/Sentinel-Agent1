@@ -2,9 +2,13 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use serde_json::json;
 use sentinel_tools::{Tool, ToolContext, ToolOutput};
+use sentinel_protocol::{Message as ProtocolMessage, ContentBlock, Role};
+use tokio::sync::Mutex;
 
 use crate::classifier::ContentType;
 use crate::ccr::CcrStore;
+use crate::config::{Message as HeadroomMessage, MessageRole, HeadroomConfig};
+use crate::compress::Compressor;
 use crate::orchestrator::{ContentCompressor, CompressOutcome};
 
 pub struct HeadroomRetrieveTool {
@@ -146,12 +150,23 @@ pub fn content_type_for_tool(tool_name: &str) -> Option<ContentType> {
 pub struct HeadroomAgentCompressor {
     pipeline: Arc<AgentCompressionPipeline>,
     ccr: Option<Arc<CcrStore>>,
+    config: Option<HeadroomConfig>,
+    full_compressor: Option<Mutex<Compressor>>,
 }
 
 impl HeadroomAgentCompressor {
     pub fn new(pipeline: Arc<AgentCompressionPipeline>) -> Self {
         let ccr = Some(Arc::clone(pipeline.ccr()));
-        Self { pipeline, ccr }
+        Self { pipeline, ccr, config: None, full_compressor: None }
+    }
+
+    pub fn with_config(pipeline: Arc<AgentCompressionPipeline>, config: HeadroomConfig) -> Self {
+        let ccr = Some(Arc::clone(pipeline.ccr()));
+        let full_compressor = Some(Mutex::new(Compressor::with_ccr(
+            Arc::clone(pipeline.ccr()),
+            config.clone(),
+        )));
+        Self { pipeline, ccr, config: Some(config), full_compressor }
     }
 
     pub fn ccr(&self) -> Option<Arc<CcrStore>> {
@@ -164,9 +179,10 @@ impl HeadroomAgentCompressor {
 }
 
 pub fn create_headroom_compressor() -> Arc<dyn sentinel_core::ContentCompressor> {
-    let compressor = Arc::new(ContentCompressor::default());
-    let pipeline = Arc::new(AgentCompressionPipeline::new(compressor));
-    Arc::new(HeadroomAgentCompressor::new(pipeline))
+    let config = HeadroomConfig::default();
+    let content_compressor = Arc::new(ContentCompressor::from_config(&config));
+    let pipeline = Arc::new(AgentCompressionPipeline::new(content_compressor));
+    Arc::new(HeadroomAgentCompressor::with_config(pipeline, config))
 }
 
 pub fn create_headroom_compressor_with_config(
@@ -185,15 +201,16 @@ pub fn create_headroom_compressor_with_config(
     };
     let content_compressor = Arc::new(ContentCompressor::from_config(&headroom_config));
     let pipeline = Arc::new(AgentCompressionPipeline::new(content_compressor));
-    Arc::new(HeadroomAgentCompressor::new(pipeline))
+    Arc::new(HeadroomAgentCompressor::with_config(pipeline, headroom_config))
 }
 
 pub fn create_headroom_compressor_and_tool(
 ) -> (Arc<dyn sentinel_core::ContentCompressor>, Arc<HeadroomRetrieveTool>) {
-    let compressor = Arc::new(ContentCompressor::default());
-    let pipeline = Arc::new(AgentCompressionPipeline::new(compressor));
+    let config = HeadroomConfig::default();
+    let content_compressor = Arc::new(ContentCompressor::from_config(&config));
+    let pipeline = Arc::new(AgentCompressionPipeline::new(content_compressor));
     let retrieve_tool = Arc::new(pipeline.create_retrieve_tool());
-    let agent_compressor = Arc::new(HeadroomAgentCompressor::new(pipeline));
+    let agent_compressor = Arc::new(HeadroomAgentCompressor::with_config(pipeline, config));
     (agent_compressor as Arc<dyn sentinel_core::ContentCompressor>, retrieve_tool)
 }
 
@@ -204,6 +221,71 @@ impl sentinel_core::ContentCompressor for HeadroomAgentCompressor {
     async fn compress(&self, tool_name: &str, output: &str, is_error: bool) -> String {
         let result = self.pipeline.process_tool_output(tool_name, output, is_error).await;
         result.text
+    }
+
+    async fn compress_conversation(&self, messages: &[ProtocolMessage], model: &str) -> Vec<ProtocolMessage> {
+        let compressor = match &self.full_compressor {
+            Some(c) => c,
+            None => return messages.to_vec(),
+        };
+
+        let headroom_msgs: Vec<HeadroomMessage> = messages.iter().map(|m| {
+            let role = match m.role {
+                Role::System => MessageRole::System,
+                Role::User => MessageRole::User,
+                Role::Assistant => MessageRole::Assistant,
+                Role::Tool => MessageRole::Tool,
+            };
+            let tool_call_id = m.content.iter().find_map(|b| {
+                if let ContentBlock::ToolResult { tool_call_id, .. } = b {
+                    Some(tool_call_id.clone())
+                } else { None }
+            });
+            let name = m.content.iter().find_map(|b| {
+                if let ContentBlock::ToolCall { name, .. } = b {
+                    Some(name.clone())
+                } else { None }
+            });
+            HeadroomMessage {
+                role,
+                content: m.extract_text(),
+                tool_call_id,
+                name,
+            }
+        }).collect();
+
+        let result = {
+            let mut guard = compressor.lock().await;
+            guard.compress(headroom_msgs, model).await
+        };
+
+        let mut output: Vec<ProtocolMessage> = Vec::with_capacity(result.messages.len());
+        for result_msg in result.messages {
+            let orig = messages.iter().find(|m| {
+                let role_match = match &result_msg.role {
+                    MessageRole::System => matches!(m.role, Role::System),
+                    MessageRole::User => matches!(m.role, Role::User),
+                    MessageRole::Assistant => matches!(m.role, Role::Assistant),
+                    MessageRole::Tool => matches!(m.role, Role::Tool),
+                };
+                role_match && m.extract_text() == result_msg.content
+            });
+            match orig {
+                Some(m) => output.push(m.clone()),
+                None => {
+                    let role = match result_msg.role {
+                        MessageRole::System => Role::System,
+                        MessageRole::User => Role::User,
+                        MessageRole::Assistant => Role::Assistant,
+                        MessageRole::Tool => Role::Tool,
+                    };
+                    output.push(ProtocolMessage::new(role, vec![
+                        ContentBlock::Text { text: result_msg.content },
+                    ]));
+                }
+            }
+        }
+        output
     }
 }
 

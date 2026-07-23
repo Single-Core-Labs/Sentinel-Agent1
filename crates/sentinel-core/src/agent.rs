@@ -205,7 +205,7 @@ impl Agent {
                 cb(thread.phase);
             }
 
-            let req = self.build_request(thread);
+            let req = self.build_request(thread).await;
             let tool_defs = self.tools.tool_defs_for_model(true);
 
             let req = if let Some(tools) = tool_defs {
@@ -431,7 +431,7 @@ impl Agent {
             thread.add_message(Message::system(self.prompt_manager.render()));
         }
 
-        let req = self.build_request(thread);
+        let req = self.build_request(thread).await;
         let tool_defs = self.tools.tool_defs_for_model(true);
         let req = if let Some(tools) = tool_defs {
             req.with_tools(tools)
@@ -466,7 +466,7 @@ impl Agent {
                 cb(thread.phase);
             }
 
-            let req = self.build_request(thread);
+            let req = self.build_request(thread).await;
             let tool_defs = self.tools.tool_defs_for_model(true);
             let req = if let Some(tools) = tool_defs { req.with_tools(tools) } else { req };
 
@@ -635,9 +635,15 @@ impl Agent {
         self.plugin_registry.dispatch(event).await;
     }
 
-    fn build_request(&self, _thread: &AgentThread) -> CompletionRequest {
-        CompletionRequest::new(&self.config.agent.default_model)
-            .with_system(self.prompt_manager.render())
+    async fn build_request(&self, thread: &AgentThread) -> CompletionRequest {
+        let messages = thread.context.messages().to_vec();
+        let compressed = self.compressor.compress_conversation(&messages, &self.config.agent.default_model).await;
+
+        let mut req = CompletionRequest::new(&self.config.agent.default_model);
+        for msg in compressed {
+            req = req.with_message(msg);
+        }
+        req
     }
 }
 
