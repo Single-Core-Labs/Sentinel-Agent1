@@ -33,6 +33,7 @@ async-trait.workspace = true
 futures.workspace = true
 hex.workspace = true
 lru.workspace = true
+rusqlite.workspace = true
 sha2.workspace = true
 once_cell = "1"
 base64.workspace = true

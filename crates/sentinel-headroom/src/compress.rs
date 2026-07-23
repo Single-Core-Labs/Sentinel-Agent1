@@ -10,34 +10,62 @@ pub struct Compressor {
     cache_optimizer: CacheOptimizer,
     content_router: Arc<ContentCompressor>,
     intelligent_context: IntelligentContext,
+    memory: Option<crate::memory::PersistentMemory>,
     config: HeadroomConfig,
 }
 
 impl Compressor {
     pub fn new(config: HeadroomConfig) -> Self {
         let content_router = Arc::new(ContentCompressor::from_config(&config));
+        let memory = if config.memory.enabled {
+            let store = Arc::new(Self::create_store(&config.memory));
+            Some(crate::memory::PersistentMemory::new(store, config.memory.clone()))
+        } else {
+            None
+        };
         Self {
             cache_aligner: CacheAligner::new(config.cache_alignment.clone()),
             cache_optimizer: CacheOptimizer::new(config.cache_optimizer.clone()),
             content_router,
             intelligent_context: IntelligentContext::new(config.intelligent_context.clone()),
+            memory,
             config,
         }
     }
 
     pub fn with_ccr(ccr: Arc<crate::ccr::CcrStore>, config: HeadroomConfig) -> Self {
         let content_router = Arc::new(ContentCompressor::with_ccr_and_config(ccr, &config));
+        let memory = if config.memory.enabled {
+            let store = Arc::new(Self::create_store(&config.memory));
+            Some(crate::memory::PersistentMemory::new(store, config.memory.clone()))
+        } else {
+            None
+        };
         Self {
             cache_aligner: CacheAligner::new(config.cache_alignment.clone()),
             cache_optimizer: CacheOptimizer::new(config.cache_optimizer.clone()),
             content_router,
             intelligent_context: IntelligentContext::new(config.intelligent_context.clone()),
+            memory,
             config,
+        }
+    }
+
+    fn create_store(mem_config: &crate::memory::MemoryConfig) -> crate::memory::store::SqliteMemoryStore {
+        match &mem_config.db_path {
+            Some(path) => crate::memory::store::SqliteMemoryStore::open(path)
+                .expect("Failed to open SQLite memory store"),
+            None => crate::memory::store::SqliteMemoryStore::in_memory()
+                .expect("Failed to create in-memory memory store"),
         }
     }
 
     pub fn content_router(&self) -> &Arc<ContentCompressor> {
         &self.content_router
+    }
+
+    pub fn memory(&self) -> Option<&crate::memory::PersistentMemory> {
+        self.memory.as_ref()
     }
 
     pub async fn compress(&mut self, messages: Vec<Message>, model: &str) -> CompressionResult {
@@ -133,7 +161,7 @@ impl Compressor {
 
         let mut ccr_dropped_refs: Vec<(String, usize)> = Vec::new();
 
-        let final_messages: Vec<Message> = match &intelligence_result {
+        let mut final_messages: Vec<Message> = match &intelligence_result {
             Some(ref scored) if scored.dropped_count > 0 => {
                 let dropped_msgs: Vec<&Message> = {
                     let selected_indices: std::collections::HashSet<usize> =
@@ -143,6 +171,18 @@ impl Compressor {
                         .map(|(_, m)| m)
                         .collect()
                 };
+
+                if !dropped_msgs.is_empty() {
+                    if let Some(ref memory) = self.memory {
+                        let dropped: Vec<Message> = dropped_msgs.iter().map(|m| (*m).clone()).collect();
+                        let _ = memory.extract_from_dropped(
+                            &dropped,
+                            &self.config.memory.user_id,
+                            None,
+                            0,
+                        ).await;
+                    }
+                }
 
                 if !dropped_msgs.is_empty() && self.config.ccr.enabled {
                     for (i, dm) in dropped_msgs.iter().enumerate().take(20) {
@@ -188,6 +228,24 @@ impl Compressor {
             }
             _ => transformed,
         };
+
+        if let Some(ref memory) = self.memory {
+            if self.config.memory.inject_on_every_turn {
+                let prompt = final_messages.iter().find(|m| matches!(m.role, MessageRole::System))
+                    .map(|m| m.content.clone())
+                    .unwrap_or_default();
+                if !prompt.is_empty() {
+                    let enriched = memory.inject_memories(&prompt, &self.config.memory.user_id, None).await;
+                    if enriched != prompt {
+                        for m in final_messages.iter_mut() {
+                            if matches!(m.role, MessageRole::System) {
+                                m.content = enriched.clone();
+                            }
+                        }
+                    }
+                }
+            }
+        }
 
         let _final_token_count: usize = final_messages.iter().map(|m| crate::intelligent_context::estimate_tokens(&m.content)).sum();
         let total_output_messages = final_messages.len();

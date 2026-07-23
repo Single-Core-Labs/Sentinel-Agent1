@@ -198,6 +198,7 @@ pub fn create_headroom_compressor_with_config(
         cache_optimizer: config.cache_optimizer.clone(),
         intelligent_context: config.intelligent_context.clone(),
         ccr: config.ccr.clone(),
+        memory: config.memory.clone(),
     };
     let content_compressor = Arc::new(ContentCompressor::from_config(&headroom_config));
     let pipeline = Arc::new(AgentCompressionPipeline::new(content_compressor));

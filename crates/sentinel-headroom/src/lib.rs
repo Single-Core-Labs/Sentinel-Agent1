@@ -10,6 +10,7 @@ pub mod config;
 pub mod cache_aligner;
 pub mod intelligent_context;
 pub mod compress;
+pub mod memory;
 
 pub use classifier::*;
 pub use strategies::*;

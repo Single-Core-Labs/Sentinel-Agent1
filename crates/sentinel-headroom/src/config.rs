@@ -7,6 +7,7 @@ pub struct HeadroomConfig {
     pub content_routing: ContentRoutingConfig,
     pub intelligent_context: IntelligentContextConfig,
     pub ccr: CcrConfig,
+    pub memory: crate::memory::MemoryConfig,
 }
 
 impl HeadroomConfig {
@@ -23,6 +24,7 @@ impl Default for HeadroomConfig {
             content_routing: ContentRoutingConfig::default(),
             intelligent_context: IntelligentContextConfig::default(),
             ccr: CcrConfig::default(),
+            memory: crate::memory::MemoryConfig::default(),
         }
     }
 }

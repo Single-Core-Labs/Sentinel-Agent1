@@ -2777,6 +2777,7 @@ dependencies = [
  "lru",
  "once_cell",
  "regex",
+ "rusqlite",
  "sentinel-core",
  "sentinel-protocol",
  "sentinel-tools",
