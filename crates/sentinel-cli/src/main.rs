@@ -4,6 +4,7 @@ mod handler;
 mod exec;
 mod auth;
 mod server;
+mod proxy;
 mod diagnostics;
 mod tui;
 
@@ -36,6 +37,7 @@ async fn main() -> anyhow::Result<()> {
 
 
         "server" => server::run(sub_args).await?,
+        "proxy" => proxy::run(sub_args).await?,
         "diagnostics" => diagnostics::run(sub_args).await?,
         "tui" => tui::run(sub_args).await?,
         other => {
@@ -58,6 +60,7 @@ fn print_help() {
     println!("  exec <model> <prompt>    Run the agent with a prompt");
     println!("  auth login|logout|status Authentication management");
     println!("  server start|stop|status App server control");
+    println!("  proxy                    Headroom HTTP compression proxy");
     println!("  tui [--port <addr>]     Terminal UI interactive session");
     println!("  diagnostics              System diagnostic checks");
     println!();
@@ -66,6 +69,7 @@ fn print_help() {
     println!("  sentinel auth login --token <token>");
     println!("  sentinel diagnostics");
     println!("  sentinel server start");
+    println!("  sentinel proxy --host 0.0.0.0 --port 8787");
     println!();
     println!("{}", "Configuration:".yellow().bold());
     println!("  See sentinel.example.toml for options");

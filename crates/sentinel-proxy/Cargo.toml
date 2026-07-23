@@ -1,0 +1,26 @@
+[package]
+name = "sentinel-proxy"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "HTTP proxy server that compresses all LLM traffic using Headroom context optimization"
+
+[dependencies]
+anyhow.workspace = true
+tokio = { workspace = true, features = ["full"] }
+tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+reqwest = { workspace = true, features = ["json", "stream"] }
+chrono.workspace = true
+uuid.workspace = true
+colored.workspace = true
+base64.workspace = true
+hex.workspace = true
+sha2.workspace = true
+axum = "0.7"
+hyper = "1"
+tower-http = { version = "0.5", features = ["cors"] }
+
+sentinel-headroom = { path = "../sentinel-headroom" }
+sentinel-core = { path = "../sentinel-core" }

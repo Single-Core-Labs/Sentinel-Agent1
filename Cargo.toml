@@ -26,6 +26,7 @@ members = [
     "crates/sentinel-lsp",
     "crates/sentinel-headroom",
     "crates/sentinel-sdk",
+    "crates/sentinel-proxy",
 ]
 
 [workspace.package]

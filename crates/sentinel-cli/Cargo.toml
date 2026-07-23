@@ -29,5 +29,6 @@ sentinel-app-server-transport = { path = "../sentinel-app-server-transport" }
 sentinel-app-server-protocol = { path = "../sentinel-app-server-protocol" }
 sentinel-agent-identity = { path = "../sentinel-agent-identity" }
 sentinel-headroom = { path = "../sentinel-headroom" }
+sentinel-proxy = { path = "../sentinel-proxy" }
 hex.workspace = true
 reqwest.workspace = true
