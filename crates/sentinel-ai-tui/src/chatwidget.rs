@@ -12,8 +12,8 @@ pub struct ChatMessage {
 pub struct ChatWidget {
     pub messages: Vec<ChatMessage>,
     pub scroll_offset: usize,
-    /// Accumulates streaming token chunks for the current response
     pending_text: String,
+    streaming: bool,
 }
 
 impl ChatWidget {
@@ -22,6 +22,7 @@ impl ChatWidget {
             messages: Vec::new(),
             scroll_offset: 0,
             pending_text: String::new(),
+            streaming: false,
         }
     }
 
@@ -29,16 +30,18 @@ impl ChatWidget {
         self.messages.clear();
         self.scroll_offset = 0;
         self.pending_text.clear();
+        self.streaming = false;
     }
 
     pub fn append(&mut self, ev: ThreadEvent) {
         match ev.event_type.as_str() {
             "stream_chunk" => {
+                self.streaming = true;
                 let chunk = ev.data.get("text").and_then(Value::as_str).unwrap_or("");
                 self.pending_text.push_str(chunk);
             }
             "completed" => {
-                // flush any pending stream chunks into a single message
+                self.streaming = false;
                 if !self.pending_text.is_empty() {
                     let full = std::mem::take(&mut self.pending_text);
                     self.messages.push(ChatMessage {
@@ -76,6 +79,7 @@ impl ChatWidget {
             }
             "error" => {
                 self.pending_text.clear();
+                self.streaming = false;
                 let msg = ev.data.get("message").and_then(Value::as_str).unwrap_or("unknown error");
                 self.messages.push(ChatMessage {
                     event_type: "error".into(),
@@ -86,12 +90,7 @@ impl ChatWidget {
             }
             "tool_call" => {
                 let name = ev.data.get("name").and_then(Value::as_str).unwrap_or("tool");
-                let args_str = ev.data.get("arguments")
-                    .and_then(|a| a.as_str())
-                    .map(|s| {
-                        if s.len() > 120 { format!("{}...", &s[..120]) } else { s.to_string() }
-                    })
-                    .unwrap_or_default();
+                let args_str = Self::format_tool_args(&ev.data);
                 self.messages.push(ChatMessage {
                     event_type: "tool_call".into(),
                     text: format!("{} {}", name, args_str),
@@ -111,6 +110,17 @@ impl ChatWidget {
         }
     }
 
+    fn format_tool_args(data: &Value) -> String {
+        let raw = data.get("arguments")
+            .and_then(|a| a.as_str())
+            .unwrap_or("");
+        if raw.len() > 120 {
+            format!("{}...", &raw[..120])
+        } else {
+            raw.to_string()
+        }
+    }
+
     pub fn scroll_up(&mut self) {
         if self.scroll_offset < self.messages.len().saturating_sub(1) {
             self.scroll_offset += 1;
@@ -125,17 +135,33 @@ impl ChatWidget {
         self.scroll_offset = 0;
     }
 
-    pub fn visible_messages(&self, max_height: usize) -> &[ChatMessage] {
-        let msg_count = self.messages.len();
+    pub fn is_streaming(&self) -> bool {
+        self.streaming
+    }
+
+    pub fn streaming_text(&self) -> &str {
+        &self.pending_text
+    }
+
+    pub fn visible_messages(&self, max_height: usize) -> Vec<ChatMessage> {
+        let mut base: Vec<ChatMessage> = self.messages.clone();
+        if self.streaming && !self.pending_text.is_empty() {
+            base.push(ChatMessage {
+                event_type: "stream_chunk".into(),
+                text: self.pending_text.clone(),
+                is_error: false,
+            });
+        }
+        let msg_count = base.len();
         if msg_count == 0 {
-            return &[];
+            return vec![];
         }
         let start = msg_count.saturating_sub(max_height + self.scroll_offset);
         let end = msg_count.saturating_sub(self.scroll_offset);
         if start >= end {
-            return &[];
+            return vec![];
         }
-        &self.messages[start..end]
+        base[start..end].to_vec()
     }
 }
 

@@ -4,6 +4,7 @@ mod app_event_sender;
 mod app_server_session;
 mod chatwidget;
 mod model_picker;
+pub mod display;
 pub mod components;
 
 #[cfg(feature = "opentui-native")]

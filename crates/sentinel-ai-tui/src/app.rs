@@ -3,7 +3,6 @@ use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style},
-    text::Line,
     widgets::{Block, BorderType, Borders, Paragraph, Wrap},
     Frame, Terminal,
 };
@@ -15,6 +14,7 @@ use crate::{
     app_event_sender::AppEventSender,
     app_server_session::AppServerSession,
     chatwidget::ChatWidget,
+    display,
     model_picker::ModelPicker,
 };
 
@@ -25,6 +25,16 @@ enum InputMode {
     ModelPicker,
 }
 
+#[derive(PartialEq)]
+enum Overlay {
+    None,
+    Help,
+    #[allow(dead_code)]
+    Plan,
+    #[allow(dead_code)]
+    Approval,
+}
+
 pub struct App {
     pub sender: AppEventSender,
     event_rx: mpsc::UnboundedReceiver<AppEvent>,
@@ -33,10 +43,14 @@ pub struct App {
     input: String,
     mode: InputMode,
     model: String,
+    provider_name: String,
     should_quit: bool,
     model_picker: ModelPicker,
-    /// Set while the agent is streaming a response
     processing: bool,
+    boot_visible: bool,
+    tool_count: usize,
+    overlay: Overlay,
+    yolo_mode: bool,
 }
 
 impl App {
@@ -47,6 +61,10 @@ impl App {
         let models = server.available_models();
         let default_model = server.default_model();
         let model_picker = ModelPicker::new(models);
+        let config = server.config();
+        let provider_name = config.providers().first()
+            .map(|p| p.name.clone())
+            .unwrap_or_default();
 
         Ok(Self {
             sender,
@@ -56,9 +74,14 @@ impl App {
             input: String::new(),
             mode: InputMode::Normal,
             model: default_model,
+            provider_name,
             should_quit: false,
             model_picker,
             processing: false,
+            boot_visible: true,
+            tool_count: 0,
+            overlay: Overlay::None,
+            yolo_mode: false,
         })
     }
 
@@ -93,8 +116,9 @@ impl App {
                 let sender = self.sender.clone();
 
                 self.processing = true;
+                self.boot_visible = false;
+                self.overlay = Overlay::None;
 
-                // Show the user's own message immediately
                 {
                     let mut chat = self.chat.lock().await;
                     chat.append(sentinel_ai_exec::ThreadEvent::new(
@@ -103,8 +127,6 @@ impl App {
                     ));
                 }
 
-                // Start streaming: use the direct streaming path so chunks
-                // and tool calls arrive in real-time (one per mpsc message).
                 let (ev_tx, mut ev_rx) = tokio::sync::mpsc::channel(256);
                 let sender1 = sender.clone();
 
@@ -119,7 +141,6 @@ impl App {
                     }
                 });
 
-                // Drain the event channel — each chunk becomes a ServerNotification.
                 tokio::spawn(async move {
                     let mut count = 0;
                     let max_events = 10_000;
@@ -135,9 +156,7 @@ impl App {
                 let mut chat = self.chat.lock().await;
                 chat.append(event);
             }
-            AppEvent::StreamChunk(_) => {
-                // Handled via stream_chunk ServerNotification events
-            }
+            AppEvent::StreamChunk(_) => {}
             AppEvent::StreamEnd => {
                 self.processing = false;
             }
@@ -145,6 +164,7 @@ impl App {
                 self.model = model;
                 self.model_picker.hide();
                 self.mode = InputMode::Normal;
+                self.boot_visible = false;
                 let mut chat = self.chat.lock().await;
                 chat.append(sentinel_ai_exec::ThreadEvent::new(
                     "thinking",
@@ -154,6 +174,7 @@ impl App {
             AppEvent::ClearChat => {
                 let mut chat = self.chat.lock().await;
                 chat.clear();
+                self.boot_visible = true;
             }
             AppEvent::Shutdown => {
                 self.should_quit = true;
@@ -194,6 +215,8 @@ impl App {
                                 if text.starts_with('/') {
                                     self.handle_slash_command(&text).await;
                                 } else {
+                                    self.boot_visible = false;
+                                    self.overlay = Overlay::None;
                                     self.sender.send(AppEvent::UserInput(text));
                                 }
                             }
@@ -222,10 +245,10 @@ impl App {
                 }
                 match key_event.code {
                     KeyCode::Char('i') | KeyCode::Enter => {
-                        if self.processing {
-                            // Block new input while streaming
-                        } else {
+                        if !self.processing && self.overlay == Overlay::None {
                             self.mode = InputMode::Editing;
+                        } else if self.overlay != Overlay::None {
+                            self.overlay = Overlay::None;
                         }
                     }
                     KeyCode::Char('q') | KeyCode::Char('Q') => {
@@ -234,10 +257,8 @@ impl App {
                         }
                     }
                     KeyCode::Esc => {
-                        if self.processing {
-                            // First ESC during processing: cancel in-flight
-                            // TODO: wire up session cancellation
-                            self.should_quit = true;
+                        if self.overlay != Overlay::None {
+                            self.overlay = Overlay::None;
                         } else {
                             self.should_quit = true;
                         }
@@ -291,10 +312,27 @@ impl App {
                 chat.scroll_to_bottom();
             }
             "/help" => {
+                self.boot_visible = false;
+                self.overlay = if matches!(self.overlay, Overlay::Help) {
+                    Overlay::None
+                } else {
+                    Overlay::Help
+                };
+            }
+            "/yolo" => {
+                self.yolo_mode = !self.yolo_mode;
                 let mut chat = self.chat.lock().await;
                 chat.append(sentinel_ai_exec::ThreadEvent::new(
                     "thinking",
-                    serde_json::json!({"text": "Commands: /model, /new, /undo, /help, /quit"}),
+                    serde_json::json!({ "text": format!("YOLO mode: {}", if self.yolo_mode { "ON" } else { "OFF" }) }),
+                ));
+            }
+            "/status" => {
+                let chat_len = self.chat.lock().await.messages.len();
+                let mut chat = self.chat.lock().await;
+                chat.append(sentinel_ai_exec::ThreadEvent::new(
+                    "thinking",
+                    serde_json::json!({ "text": format!("Model: {} | Messages: {} | YOLO: {}", self.model, chat_len, if self.yolo_mode { "ON" } else { "OFF" }) }),
                 ));
             }
             "/quit" => {
@@ -304,7 +342,7 @@ impl App {
                 let mut chat = self.chat.lock().await;
                 chat.append(sentinel_ai_exec::ThreadEvent::new(
                     "error",
-                    serde_json::json!({ "message": format!("Unknown command: {cmd}. Type /help") }),
+                    serde_json::json!({ "message": format!("Unknown: {cmd}. Type /help") }),
                 ));
             }
         }
@@ -312,19 +350,58 @@ impl App {
 
     fn draw(&self, f: &mut Frame) {
         let area = f.size();
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Min(3),
-                Constraint::Length(3),
-                Constraint::Length(1),
-            ])
-            .split(area);
 
-        self.draw_chat(f, chunks[0]);
-        self.draw_input(f, chunks[1]);
-        self.draw_status_bar(f, chunks[2]);
+        if self.boot_visible {
+            self.draw_boot_screen(f, area);
+            return;
+        }
+
+        let (chat_area, input_area, status_area) = if matches!(self.overlay, Overlay::None) {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Min(3),
+                    Constraint::Length(3),
+                    Constraint::Length(1),
+                ])
+                .split(area);
+            (chunks[0], chunks[1], chunks[2])
+        } else {
+            let chunks = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Min(3),
+                    Constraint::Length(3),
+                    Constraint::Length(1),
+                ])
+                .split(area);
+            (chunks[0], chunks[1], chunks[2])
+        };
+
+        self.draw_chat(f, chat_area);
+        self.draw_input(f, input_area);
+        self.draw_status_bar(f, status_area);
+
+        match &self.overlay {
+            Overlay::Help => self.draw_help_overlay(f, area),
+            Overlay::Plan => self.draw_plan_overlay(f, area),
+            Overlay::Approval => self.draw_approval_overlay(f, area),
+            Overlay::None => {}
+        }
+
         self.model_picker.render(f, area);
+    }
+
+    fn draw_boot_screen(&self, f: &mut Frame, area: Rect) {
+        let lines = display::boot_screen_lines(&self.model, &self.provider_name, self.tool_count);
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(Style::default().fg(Color::Rgb(80, 160, 255)));
+        let para = Paragraph::new(lines)
+            .block(block)
+            .wrap(Wrap { trim: false });
+        f.render_widget(para, area);
     }
 
     fn draw_chat(&self, f: &mut Frame, area: Rect) {
@@ -332,21 +409,44 @@ impl App {
         let max_height = area.height.saturating_sub(2) as usize;
         let visible = chat.visible_messages(max_height);
 
-        let lines: Vec<Line> = visible
+        let lines: Vec<ratatui::text::Line> = visible
             .iter()
-            .map(|msg| {
-                let (prefix, color) = match msg.event_type.as_str() {
-                    "user_message" => (">> ", Color::Cyan),
-                    "thinking" => ("> ", Color::Yellow),
-                    "completed" => ("", Color::Green),
-                    "error" => ("! ", Color::Red),
-                    "tool_call" => ("> ", Color::Blue),
-                    _ => ("", Color::White),
-                };
-                Line::from(ratatui::text::Span::styled(
-                    format!("{}{}", prefix, msg.text),
-                    Style::default().fg(color),
-                ))
+            .flat_map(|msg| {
+                match msg.event_type.as_str() {
+                    "user_message" => {
+                        vec![ratatui::text::Line::from(
+                            ratatui::text::Span::styled(
+                                format!(">> {}", msg.text),
+                                Style::default().fg(Color::Cyan),
+                            ),
+                        )]
+                    }
+                    "completed" | "stream_chunk" => {
+                        display::markdown_to_lines(&msg.text)
+                    }
+                    "thinking" => {
+                        display::thinking_indicator(&msg.text)
+                    }
+                    "tool_call" => {
+                        vec![display::tool_call_line(&msg.text, "")]
+                    }
+                    "error" => {
+                        vec![ratatui::text::Line::from(
+                            ratatui::text::Span::styled(
+                                format!("! {}", msg.text),
+                                Style::default().fg(Color::Red),
+                            ),
+                        )]
+                    }
+                    _ => {
+                        vec![ratatui::text::Line::from(
+                            ratatui::text::Span::styled(
+                                msg.text.as_str(),
+                                Style::default().fg(Color::White),
+                            ),
+                        )]
+                    }
+                }
             })
             .collect();
 
@@ -371,27 +471,37 @@ impl App {
             InputMode::ModelPicker => "",
         };
 
-        let display = if self.mode == InputMode::Editing {
+        let display_text = if self.mode == InputMode::Editing {
             format!("{}{}", prefix, self.input)
+        } else if self.processing {
+            format!("{}Processing... press Esc to cancel", prefix)
         } else {
-            format!("{}Press i or Enter to type | /model | /help | q to quit", prefix)
+            format!("{}Press i or Enter to type | /help | /yolo | /status | q to quit", prefix)
         };
 
-        let input_style = match self.mode {
-            InputMode::Editing => Style::default().fg(Color::White).bg(Color::Black),
+        let input_style = if self.mode == InputMode::Editing {
+            Style::default().fg(Color::White).bg(Color::Black)
+        } else if self.processing {
+            Style::default().fg(Color::Yellow).bg(Color::Black)
+        } else {
+            Style::default().fg(Color::DarkGray)
+        };
+
+        let border_style = match self.mode {
+            InputMode::Editing => Style::default().fg(Color::Green),
+            _ if self.processing => Style::default().fg(Color::Yellow),
             _ => Style::default().fg(Color::DarkGray),
         };
 
         let block = Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .border_style(match self.mode {
-                InputMode::Editing => Style::default().fg(Color::Green),
-                _ => Style::default().fg(Color::DarkGray),
-            });
+            .border_style(border_style);
 
-        let paragraph = Paragraph::new(ratatui::text::Line::from(ratatui::text::Span::styled(display, input_style)))
-            .block(block);
+        let paragraph = Paragraph::new(ratatui::text::Line::from(
+            ratatui::text::Span::styled(display_text, input_style),
+        ))
+        .block(block);
 
         f.render_widget(paragraph, area);
 
@@ -412,30 +522,38 @@ impl App {
             InputMode::Editing => "EDIT",
             InputMode::ModelPicker => "PICKER",
         };
-
-        let processing_indicator = if self.processing { " ● PROCESSING" } else { "" };
-
-        let text = format!(
-            " {} | Model: {} | Messages: {}{} | Ctrl+Q to quit ",
-            mode_str, self.model, chat_len, processing_indicator,
-        );
-
-        let (bg, fg) = if self.processing {
-            (Color::Yellow, Color::Black)
-        } else {
-            match self.mode {
-                InputMode::Editing => (Color::Green, Color::White),
-                _ => (Color::Blue, Color::White),
-            }
-        };
-
-        let paragraph = Paragraph::new(ratatui::text::Line::from(ratatui::text::Span::styled(
-            text,
-            Style::default().fg(fg).bg(bg),
-        )))
-        .style(Style::default().bg(bg));
-
+        let (text, style) = display::status_bar_text(mode_str, &self.model, chat_len, self.processing);
+        let paragraph = Paragraph::new(ratatui::text::Line::from(
+            ratatui::text::Span::styled(text, style),
+        ))
+        .style(style);
         f.render_widget(paragraph, area);
+    }
+
+    fn draw_help_overlay(&self, f: &mut Frame, area: Rect) {
+        let overlay = Rect {
+            x: area.width / 6,
+            y: area.height / 6,
+            width: area.width * 2 / 3,
+            height: area.height * 2 / 3,
+        };
+        let lines = display::help_lines();
+        display::render_panel(f, overlay, " Help ", lines, Color::Cyan);
+    }
+
+    fn draw_plan_overlay(&self, _f: &mut Frame, _area: Rect) {
+        // Placeholder — plan overlay will be rendered when plan tool is active
+    }
+
+    fn draw_approval_overlay(&self, f: &mut Frame, area: Rect) {
+        let overlay = Rect {
+            x: area.width / 6,
+            y: area.height / 3,
+            width: area.width * 2 / 3,
+            height: area.height / 3,
+        };
+        let lines = display::approval_lines(&[], self.yolo_mode);
+        display::render_panel(f, overlay, " Approval ", lines, Color::Yellow);
     }
 }
 
