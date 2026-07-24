@@ -1,0 +1,68 @@
+{
+  "summary": {
+    "total": 3,
+    "rust_ok": 0,
+    "python_ok": 3,
+    "structural_matches": 0,
+    "all_ok": false
+  },
+  "tasks": [
+    {
+      "name": "simple_greeting",
+      "prompt": "Say hello and introduce yourself briefly in one sentence.",
+      "rust": {
+        "success": false,
+        "stdout": "",
+        "stderr": "Error: No API key configured for provider openrouter\n",
+        "duration_s": 1.844000000000051,
+        "exit_code": 1
+      },
+      "python": {
+        "success": true,
+        "stdout": "\n  Error: name '_MAX_TOTAL_ITERATIONS' is not defined\n",
+        "stderr": "<frozen runpy>:128: RuntimeWarning: 'agent.main' found in sys.modules after import of package 'agent', but prior to execution of 'agent.main'; this may result in unpredictable behaviour\nModel: zai-org/GLM-5.2:novita\nTool runtime: local filesystem\nMax iterations: 300\nPrompt: Say hello and introduce yourself briefly in one sentence.\n---\nWARNING:agent.core.tools:Failed to load OpenAPI search tool: [Errno 11001] getaddrinfo failed\nERROR:agent.core.agent_loop:Error in agent loop: name '_MAX_TOTAL_ITERATIONS' is not defined\n",
+        "duration_s": 12.312999999999874,
+        "exit_code": 0
+      },
+      "structural_match": false
+    },
+    {
+      "name": "read_cargo_toml",
+      "prompt": "Read the contents of Cargo.toml in the current directory and list the workspace members.",
+      "rust": {
+        "success": false,
+        "stdout": "",
+        "stderr": "Error: No API key configured for provider openrouter\n",
+        "duration_s": 0.26500000000010004,
+        "exit_code": 1
+      },
+      "python": {
+        "success": true,
+        "stdout": "\n  Error: name '_MAX_TOTAL_ITERATIONS' is not defined\n",
+        "stderr": "<frozen runpy>:128: RuntimeWarning: 'agent.main' found in sys.modules after import of package 'agent', but prior to execution of 'agent.main'; this may result in unpredictable behaviour\nModel: zai-org/GLM-5.2:novita\nTool runtime: local filesystem\nMax iterations: 300\nPrompt: Read the contents of Cargo.toml in the current directory and list the workspace members.\n---\nWARNING:agent.core.tools:Failed to load OpenAPI search tool: [Errno 11001] getaddrinfo failed\nERROR:agent.core.agent_loop:Error in agent loop: name '_MAX_TOTAL_ITERATIONS' is not defined\n",
+        "duration_s": 7.0629999999998745,
+        "exit_code": 0
+      },
+      "structural_match": false
+    },
+    {
+      "name": "code_generation",
+      "prompt": "Write a Python function that computes fibonacci numbers using recursion.",
+      "rust": {
+        "success": false,
+        "stdout": "",
+        "stderr": "Error: No API key configured for provider openrouter\n",
+        "duration_s": 0.23400000000015098,
+        "exit_code": 1
+      },
+      "python": {
+        "success": true,
+        "stdout": "\n  Error: name '_MAX_TOTAL_ITERATIONS' is not defined\n",
+        "stderr": "<frozen runpy>:128: RuntimeWarning: 'agent.main' found in sys.modules after import of package 'agent', but prior to execution of 'agent.main'; this may result in unpredictable behaviour\nModel: zai-org/GLM-5.2:novita\nTool runtime: local filesystem\nMax iterations: 300\nPrompt: Write a Python function that computes fibonacci numbers using recursion.\n---\nWARNING:agent.core.tools:Failed to load OpenAPI search tool: [Errno 11001] getaddrinfo failed\nERROR:agent.core.agent_loop:Error in agent loop: name '_MAX_TOTAL_ITERATIONS' is not defined\n",
+        "duration_s": 11.7349999999999,
+        "exit_code": 0
+      },
+      "structural_match": false
+    }
+  ]
+}
