@@ -35,6 +35,8 @@ pub struct App {
     model: String,
     should_quit: bool,
     model_picker: ModelPicker,
+    /// Set while the agent is streaming a response
+    processing: bool,
 }
 
 impl App {
@@ -56,6 +58,7 @@ impl App {
             model: default_model,
             should_quit: false,
             model_picker,
+            processing: false,
         })
     }
 
@@ -86,30 +89,57 @@ impl App {
     async fn handle_app_event(&mut self, event: AppEvent) {
         match event {
             AppEvent::UserInput(text) => {
-                let sender = self.sender.clone();
                 let server = self.server.clone();
+                let sender = self.sender.clone();
+
+                self.processing = true;
+
+                // Show the user's own message immediately
+                {
+                    let mut chat = self.chat.lock().await;
+                    chat.append(sentinel_ai_exec::ThreadEvent::new(
+                        "user_message",
+                        serde_json::json!({ "text": text }),
+                    ));
+                }
+
+                // Start streaming: use the direct streaming path so chunks
+                // and tool calls arrive in real-time (one per mpsc message).
+                let (ev_tx, mut ev_rx) = tokio::sync::mpsc::channel(256);
+                let sender1 = sender.clone();
 
                 tokio::spawn(async move {
-                    match server.send_chat(&text).await {
-                        Ok(evts) => {
-                            for ev in evts {
-                                sender.send(AppEvent::ServerNotification(ev));
-                            }
-                        }
-                        Err(e) => {
-                            sender.send(AppEvent::ServerNotification(
-                                sentinel_ai_exec::ThreadEvent::new(
-                                    "error",
-                                    serde_json::json!({ "message": e.to_string() }),
-                                ),
-                            ));
-                        }
+                    if let Err(e) = server.chat_stream_direct(&text, ev_tx).await {
+                        sender1.send(AppEvent::ServerNotification(
+                            sentinel_ai_exec::ThreadEvent::new(
+                                "error",
+                                serde_json::json!({ "message": e.to_string() }),
+                            ),
+                        ));
                     }
+                });
+
+                // Drain the event channel — each chunk becomes a ServerNotification.
+                tokio::spawn(async move {
+                    let mut count = 0;
+                    let max_events = 10_000;
+                    while let Some(ev) = ev_rx.recv().await {
+                        if count >= max_events { break; }
+                        sender.send(AppEvent::ServerNotification(ev));
+                        count += 1;
+                    }
+                    sender.send(AppEvent::StreamEnd);
                 });
             }
             AppEvent::ServerNotification(event) => {
                 let mut chat = self.chat.lock().await;
                 chat.append(event);
+            }
+            AppEvent::StreamChunk(_) => {
+                // Handled via stream_chunk ServerNotification events
+            }
+            AppEvent::StreamEnd => {
+                self.processing = false;
             }
             AppEvent::ModelSelected(model) => {
                 self.model = model;
@@ -128,7 +158,6 @@ impl App {
             AppEvent::Shutdown => {
                 self.should_quit = true;
             }
-            AppEvent::StreamChunk(_) => {}
         }
     }
 
@@ -191,33 +220,45 @@ impl App {
                 if key_event.kind != KeyEventKind::Press {
                     return;
                 }
-                    match key_event.code {
-                        KeyCode::Char('i') | KeyCode::Enter => {
+                match key_event.code {
+                    KeyCode::Char('i') | KeyCode::Enter => {
+                        if self.processing {
+                            // Block new input while streaming
+                        } else {
                             self.mode = InputMode::Editing;
                         }
-                        KeyCode::Char('q') | KeyCode::Char('Q') => {
-                            if key_event.modifiers == KeyModifiers::CONTROL {
-                                self.should_quit = true;
-                            }
-                        }
-                        KeyCode::Esc => {
+                    }
+                    KeyCode::Char('q') | KeyCode::Char('Q') => {
+                        if key_event.modifiers == KeyModifiers::CONTROL {
                             self.should_quit = true;
                         }
-                        KeyCode::Up | KeyCode::Char('k') => {
-                            let mut chat = self.chat.lock().await;
-                            chat.scroll_up();
+                    }
+                    KeyCode::Esc => {
+                        if self.processing {
+                            // First ESC during processing: cancel in-flight
+                            // TODO: wire up session cancellation
+                            self.should_quit = true;
+                        } else {
+                            self.should_quit = true;
                         }
-                        KeyCode::Down | KeyCode::Char('j') => {
-                            let mut chat = self.chat.lock().await;
-                            chat.scroll_down();
-                        }
-                        KeyCode::Char(':') => {
+                    }
+                    KeyCode::Up | KeyCode::Char('k') => {
+                        let mut chat = self.chat.lock().await;
+                        chat.scroll_up();
+                    }
+                    KeyCode::Down | KeyCode::Char('j') => {
+                        let mut chat = self.chat.lock().await;
+                        chat.scroll_down();
+                    }
+                    KeyCode::Char(':') => {
+                        if !self.processing {
                             self.input.clear();
                             self.input.push('/');
                             self.mode = InputMode::Editing;
                         }
-                        _ => {}
                     }
+                    _ => {}
+                }
             }
         }
     }
@@ -295,15 +336,15 @@ impl App {
             .iter()
             .map(|msg| {
                 let (prefix, color) = match msg.event_type.as_str() {
-                    "thinking" => ("💭", Color::Yellow),
-                    "completed" => ("✅", Color::Green),
-                    "error" => ("✖", Color::Red),
-                    "tool_call" => ("🔧", Color::Blue),
-                    "tool_result" => ("📎", Color::Cyan),
-                    _ => ("•", Color::White),
+                    "user_message" => (">> ", Color::Cyan),
+                    "thinking" => ("> ", Color::Yellow),
+                    "completed" => ("", Color::Green),
+                    "error" => ("! ", Color::Red),
+                    "tool_call" => ("> ", Color::Blue),
+                    _ => ("", Color::White),
                 };
                 Line::from(ratatui::text::Span::styled(
-                    format!("{} {}", prefix, msg.text),
+                    format!("{}{}", prefix, msg.text),
                     Style::default().fg(color),
                 ))
             })
@@ -372,19 +413,25 @@ impl App {
             InputMode::ModelPicker => "PICKER",
         };
 
+        let processing_indicator = if self.processing { " ● PROCESSING" } else { "" };
+
         let text = format!(
-            " {} | Model: {} | Messages: {} | Ctrl+Q to quit ",
-            mode_str, self.model, chat_len
+            " {} | Model: {} | Messages: {}{} | Ctrl+Q to quit ",
+            mode_str, self.model, chat_len, processing_indicator,
         );
 
-        let bg = match self.mode {
-            InputMode::Editing => Color::Green,
-            _ => Color::Blue,
+        let (bg, fg) = if self.processing {
+            (Color::Yellow, Color::Black)
+        } else {
+            match self.mode {
+                InputMode::Editing => (Color::Green, Color::White),
+                _ => (Color::Blue, Color::White),
+            }
         };
 
         let paragraph = Paragraph::new(ratatui::text::Line::from(ratatui::text::Span::styled(
             text,
-            Style::default().fg(Color::White).bg(bg),
+            Style::default().fg(fg).bg(bg),
         )))
         .style(Style::default().bg(bg));
 

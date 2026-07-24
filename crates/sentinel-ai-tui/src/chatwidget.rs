@@ -12,6 +12,8 @@ pub struct ChatMessage {
 pub struct ChatWidget {
     pub messages: Vec<ChatMessage>,
     pub scroll_offset: usize,
+    /// Accumulates streaming token chunks for the current response
+    pending_text: String,
 }
 
 impl ChatWidget {
@@ -19,37 +21,94 @@ impl ChatWidget {
         Self {
             messages: Vec::new(),
             scroll_offset: 0,
+            pending_text: String::new(),
         }
     }
 
     pub fn clear(&mut self) {
         self.messages.clear();
         self.scroll_offset = 0;
+        self.pending_text.clear();
     }
 
     pub fn append(&mut self, ev: ThreadEvent) {
-        let text = match ev.event_type.as_str() {
-            "thinking" => ev.data.get("text").and_then(Value::as_str).unwrap_or("").to_string(),
-            "completed" => ev.data.get("text").and_then(Value::as_str).unwrap_or("Done").to_string(),
-            "error" => ev.data.get("message").and_then(Value::as_str).unwrap_or("unknown error").to_string(),
+        match ev.event_type.as_str() {
+            "stream_chunk" => {
+                let chunk = ev.data.get("text").and_then(Value::as_str).unwrap_or("");
+                self.pending_text.push_str(chunk);
+            }
+            "completed" => {
+                // flush any pending stream chunks into a single message
+                if !self.pending_text.is_empty() {
+                    let full = std::mem::take(&mut self.pending_text);
+                    self.messages.push(ChatMessage {
+                        event_type: "completed".into(),
+                        text: full,
+                        is_error: false,
+                    });
+                } else {
+                    let txt = ev.data.get("text").and_then(Value::as_str).unwrap_or("Done");
+                    self.messages.push(ChatMessage {
+                        event_type: "completed".into(),
+                        text: txt.to_string(),
+                        is_error: false,
+                    });
+                }
+                self.scroll_to_bottom();
+            }
+            "user_message" => {
+                let txt = ev.data.get("text").and_then(Value::as_str).unwrap_or("");
+                self.messages.push(ChatMessage {
+                    event_type: "user_message".into(),
+                    text: txt.to_string(),
+                    is_error: false,
+                });
+                self.scroll_to_bottom();
+            }
+            "thinking" => {
+                let txt = ev.data.get("text").and_then(Value::as_str).unwrap_or("");
+                self.messages.push(ChatMessage {
+                    event_type: "thinking".into(),
+                    text: txt.to_string(),
+                    is_error: false,
+                });
+                self.scroll_to_bottom();
+            }
+            "error" => {
+                self.pending_text.clear();
+                let msg = ev.data.get("message").and_then(Value::as_str).unwrap_or("unknown error");
+                self.messages.push(ChatMessage {
+                    event_type: "error".into(),
+                    text: msg.to_string(),
+                    is_error: true,
+                });
+                self.scroll_to_bottom();
+            }
             "tool_call" => {
                 let name = ev.data.get("name").and_then(Value::as_str).unwrap_or("tool");
-                format!("🔧 Tool call: {name}")
+                let args_str = ev.data.get("arguments")
+                    .and_then(|a| a.as_str())
+                    .map(|s| {
+                        if s.len() > 120 { format!("{}...", &s[..120]) } else { s.to_string() }
+                    })
+                    .unwrap_or_default();
+                self.messages.push(ChatMessage {
+                    event_type: "tool_call".into(),
+                    text: format!("{} {}", name, args_str),
+                    is_error: false,
+                });
+                self.scroll_to_bottom();
             }
-            "tool_result" => {
-                let output = ev.data.get("output").and_then(Value::as_str).unwrap_or("");
-                format!("✅ Tool result: {output}")
+            other => {
+                let txt = ev.data.to_string();
+                self.messages.push(ChatMessage {
+                    event_type: other.to_string(),
+                    text: txt,
+                    is_error: false,
+                });
+                self.scroll_to_bottom();
             }
-            other => format!("[{other}]: {}", ev.data),
-        };
-
-        self.messages.push(ChatMessage {
-            event_type: ev.event_type.clone(),
-            text,
-            is_error: ev.event_type == "error",
-        });
-
-        self.scroll_to_bottom();
+        }
     }
 
     pub fn scroll_up(&mut self) {

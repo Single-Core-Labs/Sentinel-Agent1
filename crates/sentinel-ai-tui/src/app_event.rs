@@ -5,6 +5,7 @@ pub enum AppEvent {
     UserInput(String),
     ServerNotification(ThreadEvent),
     StreamChunk(String),
+    StreamEnd,
     ModelSelected(String),
     ClearChat,
     Shutdown,

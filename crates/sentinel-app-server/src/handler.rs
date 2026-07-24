@@ -25,6 +25,12 @@ pub struct RequestHandler {
 }
 
 impl RequestHandler {
+    /// Look up a session by ID (used by streaming clients).
+    pub async fn get_session(&self, session_id: &str) -> Option<Arc<crate::session::AppSession>> {
+        let sessions = self.sessions.lock().await;
+        sessions.get(session_id).cloned()
+    }
+
     pub fn new(
         config: Arc<SentinelConfig>,
         analytics: Arc<AnalyticsPipeline>,
