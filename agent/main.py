@@ -1951,42 +1951,5 @@ def cli():
         print("\n\nGoodbye!")
 
 
-_SENTINEL_HELP = """\
-Usage: sentinel <command> [args]
-
-Commands:
-  ai    Start the Sentinel AI agent (interactive or headless)
-            sentinel ai                     Interactive mode (Ink UI or Python REPL)
-            sentinel ai "your prompt"        Headless mode
-            sentinel ai --model <id> ...     With model override
-
-Run 'sentinel ai --help' for agent-specific options.
-"""
-
-
-def sentinel_cli():
-    """Entry point for the ``sentinel`` multi-command binary.
-
-    Dispatches to subcommands::
-
-        sentinel ai [agent-args...]
-    """
-    import sys as _sys
-
-    if len(_sys.argv) < 2 or _sys.argv[1] in ("--help", "-h", "help"):
-        print(_SENTINEL_HELP.strip())
-        _sys.exit(0 if len(_sys.argv) >= 2 and _sys.argv[1] in ("--help", "-h") else 1)
-
-    subcommand = _sys.argv[1]
-
-    if subcommand == "ai":
-        _sys.argv = [_sys.argv[0]] + _sys.argv[2:]
-        cli()
-    else:
-        print(f"Error: Unknown command '{subcommand}'")
-        print("Run 'sentinel --help' for usage.")
-        _sys.exit(1)
-
-
 if __name__ == "__main__":
     cli()

@@ -59,7 +59,7 @@ fn print_help() {
     println!("  sentinel <command> [args]");
     println!();
     println!("{}", "Subcommands:".yellow().bold());
-    println!("  ai [args]              Launch the Python AI agent (interactive or headless)");
+    println!("  ai [model]            Interactive agent session (Rust native)");
     println!("  exec <model> <prompt>  Run the agent with a prompt (Rust native)");
     println!("  auth login|logout|status Authentication management");
     println!("  server start|stop|status App server control");
@@ -69,8 +69,7 @@ fn print_help() {
     println!();
     println!("{}", "Examples:".yellow().bold());
     println!("  sentinel ai");
-    println!("  sentinel ai \"write hello world\"");
-    println!("  sentinel ai --model zai-org/GLM-5.2:novita");
+    println!("  sentinel ai zai-org/GLM-5.2:novita");
     println!("  sentinel exec gpt-4o-mini \"write hello world\"");
     println!("  sentinel auth login --token <token>");
     println!("  sentinel diagnostics");
