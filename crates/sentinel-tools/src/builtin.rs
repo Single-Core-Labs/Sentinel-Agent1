@@ -19,6 +19,10 @@ pub fn builtin_tools() -> Vec<Arc<dyn Tool>> {
         Arc::new(GitDiffTool),
         Arc::new(GitCommitTool),
         Arc::new(GitLogTool),
+        Arc::new(NotifyTool),
+        Arc::new(ExploreDocsTool),
+        Arc::new(FetchDocsTool),
+        Arc::new(FindApiTool),
     ]
 }
 
@@ -659,4 +663,260 @@ fn urlencoding(s: &str) -> String {
         ' ' => "%20".into(),
         _ => format!("%{:02X}", c as u8),
     }).collect()
+}
+
+// ── Notify ─────────────────────────────────────────────────────
+pub struct NotifyTool;
+#[async_trait]
+impl Tool for NotifyTool {
+    fn name(&self) -> &str { "notify" }
+    fn description(&self) -> &str {
+        "Send a notification to configured messaging destinations (webhook, Slack)."
+    }
+    fn input_schema(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "message": { "type": "string", "description": "Notification body" },
+                "title": { "type": "string", "description": "Optional title" },
+                "severity": { "type": "string", "enum": ["info", "success", "warning", "error"], "description": "Severity level" },
+                "webhook_url": { "type": "string", "description": "Optional custom webhook URL (defaults to SENTINEL_NOTIFY_WEBHOOK env)" }
+            },
+            "required": ["message"]
+        })
+    }
+
+    async fn execute(&self, args: serde_json::Value, _ctx: &ToolContext) -> ToolOutput {
+        let message = args["message"].as_str().unwrap_or("");
+        if message.is_empty() { return ToolOutput::err("message is required"); }
+        let title = args["title"].as_str().unwrap_or("Notification");
+        let severity = args["severity"].as_str().unwrap_or("info");
+        let env_webhook = std::env::var("SENTINEL_NOTIFY_WEBHOOK").ok();
+        let webhook = args["webhook_url"].as_str()
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .or(env_webhook);
+
+        let payload = json!({
+            "text": format!("[{}] {}: {}", severity, title, message)
+        });
+
+        match webhook {
+            Some(url) => {
+                let client = reqwest::Client::new();
+                match client.post(&url).json(&payload).send().await {
+                    Ok(resp) => {
+                        let status = resp.status();
+                        if status.is_success() {
+                            ToolOutput::ok(format!("Notification sent (status {})", status))
+                        } else {
+                            let body = resp.text().await.unwrap_or_default();
+                            ToolOutput::err(format!("Webhook returned {}: {}", status, body))
+                        }
+                    }
+                    Err(e) => ToolOutput::err(format!("Failed to send notification: {}", e)),
+                }
+            }
+            None => {
+                // Fallback: log to stdout
+                tracing::info!("NOTIFY [{}] {}: {}", severity, title, message);
+                ToolOutput::ok("Notification logged (no webhook configured)")
+            }
+        }
+    }
+}
+
+// ── Explore Docs ─────────────────────────────────────────────
+pub struct ExploreDocsTool;
+#[async_trait]
+impl Tool for ExploreDocsTool {
+    fn name(&self) -> &str { "explore_docs" }
+    fn description(&self) -> &str {
+        "Browse Sentinel AI documentation structure. Use this to discover available docs, then use fetch_docs to get full content."
+    }
+    fn input_schema(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "endpoint": { "type": "string", "description": "Documentation endpoint (e.g. transformers, datasets, trl, peft, diffusers, hub, gradio)" },
+                "query": { "type": "string", "description": "Optional search query" },
+                "max_results": { "type": "integer", "description": "Max results (default 20, max 50)" }
+            },
+            "required": ["endpoint"]
+        })
+    }
+
+    async fn execute(&self, args: serde_json::Value, _ctx: &ToolContext) -> ToolOutput {
+        let endpoint = args["endpoint"].as_str().unwrap_or("").trim_start_matches('/');
+        if endpoint.is_empty() { return ToolOutput::err("endpoint is required"); }
+        let query = args["query"].as_str().filter(|s| !s.is_empty());
+        let max_results = args["max_results"].as_u64().unwrap_or(20).min(50);
+
+        let client = reqwest::Client::builder()
+            .user_agent("SentinelAI/1.0")
+            .timeout(std::time::Duration::from_secs(30))
+            .build().unwrap();
+
+        if endpoint == "gradio" {
+            let url = "https://gradio.app/llms.txt";
+            return match client.get(url).send().await {
+                Ok(resp) => match resp.text().await {
+                    Ok(body) => ToolOutput::ok(format!("# Gradio Documentation\n\nSource: https://gradio.app/docs\n\n---\n\n{}", body)),
+                    Err(e) => ToolOutput::err(format!("Failed to read Gradio docs: {}", e)),
+                },
+                Err(e) => ToolOutput::err(format!("Failed to fetch Gradio docs: {}", e)),
+            };
+        }
+
+        let docs_url = format!("https://huggingface.co/docs/{}/en/index.md", endpoint);
+        match client.get(&docs_url).send().await {
+            Ok(resp) if resp.status().is_success() => {
+                match resp.text().await {
+                    Ok(body) => {
+                        let lines: Vec<&str> = body.lines().collect();
+                        let shown: Vec<&str> = lines.iter().take(max_results as usize).copied().collect();
+                        let total = lines.len();
+                        let mut out = format!("Documentation for: {}\n\n", endpoint);
+                        if let Some(q) = query {
+                            out.push_str(&format!("Query: '{}' — showing up to {} results out of {} pages\n\n", q, max_results, total));
+                        } else {
+                            out.push_str(&format!("Found {} pages (showing first {})\n\n", total, max_results));
+                        }
+                        for (i, line) in shown.iter().enumerate() {
+                            out.push_str(&format!("{}. {}\n", i + 1, line));
+                        }
+                        ToolOutput::ok(out)
+                    }
+                    Err(e) => ToolOutput::err(format!("Failed to read docs: {}", e)),
+                }
+            }
+            Ok(resp) => ToolOutput::err(format!("Docs endpoint returned {}", resp.status())),
+            Err(e) => ToolOutput::err(format!("Failed to fetch docs: {}", e)),
+        }
+    }
+}
+
+// ── Fetch Docs ──────────────────────────────────────────────
+pub struct FetchDocsTool;
+#[async_trait]
+impl Tool for FetchDocsTool {
+    fn name(&self) -> &str { "fetch_docs" }
+    fn description(&self) -> &str {
+        "Fetch full markdown content of a documentation page. Use after explore_docs to get complete page content."
+    }
+    fn input_schema(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "url": { "type": "string", "description": "Full URL to the documentation page. The .md extension is added automatically if missing." }
+            },
+            "required": ["url"]
+        })
+    }
+
+    async fn execute(&self, args: serde_json::Value, _ctx: &ToolContext) -> ToolOutput {
+        let mut url = args["url"].as_str().unwrap_or("").to_string();
+        if url.is_empty() { return ToolOutput::err("url is required"); }
+
+        if !url.ends_with(".md") {
+            url.push_str(".md");
+        }
+
+        let client = reqwest::Client::builder()
+            .user_agent("SentinelAI/1.0")
+            .timeout(std::time::Duration::from_secs(30))
+            .build().unwrap();
+
+        match client.get(&url).send().await {
+            Ok(resp) if resp.status().is_success() => {
+                match resp.text().await {
+                    Ok(body) => ToolOutput::ok(format!("Documentation from: {}\n\n{}", url, body)),
+                    Err(e) => ToolOutput::err(format!("Failed to read response: {}", e)),
+                }
+            }
+            Ok(resp) => ToolOutput::err(format!("HTTP {} fetching {}", resp.status(), url)),
+            Err(e) => ToolOutput::err(format!("Request failed: {}", e)),
+        }
+    }
+}
+
+// ── Find API ────────────────────────────────────────────────
+pub struct FindApiTool;
+#[async_trait]
+impl Tool for FindApiTool {
+    fn name(&self) -> &str { "find_api" }
+    fn description(&self) -> &str {
+        "Search Sentinel AI OpenAPI specification to find REST API endpoints. Returns curl examples with auth."
+    }
+    fn input_schema(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "query": { "type": "string", "description": "Keyword search across endpoint summaries and descriptions" },
+                "tag": { "type": "string", "description": "Filter by API category tag" }
+            }
+        })
+    }
+
+    async fn execute(&self, args: serde_json::Value, _ctx: &ToolContext) -> ToolOutput {
+        let query = args["query"].as_str().filter(|s| !s.is_empty());
+        let tag = args["tag"].as_str().filter(|s| !s.is_empty());
+
+        if query.is_none() && tag.is_none() {
+            return ToolOutput::err("Provide either 'query' or 'tag' (or both)");
+        }
+
+        let client = reqwest::Client::builder()
+            .user_agent("SentinelAI/1.0")
+            .timeout(std::time::Duration::from_secs(30))
+            .build().unwrap();
+
+        let spec_url = "https://huggingface.co/.well-known/openapi.json";
+        match client.get(spec_url).send().await {
+            Ok(resp) if resp.status().is_success() => {
+                match resp.json::<serde_json::Value>().await {
+                    Ok(spec) => {
+                        let mut results = Vec::new();
+                        if let Some(paths) = spec["paths"].as_object() {
+                            for (path, path_item) in paths {
+                                if let Some(obj) = path_item.as_object() {
+                                    for (method, op) in obj {
+                                        if !matches!(method.as_str(), "get" | "post" | "put" | "delete" | "patch") { continue; }
+                                        let summary = op["summary"].as_str().unwrap_or("");
+                                        let desc = op["description"].as_str().unwrap_or("");
+                                        let tags_arr = op["tags"].as_array().map(|a| a.iter().filter_map(|t| t.as_str()).collect::<Vec<_>>().join(", ")).unwrap_or_default();
+
+                                        let mut matched = true;
+                                        if let Some(q) = query {
+                                            let ql = q.to_lowercase();
+                                            matched = summary.to_lowercase().contains(&ql) || desc.to_lowercase().contains(&ql);
+                                        }
+                                        if let Some(t) = tag {
+                                            matched = matched && tags_arr.to_lowercase().contains(&t.to_lowercase());
+                                        }
+                                        if matched {
+                                            results.push(format!("{} {} — {}\n   Tags: {}", method.to_uppercase(), path, summary, tags_arr));
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        if results.is_empty() {
+                            ToolOutput::ok("No matching API endpoints found.")
+                        } else {
+                            let mut out = format!("Found {} API endpoint(s)\n\n", results.len());
+                            for (i, r) in results.iter().enumerate() {
+                                out.push_str(&format!("{}. {}\n\n", i + 1, r));
+                            }
+                            ToolOutput::ok(out)
+                        }
+                    }
+                    Err(e) => ToolOutput::err(format!("Failed to parse OpenAPI spec: {}", e)),
+                }
+            }
+            Ok(resp) => ToolOutput::err(format!("HTTP {} fetching OpenAPI spec", resp.status())),
+            Err(e) => ToolOutput::err(format!("Failed to fetch OpenAPI spec: {}", e)),
+        }
+    }
 }
