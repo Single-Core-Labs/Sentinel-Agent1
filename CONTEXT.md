@@ -1,7 +1,7 @@
 # Platform-Agent
 
 > **GitHub**: `Single-Core-Labs/Sentinel-Agent`
-> **CLI**: `platform-agent` (entry point: `agent.main:cli`)
+> **CLI**: `sentinel ai` (entry point: `agent.main:sentinel_cli` → subcommand `ai` calls `agent.main:cli`)
 
 ---
 

@@ -7,6 +7,7 @@ mod server;
 mod proxy;
 mod diagnostics;
 mod tui;
+mod ai;
 
 use colored::*;
 
@@ -33,6 +34,7 @@ async fn main() -> anyhow::Result<()> {
         "--help" | "-h" | "help" => print_help(),
         "--version" | "-V" => println!("Sentinel v{}", env!("CARGO_PKG_VERSION")),
         "exec" => exec::run(sub_args).await?,
+        "ai" => ai::run(sub_args).await?,
         "auth" => auth::run(sub_args).await?,
 
 
@@ -57,14 +59,18 @@ fn print_help() {
     println!("  sentinel <command> [args]");
     println!();
     println!("{}", "Subcommands:".yellow().bold());
-    println!("  exec <model> <prompt>    Run the agent with a prompt");
+    println!("  ai [args]              Launch the Python AI agent (interactive or headless)");
+    println!("  exec <model> <prompt>  Run the agent with a prompt (Rust native)");
     println!("  auth login|logout|status Authentication management");
     println!("  server start|stop|status App server control");
-    println!("  proxy                    Headroom HTTP compression proxy");
-    println!("  tui [--port <addr>]     Terminal UI interactive session");
-    println!("  diagnostics              System diagnostic checks");
+    println!("  proxy                  Headroom HTTP compression proxy");
+    println!("  tui [--port <addr>]    Terminal UI interactive session");
+    println!("  diagnostics            System diagnostic checks");
     println!();
     println!("{}", "Examples:".yellow().bold());
+    println!("  sentinel ai");
+    println!("  sentinel ai \"write hello world\"");
+    println!("  sentinel ai --model zai-org/GLM-5.2:novita");
     println!("  sentinel exec gpt-4o-mini \"write hello world\"");
     println!("  sentinel auth login --token <token>");
     println!("  sentinel diagnostics");

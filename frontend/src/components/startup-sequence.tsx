@@ -155,7 +155,7 @@ export function StartupSequence({ onComplete, theme }: Props) {
       </Box>
       <Box flexDirection="column" paddingTop={1} paddingLeft={3}>
         <Box marginBottom={1}>
-          <Text color={c.accent} bold>◆ sentinel-ai</Text>
+          <Text color={c.accent} bold>◆ sentinel ai</Text>
           <Text color={c.muted}>  platform engineering agent  v0.1</Text>
         </Box>
         {BOOT_LINES.slice(0, bootIndex).map((line, i) => {

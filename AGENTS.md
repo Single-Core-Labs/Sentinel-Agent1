@@ -2,6 +2,7 @@
 
 ## Local Dev Servers
 
+- Agent (CLI): run `uv run python -m agent.main` or install with `uv tool install -e .` then `sentinel ai`.
 - Frontend: from `frontend/`, run `npm ci` if dependencies are missing, then `npm run dev`.
 - Backend: from `backend/`, run `uv run uvicorn main:app --host ::1 --port 7860`.
 - Frontend URL: http://localhost:5173/

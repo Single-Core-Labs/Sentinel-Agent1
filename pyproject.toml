@@ -57,6 +57,7 @@ all = [
 ]
 
 [project.scripts]
+sentinel = "agent.main:sentinel_cli"
 platform-agent = "agent.main:cli"
 sentinel-ai = "agent.main:cli"
 
