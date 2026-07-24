@@ -9,6 +9,7 @@ pub struct WorktreeManager {
 }
 
 struct WorktreeEntry {
+    #[allow(dead_code)]
     name: String,
     path: PathBuf,
     branch: String,
