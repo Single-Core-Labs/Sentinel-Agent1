@@ -1,0 +1,3 @@
+@echo off
+echo Starting Rust Sentinel AI agent and Frontend Ink TUI...
+npx concurrently "cargo run --bin sentinel -- ai" "npm run --prefix frontend cli:dev"

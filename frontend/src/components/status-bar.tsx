@@ -55,6 +55,14 @@ export function StatusBar({ model, sessionId, turnCount, tokenUsage, mode, agent
         <Text color={c.foreground}>{tokenUsage.toLocaleString()}</Text>
       </Box>
 
+      {/* Agents */}
+      {agentCount !== undefined && agentCount > 0 && (
+        <Box marginRight={3}>
+          <Text color={c.muted}>agents </Text>
+          <Text color={c.accentAlt}>{agentCount}</Text>
+        </Box>
+      )}
+
       {/* Mode */}
       <Box>
         <Text color={modeColor as string} bold>

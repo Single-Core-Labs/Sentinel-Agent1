@@ -641,6 +641,7 @@ export default function App() {
               turnCount={turnCount}
               tokenUsage={tokenUsage}
               mode={mode}
+              agentCount={subagents.length}
               theme={theme}
             />
           </Box>
