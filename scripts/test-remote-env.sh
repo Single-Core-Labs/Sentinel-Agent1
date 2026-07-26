@@ -24,7 +24,7 @@ echo "[test-remote-env] Testing $TARGET…"
 $SSH_CMD "$TARGET" "echo OK: connectivity" || { echo "FAIL: connectivity"; exit 1; }
 
 # Check required tooling
-for tool in rustc cargo python3 node npm bazel git; do
+for tool in rustc cargo node npm bazel git; do
   $SSH_CMD "$TARGET" "which $tool && $tool --version 2>&1 | head -1" \
     && echo "  OK: $tool" \
     || echo "  MISSING: $tool"

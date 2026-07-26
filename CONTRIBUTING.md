@@ -18,15 +18,6 @@ cargo clippy -- -D warnings  # lint
 cargo fmt --check         # formatting
 ```
 
-### Python (agent/ and backend/)
-
-```bash
-uv sync                    # install dependencies
-uv run ruff check .        # lint
-uv run ruff format --check .
-uv run pytest tests/       # run tests
-```
-
 ### Frontend
 
 ```bash
@@ -38,7 +29,6 @@ npm run dev                # start dev server
 ## Code Style
 
 - Rust: follow `cargo fmt` and `cargo clippy`. No `unwrap()` in production code.
-- Python: follow `ruff` rules (enforced in CI).
 - Commits: conventional commits (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`).
 - PRs: squash-merge with a single clean commit message.
 
@@ -52,8 +42,8 @@ npm run dev                # start dev server
 
 ## Testing
 
-- Unit tests belong next to the code they test (`#[cfg(test)] mod tests` in Rust, `tests/unit/` in Python).
-- Integration tests belong in `crates/*/tests/` (Rust) or `tests/integration/` (Python).
+- Unit tests belong next to the code they test (`#[cfg(test)] mod tests` in Rust).
+- Integration tests belong in `crates/*/tests/` (Rust).
 - New features should include tests.
 
 ## Project Structure
@@ -67,9 +57,7 @@ crates/               # Rust workspace (21 crates)
   sentinel-analytics/ # Telemetry pipeline
   sentinel-ai-tui/    # Ratatui terminal UI
   ...
-agent/                # Python agent (legacy, being migrated)
-backend/              # Python FastAPI server
-frontend/             # React/Ink terminal UI
+  frontend/             # React/Ink terminal UI
 ```
 
 ## Questions?

@@ -13,8 +13,6 @@ An autonomous coding agent for platform engineering, AIOps, and MLOps — with d
 Describe a problem in plain English, and the agent investigates with real tools (code, cloud, logs, dashboards), then fixes it — asking for human approval before touching production.
 
 **Repository:** `Single-Core-Labs/Sentinel-Agent1`  
-**Python package:** `sentinel-agent`  
-**Node package:** `sentinel-ai`  
 **CLI command:** `sentinel` (Rust)
 
 ---
@@ -91,7 +89,7 @@ Run `sentinel ai` then `/model` to see the full list of suggested model ids.
 
 #### Local models
 
-Local model support uses OpenAI-compatible HTTP endpoints through LiteLLM:
+Local model support uses OpenAI-compatible HTTP endpoints:
 
 ```bash
 sentinel ai --model ollama/llama3.1:8b "your prompt"
@@ -127,30 +125,29 @@ LOCAL_LLM_API_KEY=<optional-local-api-key>
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │                        User Interfaces                           │
-│  ┌──────────┐  ┌──────────┐  ┌───────────┐  ┌────────────────┐  │
-│  │ CLI      │  │ Frontend │  │ FastAPI   │  │ Tauri Desktop  │  │
-│  │ (Python) │  │ (Ink UI) │  │ Backend   │  │ (experimental) │  │
-│  └────┬─────┘  └────┬─────┘  └─────┬─────┘  └───────┬────────┘  │
-└───────┼──────────────┼──────────────┼─────────────────┼──────────┘
-        │              │              │                 │
-        ▼              ▼              ▼                 ▼
+│  ┌──────────┐  ┌──────────┐  ┌────────────────┐  │
+│  │ CLI      │  │ Frontend │  │ Tauri Desktop  │  │
+│  │ (Rust)   │  │ (Ink UI) │  │ (experimental) │  │
+│  └────┬─────┘  └────┬─────┘  └───────┬────────┘  │
+└───────┼──────────────┼────────────────┼────────────┘
+        │              │                │
+        ▼              ▼                ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│                     Agent Core (Python)                          │
+│                      Rust Agent Runtime                          │
 │                                                                  │
 │  ┌──────────────────────────────────────────────────────────┐    │
-│  │                  Agent Loop (agent_loop.py)               │    │
+│  │              sentinel-core (Agent Loop)                   │    │
 │  │  ┌──────────────┐  ┌──────────────┐  ┌────────────────┐ │    │
-│  │  │ Context      │  │ ToolRouter   │  │ Doom Loop      │ │    │
-│  │  │ Manager      │  │ • 15+ tools  │  │ Detector       │ │    │
-│  │  │ • History    │  │ • MCP        │  │ • Pattern      │ │    │
-│  │  │ • Compaction │  │ • Sub-agents │  │ • Recovery     │ │    │
+│  │  │ Context      │  │ Tool         │  │ Doom Loop      │ │    │
+│  │  │ Manager      │  │ Registry     │  │ Detector       │ │    │
+│  │  │ • History    │  │ • Built-in   │  │ • Pattern      │ │    │
+│  │  │ • Compaction │  │ • MCP        │  │ • Recovery     │ │    │
 │  │  └──────────────┘  └──────────────┘  └────────────────┘ │    │
 │  │  ┌──────────────┐  ┌──────────────┐  ┌────────────────┐ │    │
 │  │  │ Model Router │  │ Approval     │  │ Session        │ │    │
-│  │  │ • Reasoning  │  │ Policy       │  │ Persistence    │ │    │
-│  │  │ • Mechanical │  │ • 3 gates    │  │ • MongoDB      │ │    │
-│  │  └──────────────┘  └──────────────┘  │ • SQLite (Rust)│ │    │
-│  │                                       └────────────────┘ │    │
+│  │  │ • Reasoning  │  │ Gate         │  │ Store          │ │    │
+│  │  │ • Mechanical │  │ • 3 modes    │  │ • SQLite       │ │    │
+│  │  └──────────────┘  └──────────────┘  └────────────────┘ │    │
 │  └──────────────────────────────────────────────────────────┘    │
 │                                                                  │
 │  Tools: bash, read, write, edit, grep, glob, git,               │
@@ -160,7 +157,7 @@ LOCAL_LLM_API_KEY=<optional-local-api-key>
                               │
                               ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│                      Rust Crates (migration target)              │
+│                      Rust Crates                                 │
 │                                                                  │
 │  24 crates: sentinel-core, sentinel-cli, sentinel-provider,     │
 │  sentinel-tools, sentinel-mcp, sentinel-config, sentinel-exec,  │
@@ -225,26 +222,13 @@ The agent emits events via `event_queue`:
 ## Project Structure
 
 ```
-├── agent/              # Python agent core
-│   ├── main.py         # CLI entry point
-│   ├── core/           # Agent loop, session, tools, model routing
-│   ├── context_manager/# Context compression & management
-│   ├── tools/          # 15+ tool implementations
-│   ├── prompts/        # System prompt templates (YAML)
-│   ├── messaging/      # Slack notification gateway
-│   └── utils/          # Terminal display utilities
-├── backend/            # FastAPI web backend
-│   ├── main.py         # API server with SSE streaming
-│   ├── session_manager.py
-│   └── routes/         # agent, auth, providers routes
 ├── frontend/           # TypeScript CLI (Ink + React)
 │   ├── src/            # Terminal UI components
 │   └── bin/            # CLI launcher
 ├── desktop/            # Tauri desktop app (experimental)
-├── crates/             # 24 Rust crates (migration target)
+├── crates/             # 24 Rust crates
 ├── configs/            # Runtime configuration JSON
 ├── docs/               # Documentation
-├── tests/              # Test suites (unit, integration, dry-run)
 ├── scripts/            # Utility scripts
 ├── tools/              # Lint and dev tools
 ├── bazel/              # Bazel build rules
@@ -254,16 +238,6 @@ The agent emits events via `event_queue`:
 ---
 
 ## Development
-
-### Python
-
-```bash
-uv sync
-uv run ruff check .
-uv run ruff format --check .
-uv run ruff format .    # auto-fix formatting
-uv run pytest
-```
 
 ### Frontend
 
@@ -283,35 +257,9 @@ cargo test --workspace
 cargo fmt --all --check
 ```
 
-### Backend
-
-```bash
-uv run uvicorn main:app --host ::1 --port 7860
-```
-
 ---
 
-## Adding Built-in Tools
 
-Edit `agent/core/tools.py`:
-
-```python
-def create_builtin_tools() -> list[ToolSpec]:
-    return [
-        ToolSpec(
-            name="your_tool",
-            description="What your tool does",
-            parameters={
-                "type": "object",
-                "properties": {
-                    "param": {"type": "string", "description": "Parameter description"}
-                },
-                "required": ["param"]
-            },
-            handler=your_async_handler
-        ),
-    ]
-```
 
 ## Adding MCP Servers
 

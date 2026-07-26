@@ -34,7 +34,7 @@ devcontainer exec --workspace-folder . cargo test
 ### What it does
 
 1. Builds the `Dockerfile` with all tooling.
-2. Runs `post_install.py` to:
+2. Runs setup to:
    - Set up persistent shell history (mounted volume).
    - Configure Git (autocrlf=input, pull.rebase, safe.directory, LFS).
    - Setup Cargo config (git-fetch-with-cli, sparse protocol).

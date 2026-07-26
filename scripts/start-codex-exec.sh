@@ -36,7 +36,7 @@ case "$MODE" in
       --exclude target/ \
       --exclude .git/ \
       --exclude node_modules/ \
-      --exclude .venv/ \
+
       "$REPO_DIR/" "$TARGET:sentinel/"
     ssh -i "$SSH_KEY" "$TARGET" \
       "cd sentinel && cargo build --release && ./target/release/sentinel server start --port $DAEMON_PORT"

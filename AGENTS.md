@@ -1,21 +1,14 @@
 # Agent Notes
 
-## Local Dev Servers
+## Running the Agent
 
-- Agent (CLI): build with `cargo install --path crates/sentinel-cli` then run `sentinel ai`.
-- Frontend: from `frontend/`, run `npm ci` if dependencies are missing, then `npm run dev`.
-- Backend: from `backend/`, run `uv run uvicorn main:app --host ::1 --port 7860`.
-- Frontend URL: http://localhost:5173/
-- Backend health check: `curl -g http://[::1]:7860/api`
-- Frontend proxy health check: `curl http://localhost:5173/api`
+- **One command:** `cargo run -- ai` — builds and launches the Rust-native interactive agent.
+- Or build once: `cargo install --path crates/sentinel-cli` then `sentinel ai`.
+- Vite frontend (optional): from `frontend/`, run `npm ci` then `npm run dev`.
 
-Notes:
+## Configuration
 
-- Vite proxies `/api` and `/auth` to `http://localhost:7860`.
-- If `127.0.0.1:7860` is already owned by another local process, binding the backend to `::1` lets the Vite proxy resolve `localhost` cleanly.
-- Prefer `npm ci` over `npm install` for setup, since `npm install` may rewrite `frontend/package-lock.json` metadata depending on npm version.
 - Non-local LLM calls use `https://router.sentinel-ai/v1` with the active Sentinel AI user's token. Web sessions and the CLI default to GLM 5.2.
-- When asked to start the local server, export the GitHub CLI token first with `export GITHUB_TOKEN="$(gh auth token)"`.
 
 ## Development Checks
 
