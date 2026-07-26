@@ -2,10 +2,12 @@ use anyhow::Result;
 use crossterm::event::{self, Event, KeyCode, KeyEventKind, KeyModifiers};
 use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
-    style::{Color, Style},
-    widgets::{Block, BorderType, Borders, Paragraph, Wrap},
+    style::{Color, Style, Stylize},
+    text::{Line, Span},
+    widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap},
     Frame, Terminal,
 };
+use fastrand;
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 
@@ -13,9 +15,11 @@ use crate::{
     app_event::AppEvent,
     app_event_sender::AppEventSender,
     app_server_session::AppServerSession,
-    chatwidget::ChatWidget,
+    chatwidget::{ChatWidget, DisplayEvent},
     display,
     model_picker::ModelPicker,
+    provider_picker::{PickerPhase, ProviderPicker},
+    theme::{self, ThemeConfig},
 };
 
 #[derive(PartialEq)]
@@ -23,6 +27,7 @@ enum InputMode {
     Normal,
     Editing,
     ModelPicker,
+    SearchCommands,
 }
 
 #[derive(PartialEq)]
@@ -31,8 +36,30 @@ enum Overlay {
     Help,
     #[allow(dead_code)]
     Plan,
-    #[allow(dead_code)]
     Approval,
+}
+
+struct BootState {
+    phase: BootPhase,
+    boot_index: usize,
+    particles: Vec<Particle>,
+    tick: u32,
+}
+
+enum BootPhase {
+    Particles,
+    Boot,
+    Done,
+}
+
+struct Particle {
+    x: i32,
+    y: i32,
+    char_: String,
+    age: u32,
+    max_age: u32,
+    #[allow(dead_code)]
+    col: Color,
 }
 
 pub struct App {
@@ -43,28 +70,48 @@ pub struct App {
     input: String,
     mode: InputMode,
     model: String,
+    #[allow(dead_code)]
     provider_name: String,
     should_quit: bool,
     model_picker: ModelPicker,
+    provider_picker: ProviderPicker,
     processing: bool,
-    boot_visible: bool,
+    boot: BootState,
+    #[allow(dead_code)]
     tool_count: usize,
     overlay: Overlay,
     yolo_mode: bool,
+    theme: ThemeConfig,
+    session_id: String,
+    turn_count: usize,
+    approval_selected_yes: bool,
+    suggestion_cursor: usize,
 }
+
+const SLASH_COMMANDS: &[(&str, &str)] = &[
+    ("/model", "Switch model"),
+    ("/theme", "Switch theme (dark | high-contrast | cyber)"),
+    ("/compact", "Compact conversation context"),
+    ("/new", "Start a new session"),
+    ("/undo", "Undo last turn"),
+    ("/help", "Show available commands"),
+    ("/yolo", "Toggle auto-approve mode"),
+    ("/status", "Current model & stats"),
+    ("/quit", "Exit"),
+];
 
 impl App {
     pub async fn new() -> Result<Self> {
         let (tx, rx) = mpsc::unbounded_channel();
         let sender = AppEventSender::new(tx);
         let server = Arc::new(AppServerSession::new()?);
-        let models = server.available_models();
         let default_model = server.default_model();
-        let model_picker = ModelPicker::new(models);
+        let model_picker = ModelPicker::new();
         let config = server.config();
         let provider_name = config.providers().first()
             .map(|p| p.name.clone())
             .unwrap_or_default();
+        let sid = format!("{:08x}", fastrand::u32(..));
 
         Ok(Self {
             sender,
@@ -77,11 +124,22 @@ impl App {
             provider_name,
             should_quit: false,
             model_picker,
+            provider_picker: ProviderPicker::new(),
             processing: false,
-            boot_visible: true,
+            boot: BootState {
+                phase: BootPhase::Particles,
+                boot_index: 0,
+                particles: Vec::new(),
+                tick: 0,
+            },
             tool_count: 0,
             overlay: Overlay::None,
             yolo_mode: false,
+            theme: theme::dark_theme(),
+            session_id: sid,
+            turn_count: 0,
+            approval_selected_yes: false,
+            suggestion_cursor: 0,
         })
     }
 
@@ -114,14 +172,15 @@ impl App {
             AppEvent::UserInput(text) => {
                 let server = self.server.clone();
                 let sender = self.sender.clone();
+                let chat = self.chat.clone();
 
                 self.processing = true;
-                self.boot_visible = false;
+                self.boot.phase = BootPhase::Done;
                 self.overlay = Overlay::None;
 
                 {
-                    let mut chat = self.chat.lock().await;
-                    chat.append(sentinel_ai_exec::ThreadEvent::new(
+                    let mut c = chat.lock().await;
+                    c.append(sentinel_ai_exec::ThreadEvent::new(
                         "user_message",
                         serde_json::json!({ "text": text }),
                     ));
@@ -159,22 +218,44 @@ impl App {
             AppEvent::StreamChunk(_) => {}
             AppEvent::StreamEnd => {
                 self.processing = false;
+                self.turn_count += 1;
             }
             AppEvent::ModelSelected(model) => {
                 self.model = model;
                 self.model_picker.hide();
                 self.mode = InputMode::Normal;
-                self.boot_visible = false;
+                self.boot.phase = BootPhase::Done;
                 let mut chat = self.chat.lock().await;
                 chat.append(sentinel_ai_exec::ThreadEvent::new(
                     "thinking",
                     serde_json::json!({ "text": format!("Switched to model: {}", self.model) }),
                 ));
             }
+            AppEvent::ProviderModelSelected(model_id, _api_key, _base_url) => {
+                self.model = model_id.clone();
+                self.provider_picker.phase = PickerPhase::Done;
+                self.boot.phase = BootPhase::Done;
+                let mut chat = self.chat.lock().await;
+                chat.append(sentinel_ai_exec::ThreadEvent::new(
+                    "thinking",
+                    serde_json::json!({ "text": format!("Using model: {}", model_id) }),
+                ));
+            }
             AppEvent::ClearChat => {
                 let mut chat = self.chat.lock().await;
                 chat.clear();
-                self.boot_visible = true;
+                self.boot.phase = BootPhase::Particles;
+                self.boot.boot_index = 0;
+                self.boot.tick = 0;
+                self.boot.particles.clear();
+            }
+            AppEvent::ThemeChanged(name) => {
+                self.theme = theme::get_theme(name.as_str());
+                let mut chat = self.chat.lock().await;
+                chat.append(sentinel_ai_exec::ThreadEvent::new(
+                    "thinking",
+                    serde_json::json!({ "text": format!("Theme: {}", name) }),
+                ));
             }
             AppEvent::Shutdown => {
                 self.should_quit = true;
@@ -203,19 +284,31 @@ impl App {
                     }
                 }
             }
-            InputMode::Editing => {
+            InputMode::Editing | InputMode::SearchCommands => {
                 if let Event::Key(key_event) = key {
                     if key_event.kind != KeyEventKind::Press {
                         return;
                     }
                     match key_event.code {
                         KeyCode::Enter => {
+                        if !self.input.is_empty() && self.input.starts_with('/') {
+                            if self.mode == InputMode::SearchCommands && !self.filtered_suggestions().is_empty() {
+                                let sug = self.filtered_suggestions();
+                                let cmd = sug[self.suggestion_cursor.min(sug.len() - 1)].0;
+                                self.input = format!("{} ", cmd);
+                            }
+                            let input_buf = self.input.clone();
+                            self.handle_slash_command(&input_buf).await;
+                                self.input.clear();
+                                self.mode = InputMode::Normal;
+                                return;
+                            }
                             let text = self.input.trim().to_string();
                             if !text.is_empty() {
                                 if text.starts_with('/') {
                                     self.handle_slash_command(&text).await;
                                 } else {
-                                    self.boot_visible = false;
+                                    self.boot.phase = BootPhase::Done;
                                     self.overlay = Overlay::None;
                                     self.sender.send(AppEvent::UserInput(text));
                                 }
@@ -228,6 +321,31 @@ impl App {
                         }
                         KeyCode::Backspace => {
                             self.input.pop();
+                        }
+                        KeyCode::Tab => {
+                            let sug = self.filtered_suggestions();
+                            if !sug.is_empty() {
+                                let idx = self.suggestion_cursor.min(sug.len() - 1);
+                                let cmd = sug[idx].0;
+                                self.input = format!("{} ", cmd);
+                                self.suggestion_cursor = 0;
+                            }
+                        }
+                        KeyCode::Up => {
+                            if self.mode == InputMode::SearchCommands {
+                                let sug = self.filtered_suggestions();
+                                if !sug.is_empty() {
+                                    self.suggestion_cursor = self.suggestion_cursor.saturating_sub(1);
+                                }
+                            }
+                        }
+                        KeyCode::Down => {
+                            if self.mode == InputMode::SearchCommands {
+                                let sug = self.filtered_suggestions();
+                                if !sug.is_empty() && self.suggestion_cursor + 1 < sug.len() {
+                                    self.suggestion_cursor += 1;
+                                }
+                            }
                         }
                         KeyCode::Esc => {
                             self.input.clear();
@@ -247,6 +365,7 @@ impl App {
                     KeyCode::Char('i') | KeyCode::Enter => {
                         if !self.processing && self.overlay == Overlay::None {
                             self.mode = InputMode::Editing;
+                            self.suggestion_cursor = 0;
                         } else if self.overlay != Overlay::None {
                             self.overlay = Overlay::None;
                         }
@@ -275,12 +394,44 @@ impl App {
                         if !self.processing {
                             self.input.clear();
                             self.input.push('/');
-                            self.mode = InputMode::Editing;
+                            self.mode = InputMode::SearchCommands;
+                            self.suggestion_cursor = 0;
+                        }
+                    }
+                    KeyCode::Char('x') => {
+                        let mut chat = self.chat.lock().await;
+                        chat.toggle_tool_expand();
+                    }
+                    KeyCode::Char('y') | KeyCode::Char('Y') => {
+                        // Approve — handled in overlay context
+                    }
+                    KeyCode::Char('n') | KeyCode::Char('N') => {
+                        // Reject — handled in overlay context
+                    }
+                    KeyCode::Left => {
+                        if self.overlay == Overlay::Approval {
+                            self.approval_selected_yes = false;
+                        }
+                    }
+                    KeyCode::Right => {
+                        if self.overlay == Overlay::Approval {
+                            self.approval_selected_yes = true;
                         }
                     }
                     _ => {}
                 }
             }
+        }
+    }
+
+    fn filtered_suggestions(&self) -> Vec<(&'static str, &'static str)> {
+        if self.input.starts_with('/') && !self.input.contains(' ') {
+            SLASH_COMMANDS.iter()
+                .filter(|(cmd, _)| cmd.starts_with(&self.input))
+                .copied()
+                .collect()
+        } else {
+            vec![]
         }
     }
 
@@ -293,6 +444,28 @@ impl App {
                 self.model_picker.show();
                 self.mode = InputMode::ModelPicker;
             }
+            "/theme" => {
+                if let Some(name) = parts.get(1) {
+                    let name = *name;
+                    let valid = ["dark", "high-contrast", "cyber"].contains(&name);
+                    if valid {
+                        self.sender.send(AppEvent::ThemeChanged(name.to_string()));
+                        self.theme = theme::get_theme(name);
+                    } else {
+                        let mut chat = self.chat.lock().await;
+                        chat.append(sentinel_ai_exec::ThreadEvent::new(
+                            "error",
+                            serde_json::json!({ "message": format!("Unknown theme: {}. Options: dark, high-contrast, cyber", name) }),
+                        ));
+                    }
+                } else {
+                    let mut chat = self.chat.lock().await;
+                    chat.append(sentinel_ai_exec::ThreadEvent::new(
+                        "thinking",
+                        serde_json::json!({ "text": "Usage: /theme <dark|high-contrast|cyber>" }),
+                    ));
+                }
+            }
             "/new" => {
                 self.sender.send(AppEvent::ClearChat);
                 let model = self.model.clone();
@@ -300,19 +473,15 @@ impl App {
                 tokio::spawn(async move {
                     let _ = server.new_session(Some(&model)).await;
                 });
+                self.turn_count = 0;
             }
             "/undo" => {
                 let mut chat = self.chat.lock().await;
-                if chat.messages.len() >= 2 {
-                    chat.messages.pop();
-                    chat.messages.pop();
-                } else if !chat.messages.is_empty() {
-                    chat.messages.pop();
-                }
+                chat.pop_last_two();
                 chat.scroll_to_bottom();
             }
             "/help" => {
-                self.boot_visible = false;
+                self.boot.phase = BootPhase::Done;
                 self.overlay = if matches!(self.overlay, Overlay::Help) {
                     Overlay::None
                 } else {
@@ -332,11 +501,21 @@ impl App {
                 let mut chat = self.chat.lock().await;
                 chat.append(sentinel_ai_exec::ThreadEvent::new(
                     "thinking",
-                    serde_json::json!({ "text": format!("Model: {} | Messages: {} | YOLO: {}", self.model, chat_len, if self.yolo_mode { "ON" } else { "OFF" }) }),
+                    serde_json::json!({ "text": format!("Model: {} | Messages: {} | Turn: {} | Session: {} | YOLO: {} | Theme: {}",
+                        self.model, chat_len, self.turn_count, self.session_id,
+                        if self.yolo_mode { "ON" } else { "OFF" },
+                        self.theme.name) }),
+                ));
+            }
+            "/compact" => {
+                let mut chat = self.chat.lock().await;
+                chat.append(sentinel_ai_exec::ThreadEvent::new(
+                    "thinking",
+                    serde_json::json!({ "text": "Compacting context..." }),
                 ));
             }
             "/local" => {
-                self.boot_visible = false;
+                self.boot.phase = BootPhase::Done;
                 let model = parts.get(1).map(|s| s.to_string());
                 self.run_local_setup(model).await;
             }
@@ -359,7 +538,7 @@ impl App {
 
         chat.lock().await.append(sentinel_ai_exec::ThreadEvent::new(
             "thinking",
-            serde_json::json!({ "text": "🔍 Detecting system..." }),
+            serde_json::json!({ "text": "Detecting system..." }),
         ));
 
         let info = spawn_blocking(crate::local_model::detect_system).await.unwrap_or_else(|_| crate::local_model::SystemInfo::default());
@@ -373,14 +552,14 @@ impl App {
         if !info.has_ollama {
             chat.lock().await.append(sentinel_ai_exec::ThreadEvent::new(
                 "thinking",
-                serde_json::json!({ "text": "⬇️  Ollama not found. Downloading and installing..." }),
+                serde_json::json!({ "text": "Ollama not found. Downloading and installing..." }),
             ));
             match spawn_blocking(crate::local_model::install_ollama).await {
                 Ok(msg) => {
                     let msg_text = msg.unwrap_or_else(|e| format!("Install warning: {}", e));
                     chat.lock().await.append(sentinel_ai_exec::ThreadEvent::new(
                         "thinking",
-                        serde_json::json!({ "text": format!("✅ {}", msg_text) }),
+                        serde_json::json!({ "text": format!("{}", msg_text) }),
                     ));
                 }
                 Err(e) => {
@@ -395,7 +574,7 @@ impl App {
 
         chat.lock().await.append(sentinel_ai_exec::ThreadEvent::new(
             "thinking",
-            serde_json::json!({ "text": "🔄 Ensuring Ollama is running..." }),
+            serde_json::json!({ "text": "Ensuring Ollama is running..." }),
         ));
 
         if let Err(e) = spawn_blocking(crate::local_model::ensure_ollama_running).await.unwrap_or(Err(anyhow::anyhow!("blocking error"))) {
@@ -424,12 +603,12 @@ impl App {
         if existing.iter().any(|m| m.as_str().starts_with(&prefix)) {
             chat.lock().await.append(sentinel_ai_exec::ThreadEvent::new(
                 "completed",
-                serde_json::json!({ "text": format!("✅ Model `{}` already pulled. Ready!", model_name) }),
+                serde_json::json!({ "text": format!("Model `{}` already pulled. Ready!", model_name) }),
             ));
         } else {
             chat.lock().await.append(sentinel_ai_exec::ThreadEvent::new(
                 "thinking",
-                serde_json::json!({ "text": format!("📦 Pulling `{}` (this may take a while)...", model_name) }),
+                serde_json::json!({ "text": format!("Pulling `{}` (this may take a while)...", model_name) }),
             ));
             let model_name_for_display = model_name.clone();
             let pull_result = spawn_blocking(move || crate::local_model::pull_model(&model_name)).await;
@@ -442,35 +621,32 @@ impl App {
         }
     }
 
-    fn draw(&self, f: &mut Frame) {
+    fn draw(&mut self, f: &mut Frame) {
         let area = f.size();
 
-        if self.boot_visible {
+        // Provider picker phase
+        if !self.provider_picker.finished() {
+            self.provider_picker.render(f, area, &self.theme);
+            return;
+        }
+
+        // Boot phase
+        if matches!(self.boot.phase, BootPhase::Particles | BootPhase::Boot) {
             self.draw_boot_screen(f, area);
             return;
         }
 
-        let (chat_area, input_area, status_area) = if matches!(self.overlay, Overlay::None) {
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Min(3),
-                    Constraint::Length(3),
-                    Constraint::Length(1),
-                ])
-                .split(area);
-            (chunks[0], chunks[1], chunks[2])
-        } else {
-            let chunks = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints([
-                    Constraint::Min(3),
-                    Constraint::Length(3),
-                    Constraint::Length(1),
-                ])
-                .split(area);
-            (chunks[0], chunks[1], chunks[2])
-        };
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([
+                Constraint::Min(3),
+                Constraint::Length(3),
+                Constraint::Length(1),
+            ])
+            .split(area);
+        let chat_area = chunks[0];
+        let input_area = chunks[1];
+        let status_area = chunks[2];
 
         self.draw_chat(f, chat_area);
         self.draw_input(f, input_area);
@@ -483,71 +659,222 @@ impl App {
             Overlay::None => {}
         }
 
-        self.model_picker.render(f, area);
+        self.model_picker.render(f, area, &self.theme);
     }
 
-    fn draw_boot_screen(&self, f: &mut Frame, area: Rect) {
-        let lines = display::boot_screen_lines(&self.model, &self.provider_name, self.tool_count);
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(Color::Rgb(80, 160, 255)));
-        let para = Paragraph::new(lines)
-            .block(block)
-            .wrap(Wrap { trim: false });
-        f.render_widget(para, area);
+    fn draw_boot_screen(&mut self, f: &mut Frame, area: Rect) {
+        let c = &self.theme.colors;
+        let boot = &mut self.boot;
+
+        match boot.phase {
+            BootPhase::Particles => {
+                boot.tick += 1;
+                if boot.tick % 3 == 0 {
+                    boot.particles.retain(|p| p.age < p.max_age);
+                    let chars = self.theme.particle_chars;
+                    while boot.particles.len() < 15 {
+                        boot.particles.push(Particle {
+                            x: fastrand::i32(0..30),
+                            y: fastrand::i32(0..5),
+                            char_: chars[fastrand::usize(0..chars.len())].to_string(),
+                            age: 0,
+                            max_age: 8 + fastrand::u32(0..14),
+                            col: random_particle_color(),
+                        });
+                    }
+                }
+                for p in &mut boot.particles {
+                    p.age += 1;
+                }
+                if boot.tick > 30 {
+                    boot.phase = BootPhase::Boot;
+                    boot.boot_index = 0;
+                }
+
+                let mut lines: Vec<Line> = Vec::new();
+                for y in 0..5 {
+                    let mut row = String::new();
+                    for x in 0..30 {
+                        let p = boot.particles.iter().find(|p| p.x == x && p.y == y);
+                        match p {
+                            Some(p) => {
+                                row.push_str(&p.char_);
+                            }
+                            None => row.push(' '),
+                        }
+                    }
+                    lines.push(Line::from(Span::styled(row, Style::default().fg(c.accent))));
+                }
+
+                lines.push(Line::from(""));
+                for line in display::WORDMARK_LINES {
+                    lines.push(Line::from(Span::styled(*line, Style::default().fg(c.accent).bold())));
+                }
+                lines.push(Line::from(""));
+                lines.push(Line::from(Span::styled("Press any key to skip", Style::default().fg(c.muted))));
+
+                let block = Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::default().fg(c.border));
+                let para = Paragraph::new(lines).block(block).wrap(Wrap { trim: false });
+                f.render_widget(para, area);
+            }
+            BootPhase::Boot => {
+                boot.tick += 1;
+                if boot.tick % 8 == 0 && boot.boot_index < display::BOOT_LINES.len() {
+                    boot.boot_index += 1;
+                }
+                if boot.boot_index >= display::BOOT_LINES.len() && boot.tick > 60 {
+                    boot.phase = BootPhase::Done;
+                }
+
+                let mut lines: Vec<Line> = Vec::new();
+
+                // WORDMARK
+                for line in display::WORDMARK_LINES {
+                    lines.push(Line::from(Span::styled(*line, Style::default().fg(c.accent).bold())));
+                }
+
+                lines.push(Line::from(""));
+                lines.push(Line::from(vec![
+                    Span::styled("◆ ", Style::default().fg(c.accent).bold()),
+                    Span::styled("sentinel ai", Style::default().fg(c.accent).bold()),
+                    Span::styled("  platform engineering agent  v0.1", Style::default().fg(c.muted)),
+                ]));
+                lines.push(Line::from(""));
+
+                let shown = if boot.boot_index < display::BOOT_LINES.len() {
+                    &display::BOOT_LINES[..boot.boot_index]
+                } else {
+                    display::BOOT_LINES
+                };
+
+                for (i, line) in shown.iter().enumerate() {
+                    let is_last = i == display::BOOT_LINES.len() - 1 && boot.boot_index >= display::BOOT_LINES.len();
+                    let (prefix, color) = if is_last {
+                        ("✓ ", c.success)
+                    } else {
+                        ("  ", c.muted)
+                    };
+                    lines.push(Line::from(vec![
+                        Span::styled(prefix, Style::default().fg(color)),
+                        Span::styled(*line, Style::default().fg(if is_last { c.foreground } else { c.muted })),
+                    ]));
+                }
+
+                let block = Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::default().fg(c.border));
+                let para = Paragraph::new(lines).block(block).wrap(Wrap { trim: false });
+                f.render_widget(para, area);
+            }
+            BootPhase::Done => {}
+        }
     }
 
     fn draw_chat(&self, f: &mut Frame, area: Rect) {
         let chat = self.chat.sync_lock();
-        let max_height = area.height.saturating_sub(2) as usize;
-        let visible = chat.visible_messages(max_height);
+        let c = &self.theme.colors;
 
-        let lines: Vec<ratatui::text::Line> = visible
-            .iter()
-            .flat_map(|msg| {
-                match msg.event_type.as_str() {
-                    "user_message" => {
-                        vec![ratatui::text::Line::from(
-                            ratatui::text::Span::styled(
-                                format!(">> {}", msg.text),
-                                Style::default().fg(Color::Cyan),
-                            ),
-                        )]
-                    }
-                    "completed" | "stream_chunk" => {
-                        display::markdown_to_lines(&msg.text)
-                    }
-                    "thinking" => {
-                        display::thinking_indicator(&msg.text)
-                    }
-                    "tool_call" => {
-                        vec![display::tool_call_line(&msg.text, "")]
-                    }
-                    "error" => {
-                        vec![ratatui::text::Line::from(
-                            ratatui::text::Span::styled(
+        let mut lines: Vec<Line> = Vec::new();
+
+        // Determine spinner
+        let spinner = if self.processing {
+            let frame = (self.boot.tick / 3) as usize % self.theme.spinner_frames.len();
+            self.theme.spinner_frames[frame]
+        } else {
+            ""
+        };
+
+        for event in chat.visible_events(area.height.saturating_sub(2) as usize) {
+            match event {
+                DisplayEvent::Message(msg) => {
+                    match msg.event_type.as_str() {
+                        "user_message" => {
+                            lines.push(Line::from(Span::styled(
+                                format!("  You  {}", msg.text),
+                                Style::default().fg(c.user_fg),
+                            )));
+                        }
+                        "completed" | "stream_chunk" => {
+                            lines.extend(display::markdown_to_lines(&msg.text));
+                        }
+                        "thinking" => {
+                            lines.extend(display::thinking_indicator(&msg.text));
+                        }
+                        "error" => {
+                            lines.push(Line::from(Span::styled(
                                 format!("! {}", msg.text),
-                                Style::default().fg(Color::Red),
-                            ),
-                        )]
-                    }
-                    _ => {
-                        vec![ratatui::text::Line::from(
-                            ratatui::text::Span::styled(
+                                Style::default().fg(c.error),
+                            )));
+                        }
+                        _ => {
+                            lines.push(Line::from(Span::styled(
                                 msg.text.as_str(),
                                 Style::default().fg(Color::White),
-                            ),
-                        )]
+                            )));
+                        }
                     }
                 }
-            })
-            .collect();
+                DisplayEvent::ToolCall(tc) => {
+                    lines.extend(display::render_tool_call_card(tc, c, spinner));
+                }
+                DisplayEvent::Plan { items } => {
+                    lines.extend(display::render_plan_view(items, c));
+                }
+                DisplayEvent::Compacted { tokens_before, tokens_after } => {
+                    lines.push(display::compact_line(*tokens_before, *tokens_after));
+                }
+                DisplayEvent::TurnComplete { summary, turn_count } => {
+                    lines.push(display::turn_complete_line(summary, *turn_count));
+                }
+                DisplayEvent::Interrupted => {
+                    lines.push(Line::from(Span::styled(
+                        "■ Interrupted",
+                        Style::default().fg(c.warning),
+                    )));
+                }
+                DisplayEvent::Readied => {
+                    lines.push(Line::from(vec![
+                        Span::styled("■ ", Style::default().fg(c.success)),
+                        Span::styled("Agent ready", Style::default().fg(c.muted)),
+                    ]));
+                }
+                DisplayEvent::Step { content } => {
+                    lines.push(Line::from(vec![
+                        Span::styled("✔ ", Style::default().fg(c.success)),
+                        Span::styled(content.as_str(), Style::default().fg(c.muted)),
+                    ]));
+                }
+                DisplayEvent::Approval { tool, args } => {
+                    lines.extend(display::render_approval_prompt(tool, args, self.approval_selected_yes, c));
+                }
+                DisplayEvent::Observation { content } => {
+                    lines.push(display::observation_line(content));
+                }
+                DisplayEvent::ToolLog { tool, message } => {
+                    lines.push(Line::from(vec![
+                        Span::styled(format!(" {} ", tool), Style::default().fg(c.muted)),
+                        Span::styled(message.as_str(), Style::default().fg(c.muted)),
+                    ]));
+                }
+            }
+        }
+
+        // Streaming text
+        if chat.is_streaming() && !chat.streaming_text().is_empty() {
+            lines.push(Line::from(Span::styled(
+                chat.streaming_text(),
+                Style::default().fg(c.assistant_fg),
+            )));
+        }
 
         let block = Block::default()
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(Color::Cyan))
+            .border_style(Style::default().fg(c.border))
             .title(format!(" Sentinel AI — {} ", self.model))
             .title_alignment(ratatui::layout::Alignment::Center);
 
@@ -559,21 +886,20 @@ impl App {
     }
 
     fn draw_input(&self, f: &mut Frame, area: Rect) {
-        let prefix = match self.mode {
-            InputMode::Editing => ">> ",
-            InputMode::Normal => ": ",
-            InputMode::ModelPicker => "",
-        };
+        let c = &self.theme.colors;
 
-        let display_text = if self.mode == InputMode::Editing {
+        let is_editing = self.mode == InputMode::Editing || self.mode == InputMode::SearchCommands;
+        let prefix = if is_editing { ">> " } else { ": " };
+
+        let display_text = if is_editing {
             format!("{}{}", prefix, self.input)
         } else if self.processing {
             format!("{}Processing... press Esc to cancel", prefix)
         } else {
-            format!("{}Press i or Enter to type | /help | /yolo | /status | q to quit", prefix)
+            format!("{}Press i or Enter to type | /help | /status | q to quit", prefix)
         };
 
-        let input_style = if self.mode == InputMode::Editing {
+        let input_style = if is_editing {
             Style::default().fg(Color::White).bg(Color::Black)
         } else if self.processing {
             Style::default().fg(Color::Yellow).bg(Color::Black)
@@ -582,9 +908,9 @@ impl App {
         };
 
         let border_style = match self.mode {
-            InputMode::Editing => Style::default().fg(Color::Green),
+            InputMode::Editing | InputMode::SearchCommands => Style::default().fg(c.accent),
             _ if self.processing => Style::default().fg(Color::Yellow),
-            _ => Style::default().fg(Color::DarkGray),
+            _ => Style::default().fg(c.dim_border),
         };
 
         let block = Block::default()
@@ -599,7 +925,45 @@ impl App {
 
         f.render_widget(paragraph, area);
 
-        if self.mode == InputMode::Editing {
+        // Draw suggestion panel above input if showing slash commands
+        if self.mode == InputMode::SearchCommands && self.input.starts_with('/') {
+            let sug = self.filtered_suggestions();
+            if !sug.is_empty() {
+                let sug_height = sug.len().min(8) as u16 + 2;
+                let sug_area = Rect {
+                    x: area.x + 1,
+                    y: area.y.saturating_sub(sug_height),
+                    width: area.width.saturating_sub(2).min(50),
+                    height: sug_height,
+                };
+
+                let mut sug_lines: Vec<Line> = Vec::new();
+                for (i, (cmd, desc)) in sug.iter().enumerate() {
+                    let active = i == self.suggestion_cursor.min(sug.len() - 1);
+                    let prefix = if active { "▸ " } else { "  " };
+                    let cmd_style = if active {
+                        Style::default().fg(c.accent).bold()
+                    } else {
+                        Style::default().fg(c.foreground)
+                    };
+                    sug_lines.push(Line::from(vec![
+                        Span::styled(prefix, Style::default().fg(if active { c.accent } else { c.border })),
+                        Span::styled(format!("{:<12}", cmd), cmd_style),
+                        Span::styled(*desc, Style::default().fg(c.muted)),
+                    ]));
+                }
+
+                let sug_block = Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .border_style(Style::default().fg(c.border));
+                let sug_para = Paragraph::new(sug_lines).block(sug_block);
+                f.render_widget(Clear, sug_area);
+                f.render_widget(sug_para, sug_area);
+            }
+        }
+
+        if is_editing {
             let cursor_x = (prefix.len() + self.input.len()) as u16;
             let cursor_y = area.y + 1;
             f.set_cursor(
@@ -614,9 +978,17 @@ impl App {
         let mode_str = match self.mode {
             InputMode::Normal => "NORMAL",
             InputMode::Editing => "EDIT",
+            InputMode::SearchCommands => "CMD",
             InputMode::ModelPicker => "PICKER",
         };
-        let (text, style) = display::status_bar_text(mode_str, &self.model, chat_len, self.processing);
+        let (text, style) = display::status_bar_text(
+            mode_str,
+            &self.model,
+            chat_len,
+            self.processing,
+            &self.session_id,
+            self.turn_count,
+        );
         let paragraph = Paragraph::new(ratatui::text::Line::from(
             ratatui::text::Span::styled(text, style),
         ))
@@ -632,11 +1004,10 @@ impl App {
             height: area.height * 2 / 3,
         };
         let lines = display::help_lines();
-        display::render_panel(f, overlay, " Help ", lines, Color::Cyan);
+        display::render_panel(f, overlay, " Help ", lines, self.theme.colors.info);
     }
 
     fn draw_plan_overlay(&self, _f: &mut Frame, _area: Rect) {
-        // Placeholder — plan overlay will be rendered when plan tool is active
     }
 
     fn draw_approval_overlay(&self, f: &mut Frame, area: Rect) {
@@ -647,8 +1018,20 @@ impl App {
             height: area.height / 3,
         };
         let lines = display::approval_lines(&[], self.yolo_mode);
-        display::render_panel(f, overlay, " Approval ", lines, Color::Yellow);
+        display::render_panel(f, overlay, " Approval ", lines, self.theme.colors.warning);
     }
+}
+
+fn random_particle_color() -> Color {
+    let colors = [
+        Color::Rgb(249, 115, 22),
+        Color::Rgb(14, 165, 233),
+        Color::Rgb(167, 139, 250),
+        Color::Rgb(34, 197, 94),
+        Color::Rgb(226, 232, 240),
+        Color::Rgb(100, 116, 139),
+    ];
+    colors[fastrand::usize(0..colors.len())]
 }
 
 trait SyncLock<T> {

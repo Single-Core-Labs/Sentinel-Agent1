@@ -2620,6 +2620,7 @@ dependencies = [
  "anyhow",
  "colored",
  "crossterm",
+ "fastrand",
  "futures",
  "ratatui",
  "reqwest",

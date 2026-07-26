@@ -7,6 +7,8 @@ pub enum AppEvent {
     StreamChunk(String),
     StreamEnd,
     ModelSelected(String),
+    ProviderModelSelected(String, String, String),
     ClearChat,
+    ThemeChanged(String),
     Shutdown,
 }
