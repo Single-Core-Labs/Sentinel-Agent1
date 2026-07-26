@@ -2,9 +2,10 @@
 
 ## Running the Agent
 
-- **One command:** `cargo run -- ai` — builds and launches the Rust-native interactive agent.
+- **One command:** `cargo run --bin sentinel -- ai` — builds and launches the Rust-native interactive agent.
 - Or build once: `cargo install --path crates/sentinel-cli` then `sentinel ai`.
 - Vite frontend (optional): from `frontend/`, run `npm ci` then `npm run dev`.
+- Before running, ensure a `.env` file exists in the repo root with at least one LLM provider key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.) and `GITHUB_TOKEN`.
 
 ## Configuration
 
