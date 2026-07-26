@@ -46,11 +46,4 @@ verbose = false
 # url = "http://localhost:3000/mcp"
 # headers = { Authorization = "Bearer your_github_token_here" }
 
-# [[mcp_servers]]
-# id = "custom"
-# name = "Custom MCP"
-# [mcp_servers.transport]
-# type = "stdio"
-# command = "python"
-# args = ["-m", "my_mcp_server"]
-# env = { MY_VAR = "value" }
+
