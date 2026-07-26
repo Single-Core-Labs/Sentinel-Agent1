@@ -15,6 +15,9 @@ export interface ThemeColors {
   assistantFg: string;
   approvalBorder: string;
   spinner: string;
+  agentsPanelBg: string;
+  agentsRunning: string;
+  agentsDone: string;
 }
 
 export interface ThemeConfig {
@@ -43,6 +46,9 @@ const DARK: ThemeConfig = {
     assistantFg:   '#E2E8F0',
     approvalBorder:'#F59E0B',
     spinner:       '#F97316',
+    agentsPanelBg: '#1A1B2E',
+    agentsRunning: '#F97316',
+    agentsDone:    '#22C55E',
   },
   spinnerFrames: ['⠋','⠙','⠹','⠸','⠼','⠴','⠦','⠧','⠇','⠏'],
   particleChars: ['·','•','◦','∘','○','◌','◎','◉','◈','◆','◇','▪','▫','▸','▹'],
@@ -67,6 +73,9 @@ const HIGH_CONTRAST: ThemeConfig = {
     assistantFg:   '#FFFFFF',
     approvalBorder:'#FFAA00',
     spinner:       '#FFFF00',
+    agentsPanelBg: '#1A1A1A',
+    agentsRunning: '#FFFF00',
+    agentsDone:    '#00FF00',
   },
   spinnerFrames: ['|','/','-','\\'],
   particleChars: ['.','*','+','x','o','0','#','@','%','&'],
@@ -91,6 +100,9 @@ const CYBER: ThemeConfig = {
     assistantFg:   '#E0F0FF',
     approvalBorder:'#FFD600',
     spinner:       '#00FFD0',
+    agentsPanelBg: '#0A0A0A',
+    agentsRunning: '#00FFD0',
+    agentsDone:    '#00FF9F',
   },
   spinnerFrames: ['◐','◓','◑','◒'],
   particleChars: ['▓','▒','░','█','▄','▀','■','□','▪','▫'],

@@ -5,15 +5,19 @@ import type { ThemeConfig } from '../theme.js';
 // ── Slash commands ─────────────────────────────────────────────────
 
 const SLASH_COMMANDS = [
-  { command: '/model',   description: 'Switch model' },
-  { command: '/theme',   description: 'Switch theme (dark | high-contrast | cyber)' },
-  { command: '/compact', description: 'Compact conversation context' },
-  { command: '/new',     description: 'Start a new session' },
-  { command: '/resume',  description: 'Resume last session' },
-  { command: '/undo',    description: 'Undo last turn' },
-  { command: '/help',    description: 'Show available commands' },
-  { command: '/auth',    description: 'Update API key for current provider' },
-  { command: '/quit',    description: 'Exit' },
+  { command: '/agents',     description: 'Open sub-agent monitoring panel' },
+  { command: '/model',      description: 'Switch model' },
+  { command: '/theme',      description: 'Switch theme (dark | high-contrast | cyber)' },
+  { command: '/config',     description: 'Show current configuration' },
+  { command: '/keybindings',description: 'Show available keyboard shortcuts' },
+  { command: '/plugins',    description: 'List active plugins and MCP servers' },
+  { command: '/compact',    description: 'Compact conversation context' },
+  { command: '/new',        description: 'Start a new session' },
+  { command: '/resume',     description: 'Resume last session' },
+  { command: '/undo',       description: 'Undo last turn' },
+  { command: '/help',       description: 'Show available commands' },
+  { command: '/auth',       description: 'Update API key for current provider' },
+  { command: '/quit',       description: 'Exit' },
 ];
 
 interface Props {

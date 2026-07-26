@@ -19,7 +19,8 @@ export type DisplayItem =
   | { kind: 'compacted';    id: string; tokensBefore: number; tokensAfter: number }
   | { kind: 'observation';  id: string; content: string }
   | { kind: 'turn-complete';id: string; summary?: string; turnCount?: number }
-  | { kind: 'interrupted';  id: string };
+  | { kind: 'interrupted';  id: string }
+  | { kind: 'agent-event';  id: string; agentId: string; task?: string; status: 'forked'|'running'|'completed'|'error'; detail?: string; result?: string };
 
 export interface PlanItem {
   id: string;
@@ -234,6 +235,7 @@ function isItemStatic(item: DisplayItem, pendingApprovalId: string | null): bool
   if (item.kind === 'approval') return item.id !== pendingApprovalId;
   if (item.kind === 'plan') return item.items.every(i => i.status === 'completed');
   if (item.kind === 'processing') return false; 
+  if (item.kind === 'agent-event') return item.status === 'completed' || item.status === 'error';
   return true; 
 }
 
@@ -244,12 +246,17 @@ export function ChatView({
   const c = theme.colors;
 
   // 'x' key to expand focused tool output
-  useInput(useCallback((input: string) => {
+  // Ctrl+K to approve pending tool, Ctrl+Shift+K to reject
+  useInput(useCallback((input, key) => {
     if (input === 'x') {
       const last = [...items].reverse().find(i => i.kind === 'tool-call');
       if (last) onExpandTool(last.id);
     }
-  }, [items, onExpandTool]));
+    if (key.ctrl && (input === 'k' || input === 'K') && pendingApprovalId) {
+      const approval = [...items].reverse().find(i => i.kind === 'approval' && i.id === pendingApprovalId);
+      if (approval) onApprove(approval.id);
+    }
+  }, [items, onExpandTool, pendingApprovalId, onApprove]));
 
   const renderItem = (item: DisplayItem) => {
     switch (item.kind) {
@@ -344,6 +351,29 @@ export function ChatView({
         return (
           <Box key={item.id} marginBottom={1}>
             <Text color={c.warning}>■ Interrupted</Text>
+          </Box>
+        );
+
+      case 'agent-event':
+        const aeIcon = item.status === 'forked' ? '◈' : item.status === 'running' ? '▸' : item.status === 'completed' ? '✔' : '✘';
+        const aeColor = item.status === 'running' ? c.warning : item.status === 'completed' ? c.success : item.status === 'error' ? c.error : c.info;
+        return (
+          <Box key={item.id} flexDirection="column" marginBottom={1} paddingLeft={2}>
+            <Box>
+              <Text color={aeColor}>{aeIcon} </Text>
+              <Text color={c.accentAlt} bold>{item.agentId}</Text>
+              <Text color={c.muted}> {item.task ?? ''}</Text>
+            </Box>
+            {item.detail && (
+              <Box paddingLeft={4}>
+                <Text color={c.muted} dimColor>{item.detail}</Text>
+              </Box>
+            )}
+            {item.result && (
+              <Box paddingLeft={4}>
+                <Text color={item.status === 'error' ? c.error : c.success}>{item.result}</Text>
+              </Box>
+            )}
           </Box>
         );
 

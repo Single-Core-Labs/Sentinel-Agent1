@@ -9,7 +9,8 @@ export type AgentEventType =
   | 'assistant_chunk' | 'assistant_message' | 'assistant_stream_end'
   | 'tool_call' | 'tool_output' | 'tool_log' | 'tool_state_change'
   | 'approval_required' | 'turn_complete' | 'interrupted' | 'error'
-  | 'compacted' | 'plan_generated' | 'step_completed' | 'observation' | 'key_required';
+  | 'compacted' | 'plan_generated' | 'step_completed' | 'observation' | 'key_required'
+  | 'agent_forked' | 'agent_completed' | 'agent_progress' | 'agent_error';
 
 export interface AgentEvent {
   type: AgentEventType;

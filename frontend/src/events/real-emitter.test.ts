@@ -36,7 +36,7 @@ describe('RealEventEmitter — no silent failures', () => {
     delete process.env['OPENAI_API_KEY'];
     const emitter = new RealEventEmitter();
     emitter.start('openai/gpt-4o');
-    const event = await new Promise<import('./ipc-emitter.js').AgentEvent>((resolve, reject) => {
+    const event = await new Promise<import('./real-emitter.js').AgentEvent>((resolve, reject) => {
       const start = Date.now();
       const events: string[] = [];
       const timer = setInterval(() => {
@@ -55,7 +55,7 @@ describe('RealEventEmitter — no silent failures', () => {
       emitter.send('hello');
     });
     assert.equal(event.type, 'key_required');
-    assert.ok(event.data.message.includes('OPENAI_API_KEY'));
+    assert.ok((event.data?.['message'] as string | undefined)?.includes('OPENAI_API_KEY'));
   });
 
   test('provider throwing mid-request surfaces the real error message (regression: used to fall through to a generic message)', async () => {

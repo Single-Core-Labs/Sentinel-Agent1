@@ -20,7 +20,11 @@ export type AgentEventType =
   | 'plan_generated'
   | 'step_completed'
   | 'observation'
-  | 'key_required';
+  | 'key_required'
+  | 'agent_forked'
+  | 'agent_completed'
+  | 'agent_progress'
+  | 'agent_error';
 
 export interface AgentEvent {
   type: AgentEventType;
@@ -53,6 +57,16 @@ export class MockEventEmitter extends EventEmitter {
 
     const script: Step[] = [
       { type: 'ready', delay: 100 },
+
+      // Sub-agent fork demo
+      { type: 'agent_forked', data: { agentId: 'sa-1', task: 'Audit auth endpoints', parentId: 'main' }, delay: 200 },
+      { type: 'agent_forked', data: { agentId: 'sa-2', task: 'Scan DB for schema changes', parentId: 'main' }, delay: 100 },
+      { type: 'agent_progress', data: { agentId: 'sa-1', status: 'running', detail: 'Checking routes/auth/*.ts' }, delay: 300 },
+      { type: 'agent_progress', data: { agentId: 'sa-2', status: 'running', detail: 'Reading schema migration files' }, delay: 200 },
+      { type: 'agent_progress', data: { agentId: 'sa-1', status: 'running', detail: 'Verifying token validation middleware' }, delay: 400 },
+      { type: 'agent_completed', data: { agentId: 'sa-1', result: 'All auth endpoints use JWT — no issues found' }, delay: 300 },
+      { type: 'agent_progress', data: { agentId: 'sa-2', status: 'running', detail: 'Checking users table migration' }, delay: 250 },
+      { type: 'agent_completed', data: { agentId: 'sa-2', result: 'Found 3 unindexed foreign keys in schema' }, delay: 400 },
 
       // Turn 1: plan + tool calls
       { type: 'processing', data: { message: 'Thinking...' }, delay: 400 },

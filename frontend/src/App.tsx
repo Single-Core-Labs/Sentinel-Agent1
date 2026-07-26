@@ -11,12 +11,12 @@ import { ModelPicker, type ModelOption } from './components/model-picker.js';
 import { ChatView, type DisplayItem } from './components/chat-view.js';
 import { StatusBar } from './components/status-bar.js';
 import { InputBar } from './components/input-bar.js';
+import { AgentsPanel, type SubagentItem } from './components/agents-panel.js';
 
-type AppPhase = 'startup' | 'provider-picker' | 'model-picker' | 'main';
+type AppPhase = 'startup' | 'provider-picker' | 'model-picker' | 'agents-panel' | 'main';
 type Mode = 'plan' | 'executing' | 'idle' | 'key_required';
 
 const USE_MOCK = process.env['SENTINEL_MOCK'] === '1' || process.argv.includes('--mock');
-const USE_IPC = false; // Python IPC disabled
 
 let _counter = 0;
 const uid = (prefix = 'i') => `${prefix}-${++_counter}`;
@@ -37,12 +37,13 @@ export default function App() {
   const [missingKeyData, setMissingKeyData] = useState<{message: string, modelId: string, text: string} | null>(null);
   const [keyInput, setKeyInput]     = useState('');
   const [sessionId]               = useState(() => Math.random().toString(36).slice(2, 10));
+  const [subagents, setSubagents]  = useState<SubagentItem[]>([]);
   const { exit }                  = useApp();
 
   const theme: ThemeConfig = THEMES[themeName] ?? THEMES['dark']!;
 
-  // emitter ref — holds the live event source (mock, IPC, or direct)
-  type Emitter = MockEventEmitter | IPCEventEmitter | RealEventEmitter;
+  // emitter ref — holds the live event source (mock or direct)
+  type Emitter = MockEventEmitter | RealEventEmitter;
   const emitterRef    = useRef<Emitter | null>(null);
   const planRef       = useRef<PlanItem[]>([]);
   const toolMapRef    = useRef<Map<string, DisplayItem & { kind: 'tool-call' }>>(new Map());
@@ -258,6 +259,36 @@ export default function App() {
         setActive(null);
         setMode('idle');
         break;
+
+      case 'agent_forked': {
+        const agentId = d['agentId'] as string;
+        const task = d['task'] as string || '';
+        const parentId = d['parentId'] as string | undefined;
+        setSubagents(prev => [...prev.filter(a => a.agentId !== agentId), { id: uid('suba'), agentId, task, parentId, status: 'forked', timestamp: Date.now() }]);
+        setItems(p => [...p, { kind: 'agent-event', id: uid('agent'), agentId, task, status: 'forked' }]);
+        break;
+      }
+      case 'agent_progress': {
+        const agentId = d['agentId'] as string;
+        const status = (d['status'] as SubagentItem['status']) || 'running';
+        const detail = d['detail'] as string | undefined;
+        setSubagents(prev => prev.map(a => a.agentId === agentId ? { ...a, status, detail } : a));
+        break;
+      }
+      case 'agent_completed': {
+        const agentId = d['agentId'] as string;
+        const result = d['result'] as string || '';
+        setSubagents(prev => prev.map(a => a.agentId === agentId ? { ...a, status: 'completed', result } : a));
+        setItems(p => [...p, { kind: 'agent-event', id: uid('agent'), agentId, status: 'completed', result }]);
+        break;
+      }
+      case 'agent_error': {
+        const agentId = d['agentId'] as string;
+        const result = d['result'] as string || d['message'] as string || '';
+        setSubagents(prev => prev.map(a => a.agentId === agentId ? { ...a, status: 'error', result } : a));
+        setItems(p => [...p, { kind: 'agent-event', id: uid('agent'), agentId, status: 'error', result }]);
+        break;
+      }
     }
   }, []);
 
@@ -317,22 +348,97 @@ export default function App() {
         case '/model':
           setPhase('provider-picker');
           return;
+        case '/agents':
+          setPhase('agents-panel');
+          return;
+        case '/config':
+          setItems(p => [...p, {
+            kind: 'assistant', id: uid('cfg'), complete: true,
+            text: [
+              'Configuration:',
+              `  Theme:       ${themeName}`,
+              `  Model:       ${model ? `${model.provider}/${model.name}` : 'Not set'}`,
+              `  Turn:        ${turnCount}`,
+              `  Tokens:      ${tokenUsage.toLocaleString()}`,
+              `  Session:     ${sessionId}`,
+              `  Mode:        ${mode}`,
+              '',
+              'Use /theme <name> to change theme.',
+              'Use /model to change model.',
+              'Use /auth to update API key.',
+            ].join('\n'),
+          }]);
+          return;
+        case '/keybindings':
+          setItems(p => [...p, {
+            kind: 'assistant', id: uid('keys'), complete: true,
+            text: [
+              'Keybindings:',
+              '  Ctrl+C once     Interrupt current turn',
+              '  Ctrl+C twice    Exit (within 1.5s)',
+              '  Ctrl+K          Approve pending tool call',
+              '  x               Expand last tool output',
+              '  Tab             Autocomplete slash command',
+              '  ↑/↓             Navigate slash autocomplete',
+              '  Shift+Enter     Newline in input',
+              '  Esc             Close panel / cancel',
+              '  ← →            Switch approve/reject selection',
+              '  Y / N           Approve or reject (in approval prompt)',
+              '',
+              'Slash Commands:',
+              '  /agents       Open sub-agent monitoring panel',
+              '  /config       Show current configuration',
+              '  /keybindings  Show this list',
+              '  /plugins      Show active plugins and MCP servers',
+              '  /model        Change model',
+              '  /theme        Switch theme',
+              '  /compact      Compact context',
+              '  /undo         Undo last turn',
+              '  /resume       Resume last session',
+              '  /new          Start a new session',
+              '  /auth         Update API key',
+              '  /help         Show commands',
+              '  /quit         Exit',
+            ].join('\n'),
+          }]);
+          return;
+        case '/plugins':
+          setItems(p => [...p, {
+            kind: 'assistant', id: uid('plug'), complete: true,
+            text: [
+              'Plugins & MCP:',
+              '  Plugin system   sentinel-plugin-system (active)',
+              '  MCP client      sentinel-mcp (configured in sentinel.toml)',
+              '  Built-in tools: 18 tools (bash, read, write, edit, grep, glob, git, web_search, etc.)',
+              '  Sub-agent tool  fork_sub_agent (fork parallel tasks)',
+              '',
+              '  MCP servers are configured in sentinel.toml under [[mcp_servers]].',
+              '  Custom plugins can be registered via the plugin system API.',
+            ].join('\n'),
+          }]);
+          return;
         case '/help':
           setItems(p => [...p, {
             kind: 'assistant', id: uid('help'), complete: true,
             text: [
               'Commands:',
-              '  /theme <name>   Switch theme (dark | high-contrast | cyber)',
-              '  /model          Change model',
-              '  /new            Start a new session',
-              '  /compact        Compact context',
-              '  /undo           Undo last turn',
-              '  /resume         Resume last session',
-              '  /quit           Exit',
+              '  /agents       Open sub-agent monitoring panel',
+              '  /theme <name> Switch theme (dark | high-contrast | cyber)',
+              '  /model        Change model',
+              '  /config       Show current configuration',
+              '  /keybindings  Show available keyboard shortcuts',
+              '  /plugins      Show active plugins and MCP servers',
+              '  /new          Start a new session',
+              '  /compact      Compact context',
+              '  /undo         Undo last turn',
+              '  /resume       Resume last session',
+              '  /auth         Update API key',
+              '  /quit         Exit',
               '',
               'Keys:',
               '  Ctrl+C once     Interrupt current turn',
               '  Ctrl+C twice    Exit',
+              '  Ctrl+K          Approve pending tool call',
               '  x               Expand last tool output',
               '  Shift+Enter     Newline in input',
             ].join('\n'),
@@ -405,6 +511,9 @@ export default function App() {
       setActive(null);
       setMode('idle');
     }
+    if (key.ctrl && (input === 'k' || input === 'K') && pendingApproval) {
+      handleApprove(pendingApproval);
+    }
   });
 
   // ── Render ─────────────────────────────────────────────────────
@@ -459,6 +568,14 @@ export default function App() {
           onCancel={model ? () => setPhase('main') : undefined}
           theme={theme}
           defaultModel={model?.id}
+        />
+      )}
+
+      {phase === 'agents-panel' && (
+        <AgentsPanel
+          subagents={subagents}
+          onClose={() => setPhase('main')}
+          theme={theme}
         />
       )}
 

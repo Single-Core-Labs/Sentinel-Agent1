@@ -8,6 +8,7 @@ interface Props {
   turnCount: number;
   tokenUsage: number;
   mode: 'plan' | 'executing' | 'idle' | 'key_required';
+  agentCount?: number;
   theme: ThemeConfig;
 }
 
@@ -22,7 +23,7 @@ const MODE_COLOR: Record<string, keyof Props['theme']['colors']> = {
   idle:      'muted',
 };
 
-export function StatusBar({ model, sessionId, turnCount, tokenUsage, mode, theme }: Props) {
+export function StatusBar({ model, sessionId, turnCount, tokenUsage, mode, agentCount, theme }: Props) {
   const spinner = useSpinner(theme.spinnerFrames, mode === 'executing');
   const c = theme.colors;
   const modeColor = c[MODE_COLOR[mode] ?? 'muted'];
