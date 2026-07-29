@@ -18,14 +18,6 @@ cargo clippy -- -D warnings  # lint
 cargo fmt --check         # formatting
 ```
 
-### Frontend
-
-```bash
-cd frontend
-npm ci
-npm run dev                # start dev server
-```
-
 ## Code Style
 
 - Rust: follow `cargo fmt` and `cargo clippy`. No `unwrap()` in production code.
@@ -57,7 +49,6 @@ crates/               # Rust workspace (21 crates)
   sentinel-analytics/ # Telemetry pipeline
   sentinel-ai-tui/    # Ratatui terminal UI
   ...
-  frontend/             # React/Ink terminal UI
 ```
 
 ## Questions?

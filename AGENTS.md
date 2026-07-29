@@ -4,7 +4,6 @@
 
 - **One command:** `cargo run --bin sentinel -- ai` — builds and launches the Rust-native interactive agent.
 - Or build once: `cargo install --path crates/sentinel-cli` then `sentinel ai`.
-- Vite frontend (optional): from `frontend/`, run `npm ci` then `npm run dev`.
 - Before running, ensure a `.env` file exists in the repo root with at least one LLM provider key (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.) and `GITHUB_TOKEN`.
 
 ## Configuration
@@ -29,6 +28,6 @@
 ## GitHub PRs
 
 - Open code changes as GitHub PRs first. Do not push code changes directly to the Sentinel AI Space deployment branch or Space remote before the PR has been opened, reviewed, and merged, unless the user explicitly asks to bypass the PR flow.
-- After implementing a plan, run the required checks, commit the changes, open a GitHub PR, then start the backend and frontend local dev servers for testing.
+- After implementing a plan, run the required checks, commit the changes, and open a GitHub PR for testing.
 
 

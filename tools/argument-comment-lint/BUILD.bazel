@@ -68,7 +68,5 @@ filegroup(
 # ---------------------------------------------------------------------------
 exports_files([
     "lint_config.json",
-    "run.py",
-    "run-prebuilt-linter.py",
     "lint_aspect.bzl",
 ])

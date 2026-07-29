@@ -47,21 +47,6 @@ ANTHROPIC_API_KEY=sk-ant-...
 GITHUB_TOKEN=<github-personal-access-token>
 ```
 
-### Node CLI (frontend terminal UI)
-
-```bash
-cd frontend
-npm ci
-npm run cli
-```
-
-Or install globally:
-
-```bash
-npm install -g .
-sentinel-ai
-```
-
 ### Usage
 
 #### Interactive mode (start a chat session):
@@ -222,9 +207,6 @@ The agent emits events via `event_queue`:
 ## Project Structure
 
 ```
-├── frontend/           # TypeScript CLI (Ink + React)
-│   ├── src/            # Terminal UI components
-│   └── bin/            # CLI launcher
 ├── desktop/            # Tauri desktop app (experimental)
 ├── crates/             # 24 Rust crates
 ├── configs/            # Runtime configuration JSON
@@ -238,16 +220,6 @@ The agent emits events via `event_queue`:
 ---
 
 ## Development
-
-### Frontend
-
-```bash
-cd frontend
-npm ci
-npm run dev             # Vite dev server
-npm run cli             # Run CLI via tsx
-npm run cli:dev         # Watch mode
-```
 
 ### Rust
 
@@ -263,7 +235,7 @@ cargo fmt --all --check
 
 ## Adding MCP Servers
 
-Edit `configs/cli_agent_config.json` or `configs/frontend_agent_config.json`:
+Edit `configs/cli_agent_config.json`:
 
 ```json
 {
