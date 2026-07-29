@@ -8,6 +8,7 @@ mod proxy;
 mod diagnostics;
 mod tui;
 mod ai;
+mod web;
 
 use colored::*;
 
@@ -39,6 +40,7 @@ async fn main() -> anyhow::Result<()> {
 
 
         "server" => server::run(sub_args).await?,
+        "web" => web::run(sub_args).await?,
         "proxy" => proxy::run(sub_args).await?,
         "diagnostics" => diagnostics::run(sub_args).await?,
         "tui" => tui::run(sub_args).await?,
@@ -63,6 +65,7 @@ fn print_help() {
     println!("  exec <model> <prompt>  Run the agent with a prompt (Rust native)");
     println!("  auth login|logout|status Authentication management");
     println!("  server start|stop|status App server control");
+    println!("  web [--port <n>]        Start HTTP server with Web UI");
     println!("  proxy                  Headroom HTTP compression proxy");
     println!("  tui [--port <addr>]    Terminal UI interactive session");
     println!("  diagnostics            System diagnostic checks");

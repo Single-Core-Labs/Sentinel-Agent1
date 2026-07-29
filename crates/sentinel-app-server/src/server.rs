@@ -1,10 +1,12 @@
 use std::sync::Arc;
+use std::net::SocketAddr;
 use sentinel_app_server_protocol::rpc::JsonRpcMessage;
 use sentinel_app_server_transport::{TransportServer, TransportKind, Authenticator, TransportEvent, MessageSink};
 use sentinel_config::SentinelConfig;
 use sentinel_tools::ToolRegistry;
 use sentinel_analytics::AnalyticsPipeline;
 use crate::handler::RequestHandler;
+use crate::http::HttpServer;
 
 pub struct AppServer {
     _config: Arc<SentinelConfig>,
@@ -45,6 +47,16 @@ impl AppServer {
         let (mut stream, mut sink, _client_id) = transport.accept().await
             .map_err(|e| format!("accept error: {}", e))?;
         Self::handle_stream(&self.handler, &mut stream, &mut sink).await
+    }
+
+    pub async fn run_http(&self, addr: &SocketAddr) -> anyhow::Result<()> {
+        let http = HttpServer::new(self.handler.clone());
+        http.run(addr).await
+    }
+
+    pub async fn run_http_with_dir(&self, addr: &SocketAddr, static_dir: &str) -> anyhow::Result<()> {
+        let http = HttpServer::new(self.handler.clone()).with_static_dir(static_dir);
+        http.run(addr).await
     }
 
     pub async fn run_tcp(&self, addr: &str) -> Result<(), Box<dyn std::error::Error>> {

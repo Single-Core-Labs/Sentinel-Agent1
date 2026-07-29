@@ -33,3 +33,4 @@ sentinel-proxy = { path = "../sentinel-proxy" }
 hex.workspace = true
 reqwest.workspace = true
 terminal_size = "0.3"
+webbrowser = "1.2.2"
