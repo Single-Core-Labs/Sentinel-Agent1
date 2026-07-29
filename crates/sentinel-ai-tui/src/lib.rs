@@ -17,7 +17,7 @@ pub use app::App;
 pub use app_event::AppEvent;
 pub use app_event_sender::AppEventSender;
 pub use app_server_session::AppServerSession;
-pub use chatwidget::ChatWidget;
+pub use chatwidget::{ChatWidget, DisplayEvent};
 pub use model_picker::ModelPicker;
 pub use provider_picker::ProviderPicker;
 pub use components::widget::{Widget, WidgetMut};

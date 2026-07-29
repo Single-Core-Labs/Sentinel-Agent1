@@ -81,8 +81,8 @@ impl SentinelConfig {
         if other.agent.default_model != default_model() { self.agent.default_model = other.agent.default_model; }
         self.agent.yolo_mode = other.agent.yolo_mode;
         self.agent.verbose = other.agent.verbose;
-        self.providers = other.providers;
-        self.mcp_servers = other.mcp_servers;
+        if !other.providers.is_empty() { self.providers = other.providers; }
+        if !other.mcp_servers.is_empty() { self.mcp_servers = other.mcp_servers; }
         if other.thread_store != default_thread_store() {
             self.thread_store = other.thread_store;
         }

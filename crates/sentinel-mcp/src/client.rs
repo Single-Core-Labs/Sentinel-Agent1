@@ -242,12 +242,13 @@ impl McpClient {
             "arguments": args,
         })).await?;
 
-        let content = result["content"].as_array()
-            .and_then(|arr| arr.first())
-            .and_then(|c| c["text"].as_str())
-            .unwrap_or("");
+        let content_array = result["content"].as_array();
+        let content_str = match content_array {
+            Some(arr) => convert_mcp_content_to_string(arr),
+            None => "".to_string(),
+        };
 
-        Ok(content.to_string())
+        Ok(content_str)
     }
 
     pub async fn close(&self) {
@@ -259,6 +260,66 @@ impl McpClient {
             }
         }
     }
+}
+
+fn convert_mcp_content_to_string(content_array: &[Value]) -> String {
+    let mut out = String::new();
+    for item in content_array {
+        let content_type = item.get("type").and_then(Value::as_str).unwrap_or("text");
+        match content_type {
+            "text" => {
+                if let Some(text) = item.get("text").and_then(Value::as_str) {
+                    if !out.is_empty() {
+                        out.push_str("\n\n");
+                    }
+                    out.push_str(text);
+                }
+            }
+            "image" => {
+                let mime_type = item.get("mimeType").and_then(Value::as_str).unwrap_or("image/png");
+                let data = item.get("data").and_then(Value::as_str).unwrap_or("");
+                if !out.is_empty() {
+                    out.push_str("\n\n");
+                }
+                if data.len() > 100 {
+                    out.push_str(&format!(
+                        "[Image: {} (base64, {} bytes, data:image/{};base64,{}...)]",
+                        mime_type,
+                        data.len(),
+                        mime_type.split('/').last().unwrap_or("png"),
+                        &data[..50]
+                    ));
+                } else {
+                    out.push_str(&format!("[Image: {} (base64: {})]", mime_type, data));
+                }
+            }
+            "resource" => {
+                if !out.is_empty() {
+                    out.push_str("\n\n");
+                }
+                if let Some(resource) = item.get("resource") {
+                    let uri = resource.get("uri").and_then(Value::as_str).unwrap_or("unknown-uri");
+                    let mime_type = resource.get("mimeType").and_then(Value::as_str).unwrap_or("application/octet-stream");
+                    if let Some(text) = resource.get("text").and_then(Value::as_str) {
+                        out.push_str(&format!("[Embedded Resource: {} ({})]\n{}", uri, mime_type, text));
+                    } else if let Some(blob) = resource.get("blob").and_then(Value::as_str) {
+                        out.push_str(&format!("[Embedded Resource: {} ({}) (binary blob, {} bytes)]", uri, mime_type, blob.len()));
+                    } else {
+                        out.push_str(&format!("[Embedded Resource: {} ({})]", uri, mime_type));
+                    }
+                } else {
+                    out.push_str("[Embedded Resource: unknown]");
+                }
+            }
+            other => {
+                if !out.is_empty() {
+                    out.push_str("\n\n");
+                }
+                out.push_str(&format!("[Unknown Content Type: {}]", other));
+            }
+        }
+    }
+    out
 }
 
 impl Drop for McpClient {
@@ -289,4 +350,47 @@ pub enum McpError {
     ParseError(String),
     #[error("Not implemented: {0}")]
     NotImplemented(&'static str),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_convert_mcp_content_to_string() {
+        let content = json!([
+            {
+                "type": "text",
+                "text": "Hello, world!"
+            },
+            {
+                "type": "image",
+                "mimeType": "image/png",
+                "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+            },
+            {
+                "type": "resource",
+                "resource": {
+                    "uri": "file:///test.txt",
+                    "mimeType": "text/plain",
+                    "text": "File contents"
+                }
+            },
+            {
+                "type": "resource",
+                "resource": {
+                    "uri": "file:///blob.bin",
+                    "mimeType": "application/octet-stream",
+                    "blob": "AAECAwQ="
+                }
+            }
+        ]);
+        let array = content.as_array().unwrap();
+        let s = convert_mcp_content_to_string(array);
+        assert!(s.contains("Hello, world!"));
+        assert!(s.contains("[Image: image/png"));
+        assert!(s.contains("[Embedded Resource: file:///test.txt (text/plain)]\nFile contents"));
+        assert!(s.contains("[Embedded Resource: file:///blob.bin (application/octet-stream) (binary blob, 8 bytes)]"));
+    }
 }

@@ -1,4 +1,4 @@
-use sentinel_ai_tui::ChatWidget;
+use sentinel_ai_tui::{ChatWidget, DisplayEvent};
 use sentinel_ai_exec::ThreadEvent;
 use serde_json::json;
 
@@ -8,7 +8,11 @@ fn chatwidget_append_and_scroll() {
     let ev = ThreadEvent::new("thinking", json!({"text": "thinking..."}));
     widget.append(ev);
     assert_eq!(widget.messages.len(), 1);
-    assert_eq!(widget.messages[0].text, "thinking...");
+    if let DisplayEvent::Message(ref msg) = widget.messages[0] {
+        assert_eq!(msg.text, "thinking...");
+    } else {
+        panic!("expected message event");
+    }
 }
 
 #[test]
@@ -18,10 +22,18 @@ fn chatwidget_visible_messages() {
         let ev = ThreadEvent::new("thinking", json!({"text": format!("msg {i}")}));
         widget.append(ev);
     }
-    let visible = widget.visible_messages(3);
+    let visible = widget.visible_events(3);
     assert_eq!(visible.len(), 3);
-    assert_eq!(visible[0].text, "msg 7");
-    assert_eq!(visible[2].text, "msg 9");
+    if let DisplayEvent::Message(ref msg0) = visible[0] {
+        assert_eq!(msg0.text, "msg 7");
+    } else {
+        panic!("expected message event");
+    }
+    if let DisplayEvent::Message(ref msg2) = visible[2] {
+        assert_eq!(msg2.text, "msg 9");
+    } else {
+        panic!("expected message event");
+    }
 }
 
 #[test]

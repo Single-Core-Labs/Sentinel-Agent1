@@ -31,6 +31,46 @@ impl RequestHandler {
         sessions.get(session_id).cloned()
     }
 
+    async fn get_or_load_session(&self, session_id: &str) -> Result<Arc<crate::session::AppSession>, JsonRpcError> {
+        let mut sessions = self.sessions.lock().await;
+        if let Some(session) = sessions.get(session_id) {
+            return Ok(session.clone());
+        }
+
+        if let Some(ref store) = self.thread_store {
+            match store.load_thread(session_id).await {
+                Ok(thread) => {
+                    let model_id = self.config.agent.default_model.clone();
+                    let provider_info = self.find_provider_for_model(&model_id)
+                        .ok_or_else(|| JsonRpcError::internal_error(format!(
+                            "No provider info found for default model: {}", model_id
+                        )))?;
+                    let provider = ProviderKind::from_info(provider_info)
+                        .map_err(|e| JsonRpcError::internal_error(format!("Failed to create provider: {}", e)))?;
+                    let provider: Arc<dyn ModelProvider> = Arc::new(provider);
+
+                    let session = Arc::new(crate::session::AppSession::new_with_thread(
+                        session_id.to_string(),
+                        thread,
+                        provider,
+                        self.tools.clone(),
+                        self.config.clone(),
+                        self.analytics.clone(),
+                        self.headroom_compressor.clone(),
+                    ));
+
+                    sessions.insert(session_id.to_string(), session.clone());
+                    Ok(session)
+                }
+                Err(e) => Err(JsonRpcError::invalid_params(format!(
+                    "Session not found or failed to load from database: {}", e
+                ))),
+            }
+        } else {
+            Err(JsonRpcError::invalid_params(format!("Session not found: {}", session_id)))
+        }
+    }
+
     pub fn new(
         config: Arc<SentinelConfig>,
         analytics: Arc<AnalyticsPipeline>,
@@ -171,7 +211,14 @@ impl RequestHandler {
         };
 
         let session_id = session.id.clone();
-        self.sessions.lock().await.insert(session_id.clone(), session);
+        self.sessions.lock().await.insert(session_id.clone(), session.clone());
+
+        if let Some(ref store) = self.thread_store {
+            let thread = session.thread.lock().await;
+            if let Err(e) = store.save_thread(&thread).await {
+                tracing::error!("Failed to save new thread to store: {:?}", e);
+            }
+        }
 
         self.analytics.emit(
             AnalyticsEvent::new(EventKind::SessionCreated, Some(session_id.clone()))
@@ -202,9 +249,7 @@ impl RequestHandler {
             .and_then(|v| v.as_str().map(String::from))
             .ok_or_else(|| JsonRpcError::invalid_params("Missing session_id"))?;
 
-        let sessions = self.sessions.lock().await;
-        let session = sessions.get(&session_id)
-            .ok_or_else(|| JsonRpcError::invalid_params(format!("Session not found: {}", session_id)))?;
+        let session = self.get_or_load_session(&session_id).await?;
 
         let thread = session.thread.lock().await;
         Ok(serde_json::json!({
@@ -219,18 +264,23 @@ impl RequestHandler {
 
     async fn handle_chat(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
         let p: api::ChatParams = parse_params(params)?;
-        let sessions = self.sessions.lock().await;
-        let session = sessions.get(&p.session_id)
-            .ok_or_else(|| JsonRpcError::invalid_params(format!(
-                "Session not found: {}", p.session_id
-            )))?;
+        let session = self.get_or_load_session(&p.session_id).await?;
 
         self.analytics.emit(
             AnalyticsEvent::new(EventKind::MessageSent, Some(p.session_id.clone()))
                 .with_metadata(serde_json::json!({ "len": p.message.len() }))
         );
 
-        match session.chat(&p.message).await {
+        let chat_result = session.chat(&p.message).await;
+
+        if let Some(ref store) = self.thread_store {
+            let thread = session.thread.lock().await;
+            if let Err(e) = store.save_thread(&thread).await {
+                tracing::error!("Failed to save thread to store: {:?}", e);
+            }
+        }
+
+        match chat_result {
             Ok(response) => {
                 self.analytics.emit(
                     AnalyticsEvent::new(EventKind::MessageReceived, Some(p.session_id))
@@ -244,18 +294,21 @@ impl RequestHandler {
 
     async fn handle_chat_stream(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
         let p: api::ChatStreamParams = parse_params(params)?;
-        let sessions = self.sessions.lock().await;
-        let session = sessions.get(&p.session_id)
-            .ok_or_else(|| JsonRpcError::invalid_params(format!(
-                "Session not found: {}", p.session_id
-            )))?;
+        let session = self.get_or_load_session(&p.session_id).await?;
 
         let (tx, rx) = mpsc::channel(64);
         let msg = p.message.clone();
         tokio::spawn({
             let session = session.clone();
+            let store = self.thread_store.clone();
             async move {
                 session.chat_stream(&msg, tx).await;
+                if let Some(ref store) = store {
+                    let thread = session.thread.lock().await;
+                    if let Err(e) = store.save_thread(&thread).await {
+                        tracing::error!("Failed to save thread to store: {:?}", e);
+                    }
+                }
             }
         });
 
@@ -277,9 +330,7 @@ impl RequestHandler {
             .and_then(|v| v.as_str().map(String::from))
             .ok_or_else(|| JsonRpcError::invalid_params("Missing session_id"))?;
 
-        let sessions = self.sessions.lock().await;
-        let session = sessions.get(&session_id)
-            .ok_or_else(|| JsonRpcError::invalid_params(format!("Session not found: {}", session_id)))?;
+        let session = self.get_or_load_session(&session_id).await?;
 
         let thread = session.thread.lock().await;
         let conversation = &thread.conversation;

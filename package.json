@@ -3,8 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "start": "npx concurrently \"cargo run --bin sentinel -- ai\" \"npm run --prefix frontend cli:dev\"",
-    "dev": "npx concurrently \"cargo run --bin sentinel -- ai\" \"npm run --prefix frontend cli:dev\""
+    "start": "npm run --prefix frontend cli:dev",
+    "start:mock": "npm run --prefix frontend cli:dev -- --mock",
+    "rust": "cargo run --bin sentinel -- ai",
+    "dev": "npx concurrently \"cargo run --bin sentinel -- ai\" \"npm run --prefix frontend cli:dev -- --mock\""
   },
   "devDependencies": {
     "concurrently": "^9.1.2"
