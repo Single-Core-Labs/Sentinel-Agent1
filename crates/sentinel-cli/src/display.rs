@@ -2,14 +2,14 @@ use colored::*;
 
 pub fn print_banner() {
     println!();
-    println!("{}", "╔══════════════════════════════════════╗".green());
-    println!("{}", "║        Sentinel Agent v0.1.0         ║".green().bold());
-    println!("{}", "╚══════════════════════════════════════╝".green());
+    println!("{}", "  ╭──────────────────────────────────────────╮".bright_white().dimmed());
+    println!("  {} {}", "│".bright_white().dimmed(), "           Sentinel Agent                     ".bright_white().bold());
+    println!("{}", "  ╰──────────────────────────────────────────╯".bright_white().dimmed());
     println!();
 }
 
 pub fn print_divider() {
-    println!("{}", "────────────────────────────────────────────".dimmed());
+    println!("{}", "  ────────────────────────────────────────────".dimmed());
 }
 
 pub fn print_error(msg: &str) {

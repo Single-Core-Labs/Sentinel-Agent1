@@ -2,6 +2,7 @@ use std::sync::Arc;
 use colored::*;
 use crate::approval::CliApprovalGate;
 use crate::display::{print_banner, print_divider};
+use crate::handler::CliEventHandler;
 
 pub async fn run(args: &[String]) -> anyhow::Result<()> {
     let config = Arc::new(match sentinel_config::SentinelConfig::load() {
@@ -66,6 +67,8 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         config.agent.max_iterations,
         config.agent.yolo_mode,
     );
+
+    agent.set_event_handler(Arc::new(CliEventHandler));
 
     print_banner();
     println!(" Model:  {}", model_id.green().bold());
