@@ -32,3 +32,4 @@ sentinel-headroom = { path = "../sentinel-headroom" }
 sentinel-core = { path = "../sentinel-core" }
 reqwest = { workspace = true, features = ["blocking"] }
 fastrand = "2"
+async-trait = { workspace = true }

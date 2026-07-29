@@ -148,13 +148,29 @@ impl ChatWidget {
                 let args_str = Self::format_tool_args(&ev.data);
                 let status = ev.data.get("status").and_then(Value::as_str).unwrap_or("pending");
                 let output = ev.data.get("output").and_then(Value::as_str).unwrap_or("");
-                self.messages.push(DisplayEvent::ToolCall(ToolCallInfo {
-                    name: name.to_string(),
-                    args: args_str,
-                    status: status.to_string(),
-                    output: output.to_string(),
-                    expanded: false,
-                }));
+
+                // If a tool_call with the same name already exists, update it in place
+                let updated = if status == "completed" || status == "error" {
+                    self.messages.iter_mut().rev().find_map(|m| {
+                        if let DisplayEvent::ToolCall(ref mut tc) = m {
+                            if tc.name == name {
+                                tc.status = status.to_string();
+                                tc.output = output.to_string();
+                                Some(())
+                            } else { None }
+                        } else { None }
+                    }).is_some()
+                } else { false };
+
+                if !updated {
+                    self.messages.push(DisplayEvent::ToolCall(ToolCallInfo {
+                        name: name.to_string(),
+                        args: args_str,
+                        status: status.to_string(),
+                        output: output.to_string(),
+                        expanded: false,
+                    }));
+                }
                 self.scroll_to_bottom();
             }
             "tool_log" => {

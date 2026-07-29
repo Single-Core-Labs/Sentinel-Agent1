@@ -8,16 +8,17 @@ use sentinel_config::SentinelConfig;
 use sentinel_analytics::AnalyticsPipeline;
 use sentinel_tools::ToolRegistry;
 use sentinel_app_server_protocol::api;
-use tokio::sync::oneshot;
 use sentinel_core;
+use crate::event_bridge::{TuiEventHandler, TuiApprovalGate};
+use tokio::sync::Mutex;
 
 pub struct AppServerSession {
     client: AppServerConnection,
     session_id: tokio::sync::Mutex<Option<String>>,
     handler: Arc<RequestHandler>,
     config: Arc<SentinelConfig>,
-    /// Sends an approval decision into the active tool-approval gate.
-    pub approval_tx: tokio::sync::Mutex<Option<oneshot::Sender<bool>>>,
+    /// Sends approval decisions from the TUI into the active tool-approval gate.
+    pub approval_tx: tokio::sync::Mutex<Option<tokio::sync::mpsc::UnboundedSender<bool>>>,
 }
 
 impl AppServerSession {
@@ -54,14 +55,15 @@ impl AppServerSession {
 
     /// Send an approval decision for the current pending tool call.
     pub async fn send_approval(&self, approved: bool) {
-        let mut guard = self.approval_tx.lock().await;
-        if let Some(tx) = guard.take() {
+        let guard = self.approval_tx.lock().await;
+        if let Some(tx) = guard.as_ref() {
             let _ = tx.send(approved);
         }
     }
 
-    /// Full agent loop: drives plan→act→observe and emits rich ThreadEvents
-    /// (processing, completed, tool_call, turn_complete, error).
+    /// Full agent loop: drives plan→act→observe and emits rich events
+    /// (thinking, tool_call, tool_output, turn_complete, completed, error)
+    /// through the provided event_tx in real time.
     pub async fn chat_stream_direct(
         &self,
         prompt: &str,
@@ -79,27 +81,38 @@ impl AppServerSession {
             }
         };
 
+        // Create an approval channel for this turn
+        let (approval_tx, approval_rx) = tokio::sync::mpsc::unbounded_channel();
+        {
+            let mut guard = self.approval_tx.lock().await;
+            *guard = Some(approval_tx);
+        }
+
         let _ = event_tx
             .send(ThreadEvent::new("processing", json!({ "message": "Thinking..." })))
             .await;
 
+        // Inject the TUI event handler so intermediate events are streamed
+        let tui_handler = Arc::new(TuiEventHandler { event_tx: event_tx.clone() });
+        session.agent.set_event_handler(tui_handler);
+
+        // Create the approval gate that will send approval_required events through event_tx
+        let gate = TuiApprovalGate {
+            event_tx: event_tx.clone(),
+            approval_rx: Mutex::new(approval_rx),
+        };
+
         // Run the full agent loop (plan → tool calls → observe → answer)
         let mut thread = session.thread.lock().await;
-        let result = session.agent.run(&mut thread, prompt).await;
-        let turn = thread.turn;
+        let result = session.agent.run_with_approval(&mut thread, prompt, &gate).await;
         drop(thread);
 
+        // Restore the null handler so future calls start clean
+        session.agent.set_event_handler(Arc::new(sentinel_core::agent::NullEventHandler));
+
         match result {
-            Ok(sentinel_core::AgentOutput::Success { text }) => {
-                let _ = event_tx
-                    .send(ThreadEvent::new("completed", json!({ "text": text })))
-                    .await;
-                let _ = event_tx
-                    .send(ThreadEvent::new(
-                        "turn_complete",
-                        json!({ "summary": "turn complete", "turn_count": turn }),
-                    ))
-                    .await;
+            Ok(sentinel_core::AgentOutput::Success { .. }) => {
+                // Handler already emitted completed + turn_complete events
             }
             Ok(sentinel_core::AgentOutput::Error { message }) => {
                 let _ = event_tx

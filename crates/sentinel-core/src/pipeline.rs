@@ -273,7 +273,8 @@ impl PipelineAgent {
 
             thread.add_message(choice.message.clone());
             thread.conversation.add_assistant_text(&last_text);
-            self.agent.events.handle_event(AgentEvent::Thinking { text: last_text.clone() }).await;
+            let handler = self.agent.events.read().unwrap().clone();
+            handler.handle_event(AgentEvent::Thinking { text: last_text.clone() }).await;
 
             let tool_calls: Vec<_> = choice.message.content.iter()
                 .filter_map(|b| {

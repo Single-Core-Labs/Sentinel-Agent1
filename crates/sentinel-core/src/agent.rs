@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::RwLock;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::fmt;
 use std::collections::BTreeMap;
@@ -55,7 +56,7 @@ pub struct Agent {
     pub(crate) provider: Arc<dyn ModelProvider>,
     pub(crate) tools: Arc<ToolRegistry>,
     pub(crate) config: Arc<SentinelConfig>,
-    pub(crate) events: Arc<dyn EventHandler>,
+    pub(crate) events: RwLock<Arc<dyn EventHandler>>,
     pub(crate) event_store: SharedEventStore,
     pub(crate) prompt_manager: SystemPromptManager,
     pub(crate) phase_callback: Option<Arc<dyn Fn(crate::thread::Phase) + Send + Sync>>,
@@ -87,7 +88,7 @@ impl Agent {
     ) -> Self {
         Self {
             provider, tools, config,
-            events: Arc::new(NullEventHandler),
+            events: RwLock::new(Arc::new(NullEventHandler)),
             event_store: crate::event::create_event_store(),
             prompt_manager: SystemPromptManager::new(),
             phase_callback: None,
@@ -108,8 +109,13 @@ impl Agent {
     pub fn completion_tokens(&self) -> u64 { self.total_completion_tokens.load(Ordering::Relaxed) }
 
     pub fn with_event_handler(mut self, handler: Arc<dyn EventHandler>) -> Self {
-        self.events = handler;
+        self.events = RwLock::new(handler);
         self
+    }
+
+    /// Replace the event handler at runtime (used by TUI to inject a streaming bridge).
+    pub fn set_event_handler(&self, handler: Arc<dyn EventHandler>) {
+        *self.events.write().unwrap() = handler;
     }
 
     pub fn with_event_store(mut self, store: SharedEventStore) -> Self {
@@ -270,7 +276,8 @@ impl Agent {
 
             thread.add_message(choice.message.clone());
             thread.conversation.add_assistant_text(&last_text);
-            self.events.handle_event(AgentEvent::Thinking { text: last_text.clone() }).await;
+            let handler = self.events.read().unwrap().clone();
+            handler.handle_event(AgentEvent::Thinking { text: last_text.clone() }).await;
 
             let tool_calls: Vec<_> = choice.message.content.iter()
                 .filter_map(|b| {
@@ -312,7 +319,8 @@ impl Agent {
 
             if tool_calls.is_empty() {
                 thread.status = ThreadStatus::Completed;
-                self.events.handle_event(AgentEvent::Completed { text: last_text.clone() }).await;
+                let handler = self.events.read().unwrap().clone();
+                handler.handle_event(AgentEvent::Completed { text: last_text.clone() }).await;
                 return Ok(AgentOutput::success(last_text));
             }
 
@@ -370,7 +378,8 @@ impl Agent {
                 iteration: thread.iterations,
             }).await;
 
-            self.events.handle_event(AgentEvent::TurnEnd {
+            let handler = self.events.read().unwrap().clone();
+            handler.handle_event(AgentEvent::TurnEnd {
                 turn: thread.turn,
                 iteration: thread.iterations,
             }).await;
@@ -525,7 +534,8 @@ impl Agent {
 
             let msg = Message::new(Role::Assistant, content);
             thread.add_message(msg);
-            self.events.handle_event(AgentEvent::Thinking { text: last_text.clone() }).await;
+            let handler = self.events.read().unwrap().clone();
+            handler.handle_event(AgentEvent::Thinking { text: last_text.clone() }).await;
 
             // Malformed tool call recovery
             if is_tool_call {
@@ -558,7 +568,8 @@ impl Agent {
 
             if !is_tool_call {
                 thread.status = ThreadStatus::Completed;
-                self.events.handle_event(AgentEvent::Completed { text: last_text.clone() }).await;
+                let handler = self.events.read().unwrap().clone();
+                handler.handle_event(AgentEvent::Completed { text: last_text.clone() }).await;
                 return Ok(AgentOutput::success(last_text));
             }
 
@@ -600,7 +611,8 @@ impl Agent {
             if !thread.increment_turn() {
                 return Ok(AgentOutput::error("Max turns reached"));
             }
-            self.events.handle_event(AgentEvent::TurnEnd {
+            let handler = self.events.read().unwrap().clone();
+            handler.handle_event(AgentEvent::TurnEnd {
                 turn: thread.turn,
                 iteration: thread.iterations,
             }).await;
@@ -675,7 +687,7 @@ pub(crate) async fn execute_tools_concurrent(
     tools: Arc<ToolRegistry>,
     approval: &dyn ApprovalGate,
     thread: &mut AgentThread,
-    events: &Arc<dyn EventHandler>,
+    events: &RwLock<Arc<dyn EventHandler>>,
     ctx: &ToolContext,
     cancel: &CancellationToken,
     compressor: &Arc<dyn ContentCompressor>,
@@ -688,7 +700,8 @@ pub(crate) async fn execute_tools_concurrent(
 
     for (i, (tool_call_id, name, args)) in tool_calls.iter().enumerate() {
         thread.conversation.add_tool_call(tool_call_id, name, args.clone());
-        events.handle_event(AgentEvent::ToolCall {
+        let evt_handler = events.read().unwrap().clone();
+        evt_handler.handle_event(AgentEvent::ToolCall {
             name: name.clone(),
             args: args.clone(),
         }).await;
@@ -800,7 +813,7 @@ pub(crate) async fn execute_tools_concurrent(
             ctx.sandbox_dir = Some(sb.root().to_string_lossy().to_string());
         }
         let cancel = cancel.clone();
-        let events = Arc::clone(events);
+        let evt_handler = events.read().unwrap().clone();
         let compressor = Arc::clone(compressor);
 
         let tool_call_id_cancel = tool_call_id.clone();
@@ -820,7 +833,7 @@ pub(crate) async fn execute_tools_concurrent(
                 result = async {
                     let output = tools.execute(&name, args, &ctx).await;
                     let compressed = compressor.compress(&name, &output.text, output.is_error).await;
-                    events.handle_event(AgentEvent::ToolResult {
+                    evt_handler.handle_event(AgentEvent::ToolResult {
                         name: name.clone(),
                         output: compressed.clone(),
                         is_error: output.is_error,
