@@ -25,17 +25,23 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         .or_else(|| config.providers().first())
         .cloned();
 
-    let provider_info = match provider_info {
-        Some(p) => p,
+    let provider = match provider_info {
+        Some(ref p) => {
+            match sentinel_provider::ProviderKind::from_info(p.clone()) {
+                Ok(provider) => Arc::new(provider),
+                Err(e) => {
+                    eprintln!();
+                    eprintln!(" {} Provider '{}' not available: {}", "✖".red().bold(), p.name, e);
+                    return launch_web_fallback().await;
+                }
+            }
+        }
         None => {
-            eprintln!("{} No provider found for model '{}'", "Error:".red().bold(), model_id);
-            std::process::exit(1);
+            eprintln!();
+            eprintln!(" {} No providers configured.", "✖".red().bold());
+            return launch_web_fallback().await;
         }
     };
-
-    let provider = Arc::new(
-        sentinel_provider::ProviderKind::from_info(provider_info)?
-    );
 
     let mut tool_registry = sentinel_tools::ToolRegistry::new();
 
@@ -118,4 +124,17 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     println!("\n{} {}", "Done.".green().bold(), stats.dimmed());
 
     Ok(())
+}
+
+async fn launch_web_fallback() -> anyhow::Result<()> {
+    println!();
+    println!(" {} {}", "Tip:".yellow().bold(), "Run the web UI to configure providers and chat:");
+    println!("       sentinel web");
+    println!();
+    println!(" {} {}", "Or authenticate a provider:", "sentinel auth login".cyan());
+    println!();
+    println!(" {} {}", "Opening web UI automatically...", "".dimmed());
+
+    // Launch the web UI
+    crate::web::run(&[]).await
 }
