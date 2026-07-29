@@ -17,3 +17,7 @@ sentinel-core = { path = "../../crates/sentinel-core" }
 sentinel-provider = { path = "../../crates/sentinel-provider" }
 sentinel-tools = { path = "../../crates/sentinel-tools" }
 sentinel-config = { path = "../../crates/sentinel-config" }
+sentinel-analytics = { path = "../../crates/sentinel-analytics" }
+sentinel-headroom = { path = "../../crates/sentinel-headroom" }
+sentinel-app-server = { path = "../../crates/sentinel-app-server" }
+sentinel-app-server-protocol = { path = "../../crates/sentinel-app-server-protocol" }
