@@ -30,12 +30,12 @@ function makeParticle(chars: string[]): Particle {
 }
 
 const WORDMARK_LINES = [
-  ' ██████╗ ██╗      █████╗ ████████╗███████╗ ██████╗ ██████╗ ███╗   ███╗',
-  ' ██╔══██╗██║     ██╔══██╗╚══██╔══╝██╔════╝██╔═══██╗██╔══██╗████╗ ████║',
-  ' ██████╔╝██║     ███████║   ██║   █████╗  ██║   ██║██████╔╝██╔████╔██║',
-  ' ██╔═══╝ ██║     ██╔══██║   ██║   ██╔══╝  ██║   ██║██╔══██╗██║╚██╔╝██║',
-  ' ██║     ███████╗██║  ██║   ██║   ██║     ╚██████╔╝██║  ██║██║ ╚═╝ ██║',
-  ' ╚═╝     ╚══════╝╚═╝  ╚═╝   ╚═╝   ╚═╝      ╚═════╝ ╚═╝  ╚═╝╚═╝     ╚═╝',
+  '   _____ ______ _   _ _______ _____ _   _ ______ _      ',
+  '  / ____|  ____| \\ | |__   __|_   _| \\ | |  ____| |     ',
+  ' | (___ | |__  |  \\| |  | |    | | |  \\| | |__  | |     ',
+  '  \\___ \\|  __| | . ` |  | |    | | | . ` |  __| | |     ',
+  '  ____) | |____| |\\  |  | |   _| |_| |\\  | |____| |____ ',
+  ' |_____/|______|_| \\_|  |_|  |_____|_| \\_|______|______|',
 ];
 
 const BOOT_LINES = [
@@ -156,7 +156,7 @@ export function StartupSequence({ onComplete, theme }: Props) {
       <Box flexDirection="column" paddingTop={1} paddingLeft={3}>
         <Box marginBottom={1}>
           <Text color={c.accent} bold>◆ sentinel ai</Text>
-          <Text color={c.muted}>  platform engineering agent  v0.1</Text>
+          <Text color={c.muted}>  autonomous coding agent  v0.1</Text>
         </Box>
         {BOOT_LINES.slice(0, bootIndex).map((line, i) => {
           const isLast = i === BOOT_LINES.length - 1;
