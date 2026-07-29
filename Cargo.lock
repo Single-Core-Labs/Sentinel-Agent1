@@ -2630,6 +2630,7 @@ dependencies = [
  "sentinel-app-server-client",
  "sentinel-app-server-protocol",
  "sentinel-config",
+ "sentinel-core",
  "sentinel-headroom",
  "sentinel-tools",
  "serde",

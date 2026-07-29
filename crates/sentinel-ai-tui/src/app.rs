@@ -9,6 +9,7 @@ use ratatui::{
 };
 use fastrand;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::{mpsc, Mutex};
 
 use crate::{
@@ -144,6 +145,7 @@ impl App {
     }
 
     pub async fn run(&mut self, terminal: &mut Terminal<ratatui::backend::CrosstermBackend<std::io::Stdout>>) -> Result<()> {
+        let mut tick = tokio::time::interval(Duration::from_millis(100));
         loop {
             terminal.draw(|f| self.draw(f))?;
 
@@ -160,6 +162,11 @@ impl App {
                 }
                 Some(event) = self.event_rx.recv() => {
                     self.handle_app_event(event).await;
+                }
+                _ = tick.tick(), if self.processing => {
+                    // Tick fires every 100ms while processing to animate the spinner.
+                    // No event handling needed — just triggering the redraw above.
+                    self.boot.tick += 1;
                 }
             }
         }
@@ -212,6 +219,10 @@ impl App {
                 });
             }
             AppEvent::ServerNotification(event) => {
+                // Check if this is an approval_required event — trigger the overlay
+                if event.event_type == "approval" || event.event_type == "approval_required" {
+                    self.overlay = Overlay::Approval;
+                }
                 let mut chat = self.chat.lock().await;
                 chat.append(event);
             }
@@ -259,6 +270,14 @@ impl App {
             }
             AppEvent::Shutdown => {
                 self.should_quit = true;
+            }
+            AppEvent::Tick => {
+                // Just triggers a redraw — handled by the select! arm above.
+                self.boot.tick += 1;
+            }
+            AppEvent::ApprovalResponse(approved) => {
+                self.overlay = Overlay::None;
+                self.server.send_approval(approved).await;
             }
         }
     }
@@ -403,10 +422,14 @@ impl App {
                         chat.toggle_tool_expand();
                     }
                     KeyCode::Char('y') | KeyCode::Char('Y') => {
-                        // Approve — handled in overlay context
+                        if self.overlay == Overlay::Approval {
+                            self.sender.send(AppEvent::ApprovalResponse(true));
+                        }
                     }
                     KeyCode::Char('n') | KeyCode::Char('N') => {
-                        // Reject — handled in overlay context
+                        if self.overlay == Overlay::Approval {
+                            self.sender.send(AppEvent::ApprovalResponse(false));
+                        }
                     }
                     KeyCode::Left => {
                         if self.overlay == Overlay::Approval {
@@ -476,9 +499,15 @@ impl App {
                 self.turn_count = 0;
             }
             "/undo" => {
+                // Pop from both the local UI and the server-side thread
                 let mut chat = self.chat.lock().await;
                 chat.pop_last_two();
                 chat.scroll_to_bottom();
+                drop(chat);
+                let server = self.server.clone();
+                tokio::spawn(async move {
+                    let _ = server.undo_last_turn().await;
+                });
             }
             "/help" => {
                 self.boot.phase = BootPhase::Done;
@@ -508,11 +537,31 @@ impl App {
                 ));
             }
             "/compact" => {
-                let mut chat = self.chat.lock().await;
-                chat.append(sentinel_ai_exec::ThreadEvent::new(
-                    "thinking",
-                    serde_json::json!({ "text": "Compacting context..." }),
-                ));
+                let server = self.server.clone();
+                let sender = self.sender.clone();
+                tokio::spawn(async move {
+                    match server.compact_context().await {
+                        Ok((before, after)) => {
+                            sender.send(AppEvent::ServerNotification(
+                                sentinel_ai_exec::ThreadEvent::new(
+                                    "compacted",
+                                    serde_json::json!({
+                                        "tokens_before": before,
+                                        "tokens_after": after,
+                                    }),
+                                ),
+                            ));
+                        }
+                        Err(e) => {
+                            sender.send(AppEvent::ServerNotification(
+                                sentinel_ai_exec::ThreadEvent::new(
+                                    "error",
+                                    serde_json::json!({ "message": format!("Compact failed: {}", e) }),
+                                ),
+                            ));
+                        }
+                    }
+                });
             }
             "/local" => {
                 self.boot.phase = BootPhase::Done;
@@ -740,7 +789,7 @@ impl App {
                 lines.push(Line::from(vec![
                     Span::styled("◆ ", Style::default().fg(c.accent).bold()),
                     Span::styled("sentinel ai", Style::default().fg(c.accent).bold()),
-                    Span::styled("  platform engineering agent  v0.1", Style::default().fg(c.muted)),
+                    Span::styled("  developer tools  v0.1", Style::default().fg(c.muted)),
                 ]));
                 lines.push(Line::from(""));
 

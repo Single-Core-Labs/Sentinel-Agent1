@@ -8,12 +8,16 @@ use sentinel_config::SentinelConfig;
 use sentinel_analytics::AnalyticsPipeline;
 use sentinel_tools::ToolRegistry;
 use sentinel_app_server_protocol::api;
+use tokio::sync::oneshot;
+use sentinel_core;
 
 pub struct AppServerSession {
     client: AppServerConnection,
     session_id: tokio::sync::Mutex<Option<String>>,
     handler: Arc<RequestHandler>,
     config: Arc<SentinelConfig>,
+    /// Sends an approval decision into the active tool-approval gate.
+    pub approval_tx: tokio::sync::Mutex<Option<oneshot::Sender<bool>>>,
 }
 
 impl AppServerSession {
@@ -28,7 +32,14 @@ impl AppServerSession {
             reg.register(Arc::new(headroom_retrieve));
             Arc::new(reg)
         };
-        let handler = Arc::new(RequestHandler::new(config.clone(), analytics, tools));
+        // Wire headroom compressor so /compact works
+        let compressor_arc = sentinel_headroom::integration::create_headroom_compressor();
+        let handler = Arc::new(RequestHandler::new_with_headroom(
+            config.clone(),
+            analytics,
+            tools,
+            Some(compressor_arc),
+        ));
         let embedded = EmbeddedClient::new(handler.clone());
         let client = AppServerConnection::Embedded(embedded);
 
@@ -37,11 +48,20 @@ impl AppServerSession {
             session_id: tokio::sync::Mutex::new(None),
             handler,
             config,
+            approval_tx: tokio::sync::Mutex::new(None),
         })
     }
 
-    /// Direct streaming: bypasses JSON-RPC buffering and emits each chunk/tool-call
-    /// as a separate `ThreadEvent` through `event_tx` as the agent produces them.
+    /// Send an approval decision for the current pending tool call.
+    pub async fn send_approval(&self, approved: bool) {
+        let mut guard = self.approval_tx.lock().await;
+        if let Some(tx) = guard.take() {
+            let _ = tx.send(approved);
+        }
+    }
+
+    /// Full agent loop: drives plan→act→observe and emits rich ThreadEvents
+    /// (processing, completed, tool_call, turn_complete, error).
     pub async fn chat_stream_direct(
         &self,
         prompt: &str,
@@ -59,58 +79,75 @@ impl AppServerSession {
             }
         };
 
-        let (chunk_tx, mut chunk_rx) = tokio::sync::mpsc::channel(64);
-        let msg = prompt.to_string();
-        let session_clone = session.clone();
-        tokio::spawn(async move {
-            session_clone.chat_stream(&msg, chunk_tx).await;
-        });
+        let _ = event_tx
+            .send(ThreadEvent::new("processing", json!({ "message": "Thinking..." })))
+            .await;
 
-        let mut accumulated = String::new();
-        while let Some(chunk) = chunk_rx.recv().await {
-            match chunk {
-                Ok(chunk) => {
-                    for choice in &chunk.choices {
-                        if let Some(ref text) = choice.delta.content {
-                            let _ = event_tx
-                                .send(ThreadEvent::new("stream_chunk", json!({ "text": text })))
-                                .await;
-                            accumulated.push_str(text);
-                        }
-                        if let Some(tcs) = &choice.delta.tool_calls {
-                            for tc in tcs {
-                                if let Some(ref name) = tc.function.as_ref().and_then(|f| f.name.clone()) {
-                                    let args = tc
-                                        .function
-                                        .as_ref()
-                                        .and_then(|f| f.arguments.clone())
-                                        .unwrap_or_default();
-                                    let _ = event_tx
-                                        .send(ThreadEvent::new(
-                                            "tool_call",
-                                            json!({ "name": name, "arguments": args }),
-                                        ))
-                                        .await;
-                                }
-                            }
-                        }
-                    }
-                }
-                Err(e) => {
-                    let _ = event_tx
-                        .send(ThreadEvent::new("error", json!({ "message": e })))
-                        .await;
-                    break;
-                }
+        // Run the full agent loop (plan → tool calls → observe → answer)
+        let mut thread = session.thread.lock().await;
+        let result = session.agent.run(&mut thread, prompt).await;
+        let turn = thread.turn;
+        drop(thread);
+
+        match result {
+            Ok(sentinel_core::AgentOutput::Success { text }) => {
+                let _ = event_tx
+                    .send(ThreadEvent::new("completed", json!({ "text": text })))
+                    .await;
+                let _ = event_tx
+                    .send(ThreadEvent::new(
+                        "turn_complete",
+                        json!({ "summary": "turn complete", "turn_count": turn }),
+                    ))
+                    .await;
+            }
+            Ok(sentinel_core::AgentOutput::Error { message }) => {
+                let _ = event_tx
+                    .send(ThreadEvent::new("error", json!({ "message": message })))
+                    .await;
+            }
+            Err(e) => {
+                let _ = event_tx
+                    .send(ThreadEvent::new("error", json!({ "message": e.to_string() })))
+                    .await;
             }
         }
 
-        if !accumulated.is_empty() {
-            let _ = event_tx
-                .send(ThreadEvent::new("completed", json!({ "text": accumulated })))
-                .await;
-        }
+        Ok(())
+    }
 
+    /// Compact the current session's context (keep last 20 items).
+    /// Returns (items_before, items_after).
+    pub async fn compact_context(&self) -> Result<(usize, usize)> {
+        let sid = self.ensure_session(None).await?;
+        let session = self.handler.get_session(&sid).await;
+        let session = match session {
+            Some(s) => s,
+            None => return Err(anyhow::anyhow!("session not found")),
+        };
+        let mut thread = session.thread.lock().await;
+        let before = thread.conversation.total_items();
+        let keep_last = 20usize;
+        if before > keep_last + 1 {
+            thread.conversation.truncate_to_last(keep_last);
+        }
+        let after = thread.conversation.total_items();
+        Ok((before, after))
+    }
+
+    /// Undo the last user+assistant turn from the server-side thread.
+    pub async fn undo_last_turn(&self) -> Result<()> {
+        let sid = self.ensure_session(None).await?;
+        let session = self.handler.get_session(&sid).await;
+        let session = match session {
+            Some(s) => s,
+            None => return Err(anyhow::anyhow!("session not found")),
+        };
+        let mut thread = session.thread.lock().await;
+        thread.conversation.undo_last_turn();
+        if thread.turn > 0 {
+            thread.turn -= 1;
+        }
         Ok(())
     }
 

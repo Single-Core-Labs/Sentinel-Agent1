@@ -257,6 +257,15 @@ impl Conversation {
         !self.redo_stack.is_empty()
     }
 
+    /// Truncate context by keeping only the last `n` turns.
+    pub fn truncate_to_last(&mut self, n: usize) {
+        if self.turns.len() > n {
+            let drain_count = self.turns.len() - n;
+            self.turns.drain(..drain_count);
+            self.updated_at = Utc::now();
+        }
+    }
+
     pub fn fork_at_turn(&self, turn_number: u32) -> Self {
         let now = Utc::now();
         let fork_turns: Vec<Turn> = self.turns.iter()
