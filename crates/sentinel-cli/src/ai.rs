@@ -4,7 +4,29 @@ use crate::approval::CliApprovalGate;
 use crate::display::{print_banner, print_divider};
 use crate::handler::CliEventHandler;
 
+fn try_spawn_ts_agent() -> bool {
+    let agent_path = std::path::Path::new("packages/cli-agent/src/index.tsx");
+    if !agent_path.exists() {
+        return false;
+    }
+    let bun = if cfg!(windows) { "bun.exe" } else { "bun" };
+    let status = std::process::Command::new(bun)
+        .arg("run")
+        .arg(agent_path)
+        .spawn();
+    match status {
+        Ok(mut child) => {
+            let _ = child.wait();
+            true
+        }
+        Err(_) => false,
+    }
+}
+
 pub async fn run(args: &[String]) -> anyhow::Result<()> {
+    if try_spawn_ts_agent() {
+        return Ok(());
+    }
     let config = Arc::new(match sentinel_config::SentinelConfig::load() {
         Ok(c) => c,
         Err(e) => {
@@ -30,16 +52,14 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
             match sentinel_provider::ProviderKind::from_info(p.clone()) {
                 Ok(provider) => Arc::new(provider),
                 Err(e) => {
-                    eprintln!();
-                    eprintln!(" {} Provider '{}' not available: {}", "✖".red().bold(), p.name, e);
-                    return launch_web_fallback().await;
+                    show_setup_screen(&p.name, &e.to_string());
+                    return Ok(());
                 }
             }
         }
         None => {
-            eprintln!();
-            eprintln!(" {} No providers configured.", "✖".red().bold());
-            return launch_web_fallback().await;
+            show_no_providers_screen(&model_id);
+            return Ok(());
         }
     };
 
@@ -47,7 +67,6 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
 
     let mcp_servers = config.mcp_servers();
     if !mcp_servers.is_empty() {
-        println!(" {} MCP servers configured", format!("{}", mcp_servers.len()).yellow());
         let mcp_clients: Vec<Arc<sentinel_mcp::McpClient>> = mcp_servers.iter().map(|def| {
             Arc::new(sentinel_mcp::McpClient::new(&def.id, def.transport.clone()))
         }).collect();
@@ -80,8 +99,7 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     println!(" Model:  {}", model_id.green().bold());
     println!(" Yolo:   {}", if config.agent.yolo_mode { "yes".green() } else { "no".yellow() });
     print_divider();
-    println!("{}", "Interactive mode — type your message and press Enter.".cyan());
-    println!("{}", "Empty line or 'exit' to quit.".dimmed());
+    println!("{}", "Type your message or /help for commands.".dimmed());
 
     let approval: Box<dyn sentinel_core::ApprovalGate> = if config.agent.yolo_mode {
         Box::new(sentinel_core::AutoApprovalGate)
@@ -96,12 +114,23 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
 
         let mut input = String::new();
         std::io::stdin().read_line(&mut input)?;
-        let input = input.trim();
-        if input.is_empty() || input.eq_ignore_ascii_case("exit") || input.eq_ignore_ascii_case("quit") {
+        let input = input.trim().to_string();
+
+        if input.is_empty() {
+            continue;
+        }
+
+        if input.eq_ignore_ascii_case("exit") || input.eq_ignore_ascii_case("quit") {
             break;
         }
 
-        let result = agent.run_with_approval(&mut thread, input, approval.as_ref()).await;
+        // Slash commands
+        if input.starts_with('/') {
+            handle_slash_command(&input).await;
+            continue;
+        }
+
+        let result = agent.run_with_approval(&mut thread, &input, approval.as_ref()).await;
         match result {
             Ok(output) => match output {
                 sentinel_core::AgentOutput::Success { text } => {
@@ -126,15 +155,76 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn launch_web_fallback() -> anyhow::Result<()> {
-    println!();
-    println!(" {} {}", "Tip:".yellow().bold(), "Run the web UI to configure providers and chat:");
-    println!("       sentinel web");
-    println!();
-    println!(" {} {}", "Or authenticate a provider:", "sentinel auth login".cyan());
-    println!();
-    println!(" {} {}", "Opening web UI automatically...", "".dimmed());
+async fn handle_slash_command(cmd: &str) {
+    match cmd {
+        "/help" | "/h" => {
+            println!();
+            println!(" {}", "Commands:".yellow().bold());
+            println!("  /help, /h         Show this help");
+            println!("  /auth             Configure provider API keys");
+            println!("  /models           List available models");
+            println!("  /exit, /quit      Exit");
+            println!("  /clear            Clear screen");
+            println!();
+        }
+        "/auth" => {
+            println!();
+            println!(" {} Run this in your terminal to add a provider:", "●".cyan().bold());
+            println!("       sentinel auth login");
+            println!();
+        }
+        "/models" | "/model" => {
+            println!();
+            println!(" {} Use a model by passing it as an argument:", "●".cyan().bold());
+            println!("       sentinel ai <model-id>");
+            println!("  Or set it in sentinel.toml → agent.default_model");
+            println!();
+        }
+        "/clear" => {
+            print!("\x1B[2J\x1B[H");
+            use std::io::Write;
+            let _ = std::io::stdout().flush();
+        }
+        _ => {
+            println!(" {} Unknown command: {}", "✖".red().bold(), cmd);
+            println!("   Type /help for available commands.");
+        }
+    }
+}
 
-    // Launch the web UI
-    crate::web::run(&[]).await
+fn show_no_providers_screen(model: &str) {
+    println!();
+    println!("{}", "╭──────────────────────────────────────────────╮".bright_white().dimmed());
+    println!("{}", "│         Welcome to Sentinel Agent           │".bright_white().bold());
+    println!("{}", "╰──────────────────────────────────────────────╯".bright_white().dimmed());
+    println!();
+    println!(" {} No providers configured for model '{}'.", "✖".red().bold(), model);
+    println!();
+    println!(" {} To get started:", "→".cyan().bold());
+    println!("   1. Add an API key:");
+    println!("      sentinel auth login");
+    println!();
+    println!("   2. Or set it in your .env file:");
+    println!("      ANTHROPIC_API_KEY=sk-...");
+    println!("      OPENAI_API_KEY=sk-...");
+    println!();
+    println!("   3. Then run:");
+    println!("      sentinel ai");
+    println!();
+}
+
+fn show_setup_screen(provider: &str, error: &str) {
+    println!();
+    println!("{}", "╭──────────────────────────────────────────────╮".bright_white().dimmed());
+    println!("{}", "│         Welcome to Sentinel Agent           │".bright_white().bold());
+    println!("{}", "╰──────────────────────────────────────────────╯".bright_white().dimmed());
+    println!();
+    println!(" {} Provider '{}' needs setup.", "✖".red().bold(), provider);
+    println!("   {}", error.yellow());
+    println!();
+    println!(" {} Run:", "→".cyan().bold());
+    println!("      sentinel auth login");
+    println!();
+    println!("   Or set the corresponding env var in .env");
+    println!();
 }

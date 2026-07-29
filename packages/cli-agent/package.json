@@ -1,0 +1,22 @@
+{
+  "name": "sentinel-cli-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "sentinel-agent": "./src/index.tsx"
+  },
+  "scripts": {
+    "dev": "bun run src/index.tsx",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opentui/core": "latest",
+    "@opentui/solid": "latest",
+    "solid-js": "^1.9.0"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.0.0"
+  }
+}

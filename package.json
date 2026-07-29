@@ -1,0 +1,8 @@
+{
+  "name": "sentinel-monorepo",
+  "private": true,
+  "scripts": {
+    "agent": "bun run packages/cli-agent/src/index.tsx",
+    "agent:check": "cd packages/cli-agent && bun run typecheck"
+  }
+}
