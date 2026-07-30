@@ -25,7 +25,7 @@ Describe a problem in plain English, and the agent investigates with real tools 
 git clone https://github.com/Single-Core-Labs/Sentinel-Agent1.git
 cd Sentinel-Agent1
 # Build and install the Rust CLI
-cargo install --path crates/sentinel-cli
+cargo install --path crates/interfaces/sentinel-cli
 ```
 
 Now `sentinel ai` works from any directory:
@@ -207,14 +207,21 @@ The agent emits events via `event_queue`:
 ## Project Structure
 
 ```
-├── desktop/            # Tauri desktop app (experimental)
-├── crates/             # 24 Rust crates
+├── packages/           # TS/JS frontend packages
+│   ├── cli-agent/      # Solid.js + OpenTUI interactive agent
+│   └── desktop-app/    # React + Tauri desktop GUI app
+├── crates/             # Domain-categorized Rust crates
+│   ├── core/           # Agent engine & protocol
+│   ├── server/         # App server JSON-RPC daemon
+│   ├── interfaces/     # CLI & TUI binaries
+│   ├── tools-and-exec/ # Execution sandbox & tool registry
+│   ├── integrations/   # IDE & LSP companions
+│   └── platform/       # Providers, config, infra
 ├── configs/            # Runtime configuration JSON
-├── docs/               # Documentation
+├── docs/               # Centralized documentation hub
+├── schemas/            # JSON schemas for protocols
 ├── scripts/            # Utility scripts
-├── tools/              # Lint and dev tools
-├── bazel/              # Bazel build rules
-└── .github/            # CI workflows
+└── tools/              # Lint and dev tools
 ```
 
 ---
