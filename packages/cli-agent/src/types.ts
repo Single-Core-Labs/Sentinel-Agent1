@@ -33,3 +33,19 @@ export interface JsonRpcResponse {
   result?: unknown
   error?: { code: number; message: string; data?: unknown }
 }
+
+export interface GpuStats {
+  name: string | null
+  vramTotalGb: number | null
+  vramUsedGb: number | null
+  utilGpu: number | null
+  tempC: number | null
+}
+
+export interface BackendInfo {
+  kind: string
+  baseUrl: string
+  version: string | null
+  modelCount: number
+  available: boolean
+}

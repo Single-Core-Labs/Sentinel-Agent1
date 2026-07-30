@@ -3,6 +3,7 @@ use std::sync::OnceLock;
 use std::sync::atomic::Ordering;
 use colored::*;
 use sentinel_provider_info::{ProviderInfo, AuthConfig};
+use sentinel_gpu_profiler::{model_db, vram as gpu_vram, cuda};
 
 static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 fn client() -> &'static reqwest::Client {
@@ -67,9 +68,10 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     let tools = Arc::new(sentinel_tools::ToolRegistry::new());
 
     let gpu = info.gpu.as_deref().unwrap_or("No GPU");
+    let vram_str = info.vram_gb.map(|v| format!(", {:.1}GB VRAM", v)).unwrap_or_default();
     let ctx = format!(
-        "LOCAL: {os} {arch}, {cores}c/{mem:.0}GB, {gpu}. Use /gpu for GPU stats, /ssh for remote.",
-        os = info.os, arch = info.arch, cores = info.cpu_cores, mem = info.mem_gb, gpu = gpu
+        "LOCAL: {os} {arch}, {cores}c/{mem:.0}GB, {gpu}{vram}. Use /gpu for GPU stats, /ssh for remote.",
+        os = info.os, arch = info.arch, cores = info.cpu_cores, mem = info.mem_gb, gpu = gpu, vram = vram_str
     );
     let mut prompt_mgr = sentinel_core::SystemPromptManager::new();
     prompt_mgr.set_variable("local_context", &ctx);
@@ -125,6 +127,8 @@ async fn chat_loop(
                 "/recommend" => cmd_recommend(model, sys),
                 "/gpu" | "/nvidia" => cmd_gpu(arg).await,
                 "/ssh" => cmd_ssh(arg).await,
+                "/backends" | "/engines" => cmd_backends().await,
+                "/profile" => cmd_profile(arg).await,
                 _ => eprintln!(" {} Unknown command. Type /help.", "✖".red().bold()),
             }
             continue;
@@ -159,6 +163,8 @@ fn help() {
     println!("  /stats            Show conversation statistics");
     println!("  /gpu [/gpu ps|/gpu detailed]  NVIDIA GPU stats (zero-cost)");
     println!("  /ssh <user@host> <cmd>  Run command on remote machine (zero-cost)");
+    println!("  /backends         List detected local LLM backends (Ollama, vLLM, LM Studio)");
+    println!("  /profile [file]   Analyze CUDA/Numba kernel source for performance issues");
     println!("  /clear            Clear screen");
     println!("  /exit, /quit      Exit");
     println!();
@@ -175,8 +181,15 @@ fn cmd_models() {
             println!();
             println!(" {} {}", "•".cyan().bold(), "Pulled models:".bold());
             for (name, size, modified) in &list {
-                let size_colored = size.green();
-                println!("   {}  {}  {}", name.bold(), size_colored, modified.dimmed());
+                let vram_est = model_db::lookup_model(name)
+                    .map(|m| format!("  ~{:.1} GB VRAM", m.vram_gb_fp16 * 2.5))
+                    .unwrap_or_default();
+                println!("   {}  {} {}{}",
+                    name.bold(),
+                    size.green(),
+                    modified.dimmed(),
+                    vram_est.dimmed(),
+                );
             }
             println!();
         }
@@ -201,12 +214,14 @@ fn cmd_info(model: &str, sys: &SysInfo, agent: &sentinel_core::Agent) {
     let pt = agent.total_prompt_tokens.load(Ordering::Relaxed);
     let ct = agent.total_completion_tokens.load(Ordering::Relaxed);
     let gpu = sys.gpu.as_deref().unwrap_or("None");
+    let vram_str = sys.vram_gb.map(|v| format!("{:.1} GB", v)).unwrap_or_else(|| "N/A".into());
+    let util_str = sys.gpu_util.map(|u| format!(", {:.0}% util", u)).unwrap_or_default();
 
     println!();
     println!(" {}", "System Info:".yellow().bold());
     println!("   {} {} ({}), {} cores, {:.0} GB RAM",
         "OS:".dimmed(), sys.os, sys.arch, sys.cpu_cores, sys.mem_gb);
-    println!("   {} {}", "GPU:".dimmed(), gpu);
+    println!("   {} {} (VRAM: {}{})", "GPU:".dimmed(), gpu, vram_str, util_str);
     println!();
     println!(" {}", "Session:".yellow().bold());
     println!("   {} {}", "Model:".dimmed(), model.green().bold());
@@ -314,12 +329,13 @@ async fn cmd_show(model: &str) {
 
 fn cmd_recommend(model: &str, sys: &SysInfo) {
     let gpu = sys.gpu.as_deref().unwrap_or("No GPU detected");
+    let vram_str = sys.vram_gb.map(|v| format!("{:.1} GB", v)).unwrap_or_else(|| "N/A".into());
 
     println!();
     println!(" {} {}", "•".cyan().bold(), "Hardware Profile".bold());
     println!("   {} {} ({}), {} cores, {:.0} GB RAM",
         "System:".dimmed(), sys.os, sys.arch, sys.cpu_cores, sys.mem_gb);
-    println!("   {} {}", "GPU:".dimmed(), gpu);
+    println!("   {} {} ({})", "GPU:".dimmed(), gpu, vram_str);
     println!();
     println!(" {} {}", "•".cyan().bold(), "Recommended Models".bold());
 
@@ -331,7 +347,14 @@ fn cmd_recommend(model: &str, sys: &SysInfo) {
         ("XL", "llama3.3:70b / qwen2.5:72b / deepseek-r1:67b", "~40+ GB", "Best quality, high-end GPU required"),
     ];
 
-    let recommended = if sys.gpu.is_some() && sys.mem_gb >= 32.0 { 3 }
+    let recommended = if let Some(vram) = sys.vram_gb {
+        if vram >= 40.0 { 4 }
+        else if vram >= 8.0 { 3 }
+        else if vram >= 4.0 { 2 }
+        else if vram >= 2.0 { 1 }
+        else if vram >= 1.0 { 1 }
+        else { 0 }
+    } else if sys.gpu.is_some() && sys.mem_gb >= 32.0 { 3 }
     else if sys.gpu.is_some() && sys.mem_gb >= 16.0 { 2 }
     else if sys.gpu.is_some() && sys.mem_gb >= 8.0 { 2 }
     else if sys.mem_gb >= 8.0 { 1 }
@@ -344,14 +367,28 @@ fn cmd_recommend(model: &str, sys: &SysInfo) {
             marker, tier_style, examples.dimmed(), vram.dimmed(), note.dimmed());
     }
 
+    // VRAM-aware suggestions
+    if let Some(vram) = sys.vram_gb {
+        let compatible: Vec<&model_db::ModelInfo> = model_db::filter_models_by_vram(vram, 0.0);
+        println!();
+        println!(" {} {} models fit in your {:.1} GB VRAM:", "•".cyan().bold(), compatible.len(), vram);
+        for m in compatible.iter().take(6) {
+            println!("   {} ({:.2} GB FP16)", m.name.bold(), m.vram_gb_fp16);
+        }
+        if compatible.len() > 6 {
+            println!("   ... and {} more", compatible.len() - 6);
+        }
+    }
+
+    // Cloud alternatives
+    if let Some((cloud, provider, price)) = model_db::find_cloud_alternative(model) {
+        println!();
+        println!(" {} Cloud alternative for {}: {} via {} ({})",
+            "☁".cyan().bold(), model.dimmed(), cloud.bold(), provider, price);
+    }
+
     println!();
-    let current_tier = match recommended {
-        0 => "tinyllama",
-        1 => "llama3.2:1b",
-        2 => "llama3.2:3b",
-        3 => "llama3.1:8b",
-        _ => "llama3.2:3b",
-    };
+    let current_tier = model_db::recommend_tier(sys.vram_gb, sys.mem_gb, sys.gpu.is_some());
     if model != current_tier {
         println!(" {} Currently using {}. {} recommended for your hardware.",
             "ℹ".cyan().bold(), model.bold(), current_tier.green().bold());
@@ -376,6 +413,111 @@ async fn cmd_gpu(arg: &str) {
         Err(e) => println!(" {} {} (install NVIDIA drivers or run `ollama serve`)", "✖".red(), e),
     }
     println!();
+}
+
+async fn cmd_backends() {
+    let client = client();
+    println!();
+    println!(" {} {}", "•".cyan().bold(), "Scanning for local LLM backends...");
+    println!();
+    let backends = sentinel_provider::backend::auto_detect_backends(client).await;
+    if backends.is_empty() {
+        println!("   {} No local LLM backends detected.", "✖".red());
+        println!("   {}", "Start Ollama (ollama serve), vLLM, or LM Studio and try again.".dimmed());
+        println!();
+        return;
+    }
+    for (i, b) in backends.iter().enumerate() {
+        let status = if b.available { "●".green().bold() } else { "○".red().dimmed() };
+        println!(" {} {}. {}  {}  {}",
+            status, (i + 1).to_string().cyan().bold(),
+            b.kind.name().bold(),
+            b.base_url.dimmed(),
+            if b.available {
+                format!("({} models)", b.model_count.to_string().green())
+            } else {
+                "not running".red().to_string()
+            },
+        );
+    }
+    println!();
+    println!("   {} Use /backends switch <n> to change backend.", "ℹ".cyan().bold());
+    println!();
+}
+
+async fn cmd_profile(arg: &str) {
+    let arg = arg.trim();
+    if arg.is_empty() {
+        // Default: show GPU stats as quick profile
+        println!();
+        println!(" {} {}", "•".cyan().bold(), "GPU Profile Summary".bold());
+        let stats = gpu_vram::query_gpu_stats();
+        if let Some(name) = &stats.name {
+            println!("   {} {}", "GPU:".dimmed(), name.bold());
+        }
+        if let Some(vram) = stats.vram_total_gb {
+            let used = stats.vram_used_gb.unwrap_or(0.0);
+            let pct = if vram > 0.0 { used / vram * 100.0 } else { 0.0 };
+            println!("   {} {:.1} GB / {:.1} GB ({:.0}%)", "VRAM:".dimmed(), used, vram, pct);
+        }
+        if let Some(util) = stats.util_gpu {
+            println!("   {} {:.0}%", "GPU Util:".dimmed(), util);
+        }
+        if let Some(temp) = stats.temp_c {
+            println!("   {} {:.0}°C", "Temp:".dimmed(), temp);
+        }
+        if let Some(sm) = stats.sm_count {
+            println!("   {} {} SMs", "SM Count:".dimmed(), sm);
+        }
+        println!();
+        println!("   {} Use /profile <file.cu> for CUDA source analysis.", "ℹ".cyan().bold());
+        println!();
+        return;
+    }
+
+    // Try to read and analyze a CUDA source file
+    let path = std::path::Path::new(arg);
+    if !path.exists() {
+        println!(" {} File not found: {}", "✖".red(), arg);
+        return;
+    }
+    match std::fs::read_to_string(path) {
+        Ok(source) => {
+            println!();
+            println!(" {} Analyzing {}...", "●".cyan().bold(), arg.bold());
+            let issues = cuda::analyze_cuda_source(&source);
+            if issues.is_empty() {
+                println!();
+                println!("   {} No issues found in kernel.", "✔".green().bold());
+            } else {
+                println!();
+                let errors = issues.iter().filter(|i| i.severity == cuda::Severity::Error).count();
+                let warnings = issues.iter().filter(|i| i.severity == cuda::Severity::Warn).count();
+                let infos = issues.iter().filter(|i| i.severity == cuda::Severity::Info).count();
+                println!("   {} {} issues: {} errors, {} warnings, {} info",
+                    "•".cyan().bold(), issues.len(),
+                    errors.to_string().red().bold(),
+                    warnings.to_string().yellow().bold(),
+                    infos.to_string().cyan().bold(),
+                );
+                println!();
+                for issue in &issues {
+                    let severity_colored = match issue.severity {
+                        cuda::Severity::Error => "error".red().bold(),
+                        cuda::Severity::Warn => "warn".yellow().bold(),
+                        cuda::Severity::Info => "info".cyan(),
+                    };
+                    println!("   {} [{}:{}] {}",
+                        "→".cyan(), arg.dimmed(), issue.line.to_string().dimmed(), severity_colored);
+                    println!("       {}", issue.message.bold());
+                    println!("       {}", issue.suggestion.dimmed());
+                    println!();
+                }
+            }
+            println!();
+        }
+        Err(e) => println!(" {} Failed to read file: {}", "✖".red(), e),
+    }
 }
 
 async fn cmd_ssh(arg: &str) {
@@ -535,8 +677,9 @@ fn ok(msg: &str) {
 fn scan_device(info: &SysInfo) {
     println!(" {} {}", "●".cyan().bold(), "Scanning device...".bold());
     let gpu = info.gpu.as_deref().unwrap_or("No GPU detected (CPU-only)");
-    println!("   {} {} ({}), {} cores, {:.0} GB RAM, {}",
-        "System:".dimmed(), info.os, info.arch, info.cpu_cores, info.mem_gb, gpu);
+    let vram = info.vram_gb.map(|v| format!(", {:.1} GB VRAM", v)).unwrap_or_default();
+    println!("   {} {} ({}), {} cores, {:.0} GB RAM, {}{}",
+        "System:".dimmed(), info.os, info.arch, info.cpu_cores, info.mem_gb, gpu, vram);
 }
 
 async fn select_model(info: &SysInfo) -> anyhow::Result<String> {
@@ -548,7 +691,10 @@ async fn select_model(info: &SysInfo) -> anyhow::Result<String> {
         println!("   {}", "(none)".dimmed());
     } else {
         for (i, m) in existing.iter().enumerate() {
-            println!("   {}. {}", (i + 1).to_string().cyan().bold(), m.green());
+            let vram_badge = model_db::lookup_model(m)
+                .map(|info| format!(" ~{:.1}GB", info.vram_gb_fp16 * 2.5))
+                .unwrap_or_default();
+            println!("   {}. {}{}", (i + 1).to_string().cyan().bold(), m.green(), vram_badge.dimmed());
         }
     }
 
@@ -565,6 +711,21 @@ async fn select_model(info: &SysInfo) -> anyhow::Result<String> {
     for (i, (tier, name, vram, note)) in tiers.iter().enumerate() {
         let marker = if i == idx { "→".green().bold() } else { " ".normal() };
         println!(" {} {:8}  {}  {}  {}", marker, tier, name.bold(), vram.dimmed(), note.dimmed());
+    }
+
+    // Show VRAM-compatible models
+    if let Some(vram) = info.vram_gb {
+        let compatible: Vec<&model_db::ModelInfo> = model_db::filter_models_by_vram(vram, 2.5);
+        if !compatible.is_empty() {
+            println!();
+            println!("   {} Models that fit in {:.1} GB VRAM:", "ℹ".cyan().bold(), vram);
+            for m in compatible.iter().take(5) {
+                println!("     {} ({:.1} GB)", m.name.bold(), m.vram_gb_fp16 * 2.5);
+            }
+            if compatible.len() > 5 {
+                println!("     ... and {} more", compatible.len() - 5);
+            }
+        }
     }
 
     println!();
@@ -630,6 +791,8 @@ struct SysInfo {
     cpu_cores: usize,
     mem_gb: f64,
     gpu: Option<String>,
+    vram_gb: Option<f64>,
+    gpu_util: Option<f64>,
     has_ollama: bool,
 }
 
@@ -639,8 +802,11 @@ fn detect() -> SysInfo {
     let cpu_cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(0);
     let mem_gb = total_mem_gb();
     let gpu = detect_gpu();
+    let stats = gpu_vram::query_gpu_stats();
+    let vram_gb = stats.vram_total_gb.or_else(|| gpu_vram::detect_vram_gb());
+    let gpu_util = stats.util_gpu;
     let has_ollama = has_cmd("ollama");
-    SysInfo { os, arch, cpu_cores, mem_gb, gpu, has_ollama }
+    SysInfo { os, arch, cpu_cores, mem_gb, gpu, vram_gb, gpu_util, has_ollama }
 }
 
 fn detect_gpu() -> Option<String> {

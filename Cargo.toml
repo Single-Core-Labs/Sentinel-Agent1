@@ -62,6 +62,7 @@ sentinel-tools = { path = "crates/tools-and-exec/sentinel-tools" }
 sentinel-mcp = { path = "crates/tools-and-exec/sentinel-mcp" }
 sentinel-plugin-system = { path = "crates/tools-and-exec/sentinel-plugin-system" }
 sentinel-ai-exec = { path = "crates/tools-and-exec/sentinel-ai-exec" }
+sentinel-gpu-profiler = { path = "crates/tools-and-exec/sentinel-gpu-profiler" }
 sentinel-ide-companion = { path = "crates/integrations/sentinel-ide-companion" }
 sentinel-lsp = { path = "crates/integrations/sentinel-lsp" }
 sentinel-config = { path = "crates/platform/sentinel-config" }

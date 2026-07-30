@@ -59,6 +59,9 @@ pub mod methods {
     pub const AUTH_LOGIN: &str = "auth/login";
     pub const AUTH_LOGOUT: &str = "auth/logout";
     pub const AUTH_STATUS: &str = "auth/status";
+
+    // GPU
+    pub const GPU_QUERY: &str = "gpu/query";
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

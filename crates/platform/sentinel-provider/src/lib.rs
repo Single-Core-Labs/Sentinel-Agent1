@@ -11,6 +11,7 @@ pub mod route;
 pub mod protocols;
 pub mod discovery;
 pub mod fallback;
+pub mod backend;
 
 pub use provider::*;
 pub use openai::*;

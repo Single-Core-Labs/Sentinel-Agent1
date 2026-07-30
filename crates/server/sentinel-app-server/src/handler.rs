@@ -148,6 +148,7 @@ impl RequestHandler {
             methods::COMMAND_EXEC_SANDBOXED => self.handle_command_exec_sandboxed(req.params).await,
             methods::CONFIG_GET => self.handle_config_get(),
             methods::DIAGNOSTICS => self.handle_diagnostics().await,
+            methods::GPU_QUERY => self.handle_gpu_query(),
             methods::AUTH_STATUS => Ok(serde_json::json!({ "authenticated": false })),
             _ => Err(JsonRpcError::method_not_found(format!("Unknown method: {}", req.method))),
         };
@@ -458,6 +459,35 @@ impl RequestHandler {
                 .collect::<Vec<_>>(),
         }))
     }
+
+    fn handle_gpu_query(&self) -> Result<Value, JsonRpcError> {
+        let name = run_gpu_cmd(&["--query-gpu=name", "--format=csv,noheader"]);
+        let mem_total = run_gpu_cmd(&["--query-gpu=memory.total", "--format=csv,noheader,nounits"]);
+        let mem_used = run_gpu_cmd(&["--query-gpu=memory.used", "--format=csv,noheader,nounits"]);
+        let util = run_gpu_cmd(&["--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"]);
+        let temp = run_gpu_cmd(&["--query-gpu=temperature.gpu", "--format=csv,noheader,nounits"]);
+
+        let mem_total_mb = mem_total.and_then(|s| s.trim().parse::<f64>().ok());
+        let mem_used_mb = mem_used.and_then(|s| s.trim().parse::<f64>().ok());
+
+        Ok(serde_json::json!({
+            "name": name.unwrap_or_default().trim(),
+            "vram_total_gb": mem_total_mb.map(|m| m / 1024.0),
+            "vram_used_gb": mem_used_mb.map(|m| m / 1024.0),
+            "util_gpu": util.and_then(|s| s.trim().parse::<f64>().ok()),
+            "temp_c": temp.and_then(|s| s.trim().parse::<f64>().ok()),
+        }))
+    }
+}
+
+fn run_gpu_cmd(args: &[&str]) -> Option<String> {
+    let out = std::process::Command::new("nvidia-smi")
+        .args(args)
+        .output()
+        .ok()
+        .filter(|o| o.status.success())?;
+    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if s.is_empty() { None } else { Some(s) }
 }
 
 fn parse_params<T: serde::de::DeserializeOwned>(params: Option<Value>) -> Result<T, JsonRpcError> {
