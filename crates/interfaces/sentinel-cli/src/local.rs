@@ -3,7 +3,7 @@ use std::sync::OnceLock;
 use std::sync::atomic::Ordering;
 use colored::*;
 use sentinel_provider_info::{ProviderInfo, AuthConfig};
-use sentinel_gpu_profiler::{model_db, vram as gpu_vram, cuda, profile};
+use sentinel_gpu_profiler::{model_db, vram as gpu_vram, cuda, profile, bench};
 
 static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 fn client() -> &'static reqwest::Client {
@@ -67,15 +67,47 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
 
     let tools = Arc::new(sentinel_tools::ToolRegistry::new());
 
-    let gpu = info.gpu.as_deref().unwrap_or("No GPU");
-    let vram_str = info.vram_gb.map(|v| format!(", {:.1}GB VRAM", v)).unwrap_or_default();
-    let ctx = format!(
-        "LOCAL: {os} {arch}, {cores}c/{mem:.0}GB, {gpu}{vram}. Use /gpu for GPU stats, /ssh for remote.",
-        os = info.os, arch = info.arch, cores = info.cpu_cores, mem = info.mem_gb, gpu = gpu, vram = vram_str
+    let extended = gpu_vram::query_extended_gpu_info();
+    let gpu_ctx = gpu_vram::gpu_context_string(
+        info.gpu.as_deref(),
+        info.vram_gb,
+        &extended,
     );
+    let mut ctx = format!(
+        "LOCAL: {os} {arch}, {cores}c/{mem:.0}GB RAM\n{gpu_ctx}",
+        os = info.os, arch = info.arch, cores = info.cpu_cores, mem = info.mem_gb, gpu_ctx = gpu_ctx
+    );
+
+    // Add LLM backend info
+    let backends = sentinel_provider::backend::auto_detect_backends(client()).await;
+    if !backends.is_empty() {
+        ctx.push_str("\nAvailable backends:");
+        for b in &backends {
+            ctx.push_str(&format!("\n  {} ({}): {} models, status={}",
+                b.kind.name(), b.base_url, b.model_count,
+                if b.available { "running" } else { "stopped" }
+            ));
+        }
+    }
+
+    let recommended = model_db::recommend_tier(info.vram_gb, info.mem_gb, info.gpu.is_some());
+    ctx.push_str(&format!("\nRecommended model for hardware: {}", recommended));
+
+    ctx.push_str("\nProfiling commands (zero-cost, no LLM token spend):");
+    ctx.push_str("\n  /profile         GPU summary (temperature, utilization, VRAM)");
+    ctx.push_str("\n  /profile dmon N  Real-time nvidia-smi dmon for N seconds");
+    ctx.push_str("\n  /profile file.cu Static CUDA kernel analysis (7 rule patterns)");
+    ctx.push_str("\n  /profile log f   Parse existing nvidia-smi dmon log file");
+    ctx.push_str("\n  /bench           Token throughput benchmark of current model");
+    ctx.push_str("\n  /bench kernel f  Auto-sweep block sizes for a CUDA kernel");
+    ctx.push_str("\n  /ssh host cmd    Run remote command (zero-cost)");
+    ctx.push_str("\n  /ssh profile host N  Remote GPU profiling with anomaly detection");
+    ctx.push_str("\n  /gpu             GPU stats summary");
+    ctx.push_str("\n  /backends        Discover local LLM backends");
+
     let mut prompt_mgr = sentinel_core::SystemPromptManager::new();
     prompt_mgr.set_variable("local_context", &ctx);
-    let base = format!("{}\n\n{{local_context}}", sentinel_core::DEFAULT_SYSTEM_PROMPT);
+    let base = format!("{}\n\n## Local Hardware Context\n{{{{local_context}}}}", sentinel_core::DEFAULT_SYSTEM_PROMPT);
     prompt_mgr.set_base(&base);
 
     let agent = sentinel_core::Agent::new(provider, tools, config.clone())
@@ -122,7 +154,13 @@ async fn chat_loop(
                 "/pull" => cmd_pull(arg),
                 "/info" => cmd_info(model, sys, agent),
                 "/stats" => cmd_stats(thread),
-                "/bench" => cmd_bench(model).await,
+                "/bench" => {
+                    if parts.len() > 1 && parts[1] == "kernel" {
+                        cmd_bench_kernel(parts.get(2).copied().unwrap_or("")).await;
+                    } else {
+                        cmd_bench(model).await;
+                    }
+                }
                 "/show" => cmd_show(model).await,
                 "/recommend" => cmd_recommend(model, sys),
                 "/gpu" | "/nvidia" => cmd_gpu(arg).await,
@@ -158,6 +196,7 @@ fn help() {
     println!("  /pull <name>      Pull a model from Ollama");
     println!("  /show             Show current model metadata & capabilities");
     println!("  /bench            Benchmark current model (tokens/sec, latency)");
+    println!("  /bench kernel <f> Auto-sweep block sizes for CUDA kernel");
     println!("  /recommend        Hardware-aware model recommendations");
     println!("  /info             Show system, model, and token info");
     println!("  /stats            Show conversation statistics");
@@ -283,6 +322,52 @@ async fn cmd_bench(model: &str) {
     println!();
 }
 
+async fn cmd_bench_kernel(arg: &str) {
+    let arg = arg.trim();
+    if arg.is_empty() {
+        println!();
+        println!(" {} Usage: /bench kernel <file.cu>", "•".yellow().bold());
+        println!("   {}", "Auto-sweeps block sizes to find optimal kernel config.".dimmed());
+        println!();
+        return;
+    }
+
+    let path = std::path::Path::new(arg);
+    if !path.exists() {
+        println!(" {} File not found: {}", "✖".red(), arg);
+        return;
+    }
+
+    match std::fs::read_to_string(path) {
+        Ok(source) => {
+            println!();
+            println!(" {} Generating kernel config sweep for {}...", "●".cyan().bold(), arg.bold());
+
+            let configs = bench::generate_configs(&source);
+            println!("   {} {} configs to evaluate", "→".cyan(), configs.len());
+
+            let stats = gpu_vram::query_gpu_stats();
+            let sm_count = stats.sm_count.unwrap_or(128);
+            println!("   {} GPU: {} SMs", "ℹ".cyan().bold(), sm_count);
+            println!();
+
+            let result = bench::run_bench_suite(&configs, arg, sm_count);
+            println!("{}", bench::format_bench_results(&result));
+
+            // Show top 3 configs
+            println!(" {} Top 3 configurations:", "•".cyan().bold());
+            for (i, br) in result.block_configs.iter().take(3).enumerate() {
+                let medal = match i { 0 => "🥇", 1 => "🥈", 2 => "🥉", _ => "  " };
+                let occ = br.occupancy.map(|o| format!("{:.0}%", o)).unwrap_or_else(|| "N/A".into());
+                println!("   {} {} ({}, occupancy {})",
+                    medal, br.label.bold(), format!("score {:.1}", br.duration_ms).dimmed(), occ);
+            }
+            println!();
+        }
+        Err(e) => println!(" {} Failed to read file: {}", "✖".red(), e),
+    }
+}
+
 async fn cmd_show(model: &str) {
     println!();
     println!(" {} Fetching model metadata...", "●".cyan().bold());
@@ -388,6 +473,21 @@ fn cmd_recommend(model: &str, sys: &SysInfo) {
         println!();
         println!(" {} Cloud alternative for {}: {} via {} ({})",
             "☁".cyan().bold(), model.dimmed(), cloud.bold(), provider, price);
+    }
+
+    // CUDA architecture targets for compilation
+    if let Some(gpu) = &sys.gpu {
+        if let Some(arch) = gpu_vram::architecture_from_name(gpu) {
+            if let Some(cc) = gpu_vram::compute_capability_from_name(gpu) {
+                let nvcc_flag = gpu_vram::nvcc_arch_flag(&cc);
+                println!();
+                println!(" {} CUDA Compilation Targets for this GPU:", "•".cyan().bold());
+                println!("   {} {} ({})", "Architecture:".dimmed(), arch, gpu);
+                println!("   {} {}", "Compute Capability:".dimmed(), cc);
+                println!("   {} {}", "NVCC Flag:".dimmed(), nvcc_flag.green().bold());
+                println!("   {} {}", "Example:".dimmed(), format!("nvcc {} kernel.cu", nvcc_flag).dimmed());
+            }
+        }
     }
 
     println!();
