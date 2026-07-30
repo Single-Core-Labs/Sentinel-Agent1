@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use std::sync::OnceLock;
+use std::sync::atomic::Ordering;
 use colored::*;
 use sentinel_provider_info::{ProviderInfo, AuthConfig};
 
@@ -80,12 +81,14 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     agent.set_event_handler(Arc::new(crate::handler::CliEventHandler));
 
     let approval: Box<dyn sentinel_core::ApprovalGate> = Box::new(sentinel_core::AutoApprovalGate);
-    chat_loop(&agent, &mut thread, approval).await
+    chat_loop(&agent, &mut thread, &model, &info, approval).await
 }
 
 async fn chat_loop(
     agent: &sentinel_core::Agent,
     thread: &mut sentinel_core::AgentThread,
+    model: &str,
+    sys: &SysInfo,
     approval: Box<dyn sentinel_core::ApprovalGate>,
 ) -> anyhow::Result<()> {
     loop {
@@ -101,9 +104,16 @@ async fn chat_loop(
         if matches!(input.as_str(), "exit" | "quit" | "/exit" | "/quit") { break; }
 
         if input.starts_with('/') {
-            match input.as_str() {
+            let parts: Vec<&str> = input.splitn(2, ' ').collect();
+            let cmd = parts[0];
+            let arg = parts.get(1).copied().unwrap_or("");
+            match cmd {
                 "/help" | "/h" => help(),
                 "/clear" => { print!("\x1B[2J\x1B[H"); let _ = std::io::stdout().flush(); }
+                "/models" => cmd_models(),
+                "/pull" => cmd_pull(arg),
+                "/info" => cmd_info(model, sys, agent),
+                "/stats" => cmd_stats(thread),
                 _ => eprintln!(" {} Unknown command. Type /help.", "✖".red().bold()),
             }
             continue;
@@ -121,6 +131,80 @@ async fn chat_loop(
 
     println!("\n{}  turns: {}, iterations: {}", "Done.".green().bold(), thread.turn, thread.iterations);
     Ok(())
+}
+
+// ── Slash command handlers ──
+
+fn help() {
+    println!();
+    println!(" {}", "Commands:".yellow().bold());
+    println!("  /help, /h         Show this help");
+    println!("  /models           List locally pulled models");
+    println!("  /pull <name>      Pull a model from Ollama");
+    println!("  /info             Show system, model, and token info");
+    println!("  /stats            Show conversation statistics");
+    println!("  /clear            Clear screen");
+    println!("  /exit, /quit      Exit");
+    println!();
+}
+
+fn cmd_models() {
+    match list_model_details() {
+        Ok(list) if list.is_empty() => {
+            println!();
+            println!(" {} No models pulled yet. Use /pull <name> to pull one.", "•".cyan().bold());
+            println!();
+        }
+        Ok(list) => {
+            println!();
+            println!(" {} {}", "•".cyan().bold(), "Pulled models:".bold());
+            for (name, size, modified) in &list {
+                let size_colored = size.green();
+                println!("   {}  {}  {}", name.bold(), size_colored, modified.dimmed());
+            }
+            println!();
+        }
+        Err(e) => println!(" {} {}", "✖".red().bold(), e),
+    }
+}
+
+fn cmd_pull(arg: &str) {
+    if arg.is_empty() {
+        println!(" {} Usage: /pull <model-name>", "•".yellow().bold());
+        println!("   {}", "Example: /pull llama3.2:3b".dimmed());
+        return;
+    }
+    println!(" {} Pulling model {}...", "●".cyan().bold(), arg.bold());
+    match pull(arg) {
+        Ok(msg) => println!("   {} {}", "✔".green(), msg.green()),
+        Err(e) => println!("   {} {}", "✖".red(), e),
+    }
+}
+
+fn cmd_info(model: &str, sys: &SysInfo, agent: &sentinel_core::Agent) {
+    let pt = agent.total_prompt_tokens.load(Ordering::Relaxed);
+    let ct = agent.total_completion_tokens.load(Ordering::Relaxed);
+    let gpu = sys.gpu.as_deref().unwrap_or("None");
+
+    println!();
+    println!(" {}", "System Info:".yellow().bold());
+    println!("   {} {} ({}), {} cores, {:.0} GB RAM",
+        "OS:".dimmed(), sys.os, sys.arch, sys.cpu_cores, sys.mem_gb);
+    println!("   {} {}", "GPU:".dimmed(), gpu);
+    println!();
+    println!(" {}", "Session:".yellow().bold());
+    println!("   {} {}", "Model:".dimmed(), model.green().bold());
+    println!("   {} {} prompt, {} completion tokens",
+        "Tokens:".dimmed(), pt.to_string().cyan(), ct.to_string().cyan());
+    println!();
+}
+
+fn cmd_stats(thread: &sentinel_core::AgentThread) {
+    println!();
+    println!(" {} turns, {} iterations",
+        thread.turn.to_string().cyan().bold(),
+        thread.iterations.to_string().cyan().bold());
+    println!();
 }
 
 // ── Display ──
@@ -146,15 +230,6 @@ fn ready(model: &str) {
     println!("{}", "  ────────────────────────────────────────────".dimmed());
     println!(" {} {} {}", "●".green().bold(), "Ready! Model:".green(), model.green().bold());
     println!(" {}", "  Type your message. /help for commands.".dimmed());
-    println!();
-}
-
-fn help() {
-    println!();
-    println!(" {}", "Commands:".yellow().bold());
-    println!("  /help, /h         Show this help");
-    println!("  /exit, /quit      Exit");
-    println!("  /clear            Clear screen");
     println!();
 }
 
@@ -287,6 +362,24 @@ fn list_models() -> Result<Vec<String>, String> {
     Ok(String::from_utf8_lossy(&out.stdout)
         .lines().skip(1)
         .filter_map(|l| l.split_whitespace().next().map(String::from))
+        .collect())
+}
+
+fn list_model_details() -> Result<Vec<(String, String, String)>, String> {
+    let out = std::process::Command::new("ollama")
+        .args(["list"]).output()
+        .map_err(|e| format!("ollama list failed: {}", e))?;
+    if !out.status.success() { return Ok(vec![]); }
+    Ok(String::from_utf8_lossy(&out.stdout)
+        .lines().skip(1)
+        .filter_map(|l| {
+            let parts: Vec<&str> = l.split_whitespace().collect();
+            if parts.len() >= 4 {
+                Some((parts[0].into(), parts[1].into(), parts[3].into()))
+            } else if parts.len() >= 3 {
+                Some((parts[0].into(), parts[1].into(), String::new()))
+            } else { None }
+        })
         .collect())
 }
 
