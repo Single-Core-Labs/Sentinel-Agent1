@@ -3,7 +3,7 @@ use std::sync::OnceLock;
 use std::sync::atomic::Ordering;
 use colored::*;
 use sentinel_provider_info::{ProviderInfo, AuthConfig};
-use sentinel_gpu_profiler::{model_db, vram as gpu_vram, cuda};
+use sentinel_gpu_profiler::{model_db, vram as gpu_vram, cuda, profile};
 
 static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 fn client() -> &'static reqwest::Client {
@@ -162,9 +162,12 @@ fn help() {
     println!("  /info             Show system, model, and token info");
     println!("  /stats            Show conversation statistics");
     println!("  /gpu [/gpu ps|/gpu detailed]  NVIDIA GPU stats (zero-cost)");
-    println!("  /ssh <user@host> <cmd>  Run command on remote machine (zero-cost)");
+    println!("  /ssh <host> <cmd>  Run command on remote machine (zero-cost)");
+    println!("  /ssh profile <host> <s>  Remote GPU profiling with anomaly detection");
     println!("  /backends         List detected local LLM backends (Ollama, vLLM, LM Studio)");
     println!("  /profile [file]   Analyze CUDA/Numba kernel source for performance issues");
+    println!("  /profile dmon <s> Local nvidia-smi dmon profiling with analysis");
+    println!("  /profile log <f>  Parse existing nvidia-smi dmon log file");
     println!("  /clear            Clear screen");
     println!("  /exit, /quit      Exit");
     println!();
@@ -471,7 +474,77 @@ async fn cmd_profile(arg: &str) {
         }
         println!();
         println!("   {} Use /profile <file.cu> for CUDA source analysis.", "ℹ".cyan().bold());
+        println!("   {} Use /profile log <file> to parse nvidia-smi dmon output.", "ℹ".cyan().bold());
+        println!("   {} Use /profile dmon <sec> to run local dmon profiling.", "ℹ".cyan().bold());
         println!();
+        return;
+    }
+
+    // /profile log <file>: parse existing nvidia-smi dmon log
+    if let Some(log_path) = arg.strip_prefix("log ") {
+        let path = std::path::Path::new(log_path.trim());
+        if !path.exists() {
+            println!(" {} File not found: {}", "✖".red(), log_path);
+            return;
+        }
+        match std::fs::read_to_string(path) {
+            Ok(text) => {
+                println!();
+                println!(" {} Parsing profile log: {}", "●".cyan().bold(), log_path.bold());
+                let snapshots = profile::parse_dmon_csv(&text);
+                if snapshots.is_empty() {
+                    let snapshots2 = profile::parse_dmon_csv_generic(&text);
+                    if snapshots2.is_empty() {
+                        println!("   {} No profile data found in file.", "✖".red());
+                        println!();
+                        return;
+                    }
+                    let result = profile::analyze_profile(&snapshots2, log_path);
+                    println!("{}", profile::profile_summary_text(&result));
+                } else {
+                    let result = profile::analyze_profile(&snapshots, log_path);
+                    println!("{}", profile::profile_summary_text(&result));
+                }
+                println!();
+            }
+            Err(e) => println!(" {} Failed to read file: {}", "✖".red(), e),
+        }
+        return;
+    }
+
+    // /profile dmon <sec>: run local nvidia-smi dmon profiling
+    if let Some(dur_str) = arg.strip_prefix("dmon ") {
+        let dur_secs = dur_str.trim().parse::<u64>().unwrap_or(5).max(1).min(60);
+        println!();
+        println!(" {} Profiling GPU with nvidia-smi dmon for {}s...", "●".cyan().bold(), dur_secs);
+        println!();
+        let cmd = format!("nvidia-smi dmon -s pucvmet -d 1 -c {} 2>&1", dur_secs);
+        match run_shell(&cmd).await {
+            Ok(out) => {
+                let snapshots = profile::parse_dmon_csv(&out);
+                if !snapshots.is_empty() {
+                    // Print raw table
+                    for line in out.lines().take(2 + dur_secs as usize) {
+                        println!("   {}", line);
+                    }
+                    println!();
+                    let result = profile::analyze_profile(&snapshots, "local");
+                    println!("{}", profile::profile_summary_text(&result));
+                    // Print raw data rows
+                    println!("   Raw data ({} snapshots):", snapshots.len());
+                    println!("   {:<6} {:<8} {:<8} {:<8} {:<8}", "Time", "GPU%", "Mem%", "TX(MB)", "RX(MB)");
+                    for s in snapshots.iter().step_by((snapshots.len() / 5).max(1)) {
+                        println!("   {:<6.0} {:<8.0} {:<8.0} {:<8.1} {:<8.1}",
+                            s.time_s, s.gpu_util, s.mem_util, s.pcie_tx_mb, s.pcie_rx_mb);
+                    }
+                } else {
+                    println!("{}", out);
+                    println!("   {} Could not parse dmon output. Raw output shown above.", "ℹ".cyan());
+                }
+                println!();
+            }
+            Err(e) => println!("   {} {}", "✖".red(), e),
+        }
         return;
     }
 
@@ -479,6 +552,7 @@ async fn cmd_profile(arg: &str) {
     let path = std::path::Path::new(arg);
     if !path.exists() {
         println!(" {} File not found: {}", "✖".red(), arg);
+        println!("   {} Usage: /profile [file.cu | log <file> | dmon <sec>]", "ℹ".cyan().bold());
         return;
     }
     match std::fs::read_to_string(path) {
@@ -521,16 +595,71 @@ async fn cmd_profile(arg: &str) {
 }
 
 async fn cmd_ssh(arg: &str) {
-    let parts: Vec<&str> = arg.splitn(2, ' ').collect();
+    let parts: Vec<&str> = arg.splitn(3, ' ').collect();
+    if parts.is_empty() || parts[0].is_empty() {
+        println!();
+        println!(" {} Usage:", "•".yellow().bold());
+        println!("   /ssh <user@host> <command>         Run command remotely");
+        println!("   /ssh profile <user@host> <sec>     Remote GPU profiling with analysis");
+        println!("   {}", "Example: /ssh profile ubuntu@10.0.0.1 5".dimmed());
+        println!();
+        return;
+    }
+
+    // /ssh profile <user@host> <duration>
+    if parts[0] == "profile" && parts.len() >= 3 {
+        let host = parts[1];
+        let dur_secs = parts.get(2).and_then(|s| s.parse::<u64>().ok()).unwrap_or(5).max(1).min(60);
+        println!();
+        println!(" {} Profiling remote GPU on {} for {}s...", "●".cyan().bold(), host, dur_secs);
+        let cmd = format!(
+            r#"ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 {} "nvidia-smi dmon -s pucvmet -d 1 -c {}" 2>&1"#,
+            host, dur_secs
+        );
+        print!("   {} Connecting...", "→".cyan());
+        use std::io::Write;
+        std::io::stdout().flush().ok();
+        match run_shell(&cmd).await {
+            Ok(out) => {
+                println!("\r   {} Data received ({} lines).", "✔".green(), out.lines().count());
+                println!();
+                let snapshots = profile::parse_dmon_csv(&out);
+                if snapshots.is_empty() {
+                    println!("{}", out);
+                } else {
+                    let result = profile::analyze_profile(&snapshots, host);
+                    println!("{}", profile::profile_summary_text(&result));
+                    // Summary table
+                    println!("   Timeline:");
+                    println!("   {:<6} {:<8} {:<8} {:<8} {:<8} {:<6}", "Sec", "GPU%", "Mem%", "TX(MB)", "RX(MB)", "Temp°C");
+                    for s in snapshots.iter() {
+                        println!("   {:<6.0} {:<8.0} {:<8.0} {:<8.1} {:<8.1} {:<6.0}",
+                            s.time_s, s.gpu_util, s.mem_util, s.pcie_tx_mb, s.pcie_rx_mb, s.temp_c);
+                    }
+                }
+                println!();
+            }
+            Err(e) => println!("\r   {} {}", "✖".red(), e),
+        }
+        return;
+    }
+
     if parts.len() < 2 || parts[0].is_empty() || parts[1].is_empty() {
         println!();
-        println!(" {} Usage: /ssh user@host <command>", "•".yellow().bold());
-        println!("   {}", "Example: /ssh ubuntu@10.0.0.1 nvidia-smi".dimmed());
+        println!(" {} Usage:", "•".yellow().bold());
+        println!("   /ssh <user@host> <command>         Run command remotely");
+        println!("   /ssh profile <user@host> <sec>     Remote GPU profiling with analysis");
         println!();
         return;
     }
     let host = parts[0];
     let command = parts[1];
+    // Reconstruct command from parts in case split was off
+    let command = if parts.len() > 2 {
+        parts[1..].join(" ")
+    } else {
+        command.to_string()
+    };
     let cmd = format!(
         r#"ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 {} "{}" 2>&1"#,
         host, command.replace('"', "\\\"")
