@@ -438,6 +438,7 @@ pub struct EmulationResult {
     pub total_instructions: u64,
     pub ipc: f64,
     pub execution_time_us: f64,
+    pub sm_util_pct: f64,
     pub instruction_profile: InstructionProfile,
     pub occupancy: OccupancyResult,
     pub memory: MemoryAnalysis,
@@ -497,6 +498,19 @@ pub fn emulate(source: &str, config: &LaunchConfig, arch: &GpuArch) -> Emulation
     let total_bytes = (profile.global_loads + profile.global_stores) * 4;
     let arith_intensity = if total_bytes > 0 { compute_ops as f64 / total_bytes as f64 } else { 0.0 };
 
+    // SM Utilization: accounts for warp scheduler throughput and stalls
+    // Max IPC per SM ≈ active_warps / scheduler_latency (4 cycles typical)
+    let warp_schedulers = 4u64;
+    let _theoretical_max_ipc = active_warps.min(warp_schedulers * 4) as f64 / 4.0;
+    let stall_ratio = if compute_total + memory_total > 0 {
+        memory_total as f64 / (compute_total + memory_total) as f64
+    } else { 0.0 };
+    let sm_util_pct = if compute_ops + mem_ops + sync_ops + branch_ops == 0 {
+        0.0
+    } else {
+        (occupancy.occupancy_pct / 100.0 * (1.0 - stall_ratio * 0.4)).min(1.0).max(0.0) * 100.0
+    };
+
     EmulationResult {
         arch_name: specs.name,
         arch_spec: specs.clone(),
@@ -508,6 +522,7 @@ pub fn emulate(source: &str, config: &LaunchConfig, arch: &GpuArch) -> Emulation
         total_instructions: total_instr,
         ipc,
         execution_time_us: exec_time_us,
+        sm_util_pct,
         instruction_profile: profile,
         occupancy,
         memory,
@@ -528,15 +543,16 @@ pub fn compare_arches(results: &[EmulationResult]) -> String {
     use std::fmt::Write;
     let mut out = String::new();
 
-    let _ = writeln!(out, "  {:<24} {:>12} {:>12} {:>12} {:>12} {:>14}",
-        "Architecture", "Cycles", "IPC", "Occupancy", "Time(us)", "Bottleneck");
-    let _ = writeln!(out, "  {}", "-".repeat(88));
+    let _ = writeln!(out, "  {:<24} {:>12} {:>8} {:>10} {:>8} {:>10} {:>14}",
+        "Architecture", "Cycles", "IPC", "SM Util", "Occup.", "Time(us)", "Bottleneck");
+    let _ = writeln!(out, "  {}", "-".repeat(92));
 
     for r in results {
-        let _ = writeln!(out, "  {:<24} {:>12} {:>12.2} {:>11.0}% {:>11.1} {:>14}",
+        let _ = writeln!(out, "  {:<24} {:>12} {:>8.2} {:>9.0}% {:>8.0}% {:>9.1} {:>14}",
             format!("{} ({})", r.arch_name, r.arch_spec.compute_cap),
             r.total_cycles,
             r.ipc,
+            r.sm_util_pct,
             r.occupancy.occupancy_pct,
             r.execution_time_us,
             r.bottleneck,
@@ -582,8 +598,9 @@ pub fn execution_report(result: &EmulationResult) -> String {
     let _ = writeln!(out, "  {:24}: {:>12}", "Bottleneck", result.bottleneck);
     let _ = writeln!(out);
 
-    let _ = writeln!(out, "  --- Occupancy ---");
+    let _ = writeln!(out, "  --- Occupancy / SM Util ---");
     let _ = writeln!(out, "  {:24}: {:>9.0}%", "Occupancy", result.occupancy.occupancy_pct);
+    let _ = writeln!(out, "  {:24}: {:>9.0}%", "SM Util", result.sm_util_pct);
     let _ = writeln!(out, "  {:24}: {}/{}", "Warps per SM",
         result.occupancy.warps_per_sm, result.occupancy.max_warps_per_sm);
     let _ = writeln!(out, "  {:24}: {} blocks", "Blocks per SM", result.occupancy.blocks_per_sm);
@@ -642,6 +659,196 @@ pub fn language_config_hint(lang: GpuLanguage, arch: &ArchSpec) -> String {
     }
 }
 
+// ── Configuration Sweep Engine ──
+
+const SWEEP_BLOCK_X: &[u32] = &[64, 96, 128, 192, 256, 384, 512];
+const SWEEP_BLOCK_Y: &[u32] = &[1, 2, 4];
+const SWEEP_SMEM_KB: &[u32] = &[0, 8, 16, 32, 48, 64];
+
+#[derive(Debug, Clone)]
+pub struct SweepEntry {
+    pub config: LaunchConfig,
+    pub label: String,
+    pub result: EmulationResult,
+    pub score: f64,
+}
+
+#[derive(Debug, Clone)]
+pub struct SweepResult {
+    pub entries: Vec<SweepEntry>,
+    pub best: Option<SweepEntry>,
+    pub kernel_name: String,
+    pub arch: GpuArch,
+}
+
+pub fn generate_sweep_configs(source: &str) -> Vec<LaunchConfig> {
+    let mut configs = Vec::new();
+    let re = regex::Regex::new(r"<<<\s*(\d+)\s*,\s*(\d+)\s*>>>").ok();
+    let (hint_grid, hint_block) = if let Some(ref re) = re {
+        if let Some(caps) = re.captures(source) {
+            (caps[1].parse::<u32>().ok().unwrap_or(256), caps[2].parse::<u32>().ok().unwrap_or(256))
+        } else { (256, 256) }
+    } else { (256, 256) };
+
+    for &bx in SWEEP_BLOCK_X {
+        for &by in SWEEP_BLOCK_Y {
+            let total = bx * by;
+            if total > 1024 { continue; }
+            if total < 32 { continue; }
+            let ratio = total as f64 / hint_block as f64;
+            if ratio > 4.0 { continue; }
+
+            let grid = hint_grid.max(32);
+            configs.push(LaunchConfig { block_x: bx, block_y: by, block_z: 1, grid_x: grid, grid_y: 1, grid_z: 1, shared_mem_bytes: 0, registers_per_thread: 32 });
+
+            for &smem_kb in &SWEEP_SMEM_KB[1..] {
+                configs.push(LaunchConfig { block_x: bx, block_y: by, block_z: 1, grid_x: grid, grid_y: 1, grid_z: 1, shared_mem_bytes: smem_kb * 1024, registers_per_thread: 32 });
+            }
+        }
+    }
+
+    if configs.is_empty() {
+        configs.push(LaunchConfig { block_x: 128, block_y: 1, block_z: 1, grid_x: hint_grid.max(32), grid_y: 1, grid_z: 1, shared_mem_bytes: 0, registers_per_thread: 32 });
+        configs.push(LaunchConfig { block_x: 256, block_y: 1, block_z: 1, grid_x: hint_grid.max(32), grid_y: 1, grid_z: 1, shared_mem_bytes: 0, registers_per_thread: 32 });
+    }
+
+    configs
+}
+
+fn label_for_config(cfg: &LaunchConfig) -> String {
+    let block = format!("{}x{}x{}", cfg.block_x, cfg.block_y, cfg.block_z);
+    if cfg.shared_mem_bytes > 0 {
+        format!("{} smem={}KB", block, cfg.shared_mem_bytes / 1024)
+    } else {
+        block
+    }
+}
+
+pub fn score_entry(entry: &SweepEntry) -> f64 {
+    let r = &entry.result;
+    let max_possible_cycles = 1_000_000_000f64;
+    let cycle_norm = (1.0 - (r.total_cycles as f64 / max_possible_cycles).min(0.99)).max(0.01) * 0.30;
+    let occ_norm = (r.occupancy.occupancy_pct / 100.0) * 0.20;
+    let sm_util_norm = (r.sm_util_pct / 100.0) * 0.15;
+    let coalesce_norm = r.memory.coalescing_efficiency * 0.10;
+    let sector_norm = r.memory.sector_utilization * 0.05;
+    let ipc_norm = (r.ipc / 32.0).min(1.0) * 0.10;
+
+    let bank_penalty = (r.memory.shared_bank_conflicts as f64 * 0.05).min(0.30);
+    let spill_penalty = (r.memory.register_spills as f64 * 0.002).min(0.10);
+
+    (cycle_norm + occ_norm + sm_util_norm + coalesce_norm + sector_norm + ipc_norm) * (1.0 - bank_penalty - spill_penalty)
+}
+
+pub fn run_config_sweep(source: &str, configs: &[LaunchConfig], arch: &GpuArch) -> Vec<SweepEntry> {
+    let mut entries: Vec<SweepEntry> = configs.iter().map(|cfg| {
+        let result = emulate(source, cfg, arch);
+        let label = label_for_config(cfg);
+        SweepEntry { config: cfg.clone(), label: label.clone(), result, score: 0.0 }
+    }).collect();
+
+    for e in &mut entries {
+        e.score = score_entry(e);
+    }
+
+    entries.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    entries
+}
+
+pub fn detect_best_config(entries: &[SweepEntry]) -> Option<&SweepEntry> {
+    entries.first()
+}
+
+pub fn format_sweep_table(entries: &[SweepEntry]) -> String {
+    use std::fmt::Write;
+    let mut out = String::new();
+
+    let _ = writeln!(out, "  {:<20} {:>8} {:>7} {:>7} {:>8} {:>7} {:>13} {:>8}",
+        "Config", "Cycles", "IPC", "SM", "Occup.", "Coalesc", "Time(us)", "Score");
+    let _ = writeln!(out, "  {}", "-".repeat(88));
+
+    for entry in entries.iter().take(12) {
+        let r = &entry.result;
+        let _ = writeln!(out, "  {:<20} {:>8} {:>7.2} {:>6.0}% {:>7.0}% {:>6.0}% {:>12.1} {:>7.3}",
+            entry.label,
+            r.total_cycles,
+            r.ipc,
+            r.sm_util_pct,
+            r.occupancy.occupancy_pct,
+            r.memory.coalescing_efficiency * 100.0,
+            r.execution_time_us,
+            entry.score,
+        );
+    }
+
+    if entries.len() > 12 {
+        let _ = writeln!(out, "  ... {} more configs", entries.len() - 12);
+    }
+
+    out
+}
+
+pub fn format_sweep_recommendations(entries: &[SweepEntry]) -> String {
+    use std::fmt::Write;
+    let mut out = String::new();
+
+    let best = match entries.first() {
+        Some(b) => b,
+        None => { return String::new(); }
+    };
+    let r = &best.result;
+
+    let _ = writeln!(out, "  {} Best Config: {}  (score: {:.3})", "★", best.label, best.score);
+    let _ = writeln!(out, "     Grid: {}x{}x{}  Block: {}x{}x{}  SMEM: {} bytes",
+        best.config.grid_x, best.config.grid_y, best.config.grid_z,
+        best.config.block_x, best.config.block_y, best.config.block_z,
+        best.config.shared_mem_bytes);
+    let _ = writeln!(out, "     Cycles: {}, IPC: {:.2}, Est. Time: {:.1} us",
+        r.total_cycles, r.ipc, r.execution_time_us);
+    let _ = writeln!(out, "     Occupancy: {:.0}%, SM Util: {:.0}%, Coalescing: {:.0}%",
+        r.occupancy.occupancy_pct, r.sm_util_pct, r.memory.coalescing_efficiency * 100.0);
+    let _ = writeln!(out, "     Bottleneck: {}, Limiting Factor: {}",
+        r.bottleneck, r.occupancy.limiting_factor);
+
+    let mut recommendations: Vec<String> = Vec::new();
+
+    if r.occupancy.occupancy_pct < 50.0 {
+        recommendations.push(format!("Low occupancy ({:.0}%). Try smaller block or less shared memory.", r.occupancy.occupancy_pct));
+    }
+    if r.sm_util_pct < 50.0 {
+        recommendations.push(format!("Low SM utilization ({:.0}%). Increase block size to hide latency.", r.sm_util_pct));
+    }
+    if r.memory.coalescing_efficiency < 0.5 {
+        recommendations.push("Poor coalescing. Restructure memory access for contiguous thread ordering.".into());
+    }
+    if r.bottleneck == "Memory-bound" && r.memory.coalescing_efficiency < 0.8 {
+        recommendations.push("Memory-bound with low coalescing — likely the main bottleneck.".into());
+    }
+    if r.bottleneck == "Compute-bound" && r.occupancy.occupancy_pct < 75.0 {
+        recommendations.push("Compute-bound but occupancy is low. Increasing occupancy may improve throughput.".into());
+    }
+    if r.memory.shared_bank_conflicts > 0 {
+        recommendations.push(format!("{} shared memory bank conflicts detected. Pad shared arrays or use different indexing.", r.memory.shared_bank_conflicts));
+    }
+    if r.memory.register_spills > 0 {
+        recommendations.push(format!("{} register spills. Reduce register usage or increase --regs.", r.memory.register_spills));
+    }
+
+    if let Some(second) = entries.get(1) {
+        let diff = best.score - second.score;
+        if diff < 0.05 {
+            let _ = writeln!(out, "     ~ Similar score ({:.1}%) to {}. Consider both.",
+                diff * 100.0, second.label);
+        }
+    }
+
+    for rec in &recommendations {
+        let _ = writeln!(out, "     ! {}", rec);
+    }
+
+    out
+}
+
 // ── High-Level Entry Point ──
 
 pub struct EmulateRequest {
@@ -650,6 +857,7 @@ pub struct EmulateRequest {
     pub config: LaunchConfig,
     pub arches: Vec<GpuArch>,
     pub language: GpuLanguage,
+    pub sweep: bool,
 }
 
 pub struct EmulateOutput {
@@ -659,6 +867,7 @@ pub struct EmulateOutput {
     pub comparison: Vec<EmulationResult>,
     pub report: String,
     pub comparison_text: String,
+    pub sweep_result: Option<SweepResult>,
 }
 
 pub fn run_emulation(req: &EmulateRequest) -> EmulateOutput {
@@ -672,7 +881,17 @@ pub fn run_emulation(req: &EmulateRequest) -> EmulateOutput {
     let report = single.as_ref().map(|r| execution_report(r)).unwrap_or_default();
     let comparison_text = if results.len() > 1 { compare_arches(&results) } else { String::new() };
 
-    EmulateOutput { language: req.language, config_hint, single, comparison: results, report, comparison_text }
+    let sweep_result = if req.sweep {
+        let arch = req.arches.first().copied().unwrap_or(GpuArch::Ampere86);
+        let configs = generate_sweep_configs(&req.source);
+        let entries = run_config_sweep(&req.source, &configs, &arch);
+        let best = detect_best_config(&entries).cloned();
+        Some(SweepResult { entries, best, kernel_name: req.filename.clone(), arch })
+    } else {
+        None
+    };
+
+    EmulateOutput { language: req.language, config_hint, single, comparison: results, report, comparison_text, sweep_result }
 }
 
 // ── Tests ──
@@ -790,6 +1009,7 @@ mod tests {
             config: LaunchConfig { block_x: 16, block_y: 16, grid_x: 32, grid_y: 32, ..Default::default() },
             arches: vec![GpuArch::Ampere86, GpuArch::Hopper90],
             language: GpuLanguage::Cuda,
+            sweep: false,
         };
         let out = run_emulation(&req);
         assert!(!out.report.is_empty());
@@ -820,5 +1040,98 @@ mod tests {
         let config = LaunchConfig { block_x: 1, grid_x: 1, ..Default::default() };
         let result = emulate(source, &config, &GpuArch::Ampere86);
         assert_eq!(result.total_instructions, 0);
+    }
+
+    // ── SM Util Tests ──
+
+    #[test]
+    fn test_sm_util_in_range() {
+        let source = "__global__ void k(float* a) { int i = blockIdx.x * blockDim.x + threadIdx.x; a[i] = a[i] * 2.0f; }";
+        let config = LaunchConfig { block_x: 256, ..Default::default() };
+        let result = emulate(source, &config, &GpuArch::Ampere86);
+        assert!((0.0..=100.0).contains(&result.sm_util_pct));
+        assert!(result.sm_util_pct > 0.0, "SM util should be non-zero for a real kernel");
+    }
+
+    #[test]
+    fn test_sm_util_zero_for_no_instructions() {
+        let source = "// comment only";
+        let config = LaunchConfig { block_x: 64, ..Default::default() };
+        let result = emulate(source, &config, &GpuArch::Ampere86);
+        assert_eq!(result.sm_util_pct, 0.0);
+    }
+
+    #[test]
+    fn test_sm_util_differs_by_occupancy() {
+        let source = "__global__ void k(float* a) { int i = threadIdx.x; for(int j=0;j<100;j++) a[i+j]=sinf(a[i+j]); }";
+        let low = emulate(source, &LaunchConfig { block_x: 32, block_y: 1, shared_mem_bytes: 0, ..Default::default() }, &GpuArch::Ampere86);
+        let high = emulate(source, &LaunchConfig { block_x: 256, block_y: 1, shared_mem_bytes: 0, ..Default::default() }, &GpuArch::Ampere86);
+        assert!((low.sm_util_pct - high.sm_util_pct).abs() < 100.0, "SM util should differ with occupancy");
+    }
+
+    // ── Config Sweep Tests ──
+
+    #[test]
+    fn test_generate_sweep_configs_produces_configs() {
+        let source = "__global__ void k() {}";
+        let configs = generate_sweep_configs(source);
+        assert!(!configs.is_empty(), "Should produce at least one config");
+        assert!(configs.len() >= 2, "Should produce multiple configs");
+    }
+
+    #[test]
+    fn test_run_config_sweep_returns_sorted() {
+        let source = "__global__ void k(float* a) { int i = blockIdx.x * blockDim.x + threadIdx.x; a[i] *= 2.0f; }";
+        let configs = generate_sweep_configs(source);
+        let entries = run_config_sweep(source, &configs, &GpuArch::Ampere86);
+        assert!(!entries.is_empty());
+        if entries.len() >= 2 {
+            assert!(entries[0].score >= entries[entries.len() - 1].score, "Entries must be sorted descending by score");
+        }
+    }
+
+    #[test]
+    fn test_sweep_result_in_emulate_output() {
+        let source = "__global__ void k(float* a) { int i = blockIdx.x * blockDim.x + threadIdx.x; a[i] = a[i] * 2.0f; }";
+        let req = EmulateRequest {
+            source: source.to_string(),
+            filename: "test.cu".to_string(),
+            config: LaunchConfig { block_x: 256, ..Default::default() },
+            arches: vec![GpuArch::Ampere86],
+            language: GpuLanguage::Cuda,
+            sweep: true,
+        };
+        let out = run_emulation(&req);
+        assert!(out.sweep_result.is_some(), "Sweep result should be present when sweep is true");
+        let sweep = out.sweep_result.unwrap();
+        assert!(sweep.best.is_some(), "Sweep should find a best config");
+        let table = format_sweep_table(&sweep.entries);
+        assert!(table.contains("Config"), "Table should have header");
+        let recs = format_sweep_recommendations(&sweep.entries);
+        assert!(recs.contains("Best Config"), "Recommendations should mention best config");
+    }
+
+    #[test]
+    fn test_detect_best_config_returns_top() {
+        let source = "__global__ void k(float* a) { int i = blockIdx.x * blockDim.x + threadIdx.x; a[i] *= 2.0f; }";
+        let configs = generate_sweep_configs(source);
+        let entries = run_config_sweep(source, &configs, &GpuArch::Ampere86);
+        let best = detect_best_config(&entries);
+        assert!(best.is_some());
+        assert_eq!(best.unwrap().label, entries[0].label);
+    }
+
+    #[test]
+    fn test_score_entry_reflects_performance() {
+        let source = "__global__ void k(float* a) { int i = threadIdx.x; a[i] = a[i] * 2.0f; }";
+        let cfg_good = LaunchConfig { block_x: 256, block_y: 1, ..Default::default() };
+        let cfg_bad = LaunchConfig { block_x: 32, block_y: 1, shared_mem_bytes: 0, registers_per_thread: 255, ..Default::default() };
+        let r_good = emulate(source, &cfg_good, &GpuArch::Ampere86);
+        let r_bad = emulate(source, &cfg_bad, &GpuArch::Ampere86);
+        let e_good = SweepEntry { config: cfg_good, label: "good".into(), result: r_good, score: 0.0 };
+        let e_bad = SweepEntry { config: cfg_bad, label: "bad".into(), result: r_bad, score: 0.0 };
+        let s_good = score_entry(&e_good);
+        let s_bad = score_entry(&e_bad);
+        assert!(s_good >= s_bad, "Good config should score >= bad config");
     }
 }

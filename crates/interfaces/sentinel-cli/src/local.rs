@@ -805,7 +805,8 @@ async fn cmd_emulate(arg: &str) {
         println!(" {} Usage:", "•".yellow().bold());
         println!("   /emulate <file>                  Emulate on RTX 3090, RTX 4090, H100");
         println!("   /emulate <file> --all            All architectures");
-        println!("   /emulate <file> --arches=sm_80,sm_89,sm_90  Custom selection");
+        println!("   /emulate <file> --arch=sm_80,sm_89,sm_90  Custom selection");
+        println!("   /emulate <file> --sweep          Auto-sweep + detect best config");
         println!();
         return;
     }
@@ -827,11 +828,24 @@ async fn cmd_emulate(arg: &str) {
 
     let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or(file_part);
     let language = langs::detect_language(fname, &source);
-    let arches = parse_emulate_arches(&flag_part);
+
+    let do_sweep = flag_part.contains("--sweep");
+    let clean_flags = if do_sweep {
+        flag_part.replace("--sweep", "--noop")
+    } else {
+        flag_part.clone()
+    };
+
+    let arches = parse_emulate_arches(&clean_flags);
 
     println!();
-    println!(" {} Emulating {} on {} architectures...",
-        "●".cyan().bold(), fname.bold(), arches.len().to_string().green());
+    if do_sweep {
+        println!(" {} Config sweep on {} ...",
+            "●".cyan().bold(), fname.bold());
+    } else {
+        println!(" {} Emulating {} on {} architectures...",
+            "●".cyan().bold(), fname.bold(), arches.len().to_string().green());
+    }
     println!();
 
     let config = LaunchConfig {
@@ -851,21 +865,29 @@ async fn cmd_emulate(arg: &str) {
         config,
         arches,
         language,
+        sweep: do_sweep,
     };
 
     let out = emulate::run_emulation(&req);
 
-    // Show language info
-    println!("   {} {} detected", "Language:".bold().dimmed(), language.name().cyan());
+    println!("   {} {}", "Language:".bold().dimmed(), language.name().cyan());
     println!("   {} {}", "Hint:".bold().dimmed(), out.config_hint.dimmed());
     println!();
 
-    // Show detailed report for first arch
+    if let Some(ref sweep) = out.sweep_result {
+        println!("   {} {}", "Config Sweep Results:".bold().green(), "");
+        let table = emulate::format_sweep_table(&sweep.entries);
+        println!("{table}");
+        println!();
+        let recs = emulate::format_sweep_recommendations(&sweep.entries);
+        println!("{recs}");
+        return;
+    }
+
     if let Some(ref report) = out.single {
         println!("{}", emulate::execution_report(report));
     }
 
-    // Show multi-arch comparison
     if !out.comparison_text.is_empty() {
         println!("   {} {}", "Multi-Architecture Comparison:".bold().yellow(), "");
         println!("{}", out.comparison_text);
