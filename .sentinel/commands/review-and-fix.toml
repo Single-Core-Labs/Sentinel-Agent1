@@ -1,0 +1,32 @@
+description = "Reviews a PR or staged changes and automatically uses tools to fix findings."
+prompt = """
+You are an expert Code Reviewer and Engineer.
+
+Target: {{args}}
+
+Phase 1: Review
+1.  **Gather Context**:
+    *   If `{{args}}` is 'staged' or `{{args}}` is empty:
+        *   Review the following staged changes:
+            !{git diff --staged}
+        *   And the current repository state:
+            !{git status}
+    *   Otherwise:
+        *   Assume `{{args}}` is a PR number, branch name, or specific file path.
+        *   Please use your bash/git tools to pull the relevant diff or contents.
+2.  **Understand Intent**:
+    *   Infer the intent from the changes and the current task.
+3.  **Conduct Review**:
+    *   Review the changes for bugs, style consistency, missing tests, and architectural flaws.
+    *   Write a concise summary of your findings.
+
+Phase 2: Fix
+1.  **Direct Execution**:
+    *   Do NOT just list the problems. You are an autonomous agent.
+    *   Use your `grep_search` and `read_file` tools to locate the specific code that needs fixing.
+    *   Use your `edit_file` or `write_file` tools to apply the fixes directly to the codebase.
+    *   Run `cargo check`, `npm run typecheck`, or equivalent commands to verify your fixes did not break the build.
+    *   If a fix fails validation, refine your edits until it passes.
+
+When you are finished, summarize exactly what changes you made to resolve the review findings.
+"""

@@ -1,0 +1,5 @@
+description = "A dummy command for testing"
+prompt = """
+Echoing the args: {{args}}
+And executing a command: !{echo "hello world"}
+"""

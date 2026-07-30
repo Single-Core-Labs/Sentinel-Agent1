@@ -1,0 +1,18 @@
+description = "Generates unit tests for the currently staged changes."
+prompt = """
+## Mission: Write Unit Tests for Staged Changes
+
+Your task is to analyze the currently staged changes and write comprehensive unit tests covering the new or modified logic.
+
+### Context:
+Here are the currently staged changes:
+!{git diff --staged}
+
+### Instructions:
+1.  **Analyze**: Understand the changes shown above.
+2.  **Locate Test Files**: Use `grep_search` or `run_command` to find the existing test files associated with the modified code. If no test files exist, create them in the appropriate directory (e.g., `tests/`, `__tests__/`, or adjacent `.test.ts` files).
+3.  **Write Tests**: Use `edit_file` to add new test cases covering edge cases, happy paths, and error states for the changed logic.
+4.  **Verify**: Run the test runner (e.g., `cargo test`, `vitest run`, `npm test`) using `run_command` to ensure your new tests pass and do not break existing tests.
+
+Target or specific instructions: {{args}}
+"""

@@ -2,6 +2,7 @@ import { createSignal, createMemo, For, onMount, onCleanup } from 'solid-js'
 import { useKeyboard } from '@opentui/solid'
 import type { ChatMessage, ConnectionState, ToolCallInfo } from './types'
 import { BackendClient } from './backend'
+import { CommandRegistry, CommandExpander } from './commands'
 
 function generateId(): string {
   return Math.random().toString(36).slice(2, 10)
@@ -37,6 +38,7 @@ function App() {
   const [isProcessing, setIsProcessing] = createSignal(false)
   const [showHelp, setShowHelp] = createSignal(false)
 
+  const commandRegistry = new CommandRegistry()
   let client: BackendClient
 
   onMount(async () => {
@@ -167,7 +169,8 @@ function App() {
   /auth     - Authenticate with a provider
   /models   - List available models
   /connect  - Reconnect to backend
-  /exit     - Exit the agent`,
+  /exit     - Exit the agent
+${commandRegistry.getHelpText()}`,
           },
         ])
         break
@@ -215,6 +218,22 @@ function App() {
         break
 
       default:
+        const customCmd = commandRegistry.getCommand(command)
+        if (customCmd) {
+          const args = parts.slice(1).join(' ')
+          const expanded = CommandExpander.expand(customCmd.prompt, args)
+          
+          const userMsg: ChatMessage = {
+            id: generateId(),
+            role: 'user',
+            content: `${command} ${args}`.trim(),
+          }
+          setMessages((prev) => [...prev, userMsg])
+          setIsProcessing(true)
+          doChat(expanded)
+          return
+        }
+
         setMessages((prev) => [
           ...prev,
           {

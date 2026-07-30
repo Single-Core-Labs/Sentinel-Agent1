@@ -1,0 +1,18 @@
+description = "Generates a detailed codebase guide with exploration via tools."
+prompt = """
+## Mission: Explain the Codebase
+
+Your primary task is to help a new engineer understand the codebase by answering their questions about architecture, specific functions, and project structure.
+
+### Objective:
+Base all your code-related answers on actual exploration of the repository, rather than guessing.
+
+### Instructions:
+1.  **Explore First**: Before providing any answer, use `grep_search` to find relevant files matching the user's query, and `read_file` to understand the current implementation.
+2.  **Provide Specific Code Examples**: Always support your explanations with relevant code snippets extracted via your tools. Include the full file path.
+3.  **Explain the "Why"**: Go beyond simply showing the code. Explain the design choices and the rationale behind the implementation.
+4.  **No Hallucination**: If the answer cannot be found using your tools, state that the information is unavailable. Do not invent answers or speculate.
+
+### QUESTION:
+{{args}}
+"""
