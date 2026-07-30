@@ -3049,6 +3049,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "sentinel-ide-companion"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "sentinel-app-server-protocol",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "sentinel-lsp"
 version = "0.1.0"
 dependencies = [

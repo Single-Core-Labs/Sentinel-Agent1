@@ -5,6 +5,9 @@ import { useChat } from "./hooks/useChat"
 import { ChatView } from "./components/ChatView"
 import { InputBar } from "./components/InputBar"
 import { StatusBar } from "./components/StatusBar"
+import { SessionBrowser, SessionSummaryItem } from "./components/SessionBrowser"
+import { QuotaStatsDisplay } from "./components/QuotaStatsDisplay"
+import { AskUserDialog } from "./components/AskUserDialog"
 import type { ConnectionState } from "./api/types"
 import "./styles/index.css"
 
@@ -14,6 +17,13 @@ function App() {
   const [wsUrl, setWsUrl] = useState(() => localStorage.getItem("sentinel-ws-url") || DEFAULT_WS_URL)
   const [connection, setConnection] = useState<ConnectionState>({ status: "disconnected" })
   const [model, setModel] = useState("")
+  const [showSessionBrowser, setShowSessionBrowser] = useState(false)
+  const [sessions, setSessions] = useState<SessionSummaryItem[]>([])
+  const [activeDialog, setActiveDialog] = useState<{
+    requestId: string
+    prompt: string
+    options: string[]
+  } | null>(null)
   const clientRef = useRef<JsonRpcClient | null>(null)
 
   const client = clientRef.current
@@ -63,6 +73,11 @@ function App() {
     [sendMessage],
   )
 
+  const handleAskUserSubmit = (requestId: string, selection: string) => {
+    setActiveDialog(null)
+    sendMessage(`[Form Selection for ${requestId}]: ${selection}`)
+  }
+
   if (connection.status === "disconnected" && !connection.error) {
     return (
       <div className="app">
@@ -105,6 +120,33 @@ function App() {
         <span className="beta">beta</span>
         <div style={{ flex: 1 }} />
         <button
+          onClick={() => {
+            setSessions([
+              {
+                id: sessionId || "sess-current",
+                title: "Current Conversation",
+                createdAt: Date.now() - 3600000,
+                lastActiveAt: Date.now(),
+                totalTokens: 1420,
+                messageCount: messages.length,
+              },
+            ])
+            setShowSessionBrowser(true)
+          }}
+          style={{
+            background: "none",
+            border: "1px solid var(--border)",
+            color: "var(--text-secondary)",
+            padding: "0.3rem 0.6rem",
+            borderRadius: "6px",
+            fontSize: "0.75rem",
+            marginRight: "8px",
+            cursor: "pointer",
+          }}
+        >
+          📂 History
+        </button>
+        <button
           onClick={clearMessages}
           style={{
             background: "none",
@@ -121,9 +163,31 @@ function App() {
       </header>
 
       <div className="app__body">
+        <QuotaStatsDisplay totalTokensIn={850} totalTokensOut={570} />
         <ChatView messages={messages} sending={sending} error={chatError} />
         <InputBar onSend={handleSend} disabled={sending} />
       </div>
+
+      {showSessionBrowser && (
+        <SessionBrowser
+          sessions={sessions}
+          currentSessionId={sessionId}
+          onSelectSession={(id) => {
+            setShowSessionBrowser(false)
+          }}
+          onClose={() => setShowSessionBrowser(false)}
+        />
+      )}
+
+      {activeDialog && (
+        <AskUserDialog
+          requestId={activeDialog.requestId}
+          prompt={activeDialog.prompt}
+          options={activeDialog.options}
+          onSubmit={handleAskUserSubmit}
+          onClose={() => setActiveDialog(null)}
+        />
+      )}
 
       <StatusBar connection={connection} sessionId={sessionId} model={model} />
     </div>

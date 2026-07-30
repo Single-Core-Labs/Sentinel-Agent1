@@ -44,6 +44,17 @@ pub mod methods {
     pub const EVENT_SUBSCRIBE: &str = "event/subscribe";
     pub const EVENT_UNSUBSCRIBE: &str = "event/unsubscribe";
 
+    // Interactive Dialogs
+    pub const DIALOG_ASK_USER: &str = "dialog/askUser";
+    pub const DIALOG_SUBMIT_RESPONSE: &str = "dialog/submitResponse";
+
+    // Session Browser
+    pub const SESSION_BROWSER_LIST: &str = "session/browserList";
+
+    // IDE Companion
+    pub const IDE_CONTEXT_SYNC: &str = "ide/contextSync";
+    pub const IDE_DIFF_PREVIEW: &str = "ide/diffPreview";
+
     // Authentication
     pub const AUTH_LOGIN: &str = "auth/login";
     pub const AUTH_LOGOUT: &str = "auth/logout";
@@ -59,6 +70,57 @@ pub struct CreateSessionParams {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CreateSessionResult {
     pub session_id: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AskUserParams {
+    pub request_id: String,
+    pub prompt: String,
+    pub options: Vec<String>,
+    pub allow_custom: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AskUserResult {
+    pub request_id: String,
+    pub selected: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubmitResponseParams {
+    pub request_id: String,
+    pub response: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionSummary {
+    pub id: String,
+    pub title: String,
+    pub created_at: u64,
+    pub last_active_at: u64,
+    pub total_tokens: u64,
+    pub message_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionListResult {
+    pub sessions: Vec<SessionSummary>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IdeContextParams {
+    pub active_file: Option<String>,
+    pub open_tabs: Vec<String>,
+    pub cursor_line: Option<u32>,
+    pub cursor_column: Option<u32>,
+    pub selected_text: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IdeDiffParams {
+    pub file_path: String,
+    pub original_content: String,
+    pub modified_content: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -163,6 +225,8 @@ pub enum ServerEvent {
     ToolCall { name: String, args: Value },
     #[serde(rename = "tool_result")]
     ToolResult { name: String, output: String, is_error: bool },
+    #[serde(rename = "ask_user")]
+    AskUserDialog { request_id: String, prompt: String, options: Vec<String>, allow_custom: bool },
     #[serde(rename = "completed")]
     Completed { text: String },
     #[serde(rename = "error")]
