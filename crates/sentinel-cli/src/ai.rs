@@ -12,6 +12,8 @@ fn try_spawn_ts_agent() -> bool {
     let bun = if cfg!(windows) { "bun.exe" } else { "bun" };
     let status = std::process::Command::new(bun)
         .arg("run")
+        .arg("--jsx-import-source")
+        .arg("solid-js")
         .arg(agent_path)
         .spawn();
     match status {
