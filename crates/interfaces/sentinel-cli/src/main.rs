@@ -6,7 +6,6 @@ mod auth;
 mod server;
 mod proxy;
 mod diagnostics;
-mod tui;
 mod ai;
 mod web;
 
@@ -24,8 +23,7 @@ async fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().collect();
 
     if args.len() < 2 {
-        print_help();
-        return Ok(());
+        return ai::run(&[]).await;
     }
 
     let subcommand = &args[1];
@@ -37,13 +35,10 @@ async fn main() -> anyhow::Result<()> {
         "exec" => exec::run(sub_args).await?,
         "ai" => ai::run(sub_args).await?,
         "auth" => auth::run(sub_args).await?,
-
-
         "server" => server::run(sub_args).await?,
         "web" => web::run(sub_args).await?,
         "proxy" => proxy::run(sub_args).await?,
         "diagnostics" => diagnostics::run(sub_args).await?,
-        "tui" => tui::run(sub_args).await?,
         other => {
             eprintln!("{} Unknown subcommand: '{}'", "Error:".red().bold(), other);
             eprintln!("Run 'sentinel --help' for usage.");
@@ -67,7 +62,6 @@ fn print_help() {
     println!("  server start|stop|status App server control");
     println!("  web [--port <n>]        Start HTTP server with Web UI");
     println!("  proxy                  Headroom HTTP compression proxy");
-    println!("  tui [--port <addr>]    Terminal UI interactive session");
     println!("  diagnostics            System diagnostic checks");
     println!();
     println!("{}", "Examples:".yellow().bold());
