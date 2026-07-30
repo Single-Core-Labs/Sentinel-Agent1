@@ -31,7 +31,7 @@ pub fn default_providers() -> Vec<ProviderInfo> {
         ProviderInfo {
             id: "google-ai-studio".into(),
             name: "Google AI Studio".into(),
-            base_url: "https://generativelanguage.googleapis.com/v1beta/openai".into(),
+            base_url: "https://generativelanguage.googleapis.com/v1beta".into(),
             auth: AuthConfig::EnvKey { var: "GOOGLE_API_KEY".into() },
             models: vec![
                 ModelEntry { id: "gemini-2.5-flash".into(), name: "Gemini 2.5 Flash".into(), context_window: 1000000, supports_streaming: true, supports_tools: true },

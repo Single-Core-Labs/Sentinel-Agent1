@@ -1,6 +1,7 @@
 pub mod provider;
 pub mod openai;
 pub mod anthropic;
+pub mod google;
 pub mod error;
 pub mod router;
 pub mod local;
@@ -14,6 +15,7 @@ pub mod fallback;
 pub use provider::*;
 pub use openai::*;
 pub use anthropic::*;
+pub use google::*;
 pub use error::*;
 pub use router::*;
 pub use local::*;

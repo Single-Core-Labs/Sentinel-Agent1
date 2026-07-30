@@ -4,11 +4,13 @@ use sentinel_provider_info::ProviderInfo;
 use crate::error::ProviderError;
 use crate::OpenAIProvider;
 use crate::AnthropicProvider;
+use crate::GoogleProvider;
 use crate::LocalProvider;
 
 pub enum ProviderKind {
     OpenAI(OpenAIProvider),
     Anthropic(AnthropicProvider),
+    Google(GoogleProvider),
     Local(LocalProvider),
 }
 
@@ -16,6 +18,9 @@ impl ProviderKind {
     pub fn from_info(info: ProviderInfo) -> Result<Self, ProviderError> {
         match info.id.as_str() {
             "anthropic" => Ok(Self::Anthropic(AnthropicProvider::new(info)?)),
+            "google-ai-studio" | "gemini" | "google" => {
+                Ok(Self::Google(GoogleProvider::new(info)?))
+            }
             "ollama" | "vllm" | "lm-studio" | "llamacpp" => {
                 Err(ProviderError::NotFound(format!(
                     "Local provider '{}' must be created via from_local()", info.id
@@ -32,6 +37,7 @@ impl ModelProvider for ProviderKind {
         match self {
             Self::OpenAI(p) => p.info(),
             Self::Anthropic(p) => p.info(),
+            Self::Google(p) => p.info(),
             Self::Local(p) => p.info(),
         }
     }
@@ -40,6 +46,7 @@ impl ModelProvider for ProviderKind {
         match self {
             Self::OpenAI(p) => p.name(),
             Self::Anthropic(p) => p.name(),
+            Self::Google(p) => p.name(),
             Self::Local(p) => p.name(),
         }
     }
@@ -48,6 +55,7 @@ impl ModelProvider for ProviderKind {
         match self {
             Self::OpenAI(p) => p.complete(req).await,
             Self::Anthropic(p) => p.complete(req).await,
+            Self::Google(p) => p.complete(req).await,
             Self::Local(p) => p.complete(req).await,
         }
     }
@@ -56,6 +64,7 @@ impl ModelProvider for ProviderKind {
         match self {
             Self::OpenAI(p) => p.complete_stream(req).await,
             Self::Anthropic(p) => p.complete_stream(req).await,
+            Self::Google(p) => p.complete_stream(req).await,
             Self::Local(p) => p.complete_stream(req).await,
         }
     }
@@ -64,6 +73,7 @@ impl ModelProvider for ProviderKind {
         match self {
             Self::OpenAI(p) => p.supports_tool(tool),
             Self::Anthropic(p) => p.supports_tool(tool),
+            Self::Google(p) => p.supports_tool(tool),
             Self::Local(p) => p.supports_tool(tool),
         }
     }
