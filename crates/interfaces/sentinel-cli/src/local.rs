@@ -63,8 +63,21 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     )?);
 
     let config = Arc::new(sentinel_config::SentinelConfig::default());
+
     let tools = Arc::new(sentinel_tools::ToolRegistry::new());
-    let agent = sentinel_core::Agent::new(provider, tools, config.clone());
+
+    let gpu = info.gpu.as_deref().unwrap_or("No GPU");
+    let ctx = format!(
+        "LOCAL: {os} {arch}, {cores}c/{mem:.0}GB, {gpu}. Use /gpu for GPU stats, /ssh for remote.",
+        os = info.os, arch = info.arch, cores = info.cpu_cores, mem = info.mem_gb, gpu = gpu
+    );
+    let mut prompt_mgr = sentinel_core::SystemPromptManager::new();
+    prompt_mgr.set_variable("local_context", &ctx);
+    let base = format!("{}\n\n{{local_context}}", sentinel_core::DEFAULT_SYSTEM_PROMPT);
+    prompt_mgr.set_base(&base);
+
+    let agent = sentinel_core::Agent::new(provider, tools, config.clone())
+        .with_prompt_manager(prompt_mgr);
     let mut thread = sentinel_core::AgentThread::new(
         config.agent.max_turns,
         config.agent.max_iterations,
@@ -110,6 +123,8 @@ async fn chat_loop(
                 "/bench" => cmd_bench(model).await,
                 "/show" => cmd_show(model).await,
                 "/recommend" => cmd_recommend(model, sys),
+                "/gpu" | "/nvidia" => cmd_gpu(arg).await,
+                "/ssh" => cmd_ssh(arg).await,
                 _ => eprintln!(" {} Unknown command. Type /help.", "✖".red().bold()),
             }
             continue;
@@ -142,6 +157,8 @@ fn help() {
     println!("  /recommend        Hardware-aware model recommendations");
     println!("  /info             Show system, model, and token info");
     println!("  /stats            Show conversation statistics");
+    println!("  /gpu [/gpu ps|/gpu detailed]  NVIDIA GPU stats (zero-cost)");
+    println!("  /ssh <user@host> <cmd>  Run command on remote machine (zero-cost)");
     println!("  /clear            Clear screen");
     println!("  /exit, /quit      Exit");
     println!();
@@ -343,6 +360,57 @@ fn cmd_recommend(model: &str, sys: &SysInfo) {
         println!(" {} {} is a good fit for your hardware.", "✔".green(), model.green().bold());
     }
     println!();
+}
+
+// ── Zero-cost GPU / SSH commands ──
+
+async fn cmd_gpu(arg: &str) {
+    let cmd = match arg.trim() {
+        "ps" | "processes" => "nvidia-smi pmon -c 1 2>&1".to_string(),
+        "detailed" | "d" | "-q" => "nvidia-smi -q 2>&1".to_string(),
+        _ => r#"nvidia-smi --query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu --format=csv,noheader 2>&1"#.to_string(),
+    };
+    println!();
+    match run_shell(&cmd).await {
+        Ok(out) => println!("{}", out.trim()),
+        Err(e) => println!(" {} {} (install NVIDIA drivers or run `ollama serve`)", "✖".red(), e),
+    }
+    println!();
+}
+
+async fn cmd_ssh(arg: &str) {
+    let parts: Vec<&str> = arg.splitn(2, ' ').collect();
+    if parts.len() < 2 || parts[0].is_empty() || parts[1].is_empty() {
+        println!();
+        println!(" {} Usage: /ssh user@host <command>", "•".yellow().bold());
+        println!("   {}", "Example: /ssh ubuntu@10.0.0.1 nvidia-smi".dimmed());
+        println!();
+        return;
+    }
+    let host = parts[0];
+    let command = parts[1];
+    let cmd = format!(
+        r#"ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 {} "{}" 2>&1"#,
+        host, command.replace('"', "\\\"")
+    );
+    println!();
+    println!(" {} {} $ {} ...", "→".cyan(), host, command);
+    match run_shell(&cmd).await {
+        Ok(out) => println!("{}", out.trim()),
+        Err(e) => println!(" {} {}", "✖".red(), e),
+    }
+    println!();
+}
+
+async fn run_shell(cmd: &str) -> Result<String, String> {
+    let shell = if cfg!(target_os = "windows") { "powershell" } else { "sh" };
+    let flag = if cfg!(target_os = "windows") { "-Command" } else { "-c" };
+    let out = tokio::process::Command::new(shell)
+        .arg(flag).arg(cmd)
+        .output().await
+        .map_err(|e| format!("Failed to run: {}", e))?;
+    let text = String::from_utf8_lossy(if out.stderr.is_empty() { &out.stdout } else { &out.stderr }).to_string();
+    if out.status.success() { Ok(text) } else { Err(text.trim().to_string()) }
 }
 
 // ── Ollama API calls ──
