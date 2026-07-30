@@ -1,0 +1,18 @@
+[package]
+name = "sentinel-mcp"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+reqwest.workspace = true
+async-trait.workspace = true
+
+sentinel-protocol = { workspace = true }
+sentinel-tools = { workspace = true }

@@ -1,0 +1,41 @@
+[package]
+name = "sentinel-app-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+tokio = { workspace = true, features = ["full"] }
+thiserror.workspace = true
+tracing.workspace = true
+anyhow.workspace = true
+uuid.workspace = true
+async-trait.workspace = true
+futures-util.workspace = true
+tokio-stream.workspace = true
+colored.workspace = true
+
+sentinel-protocol = { workspace = true }
+sentinel-core = { workspace = true }
+sentinel-tools = { workspace = true }
+sentinel-provider = { workspace = true }
+sentinel-provider-info = { workspace = true }
+sentinel-config = { workspace = true }
+sentinel-exec = { workspace = true }
+sentinel-mcp = { workspace = true }
+sentinel-app-server-protocol = { workspace = true }
+sentinel-app-server-transport = { workspace = true }
+sentinel-analytics = { workspace = true }
+sentinel-agent-identity = { workspace = true }
+sentinel-agent-graph-store = { workspace = true }
+sentinel-headroom = { workspace = true }
+
+axum = { version = "0.7", features = ["ws"] }
+tower-http = { version = "0.5", features = ["fs", "cors"] }
+hyper = "1"
+tokio-tungstenite.workspace = true
+
+[features]
+sqlite = ["sentinel-core/sqlite"]

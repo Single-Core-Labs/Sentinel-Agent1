@@ -1,33 +1,12 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/sentinel-protocol",
-    "crates/sentinel-config",
-    "crates/sentinel-provider-info",
-    "crates/sentinel-provider",
-    "crates/sentinel-core",
-    "crates/sentinel-tools",
-    "crates/sentinel-exec",
-    "crates/sentinel-mcp",
-    "crates/sentinel-cli",
-    "crates/sentinel-app-server",
-    "crates/sentinel-app-server-protocol",
-    "crates/sentinel-app-server-client",
-    "crates/sentinel-app-server-daemon",
-    "crates/sentinel-app-server-transport",
-    "crates/sentinel-analytics",
-    "crates/sentinel-agent-identity",
-    "crates/sentinel-agent-graph-store",
-    "crates/sentinel-ai-core",
-    "crates/sentinel-ai-exec",
-    "crates/sentinel-ai-tui",
-    "crates/sentinel-ai-test-support",
-    "crates/sentinel-plugin-system",
-    "crates/sentinel-lsp",
-    "crates/sentinel-headroom",
-    "crates/sentinel-sdk",
-    "crates/sentinel-proxy",
-    "crates/sentinel-ide-companion",
+    "crates/core/*",
+    "crates/server/*",
+    "crates/interfaces/*",
+    "crates/tools-and-exec/*",
+    "crates/integrations/*",
+    "crates/platform/*",
 ]
 
 [workspace.package]
@@ -66,3 +45,33 @@ sha2 = "0.10"
 regex = "1"
 futures = "0.3"
 lru = "0.12"
+
+# Sentinel Workspace Crates
+sentinel-protocol = { path = "crates/core/sentinel-protocol" }
+sentinel-core = { path = "crates/core/sentinel-core" }
+sentinel-ai-core = { path = "crates/core/sentinel-ai-core" }
+sentinel-app-server = { path = "crates/server/sentinel-app-server" }
+sentinel-app-server-protocol = { path = "crates/server/sentinel-app-server-protocol" }
+sentinel-app-server-client = { path = "crates/server/sentinel-app-server-client" }
+sentinel-app-server-daemon = { path = "crates/server/sentinel-app-server-daemon" }
+sentinel-app-server-transport = { path = "crates/server/sentinel-app-server-transport" }
+sentinel-cli = { path = "crates/interfaces/sentinel-cli" }
+sentinel-ai-tui = { path = "crates/interfaces/sentinel-ai-tui" }
+sentinel-exec = { path = "crates/tools-and-exec/sentinel-exec" }
+sentinel-tools = { path = "crates/tools-and-exec/sentinel-tools" }
+sentinel-mcp = { path = "crates/tools-and-exec/sentinel-mcp" }
+sentinel-plugin-system = { path = "crates/tools-and-exec/sentinel-plugin-system" }
+sentinel-ai-exec = { path = "crates/tools-and-exec/sentinel-ai-exec" }
+sentinel-ide-companion = { path = "crates/integrations/sentinel-ide-companion" }
+sentinel-lsp = { path = "crates/integrations/sentinel-lsp" }
+sentinel-config = { path = "crates/platform/sentinel-config" }
+sentinel-provider = { path = "crates/platform/sentinel-provider" }
+sentinel-provider-info = { path = "crates/platform/sentinel-provider-info" }
+sentinel-agent-identity = { path = "crates/platform/sentinel-agent-identity" }
+sentinel-agent-graph-store = { path = "crates/platform/sentinel-agent-graph-store" }
+sentinel-analytics = { path = "crates/platform/sentinel-analytics" }
+sentinel-headroom = { path = "crates/platform/sentinel-headroom" }
+sentinel-sdk = { path = "crates/platform/sentinel-sdk" }
+sentinel-proxy = { path = "crates/platform/sentinel-proxy" }
+sentinel-ai-test-support = { path = "crates/platform/sentinel-ai-test-support" }
+

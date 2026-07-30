@@ -1,0 +1,17 @@
+[package]
+name = "sentinel-plugin-system"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+async-trait.workspace = true
+uuid.workspace = true
+
+sentinel-protocol = { workspace = true }
+sentinel-tools = { workspace = true }

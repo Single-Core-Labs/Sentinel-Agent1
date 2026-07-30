@@ -1,0 +1,33 @@
+[package]
+name = "sentinel-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde.workspace = true
+rusqlite = { workspace = true, optional = true }
+serde_json.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tokio-stream = "0.1"
+tokio.workspace = true
+tokio-util = "0.7"
+futures = "0.3"
+tracing.workspace = true
+uuid.workspace = true
+async-trait.workspace = true
+chrono.workspace = true
+reqwest.workspace = true
+
+sentinel-protocol = { workspace = true }
+sentinel-provider = { workspace = true }
+sentinel-provider-info = { workspace = true }
+sentinel-tools = { workspace = true }
+sentinel-config = { workspace = true }
+sentinel-plugin-system = { workspace = true }
+regex.workspace = true
+
+[features]
+default = []
+sqlite = ["rusqlite"]

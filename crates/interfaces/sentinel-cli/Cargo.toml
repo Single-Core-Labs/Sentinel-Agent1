@@ -1,0 +1,36 @@
+[package]
+name = "sentinel-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "sentinel"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+tokio.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+serde_json.workspace = true
+colored.workspace = true
+futures = "0.3"
+async-trait.workspace = true
+
+sentinel-core = { workspace = true }
+sentinel-config = { workspace = true }
+sentinel-provider = { workspace = true }
+sentinel-tools = { workspace = true }
+sentinel-mcp = { workspace = true }
+sentinel-app-server = { workspace = true }
+sentinel-app-server-client = { workspace = true }
+sentinel-app-server-transport = { workspace = true }
+sentinel-app-server-protocol = { workspace = true }
+sentinel-agent-identity = { workspace = true }
+sentinel-headroom = { workspace = true }
+sentinel-proxy = { workspace = true }
+hex.workspace = true
+reqwest.workspace = true
+terminal_size = "0.3"
+webbrowser = "1.2.2"

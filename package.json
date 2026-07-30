@@ -1,8 +1,11 @@
 {
   "name": "sentinel-monorepo",
   "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
-    "agent": "bun run packages/cli-agent/src/index.tsx",
+    "agent": "bun run \"--jsx-import-source=@opentui/solid\" packages/cli-agent/src/index.tsx",
     "agent:check": "cd packages/cli-agent && bun run typecheck"
   }
 }
