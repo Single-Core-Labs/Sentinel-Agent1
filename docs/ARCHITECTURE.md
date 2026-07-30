@@ -58,6 +58,11 @@ ml-intern-main/
 - `sentinel-ide-companion`: Active document sync and inline red/green diff preview server.
 - `sentinel-lsp`: Language Server Protocol client.
 
+### 7. Tools & Automation (`tools/`)
+- `sentinel-bot/`: Cognitive repository bot — dual-layer architecture (Pulse reflex + Brain reasoning) for automated maintenance, metrics collection, and proactive optimization.
+- `caretaker-agent/`: Cloud Run microservices for issue triage, PR generation, and egress actions.
+- `argument-comment-lint/`: Rust-based lint tool for argument comment validation.
+
 ### 6. Platform & Infra Services (`crates/platform`)
 - `sentinel-config`: Configuration loader for `sentinel.toml`.
 - `sentinel-provider`: Provider abstraction (OpenAI, Anthropic, Gemini, LiteLLM, Ollama).

@@ -1,0 +1,14 @@
+# CI Policy for Sentinel Bot
+# Grants permission for shell commands and file writes in CI environment.
+
+[[rule]]
+toolName = ["run_shell_command", "write_file", "replace"]
+decision = "allow"
+priority = 999
+interactive = false
+
+[[rule]]
+toolName = "invoke_agent"
+decision = "allow"
+priority = 999
+interactive = false
