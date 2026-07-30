@@ -3,7 +3,7 @@ use std::sync::OnceLock;
 use std::sync::atomic::Ordering;
 use colored::*;
 use sentinel_provider_info::{ProviderInfo, AuthConfig};
-use sentinel_gpu_profiler::{model_db, vram as gpu_vram, cuda, profile, bench};
+use sentinel_gpu_profiler::{model_db, vram as gpu_vram, cuda, profile, bench, langs};
 
 static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 fn client() -> &'static reqwest::Client {
@@ -204,7 +204,7 @@ fn help() {
     println!("  /ssh <host> <cmd>  Run command on remote machine (zero-cost)");
     println!("  /ssh profile <host> <s>  Remote GPU profiling with anomaly detection");
     println!("  /backends         List detected local LLM backends (Ollama, vLLM, LM Studio)");
-    println!("  /profile [file]   Analyze CUDA/Numba kernel source for performance issues");
+    println!("  /profile [file]   Analyze GPU kernel source (CUDA/Triton/Mojo/Numba/PyTorch/CUTE)");
     println!("  /profile dmon <s> Local nvidia-smi dmon profiling with analysis");
     println!("  /profile log <f>  Parse existing nvidia-smi dmon log file");
     println!("  /clear            Clear screen");
@@ -340,8 +340,12 @@ async fn cmd_bench_kernel(arg: &str) {
 
     match std::fs::read_to_string(path) {
         Ok(source) => {
+            let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or(arg);
+            let lang = langs::detect_language(fname, &source);
             println!();
-            println!(" {} Generating kernel config sweep for {}...", "●".cyan().bold(), arg.bold());
+            println!(" {} Generating kernel config sweep for {} [{}]...",
+                "●".cyan().bold(), fname.bold(), lang.name().green());
+            println!("   {} {}", "Config hint:".dimmed(), langs::analyze(fname, &source).config_hint.dimmed());
 
             let configs = bench::generate_configs(&source);
             println!("   {} {} configs to evaluate", "→".cyan(), configs.len());
@@ -573,7 +577,7 @@ async fn cmd_profile(arg: &str) {
             println!("   {} {} SMs", "SM Count:".dimmed(), sm);
         }
         println!();
-        println!("   {} Use /profile <file.cu> for CUDA source analysis.", "ℹ".cyan().bold());
+        println!("   {} Use /profile <file> for GPU kernel analysis (CUDA/Triton/Mojo/Numba/PyTorch/CUTE).", "ℹ".cyan().bold());
         println!("   {} Use /profile log <file> to parse nvidia-smi dmon output.", "ℹ".cyan().bold());
         println!("   {} Use /profile dmon <sec> to run local dmon profiling.", "ℹ".cyan().bold());
         println!();
@@ -648,41 +652,44 @@ async fn cmd_profile(arg: &str) {
         return;
     }
 
-    // Try to read and analyze a CUDA source file
+    // Try to read and analyze a source file (any supported language)
     let path = std::path::Path::new(arg);
     if !path.exists() {
         println!(" {} File not found: {}", "✖".red(), arg);
-        println!("   {} Usage: /profile [file.cu | log <file> | dmon <sec>]", "ℹ".cyan().bold());
+        println!("   {} Usage: /profile [file | log <file> | dmon <sec>]", "ℹ".cyan().bold());
+        println!("   {} Supported: .cu, .py, .mojo, .cuh, .hpp (CUDA, Triton, Mojo, Numba, PyTorch, CUTE, TileLang)",
+            "ℹ".cyan().bold());
         return;
     }
     match std::fs::read_to_string(path) {
         Ok(source) => {
+            let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or(arg);
+            let result = langs::analyze(fname, &source);
             println!();
-            println!(" {} Analyzing {}...", "●".cyan().bold(), arg.bold());
-            let issues = cuda::analyze_cuda_source(&source);
-            if issues.is_empty() {
-                println!();
-                println!("   {} No issues found in kernel.", "✔".green().bold());
+            println!(" {} Analyzing {} [{}]...", "●".cyan().bold(), fname.bold(), result.language.name().green());
+            println!("   {} {}", "Hint:".dimmed(), result.config_hint.dimmed());
+            println!();
+            if result.issues.is_empty() {
+                println!("   {} No issues found.", "✔".green().bold());
             } else {
-                println!();
-                let errors = issues.iter().filter(|i| i.severity == cuda::Severity::Error).count();
-                let warnings = issues.iter().filter(|i| i.severity == cuda::Severity::Warn).count();
-                let infos = issues.iter().filter(|i| i.severity == cuda::Severity::Info).count();
+                let errors = result.issues.iter().filter(|i| i.severity == cuda::Severity::Error).count();
+                let warnings = result.issues.iter().filter(|i| i.severity == cuda::Severity::Warn).count();
+                let infos = result.issues.iter().filter(|i| i.severity == cuda::Severity::Info).count();
                 println!("   {} {} issues: {} errors, {} warnings, {} info",
-                    "•".cyan().bold(), issues.len(),
+                    "•".cyan().bold(), result.issues.len(),
                     errors.to_string().red().bold(),
                     warnings.to_string().yellow().bold(),
                     infos.to_string().cyan().bold(),
                 );
                 println!();
-                for issue in &issues {
+                for issue in &result.issues {
                     let severity_colored = match issue.severity {
                         cuda::Severity::Error => "error".red().bold(),
                         cuda::Severity::Warn => "warn".yellow().bold(),
                         cuda::Severity::Info => "info".cyan(),
                     };
                     println!("   {} [{}:{}] {}",
-                        "→".cyan(), arg.dimmed(), issue.line.to_string().dimmed(), severity_colored);
+                        "→".cyan(), fname.dimmed(), issue.line.to_string().dimmed(), severity_colored);
                     println!("       {}", issue.message.bold());
                     println!("       {}", issue.suggestion.dimmed());
                     println!();
