@@ -7,6 +7,7 @@ mod server;
 mod proxy;
 mod diagnostics;
 mod ai;
+mod local;
 mod web;
 
 use colored::*;
@@ -34,6 +35,7 @@ async fn main() -> anyhow::Result<()> {
         "--version" | "-V" => println!("Sentinel v{}", env!("CARGO_PKG_VERSION")),
         "exec" => exec::run(sub_args).await?,
         "ai" => ai::run(sub_args).await?,
+        "local" => local::run(sub_args).await?,
         "auth" => auth::run(sub_args).await?,
         "server" => server::run(sub_args).await?,
         "web" => web::run(sub_args).await?,
@@ -57,6 +59,7 @@ fn print_help() {
     println!();
     println!("{}", "Subcommands:".yellow().bold());
     println!("  ai [model]            Interactive agent session (Rust native)");
+    println!("  local [model]         Run a local model via Ollama");
     println!("  exec <model> <prompt>  Run the agent with a prompt (Rust native)");
     println!("  auth login|logout|status Authentication management");
     println!("  server start|stop|status App server control");

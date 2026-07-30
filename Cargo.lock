@@ -2949,6 +2949,7 @@ dependencies = [
  "sentinel-headroom",
  "sentinel-mcp",
  "sentinel-provider",
+ "sentinel-provider-info",
  "sentinel-proxy",
  "sentinel-tools",
  "serde_json",
