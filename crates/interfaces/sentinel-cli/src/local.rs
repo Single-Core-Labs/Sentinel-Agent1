@@ -3,7 +3,7 @@ use std::sync::OnceLock;
 use std::sync::atomic::Ordering;
 use colored::*;
 use sentinel_provider_info::{ProviderInfo, AuthConfig};
-use sentinel_gpu_profiler::{model_db, vram as gpu_vram, cuda, profile, bench, langs, GpuLanguage};
+use sentinel_gpu_profiler::{model_db, vram as gpu_vram, cuda, profile, bench, langs, emulate, GpuLanguage, GpuArch, LaunchConfig};
 
 static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 fn client() -> &'static reqwest::Client {
@@ -167,6 +167,7 @@ async fn chat_loop(
                 "/ssh" => cmd_ssh(arg).await,
                 "/backends" | "/engines" => cmd_backends().await,
                 "/profile" => cmd_profile(arg).await,
+                "/emulate" | "/emu" => cmd_emulate(arg).await,
                 _ => eprintln!(" {} Unknown command. Type /help.", "✖".red().bold()),
             }
             continue;
@@ -209,6 +210,9 @@ fn help() {
     println!("  /profile dmon <s> Local nvidia-smi dmon profiling with analysis");
     println!("  /profile log <f>  Parse existing nvidia-smi dmon log file");
     println!("  /profile benchmark <f> Compile & run kernel, measure real perf (nvcc required)");
+    println!("  /emulate <file>    Emulate kernel on GPU (cycle-approx, occupancy, memory)");
+    println!("  /emulate <f> --all Multi-arch comparison (H100, A100, RTX 4090, RTX 3090)");
+    println!("  /emulate <f> --arches=sm_80,sm_89  Emulate on specific architectures");
     println!("  /clear            Clear screen");
     println!("  /exit, /quit      Exit");
     println!();
@@ -600,6 +604,7 @@ async fn cmd_profile(arg: &str) {
         println!("   {} Use /profile log <file> to parse nvidia-smi dmon output.", "ℹ".cyan().bold());
         println!("   {} Use /profile dmon <sec> to run local dmon profiling.", "ℹ".cyan().bold());
         println!("   {} Use /profile benchmark <file> to compile & run kernel (nvcc).", "ℹ".cyan().bold());
+        println!("   {} Use /emulate <file> to simulate on any GPU architecture (zero-cost).", "ℹ".cyan().bold());
         println!();
         return;
     }
@@ -757,6 +762,113 @@ async fn cmd_profile(arg: &str) {
             println!();
         }
         Err(e) => println!(" {} Failed to read file: {}", "✖".red(), e),
+    }
+}
+
+fn parse_emulate_arches(arg: &str) -> Vec<GpuArch> {
+    let all_arches = vec![
+        GpuArch::Pascal61, GpuArch::Volta70, GpuArch::Turing75,
+        GpuArch::Ampere80, GpuArch::Ampere86, GpuArch::Ada89,
+        GpuArch::Hopper90, GpuArch::Blackwell100,
+    ];
+
+    let arg = arg.trim();
+    if arg.contains("--all") { return all_arches; }
+
+    if let Some(arch_list) = arg.split("--arches=").nth(1).or_else(|| arg.split("--arch=").nth(1)) {
+        let mut selected = Vec::new();
+        for a in arch_list.split(',') {
+            let a = a.trim();
+            let arch = match a {
+                "sm_61" | "pascal" | "6.1" | "1080" => Some(GpuArch::Pascal61),
+                "sm_70" | "volta" | "7.0" | "v100" => Some(GpuArch::Volta70),
+                "sm_75" | "turing" | "7.5" | "2080" => Some(GpuArch::Turing75),
+                "sm_80" | "a100" | "8.0" => Some(GpuArch::Ampere80),
+                "sm_86" | "ampere" | "8.6" | "3090" => Some(GpuArch::Ampere86),
+                "sm_89" | "ada" | "8.9" | "4090" => Some(GpuArch::Ada89),
+                "sm_90" | "hopper" | "9.0" | "h100" => Some(GpuArch::Hopper90),
+                "sm_100" | "blackwell" | "10.0" | "5090" => Some(GpuArch::Blackwell100),
+                _ => None,
+            };
+            if let Some(a) = arch { selected.push(a); }
+        }
+        if !selected.is_empty() { return selected; }
+    }
+
+    vec![GpuArch::Ampere86, GpuArch::Ada89, GpuArch::Hopper90]
+}
+
+async fn cmd_emulate(arg: &str) {
+    let arg = arg.trim();
+    if arg.is_empty() {
+        println!();
+        println!(" {} Usage:", "•".yellow().bold());
+        println!("   /emulate <file>                  Emulate on RTX 3090, RTX 4090, H100");
+        println!("   /emulate <file> --all            All architectures");
+        println!("   /emulate <file> --arches=sm_80,sm_89,sm_90  Custom selection");
+        println!();
+        return;
+    }
+
+    let parts: Vec<&str> = arg.splitn(2, " --").collect();
+    let file_part = parts[0].trim();
+    let flag_part = if parts.len() > 1 { format!("--{}", parts[1]) } else { String::new() };
+
+    let path = std::path::Path::new(file_part);
+    if !path.exists() {
+        println!(" {} File not found: {}", "✖".red(), file_part);
+        return;
+    }
+
+    let source = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => { println!(" {} Failed to read: {}", "✖".red(), e); return; }
+    };
+
+    let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or(file_part);
+    let language = langs::detect_language(fname, &source);
+    let arches = parse_emulate_arches(&flag_part);
+
+    println!();
+    println!(" {} Emulating {} on {} architectures...",
+        "●".cyan().bold(), fname.bold(), arches.len().to_string().green());
+    println!();
+
+    let config = LaunchConfig {
+        block_x: 256,
+        block_y: 1,
+        block_z: 1,
+        grid_x: 100,
+        grid_y: 1,
+        grid_z: 1,
+        shared_mem_bytes: 0,
+        registers_per_thread: 32,
+    };
+
+    let req = emulate::EmulateRequest {
+        source: source.clone(),
+        filename: fname.to_string(),
+        config,
+        arches,
+        language,
+    };
+
+    let out = emulate::run_emulation(&req);
+
+    // Show language info
+    println!("   {} {} detected", "Language:".bold().dimmed(), language.name().cyan());
+    println!("   {} {}", "Hint:".bold().dimmed(), out.config_hint.dimmed());
+    println!();
+
+    // Show detailed report for first arch
+    if let Some(ref report) = out.single {
+        println!("{}", emulate::execution_report(report));
+    }
+
+    // Show multi-arch comparison
+    if !out.comparison_text.is_empty() {
+        println!("   {} {}", "Multi-Architecture Comparison:".bold().yellow(), "");
+        println!("{}", out.comparison_text);
     }
 }
 
