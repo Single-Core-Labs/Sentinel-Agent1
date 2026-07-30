@@ -14,7 +14,7 @@ use crate::session::LspSession;
 pub struct SentinelLspServer {
     session: Arc<RwLock<LspSession>>,
     capabilities: ServerCapabilities,
-    client: Option<tower_lsp::Client>,
+    _client: Option<tower_lsp::Client>,
 }
 
 impl SentinelLspServer {
@@ -48,7 +48,7 @@ impl SentinelLspServer {
         Self {
             session: Arc::new(RwLock::new(session)),
             capabilities,
-            client: None,
+            _client: None,
         }
     }
 }

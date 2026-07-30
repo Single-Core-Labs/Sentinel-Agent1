@@ -150,14 +150,14 @@ pub fn content_type_for_tool(tool_name: &str) -> Option<ContentType> {
 pub struct HeadroomAgentCompressor {
     pipeline: Arc<AgentCompressionPipeline>,
     ccr: Option<Arc<CcrStore>>,
-    config: Option<HeadroomConfig>,
+    _config: Option<HeadroomConfig>,
     full_compressor: Option<Mutex<Compressor>>,
 }
 
 impl HeadroomAgentCompressor {
     pub fn new(pipeline: Arc<AgentCompressionPipeline>) -> Self {
         let ccr = Some(Arc::clone(pipeline.ccr()));
-        Self { pipeline, ccr, config: None, full_compressor: None }
+        Self { pipeline, ccr, _config: None, full_compressor: None }
     }
 
     pub fn with_config(pipeline: Arc<AgentCompressionPipeline>, config: HeadroomConfig) -> Self {
@@ -166,7 +166,7 @@ impl HeadroomAgentCompressor {
             Arc::clone(pipeline.ccr()),
             config.clone(),
         )));
-        Self { pipeline, ccr, config: Some(config), full_compressor }
+        Self { pipeline, ccr, _config: Some(config), full_compressor }
     }
 
     pub fn ccr(&self) -> Option<Arc<CcrStore>> {

@@ -5,19 +5,43 @@ use crate::display::{print_banner, print_divider};
 use crate::handler::CliEventHandler;
 
 fn try_spawn_ts_agent() -> bool {
-    let agent_path = std::path::Path::new("packages/cli-agent/src/index.tsx");
-    if !agent_path.exists() {
-        return false;
-    }
+    let agent_relative = "packages/cli-agent/src/index.tsx";
+
+    let (agent_path, cwd) = match std::env::var("SENTINEL_HOME") {
+        Ok(home) => {
+            let home = std::path::PathBuf::from(home);
+            let ap = home.join(agent_relative);
+            if ap.exists() { (ap, home) } else { return false }
+        }
+        Err(_) => {
+            let cwd = match std::env::current_dir() {
+                Ok(d) => d,
+                Err(_) => return false,
+            };
+            let mut ap = cwd.join(agent_relative);
+            let mut resolved_cwd = cwd.clone();
+            
+            if !ap.exists() {
+                // Fallback to the known project workspace root
+                let fallback = std::path::PathBuf::from(r"d:\ml-intern-main\ml-intern-main");
+                let fallback_ap = fallback.join(agent_relative);
+                if fallback_ap.exists() {
+                    ap = fallback_ap;
+                    resolved_cwd = fallback;
+                } else {
+                    return false;
+                }
+            }
+            (ap, resolved_cwd)
+        }
+    };
+
     let bun = if cfg!(windows) { "bun.exe" } else { "bun" };
 
-    // We need to ensure bun inherits stdio so the TUI renders properly,
-    // and that we set the cwd to the workspace root for node_modules resolution.
-    let cwd = std::env::current_dir().unwrap_or_default();
     let status = std::process::Command::new(bun)
         .arg("run")
         .arg("--jsx-import-source=@opentui/solid")
-        .arg(agent_path)
+        .arg(&agent_path)
         .current_dir(&cwd)
         .stdin(std::process::Stdio::inherit())
         .stdout(std::process::Stdio::inherit())
