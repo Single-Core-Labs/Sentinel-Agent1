@@ -6,6 +6,19 @@
   ],
   "scripts": {
     "agent": "bun run \"--jsx-import-source=@opentui/solid\" packages/cli-agent/src/index.tsx",
-    "agent:check": "cd packages/cli-agent && bun run typecheck"
+    "agent:check": "cd packages/cli-agent && bun run typecheck",
+    "evals:always": "cross-env RUN_EVALS=1 vitest run --config evals/vitest.config.ts --reporter=verbose",
+    "evals:all": "cross-env RUN_EVALS=1 vitest run --config evals/vitest.config.ts --reporter=verbose",
+    "evals:behavioral": "cross-env RUN_EVALS=1 EVAL_CATEGORY=behavioral vitest run --config evals/vitest.config.ts",
+    "evals:sandbox": "cross-env RUN_EVALS=1 EVAL_CATEGORY=sandbox-safety vitest run --config evals/vitest.config.ts",
+    "evals:tools": "cross-env RUN_EVALS=1 EVAL_CATEGORY=tool-use-correctness vitest run --config evals/vitest.config.ts",
+    "evals:hero": "cross-env RUN_EVALS=1 EVAL_CATEGORY=hero-scenario vitest run --config evals/vitest.config.ts",
+    "evals:budget": "cross-env RUN_EVALS=1 EVAL_CATEGORY=context-budget vitest run --config evals/vitest.config.ts"
+  },
+  "devDependencies": {
+    "vitest": "^2.0.0",
+    "typescript": "^5.0.0",
+    "cross-env": "^7.0.3",
+    "@types/node": "^20.0.0"
   }
 }
