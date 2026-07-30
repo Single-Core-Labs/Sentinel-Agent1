@@ -10,11 +10,18 @@ fn try_spawn_ts_agent() -> bool {
         return false;
     }
     let bun = if cfg!(windows) { "bun.exe" } else { "bun" };
+
+    // We need to ensure bun inherits stdio so the TUI renders properly,
+    // and that we set the cwd to the workspace root for node_modules resolution.
+    let cwd = std::env::current_dir().unwrap_or_default();
     let status = std::process::Command::new(bun)
         .arg("run")
-        .arg("--jsx-import-source")
-        .arg("solid-js")
+        .arg("--jsx-import-source=@opentui/solid")
         .arg(agent_path)
+        .current_dir(&cwd)
+        .stdin(std::process::Stdio::inherit())
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit())
         .spawn();
     match status {
         Ok(mut child) => {
