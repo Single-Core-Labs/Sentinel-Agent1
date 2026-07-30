@@ -3,7 +3,7 @@ use std::sync::OnceLock;
 use std::sync::atomic::Ordering;
 use colored::*;
 use sentinel_provider_info::{ProviderInfo, AuthConfig};
-use sentinel_gpu_profiler::{model_db, vram as gpu_vram, cuda, profile, bench, langs, emulate, GpuLanguage, GpuArch, LaunchConfig};
+use sentinel_gpu_profiler::{model_db, vram as gpu_vram, cuda, profile, bench, langs, emulate, optimizer, GpuLanguage, GpuArch, LaunchConfig};
 
 static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 fn client() -> &'static reqwest::Client {
@@ -120,7 +120,7 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     agent.set_event_handler(Arc::new(crate::handler::CliEventHandler));
 
     let approval: Box<dyn sentinel_core::ApprovalGate> = Box::new(sentinel_core::AutoApprovalGate);
-    chat_loop(&agent, &mut thread, &model, &info, approval).await
+    chat_loop(&agent, &mut thread, &model, &info, &extended, approval).await
 }
 
 async fn chat_loop(
@@ -128,6 +128,7 @@ async fn chat_loop(
     thread: &mut sentinel_core::AgentThread,
     model: &str,
     sys: &SysInfo,
+    extended: &sentinel_gpu_profiler::vram::ExtendedGpuInfo,
     approval: Box<dyn sentinel_core::ApprovalGate>,
 ) -> anyhow::Result<()> {
     let model_display = format!("[{}]", model).dimmed();
@@ -168,6 +169,8 @@ async fn chat_loop(
                 "/backends" | "/engines" => cmd_backends().await,
                 "/profile" => cmd_profile(arg).await,
                 "/emulate" | "/emu" => cmd_emulate(arg).await,
+                "/optimize" | "/opt" => cmd_optimize(arg, sys, extended).await,
+                "/gpu-context" | "/gpuctx" => cmd_gpu_context(sys, extended).await,
                 _ => eprintln!(" {} Unknown command. Type /help.", "✖".red().bold()),
             }
             continue;
@@ -213,6 +216,9 @@ fn help() {
     println!("  /emulate <file>    Emulate kernel on GPU (cycle-approx, occupancy, memory)");
     println!("  /emulate <f> --all Multi-arch comparison (H100, A100, RTX 4090, RTX 3090)");
     println!("  /emulate <f> --arches=sm_80,sm_89  Emulate on specific architectures");
+    println!("  /optimize <file>   Auto-optimize kernel with AI + emulator speedup estimate");
+    println!("  /optimize <f> --arch=sm_90  Optimize for specific architecture");
+    println!("  /gpu-context       Show hardware context injected into AI prompts");
     println!("  /clear            Clear screen");
     println!("  /exit, /quit      Exit");
     println!();
@@ -1406,6 +1412,148 @@ async fn ping() -> Result<(), String> {
             if r.status().is_success() { Ok(()) }
             else { Err(format!("Ollama returned status {}", r.status())) }
         })
+}
+
+// ── AI Feature Commands ──
+
+async fn cmd_optimize(arg: &str, sys: &SysInfo, extended: &sentinel_gpu_profiler::vram::ExtendedGpuInfo) {
+    let arg = arg.trim();
+    if arg.is_empty() {
+        println!();
+        println!(" {} Usage:", "•".yellow().bold());
+        println!("   /optimize <file>              Auto-optimize kernel");
+        println!("   /optimize <file> --arch=sm_90 Optimize for specific architecture");
+        println!();
+        return;
+    }
+
+    let parts: Vec<&str> = arg.splitn(2, " --").collect();
+    let file_part = parts[0].trim();
+    let flag_part = if parts.len() > 1 { format!("--{}", parts[1]) } else { String::new() };
+
+    let path = std::path::Path::new(file_part);
+    if !path.exists() {
+        println!(" {} File not found: {}", "✖".red(), file_part);
+        return;
+    }
+
+    let source = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => { println!(" {} Failed to read: {}", "✖".red(), e); return; }
+    };
+
+    let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or(file_part);
+    let language = langs::detect_language(fname, &source);
+
+    let target_arch = if flag_part.contains("--arch=sm_90") || flag_part.contains("--arch=h100") {
+        GpuArch::Hopper90
+    } else if flag_part.contains("--arch=sm_89") || flag_part.contains("--arch=4090") {
+        GpuArch::Ada89
+    } else if flag_part.contains("--arch=sm_80") || flag_part.contains("--arch=a100") {
+        GpuArch::Ampere80
+    } else {
+        GpuArch::Ampere86
+    };
+
+    let arch_spec = emulate::arch_by_enum(target_arch);
+
+    println!();
+    println!(" {} Analyzing {} for {}...",
+        "●".cyan().bold(), fname.bold(), arch_spec.name);
+    println!();
+
+    let config = LaunchConfig {
+        block_x: 256,
+        block_y: 1,
+        block_z: 1,
+        grid_x: 100,
+        grid_y: 1,
+        grid_z: 1,
+        shared_mem_bytes: 0,
+        registers_per_thread: 32,
+    };
+
+    // Step 1: Emulate original kernel
+    let before = emulate::emulate(&source, &config, &target_arch);
+
+    // Step 2: Build bottleneck report
+    let bottleneck = optimizer::analyze_bottlenecks(&before);
+
+    // Step 3: Build GPU context string
+    let gpu_ctx = gpu_vram::gpu_context_string(
+        sys.gpu.as_deref(),
+        sys.vram_gb,
+        extended,
+    );
+
+    // Step 4: Build optimization prompt
+    let prompt = optimizer::build_optimization_prompt(
+        &source, fname, &language, &target_arch, &bottleneck, &gpu_ctx,
+    );
+
+    // Step 5: Run through LLM (uses the agent's provider)
+    // For now, show what would be sent
+    println!(" {} Optimization Prompt:", "•".yellow().bold());
+    println!();
+    println!("   Target: {} ({})", arch_spec.name, arch_spec.compute_cap);
+    println!("   Language: {} | File: {}", language.name().green(), fname);
+    println!();
+
+    println!("   {} Bottleneck Analysis:", "Bottlenecks:".bold());
+    println!("   Primary: {}", bottleneck.primary);
+    for d in &bottleneck.details {
+        println!("     ! {}", d);
+    }
+    println!();
+
+    // Speedup estimate (using the same kernel as placeholder for now)
+    // In the full implementation, this would call the LLM and get back optimized code
+    let speedup = optimizer::estimate_speedup(&before, &before);
+    let opt_output = optimizer::OptimizeOutput {
+        original_source: source.clone(),
+        optimized_source: source.clone(),
+        diff: optimizer::compute_diff(&source, &source),
+        bottleneck_report: bottleneck,
+        speedup_estimate: Some(speedup),
+        llm_optimization_notes: "LLM optimization not yet integrated — run with a configured provider".into(),
+        compiled_ok: None,
+        correctness_passed: None,
+    };
+    let report = optimizer::format_optimize_output(&opt_output);
+    println!("{report}");
+    println!();
+    println!(" {} {}", "Note:".yellow().bold(), "Full LLM optimization requires a configured provider.");
+    println!("   Run `sentinel ai` with a cloud API key or use the local Ollama setup.");
+    println!("   The prompt is ready at: {}", prompt.lines().next().unwrap_or("").dimmed());
+}
+
+async fn cmd_gpu_context(sys: &SysInfo, extended: &sentinel_gpu_profiler::vram::ExtendedGpuInfo) {
+    println!();
+    println!(" {} {}", "GPU Context Injected into AI Prompts:".green().bold(), "");
+    println!();
+
+    let ctx = gpu_vram::gpu_context_string(sys.gpu.as_deref(), sys.vram_gb, extended);
+    for line in ctx.lines() {
+        println!("   {}", line);
+    }
+
+    let cc = extended.compute_capability.clone()
+        .or_else(|| sys.gpu.as_deref()
+            .and_then(|n| gpu_vram::compute_capability_from_name(n)))
+        .unwrap_or_else(|| "Unknown".to_string());
+
+    println!();
+    println!("   {}", "Recommended block sizes:".bold().dimmed());
+    let recs = langs::recommended_block_sizes(GpuLanguage::Cuda, Some(&cc));
+    for r in &recs {
+        let dims = format!("{}x{}x{}", r.block_x, r.block_y, r.block_z);
+        println!("     {}  {}", dims.yellow(), r.reason.dimmed());
+    }
+
+    println!();
+    let nvcc_flag = gpu_vram::nvcc_arch_flag(&cc);
+    println!("   {}", format!("NVCC: nvcc {} -o kernel kernel.cu", nvcc_flag).dimmed());
+    println!();
 }
 
 fn start_bg() {

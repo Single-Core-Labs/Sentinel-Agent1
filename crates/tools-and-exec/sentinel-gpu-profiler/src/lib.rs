@@ -5,6 +5,7 @@ pub mod profile;
 pub mod bench;
 pub mod langs;
 pub mod emulate;
+pub mod optimizer;
 
 pub use model_db::*;
 pub use vram::*;
@@ -13,3 +14,4 @@ pub use profile::*;
 pub use bench::*;
 pub use langs::*;
 pub use emulate::*;
+pub use optimizer::*;
