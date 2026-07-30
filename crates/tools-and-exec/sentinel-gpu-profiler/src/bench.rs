@@ -149,6 +149,136 @@ pub fn run_bench_suite(configs: &[KernelConfig], kernel_name: &str, gpu_sm_count
     BenchSuiteResult { kernel_name: kernel_name.into(), block_configs: results, fastest, recommendations }
 }
 
+pub struct RealBenchResult {
+    pub kernel_source: String,
+    pub compile_ok: bool,
+    pub compile_error: Option<String>,
+    pub run_duration_ms: Option<f64>,
+    pub heuristic_score: Option<f64>,
+}
+
+pub fn benchmark_kernel_real(source: &str, kernel_name: &str, sm_count: u32) -> RealBenchResult {
+    use std::process::Command;
+
+    let temp_dir = std::env::temp_dir().join("sentinel-bench");
+    let _ = std::fs::create_dir_all(&temp_dir);
+    let cu_file = temp_dir.join(format!("{}.cu", kernel_name.replace(|c: char| !c.is_alphanumeric(), "_")));
+    let exe_file = temp_dir.join(format!("{}.exe", kernel_name.replace(|c: char| !c.is_alphanumeric(), "_")));
+
+    let has_main = source.contains("int main(") || source.contains("int main (");
+    let src = if has_main {
+        source.to_string()
+    } else {
+        format!(
+            r#"{}
+#include <cstdio>
+#include <chrono>
+int main() {{
+    auto start = std::chrono::high_resolution_clock::now();
+    {}<<<1, 256>>>(nullptr, nullptr, nullptr, 0);
+    cudaDeviceSynchronize();
+    auto end = std::chrono::high_resolution_clock::now();
+    auto ms = std::chrono::duration_cast<std::chrono::microseconds>(end - start).count() / 1000.0;
+    printf("Kernel time: %.3f ms\n", ms);
+    return 0;
+}}
+"#,
+            source,
+            kernel_name.split("::").last().unwrap_or(kernel_name)
+        )
+    };
+
+    let _ = std::fs::write(&cu_file, &src);
+
+    // Try different NVCC commands
+    let nvcc_cmds = [
+        format!("nvcc -arch=sm_89 -o {} {} 2>&1", exe_file.display(), cu_file.display()),
+        format!("nvcc -o {} {} 2>&1", exe_file.display(), cu_file.display()),
+    ];
+
+    let mut compile_ok = false;
+    let mut compile_error = None;
+
+    for cmd in &nvcc_cmds {
+        let output = if cfg!(target_os = "windows") {
+            Command::new("cmd").args(["/c", cmd]).output()
+        } else {
+            Command::new("sh").args(["-c", cmd]).output()
+        };
+
+        match output {
+            Ok(out) if out.status.success() => {
+                compile_ok = true;
+                break;
+            }
+            Ok(out) => {
+                let stderr = String::from_utf8_lossy(&out.stderr).to_string();
+                if stderr.contains("fatal error") || stderr.contains("error") {
+                    compile_error = Some(stderr);
+                }
+                continue;
+            }
+            Err(e) => {
+                compile_error = Some(format!("Failed to launch nvcc: {}", e));
+                break;
+            }
+        }
+    }
+
+    if !compile_ok {
+        let heuristic = Some(estimate_config(&KernelConfig { block_x: 256, block_y: 1, block_z: 1, shared_mem: 0 }, sm_count));
+        return RealBenchResult {
+            kernel_source: source.to_string(),
+            compile_ok: false,
+            compile_error,
+            run_duration_ms: None,
+            heuristic_score: heuristic,
+        };
+    }
+
+    let run_duration = match Command::new(&exe_file).output() {
+        Ok(out) => {
+            let stdout = String::from_utf8_lossy(&out.stdout);
+            if let Some(line) = stdout.lines().find(|l| l.contains("Kernel time:")) {
+                if let Some(ms_str) = line.split("Kernel time:").nth(1) {
+                    ms_str.trim().trim_end_matches("ms").trim().parse::<f64>().ok()
+                } else { None }
+            } else { None }
+        }
+        Err(_) => None,
+    };
+
+    RealBenchResult {
+        kernel_source: source.to_string(),
+        compile_ok: true,
+        compile_error: None,
+        run_duration_ms: run_duration,
+        heuristic_score: None,
+    }
+}
+
+pub fn format_real_bench_result(result: &RealBenchResult) -> String {
+    let mut out = String::new();
+    if result.compile_ok {
+        out.push_str("   [OK] Compiled and ran successfully\n");
+        if let Some(ms) = result.run_duration_ms {
+            out.push_str(&format!("   [TIME] Kernel time: {:.3} ms\n", ms));
+        } else {
+            out.push_str("   [INFO] Kernel ran but output was not parsed\n");
+        }
+    } else {
+        out.push_str("   [FAIL] Could not compile kernel\n");
+        if let Some(ref err) = result.compile_error {
+            out.push_str(&format!("   Error: {}\n", err));
+        }
+        out.push_str("   [HINT] NVIDIA Visual Studio build tools required for nvcc compilation\n");
+        if let Some(score) = result.heuristic_score {
+            out.push_str(&format!("   [EST] Estimated score (heuristic): {:.1}\n", score));
+        }
+    }
+    out
+}
+
 pub fn format_bench_results(result: &BenchSuiteResult) -> String {
     let mut out = String::new();
     out.push_str(&format!("Kernel: {}\n", result.kernel_name));

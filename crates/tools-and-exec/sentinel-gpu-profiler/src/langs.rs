@@ -127,6 +127,81 @@ fn config_hint_for(lang: GpuLanguage) -> String {
     }
 }
 
+pub struct BlockSizeRecommendation {
+    pub label: &'static str,
+    pub block_x: u32,
+    pub block_y: u32,
+    pub block_z: u32,
+    pub shared_mem: u32,
+    pub reason: &'static str,
+}
+
+pub fn recommended_block_sizes(lang: GpuLanguage, compute_capability: Option<&str>) -> Vec<BlockSizeRecommendation> {
+    let cc_major: u32 = compute_capability
+        .and_then(|s| s.split('.').next())
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(8);
+
+    match lang {
+        GpuLanguage::Cuda => {
+            if cc_major >= 9 {
+                vec![
+                    BlockSizeRecommendation { label: "Hopper-optimized", block_x: 128, block_y: 2, block_z: 1, shared_mem: 0, reason: "Best occupancy on SM90 with 128 threads/warpgroup" },
+                    BlockSizeRecommendation { label: "Large shared mem", block_x: 128, block_y: 1, block_z: 1, shared_mem: 49152, reason: "TMA + shared memory for Hopper tensor cores" },
+                    BlockSizeRecommendation { label: "Max occupancy", block_x: 256, block_y: 1, block_z: 1, shared_mem: 0, reason: "High occupancy for compute-bound kernels" },
+                ]
+            } else if cc_major >= 8 {
+                vec![
+                    BlockSizeRecommendation { label: "Ampere-optimized", block_x: 128, block_y: 2, block_z: 1, shared_mem: 0, reason: "Best balance on SM86/87, 256 threads per block" },
+                    BlockSizeRecommendation { label: "Max throughput", block_x: 256, block_y: 1, block_z: 1, shared_mem: 0, reason: "64 warps/SM, hides latency well" },
+                    BlockSizeRecommendation { label: "Shared-mem heavy", block_x: 128, block_y: 1, block_z: 1, shared_mem: 32768, reason: "32KB shared mem for matmul/tiling" },
+                ]
+            } else {
+                vec![
+                    BlockSizeRecommendation { label: "Turing-optimized", block_x: 128, block_y: 1, block_z: 1, shared_mem: 0, reason: "128 threads/SM optimal on SM75" },
+                    BlockSizeRecommendation { label: "Occupancy max", block_x: 256, block_y: 1, block_z: 1, shared_mem: 0, reason: "64 warps, good for memory-bound kernels" },
+                ]
+            }
+        }
+        GpuLanguage::Triton => {
+            vec![
+                BlockSizeRecommendation { label: "Triton default", block_x: 128, block_y: 128, block_z: 1, shared_mem: 0, reason: "Standard BLOCK_M=128, BLOCK_N=128 for matmul" },
+                BlockSizeRecommendation { label: "Large tiles", block_x: 256, block_y: 256, block_z: 1, shared_mem: 0, reason: "Higher arithmetic intensity for large matrices" },
+                BlockSizeRecommendation { label: "Small tiles", block_x: 64, block_y: 64, block_z: 1, shared_mem: 0, reason: "Lower register pressure, good for small N" },
+            ]
+        }
+        GpuLanguage::Mojo | GpuLanguage::Numba => {
+            vec![
+                BlockSizeRecommendation { label: "Python-default", block_x: 256, block_y: 1, block_z: 1, shared_mem: 0, reason: "256 threads/block, good for most kernels" },
+                BlockSizeRecommendation { label: "2D tiling", block_x: 16, block_y: 16, block_z: 1, shared_mem: 0, reason: "16x16 for 2D grid workloads" },
+                BlockSizeRecommendation { label: "Warp-optimized", block_x: 128, block_y: 2, block_z: 1, shared_mem: 0, reason: "128 threads, 4 warps, low divergence" },
+            ]
+        }
+        GpuLanguage::PyTorch => {
+            vec![
+                BlockSizeRecommendation { label: "torch.compile", block_x: 0, block_y: 0, block_z: 0, shared_mem: 0, reason: "Let inductor choose best block size via autotune" },
+                BlockSizeRecommendation { label: "CUDA graphs", block_x: 0, block_y: 0, block_z: 0, shared_mem: 0, reason: "Enable CUDA graphs for static workloads" },
+            ]
+        }
+        GpuLanguage::Cute | GpuLanguage::CudaTile => {
+            vec![
+                BlockSizeRecommendation { label: "CUTE warp tile", block_x: 64, block_y: 2, block_z: 1, shared_mem: 0, reason: "CUTE warp-per-tile for tensor cores" },
+                BlockSizeRecommendation { label: "Large MMA tile", block_x: 128, block_y: 1, block_z: 1, shared_mem: 32768, reason: "32KB shared mem, 128 threads for MMA" },
+            ]
+        }
+        GpuLanguage::TileLang => {
+            vec![
+                BlockSizeRecommendation { label: "TileLang auto", block_x: 128, block_y: 128, block_z: 1, shared_mem: 0, reason: "Let TileLang JIT choose tile sizes" },
+            ]
+        }
+        GpuLanguage::Unknown => {
+            vec![
+                BlockSizeRecommendation { label: "Generic", block_x: 256, block_y: 1, block_z: 1, shared_mem: 0, reason: "Safe default for unknown GPU kernel" },
+            ]
+        }
+    }
+}
+
 // ── Triton Analysis ──
 
 fn analyze_triton(source: &str) -> Vec<KernelIssue> {

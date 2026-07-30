@@ -3,7 +3,7 @@ use std::sync::OnceLock;
 use std::sync::atomic::Ordering;
 use colored::*;
 use sentinel_provider_info::{ProviderInfo, AuthConfig};
-use sentinel_gpu_profiler::{model_db, vram as gpu_vram, cuda, profile, bench, langs};
+use sentinel_gpu_profiler::{model_db, vram as gpu_vram, cuda, profile, bench, langs, GpuLanguage};
 
 static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 fn client() -> &'static reqwest::Client {
@@ -203,10 +203,12 @@ fn help() {
     println!("  /gpu [/gpu ps|/gpu detailed]  NVIDIA GPU stats (zero-cost)");
     println!("  /ssh <host> <cmd>  Run command on remote machine (zero-cost)");
     println!("  /ssh profile <host> <s>  Remote GPU profiling with anomaly detection");
+    println!("  /ssh info <host>   Remote nvidia-smi -q summary");
     println!("  /backends         List detected local LLM backends (Ollama, vLLM, LM Studio)");
     println!("  /profile [file]   Analyze GPU kernel source (CUDA/Triton/Mojo/Numba/PyTorch/CUTE)");
     println!("  /profile dmon <s> Local nvidia-smi dmon profiling with analysis");
     println!("  /profile log <f>  Parse existing nvidia-smi dmon log file");
+    println!("  /profile benchmark <f> Compile & run kernel, measure real perf (nvcc required)");
     println!("  /clear            Clear screen");
     println!("  /exit, /quit      Exit");
     println!();
@@ -494,6 +496,23 @@ fn cmd_recommend(model: &str, sys: &SysInfo) {
         }
     }
 
+    // Block size recommendations per GPU language
+    println!();
+    println!(" {} Recommended Block Sizes:", "•".cyan().bold());
+    let cc = sys.gpu.as_ref().and_then(|g| gpu_vram::compute_capability_from_name(g));
+    for lang in &[GpuLanguage::Cuda, GpuLanguage::Triton, GpuLanguage::Numba, GpuLanguage::PyTorch, GpuLanguage::Cute] {
+        let recs = langs::recommended_block_sizes(*lang, cc.as_deref());
+        let best = recs.first().unwrap();
+        println!("   {}  {}  =>  {}x{}x{}  ({})",
+            lang.name().cyan().bold(),
+            "→".dimmed(),
+            best.block_x.to_string().yellow(),
+            best.block_y.to_string().yellow(),
+            best.block_z.to_string().yellow(),
+            best.reason.dimmed(),
+        );
+    }
+
     println!();
     let current_tier = model_db::recommend_tier(sys.vram_gb, sys.mem_gb, sys.gpu.is_some());
     if model != current_tier {
@@ -580,6 +599,7 @@ async fn cmd_profile(arg: &str) {
         println!("   {} Use /profile <file> for GPU kernel analysis (CUDA/Triton/Mojo/Numba/PyTorch/CUTE).", "ℹ".cyan().bold());
         println!("   {} Use /profile log <file> to parse nvidia-smi dmon output.", "ℹ".cyan().bold());
         println!("   {} Use /profile dmon <sec> to run local dmon profiling.", "ℹ".cyan().bold());
+        println!("   {} Use /profile benchmark <file> to compile & run kernel (nvcc).", "ℹ".cyan().bold());
         println!();
         return;
     }
@@ -609,6 +629,30 @@ async fn cmd_profile(arg: &str) {
                     let result = profile::analyze_profile(&snapshots, log_path);
                     println!("{}", profile::profile_summary_text(&result));
                 }
+                println!();
+            }
+            Err(e) => println!(" {} Failed to read file: {}", "✖".red(), e),
+        }
+        return;
+    }
+
+    // /profile benchmark <file>: compile and run kernel, measure real perf
+    if let Some(bench_file) = arg.strip_prefix("benchmark ") {
+        let path = std::path::Path::new(bench_file.trim());
+        if !path.exists() {
+            println!(" {} File not found: {}", "✖".red(), bench_file);
+            return;
+        }
+        match std::fs::read_to_string(path) {
+            Ok(source) => {
+                let kernel_name = path.file_stem().and_then(|n| n.to_str()).unwrap_or("kernel");
+                println!();
+                println!(" {} Real benchmark: {}", "●".cyan().bold(), bench_file.trim().bold());
+                println!();
+                let stats = gpu_vram::query_gpu_stats();
+                let sm_count = stats.sm_count.unwrap_or(128);
+                let result = bench::benchmark_kernel_real(&source, kernel_name, sm_count);
+                println!("{}", bench::format_real_bench_result(&result));
                 println!();
             }
             Err(e) => println!(" {} Failed to read file: {}", "✖".red(), e),
@@ -656,7 +700,7 @@ async fn cmd_profile(arg: &str) {
     let path = std::path::Path::new(arg);
     if !path.exists() {
         println!(" {} File not found: {}", "✖".red(), arg);
-        println!("   {} Usage: /profile [file | log <file> | dmon <sec>]", "ℹ".cyan().bold());
+        println!("   {} Usage: /profile [file | benchmark <f> | log <f> | dmon <sec>]", "ℹ".cyan().bold());
         println!("   {} Supported: .cu, .py, .mojo, .cuh, .hpp (CUDA, Triton, Mojo, Numba, PyTorch, CUTE, TileLang)",
             "ℹ".cyan().bold());
         return;
@@ -695,6 +739,21 @@ async fn cmd_profile(arg: &str) {
                     println!();
                 }
             }
+
+            // Show block size recommendations
+            let extended = gpu_vram::query_extended_gpu_info();
+            let cc = extended.compute_capability.as_deref();
+            let recs = langs::recommended_block_sizes(result.language, cc);
+            println!("   {} Recommended block sizes for {}:",
+                "•".cyan().bold(), result.language.name().green());
+            for r in &recs {
+                let dims = if r.block_x > 0 {
+                    format!("{}x{}x{}", r.block_x, r.block_y, r.block_z)
+                } else {
+                    "autotune".into()
+                };
+                println!("     {}  {}  ({})", dims.yellow(), r.label.dimmed(), r.reason.dimmed());
+            }
             println!();
         }
         Err(e) => println!(" {} Failed to read file: {}", "✖".red(), e),
@@ -702,81 +761,112 @@ async fn cmd_profile(arg: &str) {
 }
 
 async fn cmd_ssh(arg: &str) {
-    let parts: Vec<&str> = arg.splitn(3, ' ').collect();
-    if parts.is_empty() || parts[0].is_empty() {
+    let args: Vec<&str> = arg.splitn(4, ' ').collect();
+    if args.is_empty() || args[0].is_empty() {
         println!();
         println!(" {} Usage:", "•".yellow().bold());
-        println!("   /ssh <user@host> <command>         Run command remotely");
-        println!("   /ssh profile <user@host> <sec>     Remote GPU profiling with analysis");
+        println!("   /ssh <user@host> <command>               Run command remotely");
+        println!("   /ssh profile <user@host> <sec>           Remote GPU profiling with analysis");
+        println!("   /ssh info <user@host>                    Remote nvidia-smi -q summary");
         println!("   {}", "Example: /ssh profile ubuntu@10.0.0.1 5".dimmed());
         println!();
         return;
     }
 
-    // /ssh profile <user@host> <duration>
-    if parts[0] == "profile" && parts.len() >= 3 {
-        let host = parts[1];
-        let dur_secs = parts.get(2).and_then(|s| s.parse::<u64>().ok()).unwrap_or(5).max(1).min(60);
-        println!();
-        println!(" {} Profiling remote GPU on {} for {}s...", "●".cyan().bold(), host, dur_secs);
-        let cmd = format!(
-            r#"ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 {} "nvidia-smi dmon -s pucvmet -d 1 -c {}" 2>&1"#,
-            host, dur_secs
-        );
-        print!("   {} Connecting...", "→".cyan());
-        use std::io::Write;
-        std::io::stdout().flush().ok();
-        match run_shell(&cmd).await {
-            Ok(out) => {
-                println!("\r   {} Data received ({} lines).", "✔".green(), out.lines().count());
-                println!();
-                let snapshots = profile::parse_dmon_csv(&out);
-                if snapshots.is_empty() {
-                    println!("{}", out);
-                } else {
-                    let result = profile::analyze_profile(&snapshots, host);
-                    println!("{}", profile::profile_summary_text(&result));
-                    // Summary table
-                    println!("   Timeline:");
-                    println!("   {:<6} {:<8} {:<8} {:<8} {:<8} {:<6}", "Sec", "GPU%", "Mem%", "TX(MB)", "RX(MB)", "Temp°C");
-                    for s in snapshots.iter() {
-                        println!("   {:<6.0} {:<8.0} {:<8.0} {:<8.1} {:<8.1} {:<6.0}",
-                            s.time_s, s.gpu_util, s.mem_util, s.pcie_tx_mb, s.pcie_rx_mb, s.temp_c);
-                    }
-                }
-                println!();
-            }
-            Err(e) => println!("\r   {} {}", "✖".red(), e),
-        }
-        return;
+    fn ssh_cmd(host: &str, remote_cmd: &str, key: Option<&str>) -> String {
+        let key_part = key.map(|k| format!("-i {} ", k)).unwrap_or_default();
+        format!(
+            r#"ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 {}{} "{}" 2>&1"#,
+            key_part, host, remote_cmd.replace('"', "\\\"")
+        )
     }
 
-    if parts.len() < 2 || parts[0].is_empty() || parts[1].is_empty() {
-        println!();
-        println!(" {} Usage:", "•".yellow().bold());
-        println!("   /ssh <user@host> <command>         Run command remotely");
-        println!("   /ssh profile <user@host> <sec>     Remote GPU profiling with analysis");
-        println!();
-        return;
+    let mut idx = 0;
+    let mut ssh_key: Option<&str> = None;
+    if args[idx] == "-i" && args.len() > idx + 1 {
+        ssh_key = Some(args[idx + 1]);
+        idx += 2;
     }
-    let host = parts[0];
-    let command = parts[1];
-    // Reconstruct command from parts in case split was off
-    let command = if parts.len() > 2 {
-        parts[1..].join(" ")
-    } else {
-        command.to_string()
-    };
-    let cmd = format!(
-        r#"ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 {} "{}" 2>&1"#,
-        host, command.replace('"', "\\\"")
-    );
+
+    if idx >= args.len() { print_ssh_help(); return; }
+
+    match args[idx] {
+        // /ssh info <host>
+        "info" if args.len() > idx + 1 => {
+            let host = args[idx + 1];
+            println!();
+            println!(" {} Fetching GPU info from {}...", "●".cyan().bold(), host);
+            let cmd = ssh_cmd(host, "nvidia-smi -q 2>&1 | head -50", ssh_key);
+            match run_shell(&cmd).await {
+                Ok(out) => println!("{}", out.trim()),
+                Err(e) => println!("   {} {}", "✖".red(), e),
+            }
+            println!();
+        }
+
+        // /ssh profile <host> <duration>
+        "profile" if args.len() > idx + 1 => {
+            let host = args[idx + 1];
+            let dur_secs = args.get(idx + 2).and_then(|s| s.parse::<u64>().ok()).unwrap_or(5).max(1).min(60);
+            println!();
+            println!(" {} Profiling remote GPU on {} for {}s...", "●".cyan().bold(), host, dur_secs);
+            let cmd = ssh_cmd(host, &format!("nvidia-smi dmon -s pucvmet -d 1 -c {}", dur_secs), ssh_key);
+            print!("   {} Connecting...", "→".cyan());
+            use std::io::Write;
+            std::io::stdout().flush().ok();
+            match run_shell(&cmd).await {
+                Ok(out) => {
+                    let line_count = out.lines().count();
+                    println!("\r   {} Data received ({} lines).", "✔".green(), line_count);
+                    println!();
+                    let snapshots = profile::parse_dmon_csv(&out);
+                    if snapshots.is_empty() {
+                        if out.contains("Permission denied") || out.contains("Connection refused") || out.contains("Could not resolve") {
+                            println!("   {} SSH failed: {}", "✖".red(), out.lines().next().unwrap_or(&out).trim());
+                        } else {
+                            println!("{}", out);
+                        }
+                    } else {
+                        let result = profile::analyze_profile(&snapshots, host);
+                        println!("{}", profile::profile_summary_text(&result));
+                        println!("   Timeline:");
+                        println!("   {:<6} {:<8} {:<8} {:<8} {:<8} {:<6}", "Sec", "GPU%", "Mem%", "TX(MB)", "RX(MB)", "Temp°C");
+                        for s in &snapshots {
+                            println!("   {:<6.0} {:<8.0} {:<8.0} {:<8.1} {:<8.1} {:<6.0}",
+                                s.time_s, s.gpu_util, s.mem_util, s.pcie_tx_mb, s.pcie_rx_mb, s.temp_c);
+                        }
+                    }
+                    println!();
+                }
+                Err(e) => println!("\r   {} {}", "✖".red(), e),
+            }
+        }
+
+        // /ssh <host> <command...>
+        _ if args.len() > idx + 1 => {
+            let host = args[idx];
+            let command = args[idx + 1..].join(" ");
+            let cmd = ssh_cmd(host, &command, ssh_key);
+            println!();
+            println!(" {} {} $ {} ...", "→".cyan(), host, command);
+            match run_shell(&cmd).await {
+                Ok(out) => println!("{}", out.trim()),
+                Err(e) => println!("   {} {}", "✖".red(), e),
+            }
+            println!();
+        }
+
+        _ => print_ssh_help(),
+    }
+}
+
+fn print_ssh_help() {
     println!();
-    println!(" {} {} $ {} ...", "→".cyan(), host, command);
-    match run_shell(&cmd).await {
-        Ok(out) => println!("{}", out.trim()),
-        Err(e) => println!(" {} {}", "✖".red(), e),
-    }
+    println!(" {} Usage:", "•".yellow().bold());
+    println!("   /ssh <user@host> <command>               Run command remotely");
+    println!("   /ssh profile <user@host> <sec>           Remote GPU profiling with analysis");
+    println!("   /ssh info <user@host>                    Remote nvidia-smi -q summary");
+    println!("   {}", "Example: /ssh profile ubuntu@10.0.0.1 5".dimmed());
     println!();
 }
 
