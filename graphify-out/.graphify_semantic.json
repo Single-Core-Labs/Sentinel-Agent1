@@ -1,0 +1,3567 @@
+{
+  "nodes": [
+    {
+      "id": "sentinel_headroom_work_summary_compression_pipeline",
+      "label": "sentinel-headroom compression pipeline",
+      "type": "system",
+      "file_type": "rationale",
+      "description": "Multi-stage message compression pipeline that reduces LLM context window usage via alignment, content-type routing, intelligent dropping, cache optimization, and CCR system",
+      "source": "sentinel-headroom/WORK_SUMMARY.md"
+    },
+    {
+      "id": "sentinel_headroom_work_summary_cache_aligner",
+      "label": "CacheAligner",
+      "type": "component",
+      "file_type": "code",
+      "description": "Extracts dates, paths, UUIDs, versions; replaces with placeholders; delta tracking across calls",
+      "source": "sentinel-headroom/WORK_SUMMARY.md"
+    },
+    {
+      "id": "sentinel_headroom_work_summary_content_router",
+      "label": "ContentRouter",
+      "type": "component",
+      "file_type": "code",
+      "description": "Classifies by content type (code/json/log/html/image/diff/search/text); routes to type-specific compression strategy",
+      "source": "sentinel-headroom/WORK_SUMMARY.md"
+    },
+    {
+      "id": "sentinel_headroom_work_summary_cache_optimizer",
+      "label": "CacheOptimizer",
+      "type": "component",
+      "file_type": "code",
+      "description": "Inserts provider-specific cache markers: Anthropic cache_control breakpoints, OpenAI prefix tokens, Google CachedContent eligibility",
+      "source": "sentinel-headroom/WORK_SUMMARY.md"
+    },
+    {
+      "id": "sentinel_headroom_work_summary_intelligent_context",
+      "label": "IntelligentContext",
+      "type": "component",
+      "file_type": "code",
+      "description": "Scores messages by recency, error weight, tool dependencies; drops lowest-scored when over token budget",
+      "source": "sentinel-headroom/WORK_SUMMARY.md"
+    },
+    {
+      "id": "sentinel_headroom_work_summary_ccr_store",
+      "label": "CCR (Compress-Cache-Retrieve)",
+      "type": "component",
+      "file_type": "code",
+      "description": "LRU-evicting store with TTL expiry and BM25 search within cached entries; generates retrieval markers",
+      "source": "sentinel-headroom/WORK_SUMMARY.md"
+    },
+    {
+      "id": "sentinel_headroom_work_summary_ccr_tracker",
+      "label": "CCR Tracker",
+      "type": "component",
+      "file_type": "code",
+      "description": "Proactive context expansion: finds relevant cached content with query relevance scoring and retrieval pattern learning",
+      "source": "sentinel-headroom/WORK_SUMMARY.md"
+    },
+    {
+      "id": "sentinel_headroom_work_summary_compress_executor",
+      "label": "Compress",
+      "type": "component",
+      "file_type": "code",
+      "description": "Pipeline orchestrator that chains CacheAligner -> ContentRouter -> CacheOptimizer -> IntelligentContext -> CCR",
+      "source": "sentinel-headroom/WORK_SUMMARY.md"
+    },
+    {
+      "id": "sentinel_headroom_work_summary_orchestrator",
+      "label": "Orchestrator",
+      "type": "component",
+      "file_type": "code",
+      "description": "Routes messages to type-specific compressors; handles CCR integration and headroom_retrieve tool schema with optional BM25 query",
+      "source": "sentinel-headroom/WORK_SUMMARY.md"
+    },
+    {
+      "id": "sentinel_headroom_work_summary_retrieve_tool",
+      "label": "headroom_retrieve tool",
+      "type": "tool",
+      "file_type": "code",
+      "description": "Tool schema for retrieving compressed content from CCR store with optional BM25 search",
+      "source": "sentinel-headroom/WORK_SUMMARY.md"
+    },
+    {
+      "id": "desktop_app_running_frontend",
+      "label": "Sentinel AI Frontend",
+      "type": "application",
+      "file_type": "document",
+      "description": "Web/Tauri desktop application for interacting with Sentinel AI backend via WebSocket JSON-RPC",
+      "source": "desktop-app/RUNNING.md"
+    },
+    {
+      "id": "desktop_app_running_websocket_client",
+      "label": "WebSocket JSON-RPC Client",
+      "type": "component",
+      "file_type": "code",
+      "description": "TypeScript client implementing JSON-RPC 2.0 protocol over WebSocket for server communication",
+      "source": "desktop-app/RUNNING.md"
+    },
+    {
+      "id": "desktop_app_running_chat_view",
+      "label": "ChatView UI",
+      "type": "component",
+      "file_type": "code",
+      "description": "React component rendering conversation message list with message bubbles",
+      "source": "desktop-app/RUNNING.md"
+    },
+    {
+      "id": "desktop_app_running_sentinel_cli",
+      "label": "sentinel-cli",
+      "type": "tool",
+      "file_type": "code",
+      "description": "Command-line interface that creates compression pipeline and registers headroom retrieval tool",
+      "source": "desktop-app/RUNNING.md"
+    },
+    {
+      "id": "desktop_app_running_sentinel_app_server",
+      "label": "sentinel-app-server",
+      "type": "service",
+      "file_type": "code",
+      "description": "Backend server providing new_with_headroom and new_with_compressor initialization methods",
+      "source": "desktop-app/RUNNING.md"
+    },
+    {
+      "id": "desktop_app_running_sentinel_ai_exec",
+      "label": "sentinel-ai-exec",
+      "type": "module",
+      "file_type": "code",
+      "description": "AI execution engine that registers HeadroomRetrieveTool in ToolRegistry",
+      "source": "desktop-app/RUNNING.md"
+    },
+    {
+      "id": "desktop_app_running_sentinel_ai_tui",
+      "label": "sentinel-ai-tui",
+      "type": "application",
+      "file_type": "code",
+      "description": "Terminal UI application that registers HeadroomRetrieveTool in ToolRegistry",
+      "source": "desktop-app/RUNNING.md"
+    },
+    {
+      "id": "rules_ponytail_philosophy",
+      "label": "Ponytail lazy senior dev mode",
+      "type": "methodology",
+      "file_type": "rationale",
+      "description": "Development philosophy emphasizing YAGNI, code reuse, stdlib/native features, and minimum viable solutions with deliberate trade-off marking",
+      "source": "ponytail/.agents/rules/ponytail.md"
+    },
+    {
+      "id": "openclaw_ponytail_audit_skill",
+      "label": "ponytail-audit skill",
+      "type": "skill",
+      "file_type": "concept",
+      "description": "Scans entire repository for over-engineering; ranks findings by deletable lines: dead code, stdlib reinventions, unrequested abstractions",
+      "source": "ponytail/.openclaw/skills/ponytail-audit/SKILL.md"
+    },
+    {
+      "id": "openclaw_ponytail_debt_skill",
+      "label": "ponytail-debt skill",
+      "type": "skill",
+      "file_type": "concept",
+      "description": "Harvests ponytail: shortcut comments into tracked debt ledger to prevent deferrals from rotting",
+      "source": "ponytail/.openclaw/skills/ponytail-debt/SKILL.md"
+    },
+    {
+      "id": "openclaw_ponytail_gain_skill",
+      "label": "ponytail-gain skill",
+      "type": "skill",
+      "file_type": "concept",
+      "description": "Displays measured impact scoreboard: code reduction (80-94%), cost reduction (47-77%), speed gain (3-6x) from benchmark medians",
+      "source": "ponytail/.openclaw/skills/ponytail-gain/SKILL.md"
+    },
+    {
+      "id": "openclaw_ponytail_help_skill",
+      "label": "ponytail-help skill",
+      "type": "skill",
+      "file_type": "concept",
+      "description": "Quick reference card showing ponytail levels (lite/full/ultra), all skills, triggers, and configuration options",
+      "source": "ponytail/.openclaw/skills/ponytail-help/SKILL.md"
+    },
+    {
+      "id": "openclaw_ponytail_review_skill",
+      "label": "ponytail-review skill",
+      "type": "skill",
+      "file_type": "concept",
+      "description": "Reviews diffs for over-engineering; identifies what to delete (dead code, stdlib reinventions, unrequested abstractions) with one-line findings",
+      "source": "ponytail/.openclaw/skills/ponytail-review/SKILL.md"
+    },
+    {
+      "id": "openclaw_ponytail_core_skill",
+      "label": "ponytail core skill",
+      "type": "skill",
+      "file_type": "concept",
+      "description": "Main lazy senior dev mode for coding tasks: YAGNI-first problem-solving with stdlib/native prioritization and minimum viable implementation",
+      "source": "ponytail/.openclaw/skills/ponytail/SKILL.md"
+    },
+    {
+      "id": "test_workflow_ci_system",
+      "label": "Test CI workflow",
+      "type": "automation",
+      "file_type": "concept",
+      "description": "GitHub Actions workflow for testing on push/PR: Node 22, Python 3.12, rule consistency checks, version checks",
+      "source": "ponytail/.github/workflows/test.yml"
+    },
+    {
+      "id": "publish_workflow_ci_system",
+      "label": "Publish CI workflow",
+      "type": "automation",
+      "file_type": "concept",
+      "description": "GitHub Actions workflow for npm publishing via OIDC trusted publishing on version tags",
+      "source": "ponytail/.github/workflows/publish.yml"
+    },
+    {
+      "id": "concept_ponytail",
+      "label": "Ponytail",
+      "type": "concept",
+      "file_type": "concept",
+      "description": "A skill/ruleset for AI agents that promotes efficient, minimal code generation. Teaches agents to write only what a task needs, never cutting validation, error handling, security, or accessibility."
+    },
+    {
+      "id": "concept_the_ladder",
+      "label": "The Ladder",
+      "type": "concept",
+      "file_type": "rationale",
+      "description": "7-step decision-making process agents follow before writing code: (1) Does this need to exist? (2) Already in codebase? (3) Stdlib? (4) Native platform? (5) Installed dependency? (6) One line? (7) Minimum code",
+      "rationale": "Runs after understanding the problem, not instead of it. Lazy about solution, never about reading. Shortest working diff wins but only once you understand the problem."
+    },
+    {
+      "id": "concept_laziness",
+      "label": "Laziness as Efficiency",
+      "type": "concept",
+      "file_type": "rationale",
+      "description": "Lazy means efficient, not careless. The best code is the code never written. Emphasizes code minimalism through deliberate choice of existing solutions.",
+      "rationale": "Core principle: deletion over addition, boring over clever. Fewest files possible. Mark deliberate simplifications with 'ponytail:' comments naming ceiling and upgrade path."
+    },
+    {
+      "id": "concept_safety_floor",
+      "label": "Safety Floor",
+      "type": "concept",
+      "file_type": "rationale",
+      "description": "Non-negotiable requirements never simplified away: input validation at trust boundaries, error handling that prevents data loss, security measures, accessibility basics, anything explicitly requested.",
+      "rationale": "Lazy code without its check is unfinished. Non-trivial logic leaves ONE runnable check behind (assert-based demo or one small test file). Trivial one-liners need no test."
+    },
+    {
+      "id": "tool_caveman",
+      "label": "Caveman",
+      "type": "concept",
+      "file_type": "concept",
+      "description": "Complementary skill for ultra-compressed communication mode. Cuts token usage ~75% by speaking tersely while keeping full technical accuracy. Different from Ponytail: Caveman shrinks what agent says, Ponytail shrinks what it builds."
+    },
+    {
+      "id": "entity_claude_haiku",
+      "label": "Claude Haiku",
+      "type": "entity",
+      "file_type": "concept",
+      "description": "Small, fast Claude model used in benchmarks. Ponytail achieves 54% LOC reduction and 63% cost reduction on Haiku."
+    },
+    {
+      "id": "entity_claude_sonnet",
+      "label": "Claude Sonnet",
+      "type": "entity",
+      "file_type": "concept",
+      "description": "Medium Claude model used in benchmarks. Ponytail achieves 54% LOC reduction and 74.5% cost reduction on Sonnet."
+    },
+    {
+      "id": "entity_claude_opus",
+      "label": "Claude Opus",
+      "type": "entity",
+      "file_type": "concept",
+      "description": "Large, powerful Claude model used in benchmarks. Ponytail achieves 54% LOC reduction and 42% cost reduction on Opus."
+    },
+    {
+      "id": "entity_gpt_4_1_mini",
+      "label": "GPT-4.1-mini",
+      "type": "entity",
+      "file_type": "concept",
+      "description": "OpenAI small model. Ponytail is 39.6% cheaper but results less consistent across models."
+    },
+    {
+      "id": "entity_gpt_5_4_mini",
+      "label": "GPT-5.4-mini",
+      "type": "entity",
+      "file_type": "concept",
+      "description": "OpenAI mid-tier model. Ponytail is 26.2% more expensive due to reasoning model overhead."
+    },
+    {
+      "id": "entity_gpt_5_5",
+      "label": "GPT-5.5",
+      "type": "entity",
+      "file_type": "concept",
+      "description": "OpenAI latest top model. Ponytail is 38.7% more expensive. Reasoning models pay input/reasoning overhead that outweighs line savings."
+    },
+    {
+      "id": "entity_llama3_2",
+      "label": "Llama3.2",
+      "type": "entity",
+      "file_type": "concept",
+      "description": "Small local model (3.2B). Ponytail does not transfer effectively to local models; instruction-following is insufficient at this scale."
+    },
+    {
+      "id": "metric_loc",
+      "label": "Lines of Code (LOC)",
+      "type": "concept",
+      "file_type": "concept",
+      "description": "Primary code minimalism metric. Counted from fenced code blocks or git diffs."
+    },
+    {
+      "id": "metric_cost",
+      "label": "Cost (USD)",
+      "type": "concept",
+      "file_type": "concept",
+      "description": "API cost measured from provider telemetry. Ponytail claim: 42-75% cheaper on Claude, but not on OpenAI reasoning models."
+    },
+    {
+      "id": "metric_latency",
+      "label": "Latency",
+      "type": "concept",
+      "file_type": "concept",
+      "description": "Wall-clock time to completion. Ponytail achieves 3-6x faster on Claude models, mixed results on OpenAI."
+    },
+    {
+      "id": "metric_safety",
+      "label": "Safety",
+      "type": "concept",
+      "file_type": "concept",
+      "description": "Adversarial input handling. Ponytail consistently 100% safe on Claude models, avoiding data-loss errors through error handling."
+    },
+    {
+      "id": "metric_correctness",
+      "label": "Correctness",
+      "type": "concept",
+      "file_type": "concept",
+      "description": "Code runs and returns correct answer on normal input. Ponytail 100% on Claude, no meaningful degradation on instruction-following models."
+    },
+    {
+      "id": "benchmark_single_shot",
+      "label": "Single-Shot Benchmark",
+      "type": "concept",
+      "file_type": "document",
+      "description": "One prompt, one completion, measures output LOC. Reports 80-94% less code but inflates baseline via conversational prose."
+    },
+    {
+      "id": "benchmark_agentic",
+      "label": "Agentic Benchmark",
+      "type": "concept",
+      "file_type": "document",
+      "description": "Real Claude Code sessions editing seeded codebase. Honest measurement: ponytail 60-94% on over-build tasks, wash on minimal code. 100% safe across all arms."
+    },
+    {
+      "id": "benchmark_robustness",
+      "label": "Robustness Audit",
+      "type": "concept",
+      "file_type": "document",
+      "description": "12 edge-case traps on weak models. Ponytail holds baseline parity on algorithmic tasks. Email validation is 100% on Claude, provider-specific slip on OpenAI."
+    },
+    {
+      "id": "task_safe_path",
+      "label": "Safe Path Task",
+      "type": "concept",
+      "file_type": "concept",
+      "description": "Safety benchmark: implement safe_upload_path. Requirement: ../etc/passwd must not escape base dir. Tests path-handling helper vs framework."
+    },
+    {
+      "id": "task_rate_limit",
+      "label": "Rate Limit Task",
+      "type": "concept",
+      "file_type": "concept",
+      "description": "Safety benchmark: implement RateLimiter.allow. Requirement: one client exhausting quota must not block others. Tests global counter DoS prevention."
+    },
+    {
+      "id": "task_csv_sum",
+      "label": "CSV Sum Task",
+      "type": "concept",
+      "file_type": "concept",
+      "description": "Safety benchmark: implement sum_amount from CSV. Requirement: malformed row must not crash. Tests data-loss error handling."
+    },
+    {
+      "id": "task_email_validation",
+      "label": "Email Validation",
+      "type": "concept",
+      "file_type": "concept",
+      "description": "Robustness benchmark task. Exposes edge case: email.utils.parseaddr accepts @missing-local.com. 100% on Claude, ~92-98% on OpenAI models."
+    },
+    {
+      "id": "finding_claude_specific",
+      "label": "Claude-Specific Performance",
+      "type": "concept",
+      "file_type": "rationale",
+      "description": "Ponytail cost savings (42-75% cheaper) are Claude-specific. On OpenAI reasoning models it costs more (26-39% more expensive) due to input overhead outweighing line savings."
+    },
+    {
+      "id": "finding_safety_maintained",
+      "label": "Safety Maintained",
+      "type": "concept",
+      "file_type": "rationale",
+      "description": "Pure 'minimize lines' instruction (yagni-oneliner) measurably sheds safety (94.4%), dropping path-traversal guard. Ponytail keeps safety floor at 100% while nearly matching size."
+    },
+    {
+      "id": "finding_code_size_collapse",
+      "label": "Fair Baseline Collapses Gap",
+      "type": "concept",
+      "file_type": "rationale",
+      "description": "With fair agentic baseline (real agent, not conversational model), ponytail's code-size advantage is small (~4%, 13.9 vs 14.5 LOC). Single-shot benchmark's 80-94% figure is artifact of conversational baseline inflation."
+    },
+    {
+      "id": "finding_no_over_engineering",
+      "label": "No Over-Engineering Observed",
+      "type": "concept",
+      "file_type": "rationale",
+      "description": "On well-scoped agentic tasks, baseline does not over-engineer; every arm landed on minimal solution (e.g., functools.lru_cache). LLM judge confirmed zero instances scoring >= 2 on over-engineering scale."
+    },
+    {
+      "id": "finding_transfer_poor",
+      "label": "Poor Transfer to Small Models",
+      "type": "concept",
+      "file_type": "rationale",
+      "description": "Ponytail is calibrated on Claude-class instruction-following models. On llama3.2 (3.2B), LOC signal lost in noise, model pays instruction-reading cost without reliably converting to less code."
+    },
+    {
+      "id": "platform_claude_code",
+      "label": "Claude Code",
+      "type": "entity",
+      "file_type": "concept",
+      "description": "Primary platform. Install via /plugin marketplace add DietrichGebert/ponytail and /plugin install ponytail@ponytail"
+    },
+    {
+      "id": "platform_cursor",
+      "label": "Cursor",
+      "type": "entity",
+      "file_type": "concept",
+      "description": "Editor with Ponytail rule support. Copy .cursor/rules/ponytail.md to project .cursor/rules/"
+    },
+    {
+      "id": "platform_codex",
+      "label": "Codex",
+      "type": "entity",
+      "file_type": "concept",
+      "description": "IDE platform. Install via 'codex plugin add ponytail@ponytail'"
+    },
+    {
+      "id": "doc_agents_md",
+      "label": "AGENTS.md",
+      "type": "document",
+      "file_type": "document",
+      "description": "Main ruleset file. Auto-loaded by multiple platforms (Qoder, CodeWhale, Swival, Amp, Jules, VS Code Codex)."
+    },
+    {
+      "id": "doc_readme_md",
+      "label": "README.md",
+      "type": "document",
+      "file_type": "document",
+      "description": "Main documentation. Covers installation, commands, benchmarks, FAQ. Available in Spanish (README.es.md) and Korean (README.ko.md)."
+    },
+    {
+      "id": "doc_benchmarks_readme",
+      "label": "benchmarks/README.md",
+      "type": "document",
+      "file_type": "document",
+      "description": "Benchmark documentation. Single-shot methodology, reproduce instructions, median results tables, independent benchmarks."
+    },
+    {
+      "id": "doc_agentic_readme",
+      "label": "benchmarks/agentic/README.md",
+      "type": "document",
+      "file_type": "document",
+      "description": "Agentic benchmark methodology. Real Claude Code sessions, LOC and safety tiers, arms, tasks, metrics, judges (over-engineering, completeness)."
+    },
+    {
+      "id": "file_behavior_yaml",
+      "label": "benchmarks/behavior.yaml",
+      "type": "concept",
+      "file_type": "document",
+      "description": "Behavior gate tests. Probes three rules shown in field review: hardware calibration, requested explanation, one runnable check."
+    },
+    {
+      "id": "report_caveman_vs_ponytail",
+      "label": "2026-06-12: Caveman vs Ponytail",
+      "type": "document",
+      "file_type": "document",
+      "description": "Benchmark report. Shows Ponytail v3: 47 LOC vs caveman 117, 135.7k tokens vs 138.4k, 127s vs 136s wall time."
+    },
+    {
+      "id": "report_robustness_audit",
+      "label": "2026-06-16: Robustness Audit",
+      "type": "document",
+      "file_type": "document",
+      "description": "Edge-case testing on weak models. Ponytail holds baseline parity on 12 edge-case traps. Email validation 100% on Claude, ~92-98% on OpenAI due to stdlib (parseaddr) trap."
+    },
+    {
+      "id": "report_correctness_gate_fix",
+      "label": "2026-06-16: Correctness Gate Fix",
+      "type": "document",
+      "file_type": "document",
+      "description": "Bug report on benchmark gate. Fixed: unfenced code detection, debounce task mismatch. After fixes: gpt-4.1-mini 100% both arms, gpt-5.4-mini 100% baseline vs 98% ponytail."
+    },
+    {
+      "id": "report_agentic_safety",
+      "label": "2026-06-17: Agentic Safety (Superseded)",
+      "type": "document",
+      "file_type": "document",
+      "description": "Superseded by 2026-06-18 report. Plugin SessionStart hook fired on every arm, contaminating baseline. Showed safety finding: yagni-oneliner 94.4% safe, ponytail 100%."
+    },
+    {
+      "id": "report_cost_verification",
+      "label": "2026-06-17: Cost Verification",
+      "type": "document",
+      "file_type": "document",
+      "description": "Cost re-verification with 30 pooled reps. Claude: 42-75% cheaper (vs published 47-77%). OpenAI reasoning models: 26-39% more expensive. Latency 3.1-5.8x faster on Claude."
+    },
+    {
+      "id": "report_llama_local",
+      "label": "2026-06-15: Llama3.2 Local",
+      "type": "document",
+      "file_type": "document",
+      "description": "Local model run on 3.2B llama3.2. LOC effect inside noise (−17% to +50% across runs). Ponytail does not transfer; signal lost in run-to-run variance on small models."
+    },
+    {
+      "id": "script_check_rule_copies",
+      "label": "scripts/check-rule-copies.js",
+      "type": "concept",
+      "file_type": "code",
+      "description": "Development script. Keeps agent rule copies (AGENTS.md, .cursor/rules, .windsurf/rules, etc.) aligned with compact rule text."
+    },
+    {
+      "id": "skill_ponytail_review",
+      "label": "/ponytail-review",
+      "type": "concept",
+      "file_type": "concept",
+      "description": "Command. Review current diff for over-engineering, hands back delete-list. Requires skill-capable host."
+    },
+    {
+      "id": "skill_ponytail_audit",
+      "label": "/ponytail-audit",
+      "type": "concept",
+      "file_type": "concept",
+      "description": "Command. Audit whole repo for over-engineering, not just diff. Requires skill-capable host."
+    },
+    {
+      "id": "skill_ponytail_debt",
+      "label": "/ponytail-debt",
+      "type": "concept",
+      "file_type": "concept",
+      "description": "Command. Harvest deferred 'ponytail:' shortcuts into ledger. Requires skill-capable host."
+    },
+    {
+      "id": "ponytail_framework",
+      "label": "Ponytail",
+      "type": "concept",
+      "file_type": "concept",
+      "definition": "Lazy senior developer mode for coding agents. A discipline that prioritizes shipping the minimum working solution by following a decision ladder: YAGNI → stdlib → native platform features → one-liner → minimum code.",
+      "tags": [
+        "framework",
+        "agent-skill",
+        "code-discipline"
+      ]
+    },
+    {
+      "id": "decision_ladder",
+      "label": "Decision Ladder",
+      "type": "concept",
+      "file_type": "concept",
+      "definition": "A five-rung prioritization framework for code decisions: 1) Does this need to exist (YAGNI)? 2) Already in codebase? 3) Stdlib has it? 4) Platform native? 5) Installed dependency? 6) Can it be one line? 7) Minimum code.",
+      "tags": [
+        "decision-framework",
+        "methodology"
+      ]
+    },
+    {
+      "id": "yagni_principle",
+      "label": "YAGNI",
+      "type": "concept",
+      "file_type": "concept",
+      "definition": "You Aren't Gonna Need It. First rung: speculative features are skipped, no abstractions with one implementation, no config that never changes.",
+      "tags": [
+        "design-principle",
+        "rung-1"
+      ]
+    },
+    {
+      "id": "stdlib_rung",
+      "label": "Stdlib & Native First",
+      "type": "concept",
+      "file_type": "concept",
+      "definition": "Rungs 2-4 of the ladder. Before writing code or adding dependencies, check: codebase reuse, standard library equivalents, platform-native features.",
+      "tags": [
+        "rung-2-4",
+        "reuse",
+        "stdlib"
+      ]
+    },
+    {
+      "id": "platform_native_solutions",
+      "label": "Platform-Native Solutions",
+      "type": "document",
+      "file_type": "document",
+      "summary": "Comprehensive reference of platform-native capabilities across HTML, CSS, JavaScript, Python, Node.js, Swift, and databases that replace external dependencies.",
+      "tags": [
+        "reference",
+        "platform",
+        "native-apis"
+      ]
+    },
+    {
+      "id": "agentic_benchmark_2026_06_18",
+      "label": "Agentic Benchmark (2026-06-18)",
+      "type": "document",
+      "file_type": "paper",
+      "summary": "Real-world benchmark on fastapi-template comparing ponytail vs baseline Claude Code vs caveman vs YAGNI one-liner. Measures LOC, tokens, cost, time, and safety. Results: ponytail −54% LOC on features, 100% safe on security tasks.",
+      "tags": [
+        "benchmark",
+        "evaluation",
+        "safety",
+        "performance"
+      ]
+    },
+    {
+      "id": "comprehension_benchmark_2026_06_22",
+      "label": "Comprehension & Reuse Benchmark (2026-06-22)",
+      "type": "document",
+      "file_type": "paper",
+      "summary": "Addresses issues #245 (root-cause fix) and #217 (codebase reuse). Tests trace-transfer bug fix and reuse patterns. Results: Sonnet/Opus 6/6 root-cause fixes with new comprehension directive, rung 2 ships.",
+      "tags": [
+        "benchmark",
+        "comprehension",
+        "reuse",
+        "validation"
+      ]
+    },
+    {
+      "id": "skill_ponytail_core",
+      "label": "ponytail (Skill)",
+      "type": "concept",
+      "file_type": "concept",
+      "definition": "Core ponytail skill. Lazy senior dev mode, always-on context. Implements the decision ladder and minimal-code discipline.",
+      "tags": [
+        "skill",
+        "core",
+        "mode-full",
+        "mode-lite",
+        "mode-ultra"
+      ]
+    },
+    {
+      "id": "skill_ponytail_gain",
+      "label": "ponytail-gain (Skill)",
+      "type": "concept",
+      "file_type": "concept",
+      "definition": "Display ponytail's measured impact as a compact scoreboard. Shows less code, less cost, more speed from benchmark medians.",
+      "tags": [
+        "skill",
+        "metrics",
+        "scoreboard",
+        "one-shot"
+      ]
+    },
+    {
+      "id": "skill_ponytail_help",
+      "label": "ponytail-help (Skill)",
+      "type": "concept",
+      "file_type": "concept",
+      "definition": "Quick-reference card for all ponytail modes, skills, and commands. One-shot display for user guidance.",
+      "tags": [
+        "skill",
+        "help",
+        "reference"
+      ]
+    },
+    {
+      "id": "agent_portability",
+      "label": "Agent Portability",
+      "type": "document",
+      "file_type": "document",
+      "summary": "Ponytail adapters for 30+ hosts: Claude Code, Codex, OpenCode, Pi, Hermes, Gemini CLI, Cursor, Windsurf, Cline, GitHub Copilot, Antigravity, CodeWhale, Swival, Zed, Qoder, and more.",
+      "tags": [
+        "portability",
+        "adaptation",
+        "multi-host"
+      ]
+    },
+    {
+      "id": "example_email_validation",
+      "label": "Email Validation Example",
+      "type": "document",
+      "file_type": "document",
+      "summary": "Without Ponytail: 75 lines. With Ponytail: 3 lines. Shows regex-based validation using native pattern matching.",
+      "tags": [
+        "example",
+        "code-reduction",
+        "75-to-3"
+      ]
+    },
+    {
+      "id": "example_debounce",
+      "label": "Debounce Example",
+      "type": "document",
+      "file_type": "document",
+      "summary": "Without Ponytail: 116 lines with detailed patterns. With Ponytail: 10 lines. Inline debounce using native setTimeout/clearTimeout.",
+      "tags": [
+        "example",
+        "code-reduction",
+        "116-to-10"
+      ]
+    },
+    {
+      "id": "example_csv_sum",
+      "label": "CSV Sum Example",
+      "type": "document",
+      "file_type": "document",
+      "summary": "Without Ponytail: 20 lines with pandas. With Ponytail: 3 lines with csv module.",
+      "tags": [
+        "example",
+        "code-reduction",
+        "20-to-3"
+      ]
+    },
+    {
+      "id": "example_countdown_timer",
+      "label": "Countdown Timer Example",
+      "type": "document",
+      "file_type": "document",
+      "summary": "Without Ponytail: 267 lines with styled components and features. With Ponytail: 9 lines core timer.",
+      "tags": [
+        "example",
+        "code-reduction",
+        "267-to-9"
+      ]
+    },
+    {
+      "id": "example_rate_limit",
+      "label": "Rate Limiting Example",
+      "type": "document",
+      "file_type": "document",
+      "summary": "Without Ponytail: 128 lines showing 6 approaches. With Ponytail: 10 lines using slowapi.",
+      "tags": [
+        "example",
+        "code-reduction",
+        "128-to-10"
+      ]
+    },
+    {
+      "id": "example_deep_clone",
+      "label": "Deep Clone Example",
+      "type": "document",
+      "file_type": "document",
+      "summary": "Without Ponytail: lodash dependency or fragile JSON.parse hack. With Ponytail: structuredClone built-in (modern browsers/Node 17+).",
+      "tags": [
+        "example",
+        "stdlib",
+        "native-api"
+      ]
+    },
+    {
+      "id": "example_group_by",
+      "label": "Group By Example",
+      "type": "document",
+      "file_type": "document",
+      "summary": "Without Ponytail: lodash dependency. With Ponytail: Object.groupBy native API (Chrome 117+, Node 21+).",
+      "tags": [
+        "example",
+        "stdlib",
+        "native-api"
+      ]
+    },
+    {
+      "id": "example_infinite_scroll",
+      "label": "Infinite Scroll Example",
+      "type": "document",
+      "file_type": "document",
+      "summary": "Without Ponytail: react-infinite-scroll-component dependency. With Ponytail: IntersectionObserver native API.",
+      "tags": [
+        "example",
+        "stdlib",
+        "native-api"
+      ]
+    },
+    {
+      "id": "example_modal_dialog",
+      "label": "Modal Dialog Example",
+      "type": "document",
+      "file_type": "document",
+      "summary": "Without Ponytail: @radix-ui or react-modal + 30 lines. With Ponytail: native <dialog> element + 8 lines.",
+      "tags": [
+        "example",
+        "stdlib",
+        "html-element"
+      ]
+    },
+    {
+      "id": "example_number_formatting",
+      "label": "Number Formatting Example",
+      "type": "document",
+      "file_type": "document",
+      "summary": "Without Ponytail: numeral/accounting dependency. With Ponytail: Intl.NumberFormat native API.",
+      "tags": [
+        "example",
+        "stdlib",
+        "native-api"
+      ]
+    },
+    {
+      "id": "example_url_params",
+      "label": "URL Parameters Example",
+      "type": "document",
+      "file_type": "document",
+      "summary": "Without Ponytail: query-string dependency (4.5kB, 3.5M downloads/week). With Ponytail: URLSearchParams native API.",
+      "tags": [
+        "example",
+        "stdlib",
+        "native-api"
+      ]
+    },
+    {
+      "id": "haiku_45_model",
+      "label": "Claude Haiku 4.5",
+      "type": "concept",
+      "file_type": "concept",
+      "definition": "Model used in benchmarks (claude-haiku-4-5-20251001). Benchmarks also cover Sonnet 4.6 and Opus 4.8.",
+      "tags": [
+        "model",
+        "benchmark-subject"
+      ]
+    },
+    {
+      "id": "safety_validation",
+      "label": "Safety Validation",
+      "type": "concept",
+      "file_type": "concept",
+      "definition": "Deterministic execution of produced functions against adversarial input (path traversal, SQL injection, forged tokens, malformed CSV, quota exhaustion). Benchmark safety metric: ponytail 100% safe, baseline 100% safe, yagni-oneliner 95% safe.",
+      "tags": [
+        "safety",
+        "security",
+        "validation",
+        "benchmark-metric"
+      ]
+    },
+    {
+      "id": "plugin_yaml_hermes",
+      "label": "Hermes Plugin Config",
+      "type": "document",
+      "file_type": "document",
+      "summary": "Native Hermes Agent plugin manifest. Exposes ponytail through pre_llm_call hook and provides bundled skills as ponytail:<skill>.",
+      "tags": [
+        "configuration",
+        "hermes",
+        "plugin"
+      ]
+    },
+    {
+      "id": "ponytail_mcp_server",
+      "label": "ponytail-mcp",
+      "type": "document",
+      "file_type": "document",
+      "summary": "MCP server that serves ponytail instructions via Prompt and Tool interfaces. Supports mode selection (lite/full/ultra) with config resolution (env var > config file > default).",
+      "tags": [
+        "mcp",
+        "server",
+        "portability"
+      ]
+    },
+    {
+      "id": "ponytail_review_skill",
+      "label": "ponytail-review skill",
+      "type": "concept",
+      "file_type": "document",
+      "description": "Code review skill focused exclusively on identifying over-engineering and unnecessary complexity",
+      "properties": {
+        "focus": [
+          "complexity reduction",
+          "YAGNI",
+          "stdlib reuse",
+          "deletion"
+        ],
+        "tags": [
+          "delete",
+          "stdlib",
+          "native",
+          "yagni",
+          "shrink"
+        ]
+      },
+      "confidence_score": 1.0
+    },
+    {
+      "id": "ponytail_philosophy",
+      "label": "ponytail lazy development approach",
+      "type": "concept",
+      "file_type": "document",
+      "description": "Senior developer mindset enforcing minimal, efficient code via ladder of alternatives: YAGNI > stdlib > native > existing deps > one-liners > minimum code",
+      "properties": {
+        "levels": [
+          "lite",
+          "full",
+          "ultra"
+        ],
+        "core_principle": "shortest path to done",
+        "applicable_to": [
+          "writing",
+          "refactoring",
+          "fixing",
+          "reviewing",
+          "designing"
+        ]
+      },
+      "confidence_score": 1.0
+    },
+    {
+      "id": "sentinel_agent_system",
+      "label": "Sentinel Agent",
+      "type": "entity",
+      "file_type": "document",
+      "description": "Autonomous AI coding agent for software engineering tasks with multi-provider support and 3-tier approval gates",
+      "properties": {
+        "primary_language": "Rust",
+        "support_languages": [
+          "Python",
+          "TypeScript",
+          "JavaScript"
+        ],
+        "repo": "Single-Core-Labs/Sentinel-Agent1"
+      },
+      "confidence_score": 1.0
+    },
+    {
+      "id": "single_core_labs",
+      "label": "Single Core Labs",
+      "type": "entity",
+      "file_type": "document",
+      "description": "Applied AI research lab delivering enterprise AI solutions for healthcare, finance, and insurance",
+      "properties": {
+        "website": "https://singlecorelabs.in/",
+        "focus_areas": [
+          "RAG pipelines",
+          "fine-tuned models",
+          "production deployment"
+        ]
+      },
+      "confidence_score": 1.0
+    },
+    {
+      "id": "sentinel_architecture",
+      "label": "Sentinel Agent workspace architecture",
+      "type": "concept",
+      "file_type": "document",
+      "description": "Modular multi-package monorepo with domain-categorized Rust crates and TypeScript packages",
+      "properties": {
+        "structure": {
+          "crates": [
+            "core",
+            "server",
+            "interfaces",
+            "tools-and-exec",
+            "integrations",
+            "platform"
+          ],
+          "packages": [
+            "cli-agent",
+            "desktop-app",
+            "vscode-extension"
+          ]
+        },
+        "organizing_principle": "domain-based categorization"
+      },
+      "confidence_score": 1.0
+    },
+    {
+      "id": "sentinel_pipeline_stages",
+      "label": "5-stage execution pipeline",
+      "type": "concept",
+      "file_type": "document",
+      "description": "Structured agent pipeline with Read → Triage → Draft → QA → Send stages with checkpoints and rollback capability",
+      "properties": {
+        "stages": [
+          "Read",
+          "Triage",
+          "Draft",
+          "QA",
+          "Send"
+        ],
+        "features": [
+          "checkpoints",
+          "rollback",
+          "stage-specific instructions"
+        ]
+      },
+      "confidence_score": 1.0
+    },
+    {
+      "id": "sentinel_approval_system",
+      "label": "3-tier approval gate system",
+      "type": "concept",
+      "file_type": "document",
+      "description": "Multi-layer safety system combining permissions, usage thresholds, and yolo budget with cost tracking",
+      "properties": {
+        "tiers": [
+          "permission_rulesets",
+          "usage_thresholds",
+          "yolo_budget"
+        ],
+        "features": [
+          "diff_preview",
+          "cost_estimation",
+          "glob_patterns"
+        ]
+      },
+      "confidence_score": 1.0
+    },
+    {
+      "id": "sentinel_persistent_memory",
+      "label": "Structured persistent memory system",
+      "type": "concept",
+      "file_type": "document",
+      "description": "SQLite-backed memory with categories (Fact/Preference/Context/Entity/Decision/Insight) and embedding-based search",
+      "properties": {
+        "backend": "SQLite with FTS5",
+        "categories": [
+          "Fact",
+          "Preference",
+          "Context",
+          "Entity",
+          "Decision",
+          "Insight"
+        ],
+        "features": [
+          "embedding_search",
+          "supersession_chains",
+          "memory_tools"
+        ]
+      },
+      "confidence_score": 1.0
+    },
+    {
+      "id": "sentinel_compression_headroom",
+      "label": "Headroom context compression",
+      "type": "concept",
+      "file_type": "document",
+      "description": "13 adaptive compression strategies (code, json, logs, diff, image, html, text, search, smart_crusher, llmlingua, code_aware, image_aware) with cache alignment and optimization",
+      "properties": {
+        "strategies_count": 13,
+        "features": [
+          "cache_alignment",
+          "cache_optimization",
+          "content_routing"
+        ],
+        "unique_advantage": "sophisticated vs Gemini's single-level approach"
+      },
+      "confidence_score": 1.0
+    },
+    {
+      "id": "sentinel_multi_provider",
+      "label": "Multi-provider model architecture",
+      "type": "concept",
+      "file_type": "document",
+      "description": "Provider-agnostic support for OpenAI, Anthropic, Google AI Studio, DeepSeek, NVIDIA NIM, Models.dev, GitHub Copilot, and local backends",
+      "properties": {
+        "supported_providers": [
+          "OpenAI",
+          "Anthropic",
+          "Google",
+          "DeepSeek",
+          "NVIDIA NIM",
+          "Models.dev",
+          "GitHub Copilot",
+          "Ollama",
+          "vLLM",
+          "LM Studio"
+        ],
+        "routing_abstraction": "4-Axis Route"
+      },
+      "confidence_score": 1.0
+    },
+    {
+      "id": "gemini_cli_system",
+      "label": "Gemini CLI",
+      "type": "entity",
+      "file_type": "document",
+      "description": "TypeScript-based AI coding agent by Google with full IDE integration, hook system, and model availability service",
+      "properties": {
+        "language": "TypeScript/Node.js",
+        "provider": "Google Gemini",
+        "strong_points": [
+          "IDE integration",
+          "hook system",
+          "extension system"
+        ]
+      },
+      "confidence_score": 1.0
+    },
+    {
+      "id": "gpu_sandbox_feature",
+      "label": "GPU Sandbox with process isolation",
+      "type": "concept",
+      "file_type": "document",
+      "description": "Process isolation for GPU-accelerated workloads with platform-specific mechanisms (Windows JobObject, Linux Bubblewrap, macOS Seatbelt)",
+      "properties": {
+        "platforms": {
+          "Windows": "JobObject",
+          "Linux": "Bubblewrap",
+          "macOS": "Seatbelt"
+        },
+        "capabilities": [
+          "local_inference",
+          "ML_training",
+          "fine-tuning"
+        ],
+        "fallback": "CPU-based llama.cpp when GPU unavailable"
+      },
+      "confidence_score": 1.0
+    },
+    {
+      "id": "gpu_profiler_system",
+      "label": "GPU profiler and optimizer",
+      "type": "concept",
+      "file_type": "document",
+      "description": "Deterministic GPU kernel analysis with bottleneck detection and LLM-driven optimization",
+      "properties": {
+        "analysis": [
+          "SM_usage",
+          "memory_coalescing",
+          "bank_conflicts",
+          "register_spills"
+        ],
+        "features": [
+          "instant_GPU_kernel_analysis",
+          "GPU_aware_model_management",
+          "multi_backend_local_LLM",
+          "smart_profiling_terminal"
+        ],
+        "inspiration": "RightNow AI"
+      },
+      "confidence_score": 1.0
+    },
+    {
+      "id": "sentinel_ci_cd_strategy",
+      "label": "Multi-language CI/CD testing",
+      "type": "concept",
+      "file_type": "rationale",
+      "description": "GitHub Actions workflows for Rust, Python, JavaScript/TypeScript, and Next.js with targeted path triggers",
+      "properties": {
+        "languages": [
+          "Rust",
+          "Python",
+          "JavaScript/TypeScript",
+          "Next.js"
+        ],
+        "workflows": [
+          "aggregator-node-ci.yml",
+          "ci.yml",
+          "codeql.yml",
+          "nextjs.yml",
+          "python-ci.yml",
+          "rust-ci.yml",
+          "rust-clippy.yml",
+          "static.yml"
+        ],
+        "testing_approach": [
+          "linting",
+          "building",
+          "testing",
+          "security_scanning"
+        ],
+        "deployment_targets": [
+          "GitHub Pages",
+          "Render"
+        ]
+      },
+      "confidence_score": 1.0
+    },
+    {
+      "id": "sentinel_app_server_protocol",
+      "label": "JSON-RPC 2.0 app server protocol",
+      "type": "concept",
+      "file_type": "document",
+      "description": "Standardized interface for agent session management, conversation streaming, and IDE companion integration",
+      "properties": {
+        "protocol": "JSON-RPC 2.0",
+        "transports": [
+          "TCP",
+          "stdio"
+        ],
+        "method_groups": [
+          "session_management",
+          "conversation",
+          "interactive_forms",
+          "session_browser",
+          "IDE_companion"
+        ]
+      },
+      "confidence_score": 1.0
+    },
+    {
+      "id": "sentinel_frontend_packages",
+      "label": "Frontend implementation packages",
+      "type": "entity",
+      "file_type": "code",
+      "description": "TypeScript/JavaScript packages for CLI, desktop, and IDE integrations",
+      "properties": {
+        "packages": [
+          {
+            "name": "cli-agent",
+            "tech": "Solid.js + OpenTUI",
+            "purpose": "Interactive agent UI"
+          },
+          {
+            "name": "desktop-app",
+            "tech": "React + Tauri",
+            "purpose": "Desktop GUI application"
+          },
+          {
+            "name": "vscode-extension",
+            "tech": "VS Code API",
+            "purpose": "IDE companion integration"
+          }
+        ]
+      },
+      "confidence_score": 1.0
+    },
+    {
+      "id": "sentinel_core_crate_system",
+      "label": "Core agent engine crates",
+      "type": "concept",
+      "file_type": "code",
+      "description": "Rust crates implementing bounded execution, context budgeting, approval gates, and lifecycle hooks",
+      "properties": {
+        "crates": [
+          "sentinel-core",
+          "sentinel-ai-core",
+          "sentinel-protocol"
+        ],
+        "responsibilities": [
+          "message_protocol",
+          "tool_definitions",
+          "event_schemas",
+          "context_budget",
+          "approval_gates"
+        ]
+      },
+      "confidence_score": 1.0
+    },
+    {
+      "id": "sentinel_server_crate_system",
+      "label": "Application server crate system",
+      "type": "concept",
+      "file_type": "code",
+      "description": "JSON-RPC 2.0 daemon with async client SDK and IPC transport handlers",
+      "properties": {
+        "crates": [
+          "sentinel-app-server",
+          "sentinel-app-server-protocol",
+          "sentinel-app-server-client",
+          "sentinel-app-server-daemon",
+          "sentinel-app-server-transport"
+        ],
+        "transports": [
+          "TCP",
+          "stdio"
+        ]
+      },
+      "confidence_score": 1.0
+    },
+    {
+      "id": "sentinel_tools_exec_crate_system",
+      "label": "Tools and execution sandbox crate system",
+      "type": "concept",
+      "file_type": "code",
+      "description": "Local executor with OS-specific sandboxing, built-in tool library, MCP bridge, and plugin system",
+      "properties": {
+        "crates": [
+          "sentinel-exec",
+          "sentinel-tools",
+          "sentinel-mcp",
+          "sentinel-plugin-system",
+          "sentinel-ai-exec",
+          "sentinel-gpu-profiler"
+        ],
+        "capabilities": [
+          "filesystem_git_terraform_aws_otel_grafana_tools",
+          "model_context_protocol",
+          "dynamic_plugins"
+        ]
+      },
+      "confidence_score": 1.0
+    },
+    {
+      "id": "sentinel_platform_crate_system",
+      "label": "Platform and infrastructure services",
+      "type": "concept",
+      "file_type": "code",
+      "description": "Provider abstraction, configuration loading, identity management, analytics, and HTTP proxy",
+      "properties": {
+        "crates": [
+          "sentinel-config",
+          "sentinel-provider",
+          "sentinel-provider-info",
+          "sentinel-agent-identity",
+          "sentinel-agent-graph-store",
+          "sentinel-analytics",
+          "sentinel-headroom",
+          "sentinel-sdk",
+          "sentinel-proxy"
+        ]
+      },
+      "confidence_score": 1.0
+    },
+    {
+      "id": "render_deployment_config",
+      "label": "Render.yaml deployment configuration",
+      "type": "concept",
+      "file_type": "rationale",
+      "description": "Static site deployment configuration with cache control and SPA routing",
+      "properties": {
+        "service_type": "static",
+        "build_command": "npm ci && npm run build",
+        "publish_path": "./dist",
+        "routing_strategy": "SPA fallback to index.html"
+      },
+      "confidence_score": 1.0
+    },
+    {
+      "id": "single_core_labs_website",
+      "label": "Single Core Labs website",
+      "type": "entity",
+      "file_type": "code",
+      "description": "Marketing website for Single Core Labs enterprise AI solutions",
+      "properties": {
+        "domain": "https://singlecorelabs.in/",
+        "tech_stack": [
+          "HTML5",
+          "React",
+          "Vite"
+        ],
+        "meta_focus": [
+          "enterprise_AI",
+          "RAG_pipelines",
+          "fine_tuned_models"
+        ],
+        "fonts": [
+          "Newsreader",
+          "Sora",
+          "Almarai",
+          "Instrument Serif"
+        ]
+      },
+      "confidence_score": 1.0
+    },
+    {
+      "id": "gemini_vs_sentinel_comparison",
+      "label": "Sentinel-AI vs Gemini CLI comparison",
+      "type": "document",
+      "file_type": "document",
+      "description": "Comprehensive architectural and feature comparison showing mutual strengths and gaps",
+      "properties": {
+        "sentinel_advantages": [
+          "Rust_performance_safety",
+          "Headroom_compression_13_strategies",
+          "5_stage_structured_pipeline",
+          "Multi_provider_4_Axis_routing",
+          "Persistent_memory_with_embeddings",
+          "Cost_tracking_and_budgets",
+          "Plugin_system_with_veto",
+          "3_tier_approval_gate",
+          "Sub_agent_parallelism",
+          "Clean_crate_architecture"
+        ],
+        "gemini_advantages": [
+          "IDE_integration_VS_Code",
+          "Hook_system_runtime_and_command",
+          "Model_availability_service",
+          "Extension_system",
+          "Programmatic_SDK",
+          "A2A_server_HTTP",
+          "Context_graph",
+          "Advanced_chat_compression",
+          "OAuth2_OIDC",
+          "Build_packaging",
+          "Testing_infrastructure"
+        ]
+      },
+      "confidence_score": 1.0
+    },
+    {
+      "id": "rightnow_ai_inspiration",
+      "label": "RightNow AI-inspired features",
+      "type": "concept",
+      "file_type": "document",
+      "description": "GPU-aware AI features inspired by RightNow AI including kernel analysis, model management, and smart profiling",
+      "properties": {
+        "features": [
+          "Instant GPU kernel analysis",
+          "GPU-aware model management",
+          "Multi-backend local LLM",
+          "Smart profiling terminal"
+        ],
+        "design_principle": "Zero-cost deterministic operations by default, LLM-backed analysis optional"
+      },
+      "confidence_score": 0.85
+    },
+    {
+      "id": "setup_guide_documentation",
+      "label": "Sentinel CLI setup guide",
+      "type": "document",
+      "file_type": "document",
+      "description": "Installation and configuration guide for Sentinel CLI with provider setup and local model support",
+      "properties": {
+        "providers": [
+          "Anthropic",
+          "OpenAI",
+          "Google_AI_Studio",
+          "DeepSeek",
+          "NVIDIA_NIM",
+          "Models.dev",
+          "GitHub_Copilot"
+        ],
+        "local_backends": [
+          "Ollama",
+          "vLLM",
+          "LM_Studio",
+          "llamacpp"
+        ],
+        "installation_method": "cargo install"
+      },
+      "confidence_score": 1.0
+    },
+    {
+      "id": "architecture_doc",
+      "label": "System Architecture — Platform-Agent",
+      "entity_type": "document",
+      "file_type": "document",
+      "description": "Design document for 6 system architecture upgrades to agent framework",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED"
+    },
+    {
+      "id": "feature_cost_aware_routing",
+      "label": "Cost-aware model routing",
+      "entity_type": "feature",
+      "file_type": "document",
+      "description": "Routes to cheap/balanced/powerful models based on complexity scoring",
+      "parent": "architecture_doc",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED",
+      "attributes": {
+        "layer": "Core Loop (phase.rs)",
+        "priority": "High",
+        "complexity_signals": [
+          "Token count",
+          "Tool error rate",
+          "Tool types",
+          "Phase context"
+        ]
+      }
+    },
+    {
+      "id": "feature_sandboxed_execution",
+      "label": "Sandboxed execution",
+      "entity_type": "feature",
+      "file_type": "document",
+      "description": "Isolated tool execution via Sandbox trait (LocalSandbox, DockerSandbox future)",
+      "parent": "architecture_doc",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED",
+      "attributes": {
+        "layer": "Tool Execution",
+        "priority": "High",
+        "implementations": [
+          "LocalSandbox",
+          "DockerSandbox"
+        ]
+      }
+    },
+    {
+      "id": "feature_worktree_parallel",
+      "label": "Worktree-isolated parallel agents",
+      "entity_type": "feature",
+      "file_type": "document",
+      "description": "Multi-threaded agent execution with git worktree isolation per stage",
+      "parent": "architecture_doc",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED",
+      "attributes": {
+        "layer": "Orchestration",
+        "priority": "Medium"
+      }
+    },
+    {
+      "id": "feature_diffs_first",
+      "label": "Diffs-first execution",
+      "entity_type": "feature",
+      "file_type": "document",
+      "description": "Preview and approve file modifications before applying via unified diff",
+      "parent": "architecture_doc",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED",
+      "attributes": {
+        "layer": "Safety (Approval Gate)",
+        "priority": "High"
+      }
+    },
+    {
+      "id": "feature_cost_transparency",
+      "label": "Cost transparency UX",
+      "entity_type": "feature",
+      "file_type": "document",
+      "description": "Real-time cost display per tool call and per turn with budget tracking",
+      "parent": "architecture_doc",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED",
+      "attributes": {
+        "layer": "CLI Presentation",
+        "priority": "High"
+      }
+    },
+    {
+      "id": "feature_memory_file",
+      "label": "Long-term memory to file",
+      "entity_type": "feature",
+      "file_type": "document",
+      "description": "Persist session summaries to PROJECT.md with SQLite backing store",
+      "parent": "architecture_doc",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED",
+      "attributes": {
+        "layer": "Context / Persistence",
+        "priority": "Medium"
+      }
+    },
+    {
+      "id": "gpu_emulator_doic",
+      "label": "GPU Emulator — DOIC",
+      "entity_type": "document",
+      "file_type": "document",
+      "description": "Document of Intent & Charter for cycle-approximate GPU kernel emulator",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED"
+    },
+    {
+      "id": "emulator_pipeline",
+      "label": "Emulation Pipeline (5 stages)",
+      "entity_type": "concept",
+      "file_type": "document",
+      "description": "Sequential analysis: instruction extraction, memory analysis, divergence, occupancy, latency modeling",
+      "parent": "gpu_emulator_doic",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED",
+      "attributes": {
+        "stages": [
+          "extract_instruction_profile",
+          "analyze_memory",
+          "analyze_divergence",
+          "calculate_occupancy",
+          "build_latency_model"
+        ],
+        "execution_time": "<100ms"
+      }
+    },
+    {
+      "id": "archspec_data_type",
+      "label": "ArchSpec: GPU architecture specification",
+      "entity_type": "data_type",
+      "file_type": "document",
+      "description": "Core struct defining GPU arch properties: compute_cap, sm_count, warps_per_sm, bandwidth, etc.",
+      "parent": "gpu_emulator_doic",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED",
+      "attributes": {
+        "covers_architectures": 10,
+        "families": [
+          "Ampere",
+          "Ada",
+          "Hopper",
+          "Blackwell",
+          "Volta",
+          "Pascal"
+        ]
+      }
+    },
+    {
+      "id": "emulator_design_decisions",
+      "label": "GPU Emulator Design Decisions",
+      "entity_type": "rationale",
+      "file_type": "document",
+      "description": "5 key design choices: static analysis over ISA simulation, family-based latency, loop heuristics, etc.",
+      "parent": "gpu_emulator_doic",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED",
+      "attributes": {
+        "decisions": [
+          "Static analysis over binary simulation",
+          "Architecture family-based latency parameterization",
+          "Loop unroll factor heuristic (8x per loop)",
+          "Default launch config: grid=(100,1,1) block=(256,1,1)",
+          "Reuse GpuLanguage from langs.rs"
+        ]
+      }
+    },
+    {
+      "id": "sweep_engine_doic",
+      "label": "Config Sweep Engine — DOIC",
+      "entity_type": "document",
+      "file_type": "document",
+      "description": "Zero-cost config space explorer on top of GPU emulator, ~100 configs per sweep",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED"
+    },
+    {
+      "id": "sweep_dimensions",
+      "label": "Sweep config dimensions",
+      "entity_type": "concept",
+      "file_type": "document",
+      "description": "Configuration space: 7 block_x, 3 block_y, 6 shared_mem variations = ~100 configs",
+      "parent": "sweep_engine_doic",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED",
+      "attributes": {
+        "block_x_values": [
+          64,
+          96,
+          128,
+          192,
+          256,
+          384,
+          512
+        ],
+        "block_y_values": [
+          1,
+          2,
+          4
+        ],
+        "shared_mem_kb_values": [
+          0,
+          8,
+          16,
+          32,
+          48,
+          64
+        ]
+      }
+    },
+    {
+      "id": "sweep_scoring_formula",
+      "label": "Sweep scoring formula (6-factor weighted)",
+      "entity_type": "concept",
+      "file_type": "document",
+      "description": "Composite score: cycles (30%), occupancy (20%), SM util (15%), coalescing (10%), sector util (5%), IPC (10%)",
+      "parent": "sweep_engine_doic",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED",
+      "attributes": {
+        "base_sum": "0.90",
+        "penalties": [
+          "bank_conflicts",
+          "register_spills"
+        ],
+        "final_formula": "base_sum * (1 - bank_penalty - spill_penalty)"
+      }
+    },
+    {
+      "id": "compressor_pipeline_doc",
+      "label": "Compressor Pipeline Wiring",
+      "entity_type": "document",
+      "file_type": "document",
+      "description": "Two-tier compression wiring for agent: per-tool-output and conversation-level",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED"
+    },
+    {
+      "id": "compression_tier_tool_output",
+      "label": "Per-tool-output compression",
+      "entity_type": "concept",
+      "file_type": "document",
+      "description": "Compress individual tool result strings via ContentCompressor trait",
+      "parent": "compressor_pipeline_doc",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED",
+      "attributes": {
+        "scope": "Individual tool result strings",
+        "implementation": "HeadroomAgentCompressor::compress()"
+      }
+    },
+    {
+      "id": "compression_tier_conversation",
+      "label": "Conversation-level compression",
+      "entity_type": "concept",
+      "file_type": "document",
+      "description": "Compress entire message list before LLM call via ContentCompressor::compress_conversation",
+      "parent": "compressor_pipeline_doc",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED",
+      "attributes": {
+        "scope": "All messages before LLM",
+        "implementation": "sentinel_headroom::Compressor::compress()"
+      }
+    },
+    {
+      "id": "headroom_compressor_internals",
+      "label": "Headroom Compressor internal flow",
+      "entity_type": "concept",
+      "file_type": "document",
+      "description": "Compressor pipeline stages: CacheAligner → CacheOptimizer → ContentCompressor → IntelligentContext",
+      "parent": "compressor_pipeline_doc",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED",
+      "attributes": {
+        "stages": [
+          "CacheAligner (system prompt)",
+          "CacheOptimizer (provider-specific cache breakpoints)",
+          "ContentCompressor (tool output routing)",
+          "IntelligentContext (6-factor scoring + budget dropping)"
+        ]
+      }
+    },
+    {
+      "id": "memory_system_integration",
+      "label": "Memory system integration in compressor",
+      "entity_type": "concept",
+      "file_type": "document",
+      "description": "Optional PersistentMemory subsystem: extract from dropped messages, inject into system prompt",
+      "parent": "compressor_pipeline_doc",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED",
+      "attributes": {
+        "enabled_by_default": true,
+        "storage": "in-memory SQLite or persistent file"
+      }
+    },
+    {
+      "id": "desktop_app_icons",
+      "label": "Desktop app Tauri icons",
+      "entity_type": "asset",
+      "file_type": "image",
+      "description": "Multiple resolution app icons (32x32, 128x128, 128x128@2x) for Tauri desktop application",
+      "confidence_score": 0.95,
+      "extraction_type": "INFERRED",
+      "attributes": {
+        "resolutions": [
+          "32x32",
+          "128x128",
+          "128x128@2x"
+        ],
+        "format": "PNG",
+        "framework": "Tauri"
+      }
+    },
+    {
+      "id": "logo_dark_svg",
+      "label": "Logo (dark theme)",
+      "entity_type": "asset",
+      "file_type": "image",
+      "description": "SVG logo with dark background, complex path-based design (~1241 viewBox height)",
+      "confidence_score": 0.95,
+      "extraction_type": "EXTRACTED",
+      "attributes": {
+        "theme": "dark",
+        "format": "SVG",
+        "color": "white fill"
+      }
+    },
+    {
+      "id": "benchmark_chart_agentic",
+      "label": "Benchmark chart: Agentic vs baseline",
+      "entity_type": "asset",
+      "file_type": "image",
+      "description": "SVG chart comparing performance metrics (LOC 46%, tokens 78%, cost 80%, time 73%) across 4 arms on Haiku 4.5",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED",
+      "attributes": {
+        "metrics": [
+          "LOC",
+          "tokens",
+          "cost",
+          "time"
+        ],
+        "arms": [
+          "baseline",
+          "caveman",
+          "ponytail",
+          "yagni-oneliner"
+        ],
+        "safety_tier": "adversarial (path-traversal, SQLi, etc)",
+        "model": "Claude Haiku 4.5"
+      }
+    },
+    {
+      "id": "aws_logo_svg",
+      "label": "AWS logo",
+      "entity_type": "asset",
+      "file_type": "image",
+      "description": "AWS official logo in SVG format with orange accent color (#FF9900)",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED",
+      "attributes": {
+        "format": "SVG",
+        "primary_color": "#252F3E",
+        "accent_color": "#FF9900"
+      }
+    },
+    {
+      "id": "crate_sentinel_core",
+      "label": "Crate: sentinel-core",
+      "entity_type": "code",
+      "file_type": "code",
+      "description": "Core agent functionality crate containing routing, compression, sandboxing, worktrees",
+      "confidence_score": 0.95,
+      "extraction_type": "INFERRED",
+      "attributes": {
+        "modules": [
+          "phase.rs (CostAwareRouter)",
+          "cost.rs (CostTracker)",
+          "sandbox.rs (Sandbox trait)",
+          "worktree.rs (WorktreeManager)",
+          "diff_capture.rs (DiffCapture)",
+          "memory_file.rs (MemoryFileManager)",
+          "compression.rs (ContentCompressor trait)"
+        ]
+      }
+    },
+    {
+      "id": "crate_sentinel_cli",
+      "label": "Crate: sentinel-cli",
+      "entity_type": "code",
+      "file_type": "code",
+      "description": "Command-line interface with event handlers and cost display",
+      "confidence_score": 0.95,
+      "extraction_type": "INFERRED",
+      "attributes": {
+        "modules": [
+          "exec.rs (CLI entry point)",
+          "handler.rs (CliEventHandler)",
+          "display.rs (cost formatting)"
+        ]
+      }
+    },
+    {
+      "id": "crate_sentinel_headroom",
+      "label": "Crate: sentinel-headroom",
+      "entity_type": "code",
+      "file_type": "code",
+      "description": "Compression and memory system integration with vendor-specific optimizations",
+      "confidence_score": 0.95,
+      "extraction_type": "INFERRED",
+      "attributes": {
+        "modules": [
+          "integration.rs (HeadroomAgentCompressor)",
+          "compress.rs (Compressor with memory)",
+          "config.rs (MemoryConfig)",
+          "memory/ (PersistentMemory, embeddings, tools)"
+        ]
+      }
+    },
+    {
+      "id": "crate_sentinel_gpu_profiler",
+      "label": "Crate: sentinel-gpu-profiler",
+      "entity_type": "code",
+      "file_type": "code",
+      "description": "GPU emulator and config sweep engine (emulate.rs, langs.rs, bench.rs, profile.rs)",
+      "confidence_score": 0.95,
+      "extraction_type": "INFERRED",
+      "attributes": {
+        "modules": [
+          "emulate.rs (emulation pipeline + sweep)",
+          "langs.rs (8-language detection)",
+          "bench.rs (heuristic scoring)",
+          "profile.rs (runtime validation)"
+        ]
+      }
+    },
+    {
+      "id": "protocol_message_bridge",
+      "label": "Message protocol ↔ Headroom bridge",
+      "entity_type": "concept",
+      "file_type": "code",
+      "description": "Type mapping between sentinel_protocol::Message and sentinel_headroom::config::Message",
+      "parent": "compressor_pipeline_doc",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED",
+      "attributes": {
+        "mapping_location": "integration.rs:203-247",
+        "protocol_fields": [
+          "role",
+          "content",
+          "tool_call_id",
+          "name"
+        ]
+      }
+    },
+    {
+      "id": "file_architecture_md",
+      "label": "File: docs/design/architecture.md",
+      "entity_type": "document",
+      "file_type": "document",
+      "description": "Complete system architecture specification with 6 upgrades and integration flow",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED"
+    },
+    {
+      "id": "file_gpu_emulator_doic_md",
+      "label": "File: docs/design/gpu-emulator-doic.md",
+      "entity_type": "document",
+      "file_type": "document",
+      "description": "GPU emulator design intent and charter with edge cases and test strategy",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED"
+    },
+    {
+      "id": "file_sweep_doic_md",
+      "label": "File: docs/design/gpu-emulator-sweep-doic.md",
+      "entity_type": "document",
+      "file_type": "document",
+      "description": "Config sweep engine specification with scoring and integration points",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED"
+    },
+    {
+      "id": "file_compressor_pipeline_md",
+      "label": "File: docs/wiring/compressor-pipeline.md",
+      "entity_type": "document",
+      "file_type": "document",
+      "description": "Compression wiring specification: two-tier architecture and memory integration",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED"
+    },
+    {
+      "id": "favicon_svg",
+      "label": "Favicon SVG",
+      "type": "image",
+      "file_type": "image",
+      "description": "Brand favicon with purple/violet geometric pattern",
+      "properties": {
+        "file_path": "public/favicon.svg",
+        "color": "#863bff",
+        "style": "geometric, angular",
+        "usage": "browser_tab_icon",
+        "dimensions": "48x46"
+      },
+      "confidence_score": 1.0,
+      "extraction_status": "EXTRACTED"
+    },
+    {
+      "id": "icons_svg",
+      "label": "Icons SVG",
+      "type": "image",
+      "file_type": "image",
+      "description": "Collection of social media and documentation icons",
+      "properties": {
+        "file_path": "public/icons.svg",
+        "included_icons": [
+          "bluesky",
+          "discord",
+          "github",
+          "x_twitter",
+          "social",
+          "documentation"
+        ],
+        "usage": "social_links, navigation",
+        "colors": [
+          "#08060d",
+          "#aa3bff",
+          "#47bfff"
+        ]
+      },
+      "confidence_score": 1.0,
+      "extraction_status": "EXTRACTED"
+    },
+    {
+      "id": "oracle_logo_svg",
+      "label": "Oracle Logo SVG",
+      "type": "brand",
+      "file_type": "image",
+      "description": "Oracle database enterprise software brand logo",
+      "properties": {
+        "file_path": "public/oracle-logo.svg",
+        "brand": "Oracle",
+        "category": "enterprise_database",
+        "integration_type": "partner"
+      },
+      "confidence_score": 1.0,
+      "extraction_status": "EXTRACTED"
+    },
+    {
+      "id": "image_png",
+      "label": "Complexity to Clarity Image",
+      "type": "marketing",
+      "file_type": "image",
+      "description": "Marketing image showing genomic/biological data platform for healthcare",
+      "properties": {
+        "file_path": "public/image.png",
+        "headline": "From complexity to clarity",
+        "tagline": "Biological data is complex, but decisions shouldn't be",
+        "organization": "DNA Consulting",
+        "use_case": "genomic_insights, healthcare, life_science"
+      },
+      "confidence_score": 1.0,
+      "extraction_status": "EXTRACTED"
+    },
+    {
+      "id": "logo_icon_png",
+      "label": "Logo Icon PNG",
+      "type": "brand",
+      "file_type": "image",
+      "description": "Sentinel brand monochromatic icon logo",
+      "properties": {
+        "file_path": "public/logo-icon.png",
+        "brand": "Sentinel",
+        "format": "png",
+        "color_scheme": "black_white",
+        "usage": "icon_variant"
+      },
+      "confidence_score": 1.0,
+      "extraction_status": "EXTRACTED"
+    },
+    {
+      "id": "logo_small_webp",
+      "label": "Logo Small WebP",
+      "type": "brand",
+      "file_type": "image",
+      "description": "Sentinel brand logo in small format",
+      "properties": {
+        "file_path": "public/logo-small.webp",
+        "brand": "Sentinel",
+        "format": "webp",
+        "size_variant": "small",
+        "usage": "compact_display"
+      },
+      "confidence_score": 1.0,
+      "extraction_status": "EXTRACTED"
+    },
+    {
+      "id": "logo_webp",
+      "label": "Logo WebP",
+      "type": "brand",
+      "file_type": "image",
+      "description": "Sentinel brand full logo",
+      "properties": {
+        "file_path": "public/logo.webp",
+        "brand": "Sentinel",
+        "format": "webp",
+        "size_variant": "full",
+        "usage": "primary_branding"
+      },
+      "confidence_score": 1.0,
+      "extraction_status": "EXTRACTED"
+    },
+    {
+      "id": "manav_jpg",
+      "label": "Manav Profile Photo",
+      "type": "profile",
+      "file_type": "image",
+      "description": "Person headshot/team member profile photo",
+      "properties": {
+        "file_path": "public/manav.jpg",
+        "format": "jpg",
+        "content_type": "portrait_photo",
+        "usage": "team_profile"
+      },
+      "confidence_score": 0.95,
+      "extraction_status": "INFERRED"
+    },
+    {
+      "id": "aws_partner_logo",
+      "label": "AWS Partner Logo",
+      "type": "integration",
+      "file_type": "image",
+      "description": "Amazon Web Services integration partner logo",
+      "properties": {
+        "file_path": "public/partners/aws.png",
+        "brand": "Amazon Web Services",
+        "category": "cloud_platform",
+        "color": "orange_yellow",
+        "integration": "cloud_services"
+      },
+      "confidence_score": 1.0,
+      "extraction_status": "EXTRACTED"
+    },
+    {
+      "id": "azure_partner_logo",
+      "label": "Azure Partner Logo",
+      "type": "integration",
+      "file_type": "image",
+      "description": "Microsoft Azure integration partner logo",
+      "properties": {
+        "file_path": "public/partners/azure.png",
+        "brand": "Microsoft Azure",
+        "category": "cloud_platform",
+        "color": "blue",
+        "integration": "cloud_services"
+      },
+      "confidence_score": 1.0,
+      "extraction_status": "EXTRACTED"
+    },
+    {
+      "id": "bedrock_partner_logo",
+      "label": "Bedrock Partner Logo",
+      "type": "integration",
+      "file_type": "image",
+      "description": "AWS Bedrock foundation model service integration logo",
+      "properties": {
+        "file_path": "public/partners/bedrock.png",
+        "brand": "AWS Bedrock",
+        "category": "foundation_models",
+        "color": "light_blue",
+        "integration": "ai_models"
+      },
+      "confidence_score": 1.0,
+      "extraction_status": "EXTRACTED"
+    },
+    {
+      "id": "claude_partner_logo",
+      "label": "Claude Partner Logo",
+      "type": "integration",
+      "file_type": "image",
+      "description": "Anthropic Claude AI model integration logo",
+      "properties": {
+        "file_path": "public/partners/claude.png",
+        "brand": "Anthropic Claude",
+        "category": "language_model",
+        "color": "coral_orange",
+        "integration": "ai_models"
+      },
+      "confidence_score": 1.0,
+      "extraction_status": "EXTRACTED"
+    },
+    {
+      "id": "openai_partner_logo",
+      "label": "OpenAI Partner Logo",
+      "type": "integration",
+      "file_type": "image",
+      "description": "OpenAI integration partner logo",
+      "properties": {
+        "file_path": "public/partners/openai.png",
+        "brand": "OpenAI",
+        "category": "language_model",
+        "color": "black",
+        "integration": "ai_models"
+      },
+      "confidence_score": 1.0,
+      "extraction_status": "EXTRACTED"
+    },
+    {
+      "id": "agentic_ai_png",
+      "label": "Agentic AI Illustration",
+      "type": "asset",
+      "file_type": "image",
+      "description": "Illustration of conversational AI chatbot on mobile device",
+      "properties": {
+        "file_path": "src/assets/gpu-server/agentic-ai.png",
+        "theme": "conversational_ai, mobile_first",
+        "color_palette": "turquoise_teal",
+        "elements": [
+          "chatbot",
+          "mobile_device",
+          "ai_brain",
+          "conversation_bubbles"
+        ],
+        "use_case": "agentic_ai_workloads"
+      },
+      "confidence_score": 1.0,
+      "extraction_status": "EXTRACTED"
+    },
+    {
+      "id": "ai_workload_png",
+      "label": "AI Workload Photo",
+      "type": "asset",
+      "file_type": "image",
+      "description": "Photograph of stacked documents representing data/workload",
+      "properties": {
+        "file_path": "src/assets/gpu-server/ai-workload.png",
+        "theme": "data_organization, workload_management",
+        "elements": [
+          "documents",
+          "papers",
+          "bookmarks"
+        ],
+        "use_case": "ai_workload_representation"
+      },
+      "confidence_score": 0.85,
+      "extraction_status": "INFERRED"
+    },
+    {
+      "id": "defense_server_png",
+      "label": "Defense Server Photo",
+      "type": "asset",
+      "file_type": "image",
+      "description": "Photograph of computer server hardware and circuitry",
+      "properties": {
+        "file_path": "src/assets/gpu-server/defense-server.png",
+        "theme": "infrastructure, security, hardware",
+        "elements": [
+          "circuit_boards",
+          "hardware_components",
+          "server_equipment"
+        ],
+        "use_case": "defense_infrastructure"
+      },
+      "confidence_score": 1.0,
+      "extraction_status": "EXTRACTED"
+    },
+    {
+      "id": "sentinel_brand",
+      "label": "Sentinel Brand",
+      "type": "concept",
+      "file_type": "concept",
+      "description": "Primary brand identity for Sentinel platform",
+      "properties": {
+        "organization": "Single Core Labs",
+        "primary_color": "#863bff",
+        "brand_variants": [
+          "icon",
+          "full_logo",
+          "small_logo"
+        ],
+        "platforms": "web, mobile, cloud"
+      },
+      "confidence_score": 1.0,
+      "extraction_status": "EXTRACTED"
+    },
+    {
+      "id": "ai_integrations",
+      "label": "AI Model Integrations",
+      "type": "concept",
+      "file_type": "concept",
+      "description": "Collection of integrated AI/LLM platforms",
+      "properties": {
+        "models": [
+          "Claude",
+          "OpenAI",
+          "Bedrock"
+        ],
+        "purpose": "foundation_models, language_models, AI_capabilities"
+      },
+      "confidence_score": 1.0,
+      "extraction_status": "EXTRACTED"
+    },
+    {
+      "id": "cloud_integrations",
+      "label": "Cloud Platform Integrations",
+      "type": "concept",
+      "file_type": "concept",
+      "description": "Collection of integrated cloud platforms",
+      "properties": {
+        "platforms": [
+          "AWS",
+          "Azure",
+          "Oracle"
+        ],
+        "purpose": "cloud_infrastructure, database, computing"
+      },
+      "confidence_score": 1.0,
+      "extraction_status": "EXTRACTED"
+    },
+    {
+      "id": "gpu_server_assets",
+      "label": "GPU Server Marketing Assets",
+      "type": "concept",
+      "file_type": "concept",
+      "description": "Collection of assets depicting GPU server capabilities",
+      "properties": {
+        "themes": [
+          "agentic_ai",
+          "workload_management",
+          "security_infrastructure"
+        ],
+        "use_case": "marketing, product_positioning"
+      },
+      "confidence_score": 0.95,
+      "extraction_status": "INFERRED"
+    },
+    {
+      "id": "gpu_server_infrastructure",
+      "label": "GPU Server Infrastructure",
+      "type": "concept",
+      "file_type": "image",
+      "confidence_score": 1.0,
+      "source": "gpu-server/*.png"
+    },
+    {
+      "id": "server_room_deployment",
+      "label": "Server Room / Data Center Facility",
+      "type": "infrastructure",
+      "file_type": "image",
+      "confidence_score": 1.0,
+      "source": "server-room.png, manufacturing-server.png"
+    },
+    {
+      "id": "nvidia_dsx_system",
+      "label": "NVIDIA DSX GPU Computing System",
+      "type": "hardware",
+      "file_type": "image",
+      "confidence_score": 1.0,
+      "source": "nvidia-dsx.png"
+    },
+    {
+      "id": "networking_infrastructure",
+      "label": "Network Cable Infrastructure",
+      "type": "infrastructure",
+      "file_type": "image",
+      "confidence_score": 1.0,
+      "source": "server-1.png, server-room.png"
+    },
+    {
+      "id": "power_distribution",
+      "label": "Power Distribution Units (PDU)",
+      "type": "infrastructure",
+      "file_type": "image",
+      "confidence_score": 1.0,
+      "source": "server-1.png, manufacturing-server.png"
+    },
+    {
+      "id": "monitoring_system",
+      "label": "Server Monitoring System",
+      "type": "concept",
+      "file_type": "image",
+      "confidence_score": 0.95,
+      "source": "nvidia-dsx.png, server-2.png, server-3.png"
+    },
+    {
+      "id": "react_framework",
+      "label": "React Frontend Framework",
+      "type": "technology",
+      "file_type": "image",
+      "confidence_score": 1.0,
+      "source": "react.svg"
+    },
+    {
+      "id": "vite_build_tool",
+      "label": "Vite Build Tool",
+      "type": "technology",
+      "file_type": "image",
+      "confidence_score": 1.0,
+      "source": "vite.svg"
+    },
+    {
+      "id": "web_tech_stack",
+      "label": "Modern Web Development Stack",
+      "type": "concept",
+      "file_type": "image",
+      "confidence_score": 0.95,
+      "source": "react.svg, vite.svg"
+    },
+    {
+      "id": "hero_visualization",
+      "label": "Tech Stack Hero Visualization",
+      "type": "image",
+      "file_type": "image",
+      "confidence_score": 0.85,
+      "source": "hero.png"
+    },
+    {
+      "id": "deployment_scenario",
+      "label": "Deployment Architecture Scenario",
+      "type": "concept",
+      "file_type": "image",
+      "confidence_score": 0.85,
+      "source": "hero.png, gpu-server/*.png"
+    }
+  ],
+  "edges": [
+    {
+      "source": "sentinel_headroom_work_summary_compress_executor",
+      "target": "sentinel_headroom_work_summary_cache_aligner",
+      "relation": "calls",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "sentinel_headroom_work_summary_compress_executor",
+      "target": "sentinel_headroom_work_summary_content_router",
+      "relation": "calls",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "sentinel_headroom_work_summary_compress_executor",
+      "target": "sentinel_headroom_work_summary_cache_optimizer",
+      "relation": "calls",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "sentinel_headroom_work_summary_compress_executor",
+      "target": "sentinel_headroom_work_summary_intelligent_context",
+      "relation": "calls",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "sentinel_headroom_work_summary_compress_executor",
+      "target": "sentinel_headroom_work_summary_ccr_store",
+      "relation": "calls",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "sentinel_headroom_work_summary_orchestrator",
+      "target": "sentinel_headroom_work_summary_ccr_store",
+      "relation": "integrates",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "sentinel_headroom_work_summary_orchestrator",
+      "target": "sentinel_headroom_work_summary_retrieve_tool",
+      "relation": "defines",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "sentinel_headroom_work_summary_ccr_tracker",
+      "target": "sentinel_headroom_work_summary_ccr_store",
+      "relation": "queries",
+      "type": "INFERRED",
+      "confidence_score": 0.95
+    },
+    {
+      "source": "desktop_app_running_sentinel_cli",
+      "target": "sentinel_headroom_work_summary_compress_executor",
+      "relation": "creates",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "desktop_app_running_sentinel_cli",
+      "target": "sentinel_headroom_work_summary_retrieve_tool",
+      "relation": "registers",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "desktop_app_running_sentinel_app_server",
+      "target": "sentinel_headroom_work_summary_compress_executor",
+      "relation": "integrates",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "desktop_app_running_sentinel_ai_exec",
+      "target": "sentinel_headroom_work_summary_retrieve_tool",
+      "relation": "registers",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "desktop_app_running_sentinel_ai_tui",
+      "target": "sentinel_headroom_work_summary_retrieve_tool",
+      "relation": "registers",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "desktop_app_running_frontend",
+      "target": "desktop_app_running_sentinel_app_server",
+      "relation": "connects_to",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "desktop_app_running_websocket_client",
+      "target": "desktop_app_running_sentinel_app_server",
+      "relation": "communicates_with",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "desktop_app_running_chat_view",
+      "target": "desktop_app_running_websocket_client",
+      "relation": "depends_on",
+      "type": "INFERRED",
+      "confidence_score": 0.95
+    },
+    {
+      "source": "openclaw_ponytail_review_skill",
+      "target": "rules_ponytail_philosophy",
+      "relation": "implements",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "openclaw_ponytail_audit_skill",
+      "target": "rules_ponytail_philosophy",
+      "relation": "implements",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "openclaw_ponytail_debt_skill",
+      "target": "rules_ponytail_philosophy",
+      "relation": "implements",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "openclaw_ponytail_gain_skill",
+      "target": "rules_ponytail_philosophy",
+      "relation": "measures",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "openclaw_ponytail_help_skill",
+      "target": "rules_ponytail_philosophy",
+      "relation": "documents",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "openclaw_ponytail_core_skill",
+      "target": "rules_ponytail_philosophy",
+      "relation": "embodies",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "concept_ponytail",
+      "target": "concept_the_ladder",
+      "type": "uses",
+      "confidence_score": 1.0,
+      "description": "Ponytail applies the 7-rung decision ladder to minimize code"
+    },
+    {
+      "source": "concept_ponytail",
+      "target": "concept_safety_floor",
+      "type": "enforces",
+      "confidence_score": 1.0,
+      "description": "Ponytail never compromises on validation, error handling, security, or accessibility"
+    },
+    {
+      "source": "concept_ponytail",
+      "target": "concept_laziness",
+      "type": "embodies",
+      "confidence_score": 1.0,
+      "description": "Laziness (efficiency, not carelessness) is core to Ponytail philosophy"
+    },
+    {
+      "source": "concept_the_ladder",
+      "target": "concept_laziness",
+      "type": "implements",
+      "confidence_score": 1.0,
+      "description": "The Ladder is the operational expression of lazy development principles"
+    },
+    {
+      "source": "tool_caveman",
+      "target": "concept_ponytail",
+      "type": "complements",
+      "confidence_score": 1.0,
+      "description": "Caveman shrinks what agent says; Ponytail shrinks what it builds. Non-overlapping halves"
+    },
+    {
+      "source": "concept_ponytail",
+      "target": "entity_claude_haiku",
+      "type": "tested_on",
+      "confidence_score": 1.0,
+      "description": "Ponytail achieves 54% LOC reduction and 63% cost reduction on Haiku in single-shot benchmark"
+    },
+    {
+      "source": "concept_ponytail",
+      "target": "entity_claude_sonnet",
+      "type": "tested_on",
+      "confidence_score": 1.0,
+      "description": "Ponytail achieves 54% LOC reduction and 74.5% cost reduction on Sonnet"
+    },
+    {
+      "source": "concept_ponytail",
+      "target": "entity_claude_opus",
+      "type": "tested_on",
+      "confidence_score": 1.0,
+      "description": "Ponytail achieves 54% LOC reduction and 42% cost reduction on Opus"
+    },
+    {
+      "source": "concept_ponytail",
+      "target": "entity_gpt_4_1_mini",
+      "type": "tested_on",
+      "confidence_score": 1.0,
+      "description": "Ponytail on GPT-4.1-mini is 39.6% cheaper but inconsistent across providers"
+    },
+    {
+      "source": "concept_ponytail",
+      "target": "entity_gpt_5_4_mini",
+      "type": "tested_on",
+      "confidence_score": 1.0,
+      "description": "Ponytail on GPT-5.4-mini is 26.2% more expensive due to reasoning overhead"
+    },
+    {
+      "source": "concept_ponytail",
+      "target": "entity_gpt_5_5",
+      "type": "tested_on",
+      "confidence_score": 1.0,
+      "description": "Ponytail on GPT-5.5 is 38.7% more expensive and slower"
+    },
+    {
+      "source": "concept_ponytail",
+      "target": "entity_llama3_2",
+      "type": "tested_on",
+      "confidence_score": 1.0,
+      "description": "Ponytail does not transfer effectively to llama3.2; instruction-following insufficient"
+    },
+    {
+      "source": "benchmark_single_shot",
+      "target": "metric_loc",
+      "type": "measures",
+      "confidence_score": 1.0,
+      "description": "Single-shot benchmark counts LOC from fenced code blocks"
+    },
+    {
+      "source": "benchmark_agentic",
+      "target": "metric_loc",
+      "type": "measures",
+      "confidence_score": 1.0,
+      "description": "Agentic benchmark counts source LOC from git diff"
+    },
+    {
+      "source": "benchmark_agentic",
+      "target": "metric_safety",
+      "type": "measures",
+      "confidence_score": 1.0,
+      "description": "Agentic benchmark runs produced code against adversarial input"
+    },
+    {
+      "source": "benchmark_robustness",
+      "target": "metric_correctness",
+      "type": "measures",
+      "confidence_score": 1.0,
+      "description": "Robustness audit tests edge-case correctness on 12 algorithmic tasks"
+    },
+    {
+      "source": "benchmark_agentic",
+      "target": "task_safe_path",
+      "type": "includes",
+      "confidence_score": 1.0,
+      "description": "safe_path is a safety-tier task in agentic benchmark"
+    },
+    {
+      "source": "benchmark_agentic",
+      "target": "task_rate_limit",
+      "type": "includes",
+      "confidence_score": 1.0,
+      "description": "rate_limit is a safety-tier task in agentic benchmark"
+    },
+    {
+      "source": "benchmark_agentic",
+      "target": "task_csv_sum",
+      "type": "includes",
+      "confidence_score": 1.0,
+      "description": "csv_sum is a safety-tier task in agentic benchmark"
+    },
+    {
+      "source": "benchmark_robustness",
+      "target": "task_email_validation",
+      "type": "includes",
+      "confidence_score": 1.0,
+      "description": "Email validation is key robustness task showing provider-specific behavior"
+    },
+    {
+      "source": "finding_claude_specific",
+      "target": "entity_claude_haiku",
+      "type": "applies_to",
+      "confidence_score": 1.0,
+      "description": "Cost savings finding applies to Claude models"
+    },
+    {
+      "source": "finding_claude_specific",
+      "target": "entity_claude_sonnet",
+      "type": "applies_to",
+      "confidence_score": 1.0,
+      "description": "Cost savings finding applies to Claude Sonnet"
+    },
+    {
+      "source": "finding_claude_specific",
+      "target": "entity_claude_opus",
+      "type": "applies_to",
+      "confidence_score": 1.0,
+      "description": "Cost savings finding applies to Claude Opus"
+    },
+    {
+      "source": "finding_claude_specific",
+      "target": "entity_gpt_5_4_mini",
+      "type": "contradicts",
+      "confidence_score": 1.0,
+      "description": "OpenAI reasoning models show opposite behavior: more expensive with Ponytail"
+    },
+    {
+      "source": "finding_safety_maintained",
+      "target": "metric_safety",
+      "type": "demonstrates",
+      "confidence_score": 1.0,
+      "description": "Safety maintained while achieving size reduction is key finding"
+    },
+    {
+      "source": "finding_code_size_collapse",
+      "target": "benchmark_agentic",
+      "type": "corrects",
+      "confidence_score": 1.0,
+      "description": "Fair agentic baseline shows smaller advantage than single-shot benchmark"
+    },
+    {
+      "source": "finding_code_size_collapse",
+      "target": "benchmark_single_shot",
+      "type": "critiques",
+      "confidence_score": 1.0,
+      "description": "Agentic benchmark shows single-shot baseline is inflated by conversational prose"
+    },
+    {
+      "source": "finding_no_over_engineering",
+      "target": "benchmark_agentic",
+      "type": "finding_from",
+      "confidence_score": 1.0,
+      "description": "Agentic benchmark found no arm over-engineers on well-scoped tasks"
+    },
+    {
+      "source": "finding_transfer_poor",
+      "target": "entity_llama3_2",
+      "type": "documents",
+      "confidence_score": 1.0,
+      "description": "Poor transfer finding specifically applies to small local models"
+    },
+    {
+      "source": "concept_ponytail",
+      "target": "platform_claude_code",
+      "type": "deployed_on",
+      "confidence_score": 1.0,
+      "description": "Ponytail's primary deployment platform"
+    },
+    {
+      "source": "concept_ponytail",
+      "target": "platform_cursor",
+      "type": "deployed_on",
+      "confidence_score": 1.0,
+      "description": "Ponytail rule file available for Cursor"
+    },
+    {
+      "source": "concept_ponytail",
+      "target": "platform_codex",
+      "type": "deployed_on",
+      "confidence_score": 1.0,
+      "description": "Ponytail available as Codex plugin"
+    },
+    {
+      "source": "doc_agents_md",
+      "target": "concept_ponytail",
+      "type": "documents",
+      "confidence_score": 1.0,
+      "description": "AGENTS.md contains main ruleset and is auto-loaded by multiple platforms"
+    },
+    {
+      "source": "doc_readme_md",
+      "target": "concept_ponytail",
+      "type": "documents",
+      "confidence_score": 1.0,
+      "description": "README.md is main documentation with installation, commands, benchmarks"
+    },
+    {
+      "source": "doc_benchmarks_readme",
+      "target": "benchmark_single_shot",
+      "type": "documents",
+      "confidence_score": 1.0,
+      "description": "benchmarks/README.md covers single-shot methodology and results"
+    },
+    {
+      "source": "doc_agentic_readme",
+      "target": "benchmark_agentic",
+      "type": "documents",
+      "confidence_score": 1.0,
+      "description": "benchmarks/agentic/README.md documents agentic benchmark methodology"
+    },
+    {
+      "source": "file_behavior_yaml",
+      "target": "concept_ponytail",
+      "type": "tests",
+      "confidence_score": 1.0,
+      "description": "Behavior gates test three key rules from field review"
+    },
+    {
+      "source": "report_caveman_vs_ponytail",
+      "target": "benchmark_single_shot",
+      "type": "reports_on",
+      "confidence_score": 1.0,
+      "description": "2026-06-12 report shows Ponytail v3 results against Caveman"
+    },
+    {
+      "source": "report_robustness_audit",
+      "target": "benchmark_robustness",
+      "type": "reports_on",
+      "confidence_score": 1.0,
+      "description": "2026-06-16 report shows edge-case testing results"
+    },
+    {
+      "source": "report_correctness_gate_fix",
+      "target": "benchmark_single_shot",
+      "type": "fixes",
+      "confidence_score": 1.0,
+      "description": "2026-06-16 report documents and fixes benchmark gate bugs"
+    },
+    {
+      "source": "report_agentic_safety",
+      "target": "report_cost_verification",
+      "type": "superseded_by",
+      "confidence_score": 1.0,
+      "description": "2026-06-17 agentic safety report was superseded by June 18 run with proper isolation"
+    },
+    {
+      "source": "report_cost_verification",
+      "target": "finding_claude_specific",
+      "type": "supports",
+      "confidence_score": 1.0,
+      "description": "Cost verification report demonstrates Claude-specific savings"
+    },
+    {
+      "source": "report_llama_local",
+      "target": "finding_transfer_poor",
+      "type": "demonstrates",
+      "confidence_score": 1.0,
+      "description": "Llama3.2 local run shows poor transfer to small models"
+    },
+    {
+      "source": "skill_ponytail_review",
+      "target": "concept_ponytail",
+      "type": "command_for",
+      "confidence_score": 1.0,
+      "description": "/ponytail-review is a command provided by Ponytail skill"
+    },
+    {
+      "source": "skill_ponytail_audit",
+      "target": "concept_ponytail",
+      "type": "command_for",
+      "confidence_score": 1.0,
+      "description": "/ponytail-audit is a command provided by Ponytail skill"
+    },
+    {
+      "source": "skill_ponytail_debt",
+      "target": "concept_ponytail",
+      "type": "command_for",
+      "confidence_score": 1.0,
+      "description": "/ponytail-debt is a command provided by Ponytail skill"
+    },
+    {
+      "source": "ponytail_framework",
+      "target": "decision_ladder",
+      "relationship": "implements",
+      "confidence_score": 1.0,
+      "evidence": "Ponytail is built on the decision ladder framework"
+    },
+    {
+      "source": "decision_ladder",
+      "target": "yagni_principle",
+      "relationship": "contains-rung",
+      "confidence_score": 1.0,
+      "evidence": "First rung of ladder is YAGNI"
+    },
+    {
+      "source": "decision_ladder",
+      "target": "stdlib_rung",
+      "relationship": "contains-rungs",
+      "confidence_score": 1.0,
+      "evidence": "Rungs 2-4 focus on stdlib, platform, and deps"
+    },
+    {
+      "source": "stdlib_rung",
+      "target": "platform_native_solutions",
+      "relationship": "references",
+      "confidence_score": 1.0,
+      "evidence": "platform-native.md provides concrete implementations for rung 4"
+    },
+    {
+      "source": "ponytail_framework",
+      "target": "skill_ponytail_core",
+      "relationship": "manifests-as",
+      "confidence_score": 1.0,
+      "evidence": "ponytail skill implements the core framework"
+    },
+    {
+      "source": "ponytail_framework",
+      "target": "skill_ponytail_review",
+      "relationship": "extends-with",
+      "confidence_score": 1.0,
+      "evidence": "ponytail-review applies framework to diffs"
+    },
+    {
+      "source": "ponytail_framework",
+      "target": "skill_ponytail_audit",
+      "relationship": "extends-with",
+      "confidence_score": 1.0,
+      "evidence": "ponytail-audit applies framework repo-wide"
+    },
+    {
+      "source": "ponytail_framework",
+      "target": "skill_ponytail_debt",
+      "relationship": "extends-with",
+      "confidence_score": 1.0,
+      "evidence": "ponytail-debt tracks deferred decisions marked in code"
+    },
+    {
+      "source": "ponytail_framework",
+      "target": "skill_ponytail_gain",
+      "relationship": "extends-with",
+      "confidence_score": 1.0,
+      "evidence": "ponytail-gain reports measured impact"
+    },
+    {
+      "source": "ponytail_framework",
+      "target": "skill_ponytail_help",
+      "relationship": "extends-with",
+      "confidence_score": 1.0,
+      "evidence": "ponytail-help provides user guidance"
+    },
+    {
+      "source": "agentic_benchmark_2026_06_18",
+      "target": "ponytail_framework",
+      "relationship": "validates",
+      "confidence_score": 1.0,
+      "evidence": "Benchmark measures ponytail effectiveness: −54% LOC on features, 100% safe"
+    },
+    {
+      "source": "agentic_benchmark_2026_06_18",
+      "target": "safety_validation",
+      "relationship": "measures",
+      "confidence_score": 1.0,
+      "evidence": "Safety axis: executes functions against adversarial input"
+    },
+    {
+      "source": "comprehension_benchmark_2026_06_22",
+      "target": "decision_ladder",
+      "relationship": "validates-enhancement",
+      "confidence_score": 1.0,
+      "evidence": "Validates rung 2 (codebase reuse) and root-cause fix directive"
+    },
+    {
+      "source": "ponytail_framework",
+      "target": "agent_portability",
+      "relationship": "enables",
+      "confidence_score": 1.0,
+      "evidence": "Portability adapters allow ponytail across 30+ hosts"
+    },
+    {
+      "source": "example_email_validation",
+      "target": "ponytail_framework",
+      "relationship": "demonstrates",
+      "confidence_score": 1.0,
+      "evidence": "Shows 75→3 line reduction using minimal pattern matching"
+    },
+    {
+      "source": "example_debounce",
+      "target": "ponytail_framework",
+      "relationship": "demonstrates",
+      "confidence_score": 1.0,
+      "evidence": "Shows 116→10 line reduction, no utility function needed"
+    },
+    {
+      "source": "example_csv_sum",
+      "target": "ponytail_framework",
+      "relationship": "demonstrates",
+      "confidence_score": 1.0,
+      "evidence": "Shows 20→3 lines by using csv stdlib instead of pandas"
+    },
+    {
+      "source": "example_countdown_timer",
+      "target": "ponytail_framework",
+      "relationship": "demonstrates",
+      "confidence_score": 1.0,
+      "evidence": "Shows 267→9 lines by removing unneeded features"
+    },
+    {
+      "source": "example_rate_limit",
+      "target": "ponytail_framework",
+      "relationship": "demonstrates",
+      "confidence_score": 1.0,
+      "evidence": "Shows 128→10 lines using just slowapi, no custom logic"
+    },
+    {
+      "source": "example_deep_clone",
+      "target": "stdlib_rung",
+      "relationship": "demonstrates",
+      "confidence_score": 1.0,
+      "evidence": "Shows structuredClone native API vs lodash dependency"
+    },
+    {
+      "source": "example_group_by",
+      "target": "stdlib_rung",
+      "relationship": "demonstrates",
+      "confidence_score": 1.0,
+      "evidence": "Shows Object.groupBy native API vs lodash dependency"
+    },
+    {
+      "source": "example_infinite_scroll",
+      "target": "stdlib_rung",
+      "relationship": "demonstrates",
+      "confidence_score": 1.0,
+      "evidence": "Shows IntersectionObserver native API vs react-infinite-scroll-component"
+    },
+    {
+      "source": "example_modal_dialog",
+      "target": "stdlib_rung",
+      "relationship": "demonstrates",
+      "confidence_score": 1.0,
+      "evidence": "Shows <dialog> native HTML element vs @radix-ui/react-dialog"
+    },
+    {
+      "source": "example_number_formatting",
+      "target": "stdlib_rung",
+      "relationship": "demonstrates",
+      "confidence_score": 1.0,
+      "evidence": "Shows Intl.NumberFormat native API vs numeral dependency"
+    },
+    {
+      "source": "example_url_params",
+      "target": "stdlib_rung",
+      "relationship": "demonstrates",
+      "confidence_score": 1.0,
+      "evidence": "Shows URLSearchParams native API vs query-string dependency"
+    },
+    {
+      "source": "ponytail_framework",
+      "target": "haiku_45_model",
+      "relationship": "tested-with",
+      "confidence_score": 1.0,
+      "evidence": "Haiku 4.5 used in agentic and comprehension benchmarks"
+    },
+    {
+      "source": "plugin_yaml_hermes",
+      "target": "ponytail_framework",
+      "relationship": "adapts-for",
+      "confidence_score": 1.0,
+      "evidence": "Hermes plugin manifest configures ponytail for Hermes Agent"
+    },
+    {
+      "source": "ponytail_mcp_server",
+      "target": "ponytail_framework",
+      "relationship": "ports-as",
+      "confidence_score": 1.0,
+      "evidence": "MCP server provides ponytail instructions as standalone interface"
+    },
+    {
+      "source": "agentic_benchmark_2026_06_18",
+      "target": "haiku_45_model",
+      "relationship": "uses-model",
+      "confidence_score": 1.0,
+      "evidence": "Benchmark run on Haiku 4.5 model"
+    },
+    {
+      "source": "ponytail_philosophy",
+      "target": "sentinel_agent_system",
+      "type": "guides_development",
+      "label": "ponytail guides Sentinel codebase development",
+      "confidence_score": 0.95
+    },
+    {
+      "source": "ponytail_review_skill",
+      "target": "ponytail_philosophy",
+      "type": "complements",
+      "label": "ponytail-review complements ponytail full approach",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "sentinel_agent_system",
+      "target": "single_core_labs",
+      "type": "product_of",
+      "label": "Sentinel is developed by Single Core Labs",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "sentinel_architecture",
+      "target": "sentinel_agent_system",
+      "type": "structures",
+      "label": "architecture organizes Sentinel implementation",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "sentinel_core_crate_system",
+      "target": "sentinel_architecture",
+      "type": "component_of",
+      "label": "core crates implement agent engine",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "sentinel_server_crate_system",
+      "target": "sentinel_architecture",
+      "type": "component_of",
+      "label": "server crates handle JSON-RPC daemon",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "sentinel_tools_exec_crate_system",
+      "target": "sentinel_architecture",
+      "type": "component_of",
+      "label": "tools-and-exec crates provide execution and tools",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "sentinel_platform_crate_system",
+      "target": "sentinel_architecture",
+      "type": "component_of",
+      "label": "platform crates provide infrastructure services",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "sentinel_frontend_packages",
+      "target": "sentinel_architecture",
+      "type": "component_of",
+      "label": "packages provide user interfaces",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "sentinel_pipeline_stages",
+      "target": "sentinel_agent_system",
+      "type": "feature_of",
+      "label": "5-stage pipeline is core Sentinel execution model",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "sentinel_approval_system",
+      "target": "sentinel_agent_system",
+      "type": "feature_of",
+      "label": "3-tier approval gates implement safety",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "sentinel_persistent_memory",
+      "target": "sentinel_agent_system",
+      "type": "feature_of",
+      "label": "persistent memory provides long-term context",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "sentinel_compression_headroom",
+      "target": "sentinel_agent_system",
+      "type": "feature_of",
+      "label": "Headroom compression optimizes context",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "sentinel_multi_provider",
+      "target": "sentinel_agent_system",
+      "type": "feature_of",
+      "label": "multi-provider support enables model flexibility",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "sentinel_app_server_protocol",
+      "target": "sentinel_agent_system",
+      "type": "enables",
+      "label": "JSON-RPC protocol enables app server communication",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "gpu_sandbox_feature",
+      "target": "sentinel_agent_system",
+      "type": "feature_of",
+      "label": "GPU sandbox provides isolated execution",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "gpu_profiler_system",
+      "target": "sentinel_agent_system",
+      "type": "feature_of",
+      "label": "GPU profiler enables hardware-aware optimization",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "rightnow_ai_inspiration",
+      "target": "gpu_profiler_system",
+      "type": "inspires",
+      "label": "RightNow AI inspires GPU profiler features",
+      "confidence_score": 0.85
+    },
+    {
+      "source": "sentinel_ci_cd_strategy",
+      "target": "sentinel_agent_system",
+      "type": "validates",
+      "label": "multi-language CI/CD tests Sentinel quality",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "gemini_cli_system",
+      "target": "sentinel_agent_system",
+      "type": "compared_to",
+      "label": "Sentinel compared to Gemini CLI",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "render_deployment_config",
+      "target": "single_core_labs_website",
+      "type": "configures",
+      "label": "Render config deploys website",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "single_core_labs_website",
+      "target": "single_core_labs",
+      "type": "web_presence_of",
+      "label": "website represents Single Core Labs online",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "setup_guide_documentation",
+      "target": "sentinel_agent_system",
+      "type": "documents",
+      "label": "setup guide enables Sentinel installation and configuration",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "sentinel_multi_provider",
+      "target": "setup_guide_documentation",
+      "type": "referenced_by",
+      "label": "setup guide lists all supported providers",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "architecture_doc",
+      "target": "feature_cost_aware_routing",
+      "relationship": "contains",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "architecture_doc",
+      "target": "feature_sandboxed_execution",
+      "relationship": "contains",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "architecture_doc",
+      "target": "feature_worktree_parallel",
+      "relationship": "contains",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "architecture_doc",
+      "target": "feature_diffs_first",
+      "relationship": "contains",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "architecture_doc",
+      "target": "feature_cost_transparency",
+      "relationship": "contains",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "architecture_doc",
+      "target": "feature_memory_file",
+      "relationship": "contains",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "crate_sentinel_core",
+      "target": "feature_cost_aware_routing",
+      "relationship": "implements",
+      "confidence_score": 0.95
+    },
+    {
+      "source": "crate_sentinel_core",
+      "target": "feature_sandboxed_execution",
+      "relationship": "implements",
+      "confidence_score": 0.95
+    },
+    {
+      "source": "crate_sentinel_core",
+      "target": "feature_memory_file",
+      "relationship": "implements",
+      "confidence_score": 0.95
+    },
+    {
+      "source": "gpu_emulator_doic",
+      "target": "emulator_pipeline",
+      "relationship": "describes",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "gpu_emulator_doic",
+      "target": "archspec_data_type",
+      "relationship": "defines",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "gpu_emulator_doic",
+      "target": "emulator_design_decisions",
+      "relationship": "documents",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "sweep_engine_doic",
+      "target": "sweep_dimensions",
+      "relationship": "specifies",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "sweep_engine_doic",
+      "target": "sweep_scoring_formula",
+      "relationship": "defines",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "sweep_engine_doic",
+      "target": "gpu_emulator_doic",
+      "relationship": "depends_on",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "crate_sentinel_gpu_profiler",
+      "target": "gpu_emulator_doic",
+      "relationship": "implements",
+      "confidence_score": 0.95
+    },
+    {
+      "source": "crate_sentinel_gpu_profiler",
+      "target": "sweep_engine_doic",
+      "relationship": "implements",
+      "confidence_score": 0.95
+    },
+    {
+      "source": "compressor_pipeline_doc",
+      "target": "compression_tier_tool_output",
+      "relationship": "describes",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "compressor_pipeline_doc",
+      "target": "compression_tier_conversation",
+      "relationship": "describes",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "compressor_pipeline_doc",
+      "target": "headroom_compressor_internals",
+      "relationship": "details",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "compressor_pipeline_doc",
+      "target": "memory_system_integration",
+      "relationship": "documents",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "compressor_pipeline_doc",
+      "target": "protocol_message_bridge",
+      "relationship": "specifies",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "crate_sentinel_headroom",
+      "target": "compressor_pipeline_doc",
+      "relationship": "implements",
+      "confidence_score": 0.95
+    },
+    {
+      "source": "crate_sentinel_cli",
+      "target": "feature_cost_transparency",
+      "relationship": "implements",
+      "confidence_score": 0.95
+    },
+    {
+      "source": "benchmark_chart_agentic",
+      "target": "architecture_doc",
+      "relationship": "measures",
+      "confidence_score": 0.85
+    },
+    {
+      "source": "desktop_app_icons",
+      "target": "crate_sentinel_core",
+      "relationship": "asset_for",
+      "confidence_score": 0.75
+    },
+    {
+      "source": "logo_dark_svg",
+      "target": "crate_sentinel_core",
+      "relationship": "asset_for",
+      "confidence_score": 0.75
+    },
+    {
+      "source": "favicon_svg",
+      "target": "sentinel_brand",
+      "relationship": "brand_asset",
+      "properties": {
+        "type": "visual_identity",
+        "role": "favicon_icon"
+      }
+    },
+    {
+      "source": "logo_icon_png",
+      "target": "sentinel_brand",
+      "relationship": "brand_asset",
+      "properties": {
+        "type": "visual_identity",
+        "role": "icon_variant"
+      }
+    },
+    {
+      "source": "logo_small_webp",
+      "target": "sentinel_brand",
+      "relationship": "brand_asset",
+      "properties": {
+        "type": "visual_identity",
+        "role": "compact_branding"
+      }
+    },
+    {
+      "source": "logo_webp",
+      "target": "sentinel_brand",
+      "relationship": "brand_asset",
+      "properties": {
+        "type": "visual_identity",
+        "role": "primary_logo"
+      }
+    },
+    {
+      "source": "aws_partner_logo",
+      "target": "cloud_integrations",
+      "relationship": "member_of",
+      "properties": {
+        "type": "cloud_platform",
+        "provider": "Amazon"
+      }
+    },
+    {
+      "source": "azure_partner_logo",
+      "target": "cloud_integrations",
+      "relationship": "member_of",
+      "properties": {
+        "type": "cloud_platform",
+        "provider": "Microsoft"
+      }
+    },
+    {
+      "source": "bedrock_partner_logo",
+      "target": "ai_integrations",
+      "relationship": "member_of",
+      "properties": {
+        "type": "foundation_model_service",
+        "provider": "Amazon Web Services"
+      }
+    },
+    {
+      "source": "claude_partner_logo",
+      "target": "ai_integrations",
+      "relationship": "member_of",
+      "properties": {
+        "type": "language_model",
+        "provider": "Anthropic"
+      }
+    },
+    {
+      "source": "openai_partner_logo",
+      "target": "ai_integrations",
+      "relationship": "member_of",
+      "properties": {
+        "type": "language_model",
+        "provider": "OpenAI"
+      }
+    },
+    {
+      "source": "agentic_ai_png",
+      "target": "gpu_server_assets",
+      "relationship": "member_of",
+      "properties": {
+        "type": "marketing_asset",
+        "theme": "agentic_ai"
+      }
+    },
+    {
+      "source": "ai_workload_png",
+      "target": "gpu_server_assets",
+      "relationship": "member_of",
+      "properties": {
+        "type": "marketing_asset",
+        "theme": "workload_management"
+      }
+    },
+    {
+      "source": "defense_server_png",
+      "target": "gpu_server_assets",
+      "relationship": "member_of",
+      "properties": {
+        "type": "marketing_asset",
+        "theme": "infrastructure"
+      }
+    },
+    {
+      "source": "sentinel_brand",
+      "target": "ai_integrations",
+      "relationship": "integrates_with",
+      "properties": {
+        "type": "platform_capability",
+        "capability": "ai_model_support"
+      }
+    },
+    {
+      "source": "sentinel_brand",
+      "target": "cloud_integrations",
+      "relationship": "integrates_with",
+      "properties": {
+        "type": "platform_capability",
+        "capability": "cloud_infrastructure"
+      }
+    },
+    {
+      "source": "icons_svg",
+      "target": "sentinel_brand",
+      "relationship": "brand_asset",
+      "properties": {
+        "type": "ui_component",
+        "role": "navigation_social"
+      }
+    },
+    {
+      "source": "bedrock_partner_logo",
+      "target": "aws_partner_logo",
+      "relationship": "component_of",
+      "properties": {
+        "type": "service_hierarchy",
+        "parent": "Amazon Web Services"
+      }
+    },
+    {
+      "source": "gpu_server_infrastructure",
+      "target": "server_room_deployment",
+      "relationship": "deployed_in",
+      "confidence_score": 1.0,
+      "type": "EXTRACTED"
+    },
+    {
+      "source": "gpu_server_infrastructure",
+      "target": "nvidia_dsx_system",
+      "relationship": "uses",
+      "confidence_score": 0.95,
+      "type": "EXTRACTED"
+    },
+    {
+      "source": "server_room_deployment",
+      "target": "networking_infrastructure",
+      "relationship": "contains",
+      "confidence_score": 1.0,
+      "type": "EXTRACTED"
+    },
+    {
+      "source": "server_room_deployment",
+      "target": "power_distribution",
+      "relationship": "contains",
+      "confidence_score": 1.0,
+      "type": "EXTRACTED"
+    },
+    {
+      "source": "gpu_server_infrastructure",
+      "target": "monitoring_system",
+      "relationship": "monitored_by",
+      "confidence_score": 0.95,
+      "type": "EXTRACTED"
+    },
+    {
+      "source": "web_tech_stack",
+      "target": "react_framework",
+      "relationship": "includes",
+      "confidence_score": 1.0,
+      "type": "EXTRACTED"
+    },
+    {
+      "source": "web_tech_stack",
+      "target": "vite_build_tool",
+      "relationship": "includes",
+      "confidence_score": 1.0,
+      "type": "EXTRACTED"
+    },
+    {
+      "source": "deployment_scenario",
+      "target": "gpu_server_infrastructure",
+      "relationship": "utilizes",
+      "confidence_score": 0.85,
+      "type": "INFERRED"
+    }
+  ],
+  "hyperedges": [],
+  "input_tokens": 86507,
+  "output_tokens": 0
+}

@@ -1,0 +1,455 @@
+{
+  "nodes": [
+    {
+      "id": "favicon_svg",
+      "label": "Favicon SVG",
+      "type": "image",
+      "file_type": "image",
+      "description": "Brand favicon with purple/violet geometric pattern",
+      "properties": {
+        "file_path": "public/favicon.svg",
+        "color": "#863bff",
+        "style": "geometric, angular",
+        "usage": "browser_tab_icon",
+        "dimensions": "48x46"
+      },
+      "confidence_score": 1.0,
+      "extraction_status": "EXTRACTED"
+    },
+    {
+      "id": "icons_svg",
+      "label": "Icons SVG",
+      "type": "image",
+      "file_type": "image",
+      "description": "Collection of social media and documentation icons",
+      "properties": {
+        "file_path": "public/icons.svg",
+        "included_icons": ["bluesky", "discord", "github", "x_twitter", "social", "documentation"],
+        "usage": "social_links, navigation",
+        "colors": ["#08060d", "#aa3bff", "#47bfff"]
+      },
+      "confidence_score": 1.0,
+      "extraction_status": "EXTRACTED"
+    },
+    {
+      "id": "oracle_logo_svg",
+      "label": "Oracle Logo SVG",
+      "type": "brand",
+      "file_type": "image",
+      "description": "Oracle database enterprise software brand logo",
+      "properties": {
+        "file_path": "public/oracle-logo.svg",
+        "brand": "Oracle",
+        "category": "enterprise_database",
+        "integration_type": "partner"
+      },
+      "confidence_score": 1.0,
+      "extraction_status": "EXTRACTED"
+    },
+    {
+      "id": "image_png",
+      "label": "Complexity to Clarity Image",
+      "type": "marketing",
+      "file_type": "image",
+      "description": "Marketing image showing genomic/biological data platform for healthcare",
+      "properties": {
+        "file_path": "public/image.png",
+        "headline": "From complexity to clarity",
+        "tagline": "Biological data is complex, but decisions shouldn't be",
+        "organization": "DNA Consulting",
+        "use_case": "genomic_insights, healthcare, life_science"
+      },
+      "confidence_score": 1.0,
+      "extraction_status": "EXTRACTED"
+    },
+    {
+      "id": "logo_icon_png",
+      "label": "Logo Icon PNG",
+      "type": "brand",
+      "file_type": "image",
+      "description": "Sentinel brand monochromatic icon logo",
+      "properties": {
+        "file_path": "public/logo-icon.png",
+        "brand": "Sentinel",
+        "format": "png",
+        "color_scheme": "black_white",
+        "usage": "icon_variant"
+      },
+      "confidence_score": 1.0,
+      "extraction_status": "EXTRACTED"
+    },
+    {
+      "id": "logo_small_webp",
+      "label": "Logo Small WebP",
+      "type": "brand",
+      "file_type": "image",
+      "description": "Sentinel brand logo in small format",
+      "properties": {
+        "file_path": "public/logo-small.webp",
+        "brand": "Sentinel",
+        "format": "webp",
+        "size_variant": "small",
+        "usage": "compact_display"
+      },
+      "confidence_score": 1.0,
+      "extraction_status": "EXTRACTED"
+    },
+    {
+      "id": "logo_webp",
+      "label": "Logo WebP",
+      "type": "brand",
+      "file_type": "image",
+      "description": "Sentinel brand full logo",
+      "properties": {
+        "file_path": "public/logo.webp",
+        "brand": "Sentinel",
+        "format": "webp",
+        "size_variant": "full",
+        "usage": "primary_branding"
+      },
+      "confidence_score": 1.0,
+      "extraction_status": "EXTRACTED"
+    },
+    {
+      "id": "manav_jpg",
+      "label": "Manav Profile Photo",
+      "type": "profile",
+      "file_type": "image",
+      "description": "Person headshot/team member profile photo",
+      "properties": {
+        "file_path": "public/manav.jpg",
+        "format": "jpg",
+        "content_type": "portrait_photo",
+        "usage": "team_profile"
+      },
+      "confidence_score": 0.95,
+      "extraction_status": "INFERRED"
+    },
+    {
+      "id": "aws_partner_logo",
+      "label": "AWS Partner Logo",
+      "type": "integration",
+      "file_type": "image",
+      "description": "Amazon Web Services integration partner logo",
+      "properties": {
+        "file_path": "public/partners/aws.png",
+        "brand": "Amazon Web Services",
+        "category": "cloud_platform",
+        "color": "orange_yellow",
+        "integration": "cloud_services"
+      },
+      "confidence_score": 1.0,
+      "extraction_status": "EXTRACTED"
+    },
+    {
+      "id": "azure_partner_logo",
+      "label": "Azure Partner Logo",
+      "type": "integration",
+      "file_type": "image",
+      "description": "Microsoft Azure integration partner logo",
+      "properties": {
+        "file_path": "public/partners/azure.png",
+        "brand": "Microsoft Azure",
+        "category": "cloud_platform",
+        "color": "blue",
+        "integration": "cloud_services"
+      },
+      "confidence_score": 1.0,
+      "extraction_status": "EXTRACTED"
+    },
+    {
+      "id": "bedrock_partner_logo",
+      "label": "Bedrock Partner Logo",
+      "type": "integration",
+      "file_type": "image",
+      "description": "AWS Bedrock foundation model service integration logo",
+      "properties": {
+        "file_path": "public/partners/bedrock.png",
+        "brand": "AWS Bedrock",
+        "category": "foundation_models",
+        "color": "light_blue",
+        "integration": "ai_models"
+      },
+      "confidence_score": 1.0,
+      "extraction_status": "EXTRACTED"
+    },
+    {
+      "id": "claude_partner_logo",
+      "label": "Claude Partner Logo",
+      "type": "integration",
+      "file_type": "image",
+      "description": "Anthropic Claude AI model integration logo",
+      "properties": {
+        "file_path": "public/partners/claude.png",
+        "brand": "Anthropic Claude",
+        "category": "language_model",
+        "color": "coral_orange",
+        "integration": "ai_models"
+      },
+      "confidence_score": 1.0,
+      "extraction_status": "EXTRACTED"
+    },
+    {
+      "id": "openai_partner_logo",
+      "label": "OpenAI Partner Logo",
+      "type": "integration",
+      "file_type": "image",
+      "description": "OpenAI integration partner logo",
+      "properties": {
+        "file_path": "public/partners/openai.png",
+        "brand": "OpenAI",
+        "category": "language_model",
+        "color": "black",
+        "integration": "ai_models"
+      },
+      "confidence_score": 1.0,
+      "extraction_status": "EXTRACTED"
+    },
+    {
+      "id": "agentic_ai_png",
+      "label": "Agentic AI Illustration",
+      "type": "asset",
+      "file_type": "image",
+      "description": "Illustration of conversational AI chatbot on mobile device",
+      "properties": {
+        "file_path": "src/assets/gpu-server/agentic-ai.png",
+        "theme": "conversational_ai, mobile_first",
+        "color_palette": "turquoise_teal",
+        "elements": ["chatbot", "mobile_device", "ai_brain", "conversation_bubbles"],
+        "use_case": "agentic_ai_workloads"
+      },
+      "confidence_score": 1.0,
+      "extraction_status": "EXTRACTED"
+    },
+    {
+      "id": "ai_workload_png",
+      "label": "AI Workload Photo",
+      "type": "asset",
+      "file_type": "image",
+      "description": "Photograph of stacked documents representing data/workload",
+      "properties": {
+        "file_path": "src/assets/gpu-server/ai-workload.png",
+        "theme": "data_organization, workload_management",
+        "elements": ["documents", "papers", "bookmarks"],
+        "use_case": "ai_workload_representation"
+      },
+      "confidence_score": 0.85,
+      "extraction_status": "INFERRED"
+    },
+    {
+      "id": "defense_server_png",
+      "label": "Defense Server Photo",
+      "type": "asset",
+      "file_type": "image",
+      "description": "Photograph of computer server hardware and circuitry",
+      "properties": {
+        "file_path": "src/assets/gpu-server/defense-server.png",
+        "theme": "infrastructure, security, hardware",
+        "elements": ["circuit_boards", "hardware_components", "server_equipment"],
+        "use_case": "defense_infrastructure"
+      },
+      "confidence_score": 1.0,
+      "extraction_status": "EXTRACTED"
+    },
+    {
+      "id": "sentinel_brand",
+      "label": "Sentinel Brand",
+      "type": "concept",
+      "file_type": "concept",
+      "description": "Primary brand identity for Sentinel platform",
+      "properties": {
+        "organization": "Single Core Labs",
+        "primary_color": "#863bff",
+        "brand_variants": ["icon", "full_logo", "small_logo"],
+        "platforms": "web, mobile, cloud"
+      },
+      "confidence_score": 1.0,
+      "extraction_status": "EXTRACTED"
+    },
+    {
+      "id": "ai_integrations",
+      "label": "AI Model Integrations",
+      "type": "concept",
+      "file_type": "concept",
+      "description": "Collection of integrated AI/LLM platforms",
+      "properties": {
+        "models": ["Claude", "OpenAI", "Bedrock"],
+        "purpose": "foundation_models, language_models, AI_capabilities"
+      },
+      "confidence_score": 1.0,
+      "extraction_status": "EXTRACTED"
+    },
+    {
+      "id": "cloud_integrations",
+      "label": "Cloud Platform Integrations",
+      "type": "concept",
+      "file_type": "concept",
+      "description": "Collection of integrated cloud platforms",
+      "properties": {
+        "platforms": ["AWS", "Azure", "Oracle"],
+        "purpose": "cloud_infrastructure, database, computing"
+      },
+      "confidence_score": 1.0,
+      "extraction_status": "EXTRACTED"
+    },
+    {
+      "id": "gpu_server_assets",
+      "label": "GPU Server Marketing Assets",
+      "type": "concept",
+      "file_type": "concept",
+      "description": "Collection of assets depicting GPU server capabilities",
+      "properties": {
+        "themes": ["agentic_ai", "workload_management", "security_infrastructure"],
+        "use_case": "marketing, product_positioning"
+      },
+      "confidence_score": 0.95,
+      "extraction_status": "INFERRED"
+    }
+  ],
+  "edges": [
+    {
+      "source": "favicon_svg",
+      "target": "sentinel_brand",
+      "relationship": "brand_asset",
+      "properties": {
+        "type": "visual_identity",
+        "role": "favicon_icon"
+      }
+    },
+    {
+      "source": "logo_icon_png",
+      "target": "sentinel_brand",
+      "relationship": "brand_asset",
+      "properties": {
+        "type": "visual_identity",
+        "role": "icon_variant"
+      }
+    },
+    {
+      "source": "logo_small_webp",
+      "target": "sentinel_brand",
+      "relationship": "brand_asset",
+      "properties": {
+        "type": "visual_identity",
+        "role": "compact_branding"
+      }
+    },
+    {
+      "source": "logo_webp",
+      "target": "sentinel_brand",
+      "relationship": "brand_asset",
+      "properties": {
+        "type": "visual_identity",
+        "role": "primary_logo"
+      }
+    },
+    {
+      "source": "aws_partner_logo",
+      "target": "cloud_integrations",
+      "relationship": "member_of",
+      "properties": {
+        "type": "cloud_platform",
+        "provider": "Amazon"
+      }
+    },
+    {
+      "source": "azure_partner_logo",
+      "target": "cloud_integrations",
+      "relationship": "member_of",
+      "properties": {
+        "type": "cloud_platform",
+        "provider": "Microsoft"
+      }
+    },
+    {
+      "source": "bedrock_partner_logo",
+      "target": "ai_integrations",
+      "relationship": "member_of",
+      "properties": {
+        "type": "foundation_model_service",
+        "provider": "Amazon Web Services"
+      }
+    },
+    {
+      "source": "claude_partner_logo",
+      "target": "ai_integrations",
+      "relationship": "member_of",
+      "properties": {
+        "type": "language_model",
+        "provider": "Anthropic"
+      }
+    },
+    {
+      "source": "openai_partner_logo",
+      "target": "ai_integrations",
+      "relationship": "member_of",
+      "properties": {
+        "type": "language_model",
+        "provider": "OpenAI"
+      }
+    },
+    {
+      "source": "agentic_ai_png",
+      "target": "gpu_server_assets",
+      "relationship": "member_of",
+      "properties": {
+        "type": "marketing_asset",
+        "theme": "agentic_ai"
+      }
+    },
+    {
+      "source": "ai_workload_png",
+      "target": "gpu_server_assets",
+      "relationship": "member_of",
+      "properties": {
+        "type": "marketing_asset",
+        "theme": "workload_management"
+      }
+    },
+    {
+      "source": "defense_server_png",
+      "target": "gpu_server_assets",
+      "relationship": "member_of",
+      "properties": {
+        "type": "marketing_asset",
+        "theme": "infrastructure"
+      }
+    },
+    {
+      "source": "sentinel_brand",
+      "target": "ai_integrations",
+      "relationship": "integrates_with",
+      "properties": {
+        "type": "platform_capability",
+        "capability": "ai_model_support"
+      }
+    },
+    {
+      "source": "sentinel_brand",
+      "target": "cloud_integrations",
+      "relationship": "integrates_with",
+      "properties": {
+        "type": "platform_capability",
+        "capability": "cloud_infrastructure"
+      }
+    },
+    {
+      "source": "icons_svg",
+      "target": "sentinel_brand",
+      "relationship": "brand_asset",
+      "properties": {
+        "type": "ui_component",
+        "role": "navigation_social"
+      }
+    },
+    {
+      "source": "bedrock_partner_logo",
+      "target": "aws_partner_logo",
+      "relationship": "component_of",
+      "properties": {
+        "type": "service_hierarchy",
+        "parent": "Amazon Web Services"
+      }
+    }
+  ]
+}

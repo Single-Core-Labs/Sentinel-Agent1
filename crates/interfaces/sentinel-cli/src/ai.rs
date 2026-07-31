@@ -120,6 +120,7 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
 
     let mut resume_id: Option<String> = None;
     let mut model_id = config.agent.default_model.clone();
+    let mut model_explicit = false;
     let mut yolo_mode = config.agent.yolo_mode;
     let mut prompt_arg: Option<String> = None;
     let mut hook_command: Option<String> = None;
@@ -133,12 +134,14 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
                 "--model" => {
                     if let Some(m) = iter.next() {
                         model_id = m.clone();
+                        model_explicit = true;
                     }
                 }
                 "--prompt" => prompt_arg = iter.next().cloned(),
                 "--hook-command" => hook_command = iter.next().cloned(),
                 "-h" | "--help" => {
                     println!("Usage: sentinel ai [model-id] [--resume <session-id> | --new] [--yolo] [--model <id>] [--prompt <text>] [--hook-command <cmd>]");
+                    println!("  [model-id]        Set model (positional, or use --model)");
                     println!("  --resume <id>     Continue a previously saved session");
                     println!("  --new             Start a fresh session (ignores --resume)");
                     println!("  --yolo            Auto-approve tool actions");
@@ -148,31 +151,63 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
                     return Ok(());
                 }
                 _ if arg.starts_with('-') => {}
-                _ => model_id = arg.clone(),
+                _ => {
+                    if !model_explicit {
+                        model_id = arg.clone();
+                    } else {
+                        prompt_arg = Some(arg.clone());
+                    }
+                }
             }
         }
     }
 
-    let provider_info = config.providers()
-        .iter()
-        .find(|p| p.models.iter().any(|m| m.id == model_id))
-        .or_else(|| config.providers().first())
-        .cloned();
+    let provider_info = if let Some(p) = config.providers().iter().find(|p| p.models.iter().any(|m| m.id == model_id)) {
+        Some(p.clone())
+    } else {
+        if let Some(provider_type) = detect_provider_from_prefix(&model_id) {
+            let env_var_name = provider_env_var(provider_type);
+            let env_var_set = std::env::var(env_var_name).is_ok();
+            if env_var_set {
+                Some(create_env_provider_info(provider_type))
+            } else {
+                if let Some(p) = config.providers().first() {
+                    Some(p.clone())
+                } else {
+                    None
+                }
+            }
+        } else {
+            if let Some(p) = config.providers().first() {
+                Some(p.clone())
+            } else {
+                None
+            }
+        }
+    };
 
     let provider = match provider_info {
         Some(ref p) => {
             match sentinel_provider::ProviderKind::from_info(p.clone()) {
                 Ok(provider) => Arc::new(provider),
                 Err(e) => {
-                    eprintln!("✖ Provider '{}' needs setup: {}", p.name, e);
-                    eprintln!("   → Run: sentinel auth login");
+                    if let Some(env_hint) = provider_env_hint(&model_id) {
+                        eprintln!("✖ Model '{}' needs {}", model_id, env_hint);
+                    } else {
+                        eprintln!("✖ Provider '{}' needs setup: {}", p.name, e);
+                        eprintln!("   → Run: sentinel auth login");
+                    }
                     return Ok(());
                 }
             }
         }
         None => {
-            eprintln!("✖ No provider configured for model '{}'.", model_id);
-            eprintln!("   → Add a [[providers]] section to sentinel.toml, or run: sentinel auth login");
+            if let Some(env_hint) = provider_env_hint(&model_id) {
+                eprintln!("✖ Model '{}' needs {}", model_id, env_hint);
+            } else {
+                eprintln!("✖ No provider configured for model '{}'.", model_id);
+                eprintln!("   → Add a [[providers]] section to sentinel.toml, or run: sentinel auth login");
+            }
             return Ok(());
         }
     };
@@ -242,11 +277,23 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
 
     print_banner();
     println!(" Model:  {}", model_id.green().bold());
+
+    let mut available_count = 0;
+    if std::env::var("ANTHROPIC_API_KEY").is_ok() { available_count += 1; }
+    if std::env::var("OPENAI_API_KEY").is_ok() { available_count += 1; }
+    if std::env::var("GOOGLE_AI_STUDIO_API_KEY").is_ok() { available_count += 1; }
+    if std::env::var("DEEPSEEK_API_KEY").is_ok() { available_count += 1; }
+    if std::env::var("LOCAL_LLM_BASE_URL").is_ok() { available_count += 1; }
+
+    if available_count > 1 {
+        println!(" {}", format!("{} other providers available", available_count - 1).dimmed());
+    }
+
     println!(" Yolo:   {}", if yolo_mode { "yes".green() } else { "no".yellow() });
     print_divider();
     println!(" Session: {}", thread.id.to_string().green().bold());
     println!(" {} Resume later with: sentinel ai --resume {}", "→".cyan().bold(), thread.id.to_string().dimmed());
-    println!("{}", "Type your message or /help for commands.".dimmed());
+    println!("{}", "Type /help for commands or /model to see available models.".dimmed());
 
     let approval: Box<dyn sentinel_core::ApprovalGate> = if yolo_mode {
         Box::new(sentinel_core::AutoApprovalGate)
@@ -383,9 +430,41 @@ async fn handle_slash_command(cmd: &str) {
         }
         "/models" | "/model" => {
             println!();
-            println!(" {} Use a model by passing it as an argument:", "●".cyan().bold());
-            println!("       sentinel ai <model-id>");
-            println!("  Or set it in sentinel.toml → agent.default_model");
+            println!(" {} Available models:", "●".cyan().bold());
+
+            let mut models = vec![];
+            if std::env::var("ANTHROPIC_API_KEY").is_ok() {
+                models.push(("Claude (Anthropic)", vec!["claude-opus-5", "claude-sonnet-5", "claude-haiku-4.5"]));
+            }
+            if std::env::var("OPENAI_API_KEY").is_ok() {
+                models.push(("OpenAI", vec!["gpt-4o", "gpt-4-turbo", "gpt-4"]));
+            }
+            if std::env::var("GOOGLE_AI_STUDIO_API_KEY").is_ok() {
+                models.push(("Google Gemini", vec!["gemini-2.0-flash", "gemini-1.5-pro", "gemini-1.5-flash"]));
+            }
+            if std::env::var("DEEPSEEK_API_KEY").is_ok() {
+                models.push(("DeepSeek", vec!["deepseek-chat", "deepseek-coder"]));
+            }
+            if std::env::var("LOCAL_LLM_BASE_URL").is_ok() {
+                models.push(("Local (Ollama/vLLM)", vec!["ollama/llama2", "vllm/your-model", "llamacpp/model"]));
+            }
+
+            if models.is_empty() {
+                println!("   {} No API keys set. Add one to .env:", "✖".red().bold());
+                println!("   ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_AI_STUDIO_API_KEY, DEEPSEEK_API_KEY, or LOCAL_LLM_BASE_URL");
+            } else {
+                for (provider, model_list) in models {
+                    println!("   {}", provider.cyan());
+                    for model in model_list {
+                        println!("      {} {}", "•".green(), model);
+                    }
+                }
+            }
+
+            println!();
+            println!(" {} To switch models:", "⚡".yellow());
+            println!("   Restart with: sentinel ai --model <model-id> --prompt \"your prompt\"");
+            println!("   Or set default: edit .sentinel.toml → [agent] default_model = \"model-id\"");
             println!();
         }
         "/clear" => {
@@ -397,6 +476,168 @@ async fn handle_slash_command(cmd: &str) {
             println!(" {} Unknown command: {}", "✖".red().bold(), cmd);
             println!("   Type /help for available commands.");
         }
+    }
+}
+
+fn detect_provider_from_prefix(model_id: &str) -> Option<&'static str> {
+    if model_id.starts_with("claude-") || model_id.starts_with("claude_") {
+        Some("anthropic")
+    } else if model_id.starts_with("gpt-") || model_id.starts_with("o-") || model_id.starts_with("o1") {
+        Some("openai")
+    } else if model_id.starts_with("gemini-") || model_id.starts_with("gemini_") {
+        Some("google")
+    } else if model_id.starts_with("deepseek-") {
+        Some("deepseek")
+    } else if model_id.starts_with("ollama/") || model_id.starts_with("vllm/") || model_id.starts_with("llamacpp/") || model_id.starts_with("lm_studio/") {
+        Some("local")
+    } else {
+        None
+    }
+}
+
+fn provider_env_var(provider_type: &str) -> &'static str {
+    match provider_type {
+        "anthropic" => "ANTHROPIC_API_KEY",
+        "openai" => "OPENAI_API_KEY",
+        "google" => "GOOGLE_AI_STUDIO_API_KEY",
+        "deepseek" => "DEEPSEEK_API_KEY",
+        "local" => "LOCAL_LLM_BASE_URL",
+        _ => "",
+    }
+}
+
+fn provider_env_hint(model_id: &str) -> Option<String> {
+    if let Some(provider_type) = detect_provider_from_prefix(model_id) {
+        let env_var = provider_env_var(provider_type);
+        Some(format!("env var: {}", env_var))
+    } else {
+        None
+    }
+}
+
+fn create_env_provider_info(provider_type: &str) -> sentinel_provider_info::ProviderInfo {
+    use sentinel_provider_info::AuthConfig;
+    use std::collections::HashMap;
+
+    match provider_type {
+        "anthropic" => sentinel_provider_info::ProviderInfo {
+            id: "anthropic".to_string(),
+            name: "Anthropic (Claude)".to_string(),
+            base_url: "https://api.anthropic.com".to_string(),
+            auth: AuthConfig::EnvKey { var: "ANTHROPIC_API_KEY".to_string() },
+            models: vec![],
+            timeout_secs: 120,
+            extra_headers: HashMap::new(),
+        },
+        "openai" => sentinel_provider_info::ProviderInfo {
+            id: "openai".to_string(),
+            name: "OpenAI".to_string(),
+            base_url: "https://api.openai.com".to_string(),
+            auth: AuthConfig::EnvKey { var: "OPENAI_API_KEY".to_string() },
+            models: vec![],
+            timeout_secs: 120,
+            extra_headers: HashMap::new(),
+        },
+        "google" => sentinel_provider_info::ProviderInfo {
+            id: "google".to_string(),
+            name: "Google AI Studio".to_string(),
+            base_url: "https://generativelanguage.googleapis.com".to_string(),
+            auth: AuthConfig::EnvKey { var: "GOOGLE_AI_STUDIO_API_KEY".to_string() },
+            models: vec![],
+            timeout_secs: 120,
+            extra_headers: HashMap::new(),
+        },
+        "deepseek" => sentinel_provider_info::ProviderInfo {
+            id: "deepseek".to_string(),
+            name: "DeepSeek".to_string(),
+            base_url: "https://api.deepseek.com".to_string(),
+            auth: AuthConfig::EnvKey { var: "DEEPSEEK_API_KEY".to_string() },
+            models: vec![],
+            timeout_secs: 120,
+            extra_headers: HashMap::new(),
+        },
+        "local" => sentinel_provider_info::ProviderInfo {
+            id: "local".to_string(),
+            name: "Local LLM".to_string(),
+            base_url: std::env::var("LOCAL_LLM_BASE_URL").unwrap_or_else(|_| "http://localhost:11434".to_string()),
+            auth: AuthConfig::None,
+            models: vec![],
+            timeout_secs: 120,
+            extra_headers: HashMap::new(),
+        },
+        _ => sentinel_provider_info::ProviderInfo {
+            id: "unknown".to_string(),
+            name: "Unknown".to_string(),
+            base_url: "".to_string(),
+            auth: AuthConfig::None,
+            models: vec![],
+            timeout_secs: 120,
+            extra_headers: HashMap::new(),
+        },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_detect_provider_from_prefix() {
+        assert_eq!(detect_provider_from_prefix("claude-opus-5"), Some("anthropic"));
+        assert_eq!(detect_provider_from_prefix("claude-sonnet"), Some("anthropic"));
+
+        assert_eq!(detect_provider_from_prefix("gpt-4o"), Some("openai"));
+        assert_eq!(detect_provider_from_prefix("gpt-4-turbo"), Some("openai"));
+        assert_eq!(detect_provider_from_prefix("o-1"), Some("openai"));
+        assert_eq!(detect_provider_from_prefix("o1-preview"), Some("openai"));
+
+        assert_eq!(detect_provider_from_prefix("gemini-2.0-flash"), Some("google"));
+        assert_eq!(detect_provider_from_prefix("gemini-1.5-pro"), Some("google"));
+
+        assert_eq!(detect_provider_from_prefix("deepseek-chat"), Some("deepseek"));
+        assert_eq!(detect_provider_from_prefix("deepseek-coder"), Some("deepseek"));
+
+        assert_eq!(detect_provider_from_prefix("ollama/llama2"), Some("local"));
+        assert_eq!(detect_provider_from_prefix("vllm/meta-llama"), Some("local"));
+        assert_eq!(detect_provider_from_prefix("llamacpp/model"), Some("local"));
+
+        assert_eq!(detect_provider_from_prefix("unknown-model"), None);
+    }
+
+    #[test]
+    fn test_provider_env_var_mapping() {
+        assert_eq!(provider_env_var("anthropic"), "ANTHROPIC_API_KEY");
+        assert_eq!(provider_env_var("openai"), "OPENAI_API_KEY");
+        assert_eq!(provider_env_var("google"), "GOOGLE_AI_STUDIO_API_KEY");
+        assert_eq!(provider_env_var("deepseek"), "DEEPSEEK_API_KEY");
+        assert_eq!(provider_env_var("local"), "LOCAL_LLM_BASE_URL");
+    }
+
+    #[test]
+    fn test_provider_env_hint() {
+        let hint = provider_env_hint("gemini-2.0-flash").unwrap();
+        assert!(hint.contains("GOOGLE_AI_STUDIO_API_KEY"));
+
+        let hint = provider_env_hint("gpt-4o").unwrap();
+        assert!(hint.contains("OPENAI_API_KEY"));
+
+        assert_eq!(provider_env_hint("unknown-model"), None);
+    }
+
+    #[test]
+    fn test_create_env_provider_info_google() {
+        let provider = create_env_provider_info("google");
+        assert_eq!(provider.id, "google");
+        assert_eq!(provider.name, "Google AI Studio");
+        assert!(provider.base_url.contains("generativelanguage"));
+    }
+
+    #[test]
+    fn test_create_env_provider_info_openai() {
+        let provider = create_env_provider_info("openai");
+        assert_eq!(provider.id, "openai");
+        assert_eq!(provider.name, "OpenAI");
+        assert!(provider.base_url.contains("openai.com"));
     }
 }
 

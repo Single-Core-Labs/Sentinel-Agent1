@@ -1,0 +1,371 @@
+{
+  "nodes": [
+    {
+      "id": "sentinel_headroom_work_summary_compression_pipeline",
+      "label": "sentinel-headroom compression pipeline",
+      "type": "system",
+      "file_type": "rationale",
+      "description": "Multi-stage message compression pipeline that reduces LLM context window usage via alignment, content-type routing, intelligent dropping, cache optimization, and CCR system",
+      "source": "sentinel-headroom/WORK_SUMMARY.md"
+    },
+    {
+      "id": "sentinel_headroom_work_summary_cache_aligner",
+      "label": "CacheAligner",
+      "type": "component",
+      "file_type": "code",
+      "description": "Extracts dates, paths, UUIDs, versions; replaces with placeholders; delta tracking across calls",
+      "source": "sentinel-headroom/WORK_SUMMARY.md"
+    },
+    {
+      "id": "sentinel_headroom_work_summary_content_router",
+      "label": "ContentRouter",
+      "type": "component",
+      "file_type": "code",
+      "description": "Classifies by content type (code/json/log/html/image/diff/search/text); routes to type-specific compression strategy",
+      "source": "sentinel-headroom/WORK_SUMMARY.md"
+    },
+    {
+      "id": "sentinel_headroom_work_summary_cache_optimizer",
+      "label": "CacheOptimizer",
+      "type": "component",
+      "file_type": "code",
+      "description": "Inserts provider-specific cache markers: Anthropic cache_control breakpoints, OpenAI prefix tokens, Google CachedContent eligibility",
+      "source": "sentinel-headroom/WORK_SUMMARY.md"
+    },
+    {
+      "id": "sentinel_headroom_work_summary_intelligent_context",
+      "label": "IntelligentContext",
+      "type": "component",
+      "file_type": "code",
+      "description": "Scores messages by recency, error weight, tool dependencies; drops lowest-scored when over token budget",
+      "source": "sentinel-headroom/WORK_SUMMARY.md"
+    },
+    {
+      "id": "sentinel_headroom_work_summary_ccr_store",
+      "label": "CCR (Compress-Cache-Retrieve)",
+      "type": "component",
+      "file_type": "code",
+      "description": "LRU-evicting store with TTL expiry and BM25 search within cached entries; generates retrieval markers",
+      "source": "sentinel-headroom/WORK_SUMMARY.md"
+    },
+    {
+      "id": "sentinel_headroom_work_summary_ccr_tracker",
+      "label": "CCR Tracker",
+      "type": "component",
+      "file_type": "code",
+      "description": "Proactive context expansion: finds relevant cached content with query relevance scoring and retrieval pattern learning",
+      "source": "sentinel-headroom/WORK_SUMMARY.md"
+    },
+    {
+      "id": "sentinel_headroom_work_summary_compress_executor",
+      "label": "Compress",
+      "type": "component",
+      "file_type": "code",
+      "description": "Pipeline orchestrator that chains CacheAligner -> ContentRouter -> CacheOptimizer -> IntelligentContext -> CCR",
+      "source": "sentinel-headroom/WORK_SUMMARY.md"
+    },
+    {
+      "id": "sentinel_headroom_work_summary_orchestrator",
+      "label": "Orchestrator",
+      "type": "component",
+      "file_type": "code",
+      "description": "Routes messages to type-specific compressors; handles CCR integration and headroom_retrieve tool schema with optional BM25 query",
+      "source": "sentinel-headroom/WORK_SUMMARY.md"
+    },
+    {
+      "id": "sentinel_headroom_work_summary_retrieve_tool",
+      "label": "headroom_retrieve tool",
+      "type": "tool",
+      "file_type": "code",
+      "description": "Tool schema for retrieving compressed content from CCR store with optional BM25 search",
+      "source": "sentinel-headroom/WORK_SUMMARY.md"
+    },
+    {
+      "id": "desktop_app_running_frontend",
+      "label": "Sentinel AI Frontend",
+      "type": "application",
+      "file_type": "document",
+      "description": "Web/Tauri desktop application for interacting with Sentinel AI backend via WebSocket JSON-RPC",
+      "source": "desktop-app/RUNNING.md"
+    },
+    {
+      "id": "desktop_app_running_websocket_client",
+      "label": "WebSocket JSON-RPC Client",
+      "type": "component",
+      "file_type": "code",
+      "description": "TypeScript client implementing JSON-RPC 2.0 protocol over WebSocket for server communication",
+      "source": "desktop-app/RUNNING.md"
+    },
+    {
+      "id": "desktop_app_running_chat_view",
+      "label": "ChatView UI",
+      "type": "component",
+      "file_type": "code",
+      "description": "React component rendering conversation message list with message bubbles",
+      "source": "desktop-app/RUNNING.md"
+    },
+    {
+      "id": "desktop_app_running_sentinel_cli",
+      "label": "sentinel-cli",
+      "type": "tool",
+      "file_type": "code",
+      "description": "Command-line interface that creates compression pipeline and registers headroom retrieval tool",
+      "source": "desktop-app/RUNNING.md"
+    },
+    {
+      "id": "desktop_app_running_sentinel_app_server",
+      "label": "sentinel-app-server",
+      "type": "service",
+      "file_type": "code",
+      "description": "Backend server providing new_with_headroom and new_with_compressor initialization methods",
+      "source": "desktop-app/RUNNING.md"
+    },
+    {
+      "id": "desktop_app_running_sentinel_ai_exec",
+      "label": "sentinel-ai-exec",
+      "type": "module",
+      "file_type": "code",
+      "description": "AI execution engine that registers HeadroomRetrieveTool in ToolRegistry",
+      "source": "desktop-app/RUNNING.md"
+    },
+    {
+      "id": "desktop_app_running_sentinel_ai_tui",
+      "label": "sentinel-ai-tui",
+      "type": "application",
+      "file_type": "code",
+      "description": "Terminal UI application that registers HeadroomRetrieveTool in ToolRegistry",
+      "source": "desktop-app/RUNNING.md"
+    },
+    {
+      "id": "rules_ponytail_philosophy",
+      "label": "Ponytail lazy senior dev mode",
+      "type": "methodology",
+      "file_type": "rationale",
+      "description": "Development philosophy emphasizing YAGNI, code reuse, stdlib/native features, and minimum viable solutions with deliberate trade-off marking",
+      "source": "ponytail/.agents/rules/ponytail.md"
+    },
+    {
+      "id": "openclaw_ponytail_audit_skill",
+      "label": "ponytail-audit skill",
+      "type": "skill",
+      "file_type": "concept",
+      "description": "Scans entire repository for over-engineering; ranks findings by deletable lines: dead code, stdlib reinventions, unrequested abstractions",
+      "source": "ponytail/.openclaw/skills/ponytail-audit/SKILL.md"
+    },
+    {
+      "id": "openclaw_ponytail_debt_skill",
+      "label": "ponytail-debt skill",
+      "type": "skill",
+      "file_type": "concept",
+      "description": "Harvests ponytail: shortcut comments into tracked debt ledger to prevent deferrals from rotting",
+      "source": "ponytail/.openclaw/skills/ponytail-debt/SKILL.md"
+    },
+    {
+      "id": "openclaw_ponytail_gain_skill",
+      "label": "ponytail-gain skill",
+      "type": "skill",
+      "file_type": "concept",
+      "description": "Displays measured impact scoreboard: code reduction (80-94%), cost reduction (47-77%), speed gain (3-6x) from benchmark medians",
+      "source": "ponytail/.openclaw/skills/ponytail-gain/SKILL.md"
+    },
+    {
+      "id": "openclaw_ponytail_help_skill",
+      "label": "ponytail-help skill",
+      "type": "skill",
+      "file_type": "concept",
+      "description": "Quick reference card showing ponytail levels (lite/full/ultra), all skills, triggers, and configuration options",
+      "source": "ponytail/.openclaw/skills/ponytail-help/SKILL.md"
+    },
+    {
+      "id": "openclaw_ponytail_review_skill",
+      "label": "ponytail-review skill",
+      "type": "skill",
+      "file_type": "concept",
+      "description": "Reviews diffs for over-engineering; identifies what to delete (dead code, stdlib reinventions, unrequested abstractions) with one-line findings",
+      "source": "ponytail/.openclaw/skills/ponytail-review/SKILL.md"
+    },
+    {
+      "id": "openclaw_ponytail_core_skill",
+      "label": "ponytail core skill",
+      "type": "skill",
+      "file_type": "concept",
+      "description": "Main lazy senior dev mode for coding tasks: YAGNI-first problem-solving with stdlib/native prioritization and minimum viable implementation",
+      "source": "ponytail/.openclaw/skills/ponytail/SKILL.md"
+    },
+    {
+      "id": "test_workflow_ci_system",
+      "label": "Test CI workflow",
+      "type": "automation",
+      "file_type": "concept",
+      "description": "GitHub Actions workflow for testing on push/PR: Node 22, Python 3.12, rule consistency checks, version checks",
+      "source": "ponytail/.github/workflows/test.yml"
+    },
+    {
+      "id": "publish_workflow_ci_system",
+      "label": "Publish CI workflow",
+      "type": "automation",
+      "file_type": "concept",
+      "description": "GitHub Actions workflow for npm publishing via OIDC trusted publishing on version tags",
+      "source": "ponytail/.github/workflows/publish.yml"
+    }
+  ],
+  "edges": [
+    {
+      "source": "sentinel_headroom_work_summary_compress_executor",
+      "target": "sentinel_headroom_work_summary_cache_aligner",
+      "relation": "calls",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "sentinel_headroom_work_summary_compress_executor",
+      "target": "sentinel_headroom_work_summary_content_router",
+      "relation": "calls",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "sentinel_headroom_work_summary_compress_executor",
+      "target": "sentinel_headroom_work_summary_cache_optimizer",
+      "relation": "calls",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "sentinel_headroom_work_summary_compress_executor",
+      "target": "sentinel_headroom_work_summary_intelligent_context",
+      "relation": "calls",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "sentinel_headroom_work_summary_compress_executor",
+      "target": "sentinel_headroom_work_summary_ccr_store",
+      "relation": "calls",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "sentinel_headroom_work_summary_orchestrator",
+      "target": "sentinel_headroom_work_summary_ccr_store",
+      "relation": "integrates",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "sentinel_headroom_work_summary_orchestrator",
+      "target": "sentinel_headroom_work_summary_retrieve_tool",
+      "relation": "defines",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "sentinel_headroom_work_summary_ccr_tracker",
+      "target": "sentinel_headroom_work_summary_ccr_store",
+      "relation": "queries",
+      "type": "INFERRED",
+      "confidence_score": 0.95
+    },
+    {
+      "source": "desktop_app_running_sentinel_cli",
+      "target": "sentinel_headroom_work_summary_compress_executor",
+      "relation": "creates",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "desktop_app_running_sentinel_cli",
+      "target": "sentinel_headroom_work_summary_retrieve_tool",
+      "relation": "registers",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "desktop_app_running_sentinel_app_server",
+      "target": "sentinel_headroom_work_summary_compress_executor",
+      "relation": "integrates",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "desktop_app_running_sentinel_ai_exec",
+      "target": "sentinel_headroom_work_summary_retrieve_tool",
+      "relation": "registers",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "desktop_app_running_sentinel_ai_tui",
+      "target": "sentinel_headroom_work_summary_retrieve_tool",
+      "relation": "registers",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "desktop_app_running_frontend",
+      "target": "desktop_app_running_sentinel_app_server",
+      "relation": "connects_to",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "desktop_app_running_websocket_client",
+      "target": "desktop_app_running_sentinel_app_server",
+      "relation": "communicates_with",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "desktop_app_running_chat_view",
+      "target": "desktop_app_running_websocket_client",
+      "relation": "depends_on",
+      "type": "INFERRED",
+      "confidence_score": 0.95
+    },
+    {
+      "source": "openclaw_ponytail_review_skill",
+      "target": "rules_ponytail_philosophy",
+      "relation": "implements",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "openclaw_ponytail_audit_skill",
+      "target": "rules_ponytail_philosophy",
+      "relation": "implements",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "openclaw_ponytail_debt_skill",
+      "target": "rules_ponytail_philosophy",
+      "relation": "implements",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "openclaw_ponytail_gain_skill",
+      "target": "rules_ponytail_philosophy",
+      "relation": "measures",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "openclaw_ponytail_help_skill",
+      "target": "rules_ponytail_philosophy",
+      "relation": "documents",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "openclaw_ponytail_core_skill",
+      "target": "rules_ponytail_philosophy",
+      "relation": "embodies",
+      "type": "EXTRACTED",
+      "confidence_score": 1.0
+    }
+  ],
+  "hyperedges": [],
+  "input_tokens": 42910,
+  "output_tokens": 0
+}
