@@ -22,11 +22,12 @@ impl EventHandler for TuiEventHandler {
                     "status": "running",
                 }))
             }
-            AgentEvent::ToolResult { name, output, is_error } => {
+            AgentEvent::ToolResult { name, output, is_error, sandboxed } => {
                 ThreadEvent::new("tool_call", serde_json::json!({
                     "name": name,
                     "output": output,
                     "status": if is_error { "error" } else { "completed" },
+                    "sandboxed": sandboxed,
                 }))
             }
             AgentEvent::Completed { text } => {

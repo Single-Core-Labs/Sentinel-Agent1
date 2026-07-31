@@ -16,3 +16,4 @@ glob.workspace = true
 
 sentinel-protocol = { workspace = true }
 sentinel-ai-core = { workspace = true }
+sentinel-exec = { workspace = true }

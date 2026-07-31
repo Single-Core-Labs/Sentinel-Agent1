@@ -273,3 +273,72 @@ impl MessageSink for UnixSink {
         self.0.flush().await.map_err(TransportError::Io)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio_stream::StreamExt;
+
+    fn free_tcp_addr() -> std::net::SocketAddr {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        drop(listener);
+        addr
+    }
+
+    #[tokio::test]
+    async fn tcp_transport_round_trip() {
+        let addr = free_tcp_addr();
+        let server = TransportServer::new(TransportKind::Tcp {
+            addr: addr.to_string(),
+        });
+
+        let (mut stream, mut sink, _client_id) = server.accept().await.expect("accept");
+
+        let client = tokio::spawn(async move {
+            let mut tcp = tokio::net::TcpStream::connect(addr).await.unwrap();
+            use tokio::io::AsyncWriteExt;
+            tcp.write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}\n").await.unwrap();
+            tcp.flush().await.unwrap();
+            let mut buf = String::new();
+            use tokio::io::AsyncBufReadExt;
+            let mut reader = tokio::io::BufReader::new(tcp);
+            reader.read_line(&mut buf).await.unwrap();
+            buf
+        });
+
+        let event = tokio::time::timeout(std::time::Duration::from_secs(5), stream.next()).await
+            .expect("timeout waiting for request")
+            .expect("stream ended");
+        match event {
+            TransportEvent::Message(JsonRpcMessage::Request(req)) => {
+                assert_eq!(req.method, "ping");
+                assert_eq!(req.id, 1);
+            }
+            other => panic!("unexpected event: {:?}", other),
+        }
+
+        let resp = JsonRpcMessage::Response(JsonRpcResponse {
+            jsonrpc: "2.0".into(),
+            id: serde_json::json!(1),
+            result: Some(serde_json::json!({"pong": true})),
+            error: None,
+        });
+        sink.send(&resp).await.expect("send response");
+
+        let line = client.await.expect("client task");
+        assert!(line.contains("\"pong\"") && line.contains("\"id\":1"), "got: {}", line);
+    }
+
+    #[tokio::test]
+    async fn transport_error_display_and_source() {
+        let io_err = std::io::Error::new(std::io::ErrorKind::NotFound, "nope");
+        let err = TransportError::Io(io_err);
+        assert!(err.to_string().contains("IO error"));
+        assert!(std::error::Error::source(&err).is_some());
+
+        let proto = TransportError::Protocol("bad frame".into());
+        assert!(proto.to_string().contains("Protocol error"));
+        assert!(std::error::Error::source(&proto).is_none());
+    }
+}

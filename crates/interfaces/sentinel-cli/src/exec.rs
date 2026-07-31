@@ -86,7 +86,8 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     let tools = Arc::new(tool_registry);
     let agent = sentinel_core::Agent::new(provider, tools, config.clone())
         .with_event_handler(Arc::new(CliEventHandler))
-        .with_compressor(headroom_compressor);
+        .with_compressor(headroom_compressor)
+        .with_model(model_id.clone());
 
     // Optional: Create sandbox for tool isolation
     let _sandbox = None::<std::sync::Arc<sentinel_core::sandbox::LocalSandbox>>;

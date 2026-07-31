@@ -2949,6 +2949,7 @@ dependencies = [
  "sentinel-gpu-profiler",
  "sentinel-headroom",
  "sentinel-mcp",
+ "sentinel-protocol",
  "sentinel-provider",
  "sentinel-provider-info",
  "sentinel-proxy",
@@ -3015,6 +3016,7 @@ dependencies = [
  "thiserror 2.0.19",
  "tokio",
  "tracing",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3212,6 +3214,7 @@ dependencies = [
  "glob",
  "reqwest",
  "sentinel-ai-core",
+ "sentinel-exec",
  "sentinel-protocol",
  "serde",
  "serde_json",

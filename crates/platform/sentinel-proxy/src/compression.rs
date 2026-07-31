@@ -91,3 +91,59 @@ impl ProxyCompressor {
         self.stats.clone()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn short_conversation_passes_through_uncompressed() {
+        let stats = SharedStats::new();
+        let compressor = ProxyCompressor::new(stats);
+        let messages = vec![
+            serde_json::json!({"role": "user", "content": "hello"}),
+            serde_json::json!({"role": "assistant", "content": "hi there"}),
+        ];
+        let (out, before, after) = compressor.compress_json_messages(&messages, "test-model").await;
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0]["role"], "user");
+        assert_eq!(out[0]["content"], "hello");
+        assert!(after <= before);
+    }
+
+    #[tokio::test]
+    async fn unknown_roles_default_to_user_and_fields_preserved() {
+        let stats = SharedStats::new();
+        let compressor = ProxyCompressor::new(stats);
+        let messages = vec![
+            serde_json::json!({"role": "weird", "content": "x"}),
+            serde_json::json!({"role": "tool", "content": "y", "tool_call_id": "t1", "name": "read"}),
+        ];
+        let (out, _, _) = compressor.compress_json_messages(&messages, "m").await;
+        assert_eq!(out[0]["role"], "user");
+        assert_eq!(out[1]["role"], "tool");
+        assert_eq!(out[1]["tool_call_id"], "t1");
+        assert_eq!(out[1]["name"], "read");
+    }
+
+    #[test]
+    fn estimate_tokens_scales_with_length() {
+        let short = ProxyCompressor::estimate_tokens("hello world");
+        let long = ProxyCompressor::estimate_tokens(&"word ".repeat(500));
+        assert!(short > 0);
+        assert!(long > short);
+    }
+
+    #[test]
+    fn stats_record_request_accumulates() {
+        let stats = SharedStats::new();
+        stats.record_request(100, 90);
+        stats.record_request(200, 150);
+        let snapshot = stats.snapshot();
+        assert_eq!(snapshot.total_requests, 2);
+        assert_eq!(snapshot.tokens_before, 300);
+        assert_eq!(snapshot.tokens_after, 240);
+        assert_eq!(snapshot.tokens_saved, 60);
+        assert!((snapshot.savings_percent - 20.0).abs() < 0.001);
+    }
+}

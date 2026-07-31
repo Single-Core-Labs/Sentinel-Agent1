@@ -1,0 +1,91 @@
+{
+  "id": "bde530d9-134d-4932-8e2f-98be4927a56d",
+  "conversation": {
+    "id": "71c30ea0-38e3-4fd0-a807-f7fb6162b568",
+    "turns": [
+      {
+        "id": "862f5c83-541c-43c0-a39a-f7abd587129d",
+        "number": 1,
+        "items": [
+          {
+            "UserMessage": {
+              "id": "8f2e8490-cac7-4778-8a60-a755ccf9f7a7",
+              "text": "Run the command: echo sandboxed_ok. Then reply with exactly: SMOKE-OK",
+              "timestamp": "2026-07-31T03:08:47.114859100Z"
+            }
+          },
+          {
+            "AssistantText": {
+              "id": "d0a23d20-f3c6-4d7f-ad30-4847ffc5b75a",
+              "text": "",
+              "timestamp": "2026-07-31T03:09:43.550551Z"
+            }
+          },
+          {
+            "AssistantToolCall": {
+              "id": "772bdb82-646d-4b49-974a-c7daf76de740",
+              "tool_call_id": "call_kz6jvfsp",
+              "name": "bash",
+              "arguments": {
+                "command": "echo sandboxed_ok",
+                "timeout": 1000,
+                "workdir": "/workspace"
+              },
+              "timestamp": "2026-07-31T03:09:43.550787900Z"
+            }
+          },
+          {
+            "AssistantText": {
+              "id": "d059000f-b2bf-476c-94be-9f8ae78606dc",
+              "text": "",
+              "timestamp": "2026-07-31T03:11:18.426272200Z"
+            }
+          },
+          {
+            "AssistantToolCall": {
+              "id": "f6cdf7a5-3a7f-4156-aa25-4686b13536e6",
+              "tool_call_id": "call_0ch6azx8",
+              "name": "bash",
+              "arguments": {
+                "command": "echo sandboxed_ok",
+                "timeout": 1000
+              },
+              "timestamp": "2026-07-31T03:11:18.426293600Z"
+            }
+          },
+          {
+            "AssistantText": {
+              "id": "6e725120-cfc6-4fb6-977c-3d818b24b556",
+              "text": "",
+              "timestamp": "2026-07-31T03:11:46.227270Z"
+            }
+          },
+          {
+            "AssistantToolCall": {
+              "id": "854cd79b-d526-4776-b66b-b73842e12731",
+              "tool_call_id": "call_cqavgvw8",
+              "name": "bash",
+              "arguments": {
+                "command": "echo sandboxed_ok",
+                "timeout": 1000,
+                "workdir": "/tmp"
+              },
+              "timestamp": "2026-07-31T03:11:46.227287800Z"
+            }
+          }
+        ],
+        "created_at": "2026-07-31T03:08:47.114854900Z"
+      }
+    ],
+    "created_at": "2026-07-31T03:08:47.114609600Z",
+    "updated_at": "2026-07-31T03:11:46.227286Z"
+  },
+  "turn": 3,
+  "iterations": 3,
+  "max_turns": 50,
+  "max_iterations": 100,
+  "yolo_mode": true,
+  "parent_thread_id": null,
+  "budget_cost_cap_usd": null,
+  "budget_total_spend_usd": 0.018451500000000003
+}

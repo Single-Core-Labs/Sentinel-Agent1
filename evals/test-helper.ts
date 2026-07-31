@@ -72,10 +72,23 @@ export interface EvalCase {
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
-/** Path to the sentinel binary. Falls back to cargo dev build. */
-const SENTINEL_BIN =
-  process.env['SENTINEL_BIN'] ??
-  'sentinel.exe';
+/** Path to the sentinel binary. Falls back to the cargo dev build. */
+const SENTINEL_BIN = resolveSentinelBin();
+
+function resolveSentinelBin(): string {
+  if (process.env['SENTINEL_BIN']) return process.env['SENTINEL_BIN'];
+  const exe = process.platform === 'win32' ? 'sentinel.exe' : 'sentinel';
+  const candidates = [
+    path.resolve(process.cwd(), 'target/debug', exe),
+    path.resolve(process.cwd(), 'target/release', exe),
+    // __dirname is undefined under ESM; fall back to cwd-relative paths only.
+    exe,
+  ];
+  for (const c of candidates) {
+    if (fs.existsSync(c)) return c;
+  }
+  return candidates[0];
+}
 
 /** Model to use when running the agent under test. */
 export const EVAL_MODEL =
@@ -369,7 +382,7 @@ async function spawnSentinel(opts: {
   return new Promise((resolve, reject) => {
     const proc = cp.spawn(
       SENTINEL_BIN,
-      ['ai', '--yolo', '--model', opts.model, '--prompt', opts.prompt],
+      ['ai', opts.model, '--yolo', '--prompt', opts.prompt],
       {
         cwd: opts.workDir,
         env: {

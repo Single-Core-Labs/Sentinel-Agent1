@@ -125,7 +125,7 @@ impl McpServer {
                 }
 
                 match self.registry.execute(name, arguments, &self.ctx).await {
-                    ToolOutput { text, is_error } if is_error => {
+                    ToolOutput { text, is_error, .. } if is_error => {
                         serde_json::json!({
                             "jsonrpc": "2.0",
                             "id": id,

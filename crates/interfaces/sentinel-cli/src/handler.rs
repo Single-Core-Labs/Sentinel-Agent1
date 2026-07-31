@@ -3,6 +3,19 @@ use sentinel_core::{EventHandler, AgentEvent};
 
 pub struct CliEventHandler;
 
+fn activity_log_path() -> Option<String> {
+    std::env::var("SENTINEL_ACTIVITY_LOG").ok().filter(|p| !p.is_empty())
+}
+
+fn append_activity(record: &serde_json::Value) {
+    if let Some(path) = activity_log_path() {
+        if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+            use std::io::Write;
+            let _ = writeln!(file, "{}", serde_json::to_string(record).unwrap_or_default());
+        }
+    }
+}
+
 #[async_trait::async_trait]
 impl EventHandler for CliEventHandler {
     async fn handle_event(&self, event: AgentEvent) {
@@ -15,6 +28,11 @@ impl EventHandler for CliEventHandler {
                 }
             }
             AgentEvent::ToolCall { name, args } => {
+                append_activity(&serde_json::json!({
+                    "type": "tool_call",
+                    "tool": name,
+                    "args": args,
+                }));
                 let args_str = serde_json::to_string_pretty(&args).unwrap_or_default();
                 let width = terminal_width().saturating_sub(4) as usize;
                 println!();
@@ -29,7 +47,14 @@ impl EventHandler for CliEventHandler {
                 }
                 println!("{}", " └──".yellow().bold());
             }
-            AgentEvent::ToolResult { name, output, is_error } => {
+            AgentEvent::ToolResult { name, output, is_error, sandboxed } => {
+                append_activity(&serde_json::json!({
+                    "type": "tool_result",
+                    "tool": name,
+                    "result": output,
+                    "is_error": is_error,
+                    "sandboxed": sandboxed,
+                }));
                 let icon = if is_error { "✖" } else { "✔" };
                 let preview: String = output.chars().take(1000).collect();
                 let suffix = if output.len() > 1000 { " …" } else { "" };

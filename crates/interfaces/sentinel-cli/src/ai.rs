@@ -3,38 +3,79 @@ use colored::*;
 use crate::approval::CliApprovalGate;
 use crate::display::{print_banner, print_divider};
 use crate::handler::CliEventHandler;
+use sentinel_core::thread_store::ThreadStore;
 
-fn try_spawn_ts_agent() -> bool {
+const TUI_WS_ADDR: &str = "127.0.0.1:9090";
+
+fn port_open(addr: &str) -> bool {
+    std::net::TcpStream::connect(addr).map(|_| true).unwrap_or(false)
+}
+
+fn resolve_ts_agent() -> Option<(std::path::PathBuf, std::path::PathBuf)> {
     let agent_relative = "packages/cli-agent/src/index.tsx";
 
-    let (agent_path, cwd) = match std::env::var("SENTINEL_HOME") {
-        Ok(home) => {
-            let home = std::path::PathBuf::from(home);
-            let ap = home.join(agent_relative);
-            if ap.exists() { (ap, home) } else { return false }
-        }
-        Err(_) => {
-            let cwd = match std::env::current_dir() {
-                Ok(d) => d,
-                Err(_) => return false,
-            };
-            let mut ap = cwd.join(agent_relative);
-            let mut resolved_cwd = cwd.clone();
-            
-            if !ap.exists() {
-                // Fallback to the known project workspace root
-                let fallback = std::path::PathBuf::from(r"d:\ml-intern-main\ml-intern-main");
-                let fallback_ap = fallback.join(agent_relative);
-                if fallback_ap.exists() {
-                    ap = fallback_ap;
-                    resolved_cwd = fallback;
-                } else {
-                    return false;
-                }
-            }
-            (ap, resolved_cwd)
-        }
+    if let Ok(home) = std::env::var("SENTINEL_HOME") {
+        let home = std::path::PathBuf::from(home);
+        let ap = home.join(agent_relative);
+        if ap.exists() { return Some((ap, home)); }
+    }
+
+    if let Ok(cwd) = std::env::current_dir() {
+        let ap = cwd.join(agent_relative);
+        if ap.exists() { return Some((ap, cwd)); }
+    }
+
+    let fallback = std::path::PathBuf::from(r"d:\ml-intern-main\ml-intern-main");
+    let fallback_ap = fallback.join(agent_relative);
+    if fallback_ap.exists() { return Some((fallback_ap, fallback)); }
+
+    None
+}
+
+fn try_spawn_ts_agent(args: &[String]) -> bool {
+    if std::env::var("SENTINEL_NON_INTERACTIVE").as_deref() == Ok("1") {
+        return false;
+    }
+    if args.iter().any(|a| a == "--prompt") {
+        return false;
+    }
+
+    let (agent_path, cwd) = match resolve_ts_agent() {
+        Some(x) => x,
+        None => return false,
     };
+
+    let mut server_child: Option<std::process::Child> = None;
+    if !port_open(TUI_WS_ADDR) {
+        if let Ok(exe) = std::env::current_exe() {
+            match std::process::Command::new(&exe)
+                .args(["web", "--port", "9090", "--no-open"])
+                .current_dir(&cwd)
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+            {
+                Ok(child) => {
+                    server_child = Some(child);
+                    let mut up = false;
+                    for _ in 0..80 {
+                        if port_open(TUI_WS_ADDR) { up = true; break; }
+                        std::thread::sleep(std::time::Duration::from_millis(100));
+                    }
+                    if !up {
+                        let _ = server_child.take().map(|mut c| c.kill());
+                        eprintln!("{} Could not start WebSocket server on {}", "W".yellow(), TUI_WS_ADDR);
+                        eprintln!("   Falling back to inline terminal UI.");
+                        return false;
+                    }
+                }
+                Err(_) => return false,
+            }
+        } else {
+            return false;
+        }
+    }
 
     let bun = if cfg!(windows) { "bun.exe" } else { "bun" };
 
@@ -50,14 +91,23 @@ fn try_spawn_ts_agent() -> bool {
     match status {
         Ok(mut child) => {
             let _ = child.wait();
+            if let Some(mut s) = server_child {
+                let _ = s.kill();
+            }
             true
         }
-        Err(_) => false,
+        Err(e) => {
+            eprintln!("{} Could not start TUI ({}) — falling back to inline terminal UI.", "W".yellow(), e);
+            if let Some(mut s) = server_child {
+                let _ = s.kill();
+            }
+            false
+        }
     }
 }
 
 pub async fn run(args: &[String]) -> anyhow::Result<()> {
-    if try_spawn_ts_agent() {
+    if try_spawn_ts_agent(args) {
         return Ok(());
     }
     let config = Arc::new(match sentinel_config::SentinelConfig::load() {
@@ -68,11 +118,36 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         }
     });
 
-    let model_id = if !args.is_empty() && !args[0].starts_with('-') {
-        args[0].clone()
-    } else {
-        config.agent.default_model.clone()
-    };
+    let mut resume_id: Option<String> = None;
+    let mut model_id = config.agent.default_model.clone();
+    let mut yolo_mode = config.agent.yolo_mode;
+    let mut prompt_arg: Option<String> = None;
+    {
+        let mut iter = args.iter();
+        while let Some(arg) = iter.next() {
+            match arg.as_str() {
+                "--resume" => resume_id = iter.next().cloned(),
+                "--new" => resume_id = None,
+                "--yolo" => yolo_mode = true,
+                "--model" => {
+                    if let Some(m) = iter.next() {
+                        model_id = m.clone();
+                    }
+                }
+                "--prompt" => prompt_arg = iter.next().cloned(),
+                "-h" | "--help" => {
+                    println!("Usage: sentinel ai [model-id] [--resume <session-id> | --new] [--yolo] [--model <id>] [--prompt <text>]");
+                    println!("  --resume <id>  Continue a previously saved session");
+                    println!("  --new          Start a fresh session (ignores --resume)");
+                    println!("  --yolo         Auto-approve tool actions");
+                    println!("  --prompt <t>   Run a single turn non-interactively, then exit");
+                    return Ok(());
+                }
+                _ if arg.starts_with('-') => {}
+                _ => model_id = arg.clone(),
+            }
+        }
+    }
 
     let provider_info = config.providers()
         .iter()
@@ -85,13 +160,15 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
             match sentinel_provider::ProviderKind::from_info(p.clone()) {
                 Ok(provider) => Arc::new(provider),
                 Err(e) => {
-                    show_setup_screen(&p.name, &e.to_string());
+                    eprintln!("✖ Provider '{}' needs setup: {}", p.name, e);
+                    eprintln!("   → Run: sentinel auth login");
                     return Ok(());
                 }
             }
         }
         None => {
-            show_no_providers_screen(&model_id);
+            eprintln!("✖ No provider configured for model '{}'.", model_id);
+            eprintln!("   → Add a [[providers]] section to sentinel.toml, or run: sentinel auth login");
             return Ok(());
         }
     };
@@ -118,27 +195,73 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     }
     let tools = Arc::new(tool_registry);
     let agent = sentinel_core::Agent::new(provider, tools, config.clone())
-        .with_compressor(headroom_compressor);
+        .with_compressor(headroom_compressor)
+        .with_model(model_id.clone());
 
-    let mut thread = sentinel_core::AgentThread::new(
-        config.agent.max_turns,
-        config.agent.max_iterations,
-        config.agent.yolo_mode,
-    );
+    let store = sentinel_core::JsonFileThreadStore::new(session_dir());
+
+    let mut thread = match resume_id {
+        Some(id) => {
+            match store.load_thread(&id).await {
+                Ok(t) => {
+                    println!(" Resumed session {}", id.green().bold());
+                    t
+                }
+                Err(e) => {
+                    eprintln!("{} Could not load session '{}': {}", "✖".red().bold(), id, e);
+                    return Ok(());
+                }
+            }
+        }
+        None => sentinel_core::AgentThread::new(
+            config.agent.max_turns,
+            config.agent.max_iterations,
+            yolo_mode,
+        ),
+    };
 
     agent.set_event_handler(Arc::new(CliEventHandler));
 
     print_banner();
     println!(" Model:  {}", model_id.green().bold());
-    println!(" Yolo:   {}", if config.agent.yolo_mode { "yes".green() } else { "no".yellow() });
+    println!(" Yolo:   {}", if yolo_mode { "yes".green() } else { "no".yellow() });
     print_divider();
+    println!(" Session: {}", thread.id.to_string().green().bold());
+    println!(" {} Resume later with: sentinel ai --resume {}", "→".cyan().bold(), thread.id.to_string().dimmed());
     println!("{}", "Type your message or /help for commands.".dimmed());
 
-    let approval: Box<dyn sentinel_core::ApprovalGate> = if config.agent.yolo_mode {
+    let approval: Box<dyn sentinel_core::ApprovalGate> = if yolo_mode {
         Box::new(sentinel_core::AutoApprovalGate)
     } else {
         Box::new(CliApprovalGate)
     };
+
+    // Non-interactive single-shot mode (used by the eval harness)
+    if let Some(one_shot) = prompt_arg {
+        let result = agent.run_with_approval(&mut thread, &one_shot, approval.as_ref()).await;
+        if let Err(e) = store.save_thread(&thread).await {
+            eprintln!("{} Failed to save session: {}", "W".yellow(), e);
+        }
+        match result {
+            Ok(output) => match output {
+                sentinel_core::AgentOutput::Success { text } => {
+                    if !text.is_empty() {
+                        println!("\n{}", text);
+                    }
+                }
+                sentinel_core::AgentOutput::Error { message } => {
+                    crate::display::print_error(&message);
+                    std::process::exit(1);
+                }
+            },
+            Err(e) => {
+                crate::display::print_error(&e.to_string());
+                std::process::exit(1);
+            }
+        }
+        println!();
+        return Ok(());
+    }
 
     loop {
         print!("{} ", ">".yellow().bold());
@@ -159,11 +282,31 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
 
         // Slash commands
         if input.starts_with('/') {
-            handle_slash_command(&input).await;
+            match input.as_str() {
+                "/sessions" => list_sessions(&store).await,
+                _ => {
+                    if let Some(rest) = input.strip_prefix("/resume ") {
+                        match store.load_thread(rest.trim()).await {
+                            Ok(t) => {
+                                thread = t;
+                                println!(" Resumed session {}", rest.trim().green().bold());
+                            }
+                            Err(e) => {
+                                crate::display::print_error(&format!("Could not load session: {}", e));
+                            }
+                        }
+                    } else {
+                        handle_slash_command(&input).await;
+                    }
+                }
+            }
             continue;
         }
 
         let result = agent.run_with_approval(&mut thread, &input, approval.as_ref()).await;
+        if let Err(e) = store.save_thread(&thread).await {
+            eprintln!("{} Failed to save session: {}", "W".yellow(), e);
+        }
         match result {
             Ok(output) => match output {
                 sentinel_core::AgentOutput::Success { text } => {
@@ -196,6 +339,8 @@ async fn handle_slash_command(cmd: &str) {
             println!("  /help, /h         Show this help");
             println!("  /auth             Configure provider API keys");
             println!("  /models           List available models");
+            println!("  /sessions         List saved sessions");
+            println!("  /resume <id>      Resume a saved session");
             println!("  /exit, /quit      Exit");
             println!("  /clear            Clear screen");
             println!();
@@ -225,39 +370,31 @@ async fn handle_slash_command(cmd: &str) {
     }
 }
 
-fn show_no_providers_screen(model: &str) {
-    println!();
-    println!("{}", "╭──────────────────────────────────────────────╮".bright_white().dimmed());
-    println!("{}", "│         Welcome to Sentinel Agent           │".bright_white().bold());
-    println!("{}", "╰──────────────────────────────────────────────╯".bright_white().dimmed());
-    println!();
-    println!(" {} No providers configured for model '{}'.", "✖".red().bold(), model);
-    println!();
-    println!(" {} To get started:", "→".cyan().bold());
-    println!("   1. Add an API key:");
-    println!("      sentinel auth login");
-    println!();
-    println!("   2. Or set it in your .env file:");
-    println!("      ANTHROPIC_API_KEY=sk-...");
-    println!("      OPENAI_API_KEY=sk-...");
-    println!();
-    println!("   3. Then run:");
-    println!("      sentinel ai");
-    println!();
+fn session_dir() -> std::path::PathBuf {
+    if let Ok(home) = std::env::var("SENTINEL_HOME") {
+        return std::path::PathBuf::from(home).join("threads");
+    }
+    std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .map(|h| std::path::PathBuf::from(h).join(".sentinel").join("threads"))
+        .unwrap_or_else(|_| std::path::PathBuf::from("sentinel_threads"))
 }
 
-fn show_setup_screen(provider: &str, error: &str) {
-    println!();
-    println!("{}", "╭──────────────────────────────────────────────╮".bright_white().dimmed());
-    println!("{}", "│         Welcome to Sentinel Agent           │".bright_white().bold());
-    println!("{}", "╰──────────────────────────────────────────────╯".bright_white().dimmed());
-    println!();
-    println!(" {} Provider '{}' needs setup.", "✖".red().bold(), provider);
-    println!("   {}", error.yellow());
-    println!();
-    println!(" {} Run:", "→".cyan().bold());
-    println!("      sentinel auth login");
-    println!();
-    println!("   Or set the corresponding env var in .env");
-    println!();
+async fn list_sessions(store: &sentinel_core::JsonFileThreadStore) {
+    match store.list_threads().await {
+        Ok(ids) if !ids.is_empty() => {
+            println!();
+            println!(" {} Saved sessions:", "●".cyan().bold());
+            for id in ids {
+                println!("    {}  ({})", id.dimmed(), "resume: sentinel ai --resume".dimmed());
+            }
+            println!();
+        }
+        Ok(_) => {
+            println!(" {} No saved sessions yet.", "●".cyan().bold());
+        }
+        Err(e) => {
+            println!(" {} Could not list sessions: {}", "✖".red().bold(), e);
+        }
+    }
 }

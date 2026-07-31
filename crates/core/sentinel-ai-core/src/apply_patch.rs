@@ -14,11 +14,12 @@
 //! +added line
 //! ```
 //!
-//! Multiple hunks per file are supported.  Multi-file diffs are **not**
-//! supported by this function; pass each file's diff separately.
+//! Multiple hunks per file **and multi-file diffs** are supported (see
+//! [`apply_patch_multi`]); [`apply_patch`] applies a single target file.
+//! `--- /dev/null` creates a new file; `+++ /dev/null` deletes a file.
 //!
 //! # Atomicity
-//! The patch is written to a sibling temp file first.  Only on complete
+//! Each file is written to a sibling temp file first.  Only on complete
 //! success is the temp file renamed over the original.  Any failure leaves
 //! the original untouched.
 //!
@@ -83,6 +84,34 @@ struct Hunk {
     diff_line: usize,
 }
 
+/// A file-scoped section of a multi-file diff.
+#[derive(Debug)]
+struct FileDiff {
+    /// Path from the `---` header (`/dev/null` for new files).
+    old_path: String,
+    /// Path from the `+++` header (`/dev/null` for deletions).
+    new_path: String,
+    /// Hunks belonging to this file.
+    hunks: Vec<Hunk>,
+}
+
+/// Classify a diff body line into a hunk line, if it is one.
+fn classify_line(raw_line: &str) -> Option<HunkLine> {
+    if let Some(rest) = raw_line.strip_prefix('-') {
+        Some(HunkLine::Removed(rest.to_string()))
+    } else if let Some(rest) = raw_line.strip_prefix('+') {
+        Some(HunkLine::Added(rest.to_string()))
+    } else if let Some(rest) = raw_line.strip_prefix(' ') {
+        Some(HunkLine::Context(rest.to_string()))
+    } else if raw_line.is_empty() {
+        // Some tools emit context lines without any prefix when the line
+        // itself is blank.
+        Some(HunkLine::Context(String::new()))
+    } else {
+        None
+    }
+}
+
 // ─── Parser ──────────────────────────────────────────────────────────────────
 
 /// Parse a unified diff string into a list of hunks.
@@ -110,17 +139,8 @@ fn parse_hunks(diff: &str) -> Result<Vec<Hunk>, PatchError> {
             continue;
         } else if let Some(ref mut hunk) = current {
             // Hunk body.
-            if let Some(rest) = raw_line.strip_prefix('-') {
-                hunk.lines.push(HunkLine::Removed(rest.to_string()));
-            } else if let Some(rest) = raw_line.strip_prefix('+') {
-                hunk.lines.push(HunkLine::Added(rest.to_string()));
-            } else if let Some(rest) = raw_line.strip_prefix(' ') {
-                // Context line with a leading space.
-                hunk.lines.push(HunkLine::Context(rest.to_string()));
-            } else if raw_line.is_empty() {
-                // Some tools emit context lines without any prefix when the
-                // line itself is blank.
-                hunk.lines.push(HunkLine::Context(String::new()));
+            if let Some(line) = classify_line(raw_line) {
+                hunk.lines.push(line);
             }
             // Anything else (e.g. "\ No newline at end of file") is ignored.
         }
@@ -138,6 +158,85 @@ fn parse_hunks(diff: &str) -> Result<Vec<Hunk>, PatchError> {
     }
 
     Ok(hunks)
+}
+
+/// Parse a unified diff into per-file sections.
+///
+/// A `--- old` line starts a new file section (flushing the previous one),
+/// `+++ new` records the new path, and `@@` headers + body lines are
+/// collected into that section's hunks.
+fn parse_files(diff: &str) -> Result<Vec<FileDiff>, PatchError> {
+    let mut files: Vec<FileDiff> = Vec::new();
+    let mut current: Option<FileDiff> = None;
+
+    for (idx, raw_line) in diff.lines().enumerate() {
+        if let Some(old) = raw_line.strip_prefix("--- ") {
+            if let Some(f) = current.take() {
+                files.push(f);
+            }
+            current = Some(FileDiff {
+                old_path: old.trim().to_string(),
+                new_path: String::new(),
+                hunks: Vec::new(),
+            });
+        } else if let Some(new) = raw_line.strip_prefix("+++ ") {
+            if let Some(f) = current.as_mut() {
+                if f.new_path.is_empty() {
+                    f.new_path = new.trim().to_string();
+                }
+            }
+        } else if raw_line.starts_with("@@") {
+            match current.as_mut() {
+                Some(f) => {
+                    let orig_start = parse_hunk_header(raw_line, idx)?;
+                    f.hunks.push(Hunk {
+                        orig_start,
+                        lines: Vec::new(),
+                        diff_line: idx + 1,
+                    });
+                }
+                None => {
+                    return Err(PatchError::MalformedDiff(
+                        "hunk appears before any --- / +++ file header".to_string(),
+                    ));
+                }
+            }
+        } else if let Some(f) = current.as_mut() {
+            if let Some(hunk) = f.hunks.last_mut() {
+                if let Some(line) = classify_line(raw_line) {
+                    hunk.lines.push(line);
+                }
+            }
+        }
+    }
+
+    if let Some(f) = current.take() {
+        files.push(f);
+    }
+
+    if files.is_empty() {
+        return Err(PatchError::MalformedDiff(
+            "no file sections found in diff".to_string(),
+        ));
+    }
+
+    let mut any_hunks = false;
+    for f in &files {
+        if f.new_path.is_empty() {
+            return Err(PatchError::MalformedDiff(format!(
+                "file section '{}' is missing its +++ header",
+                f.old_path
+            )));
+        }
+        any_hunks |= !f.hunks.is_empty();
+    }
+    if !any_hunks {
+        return Err(PatchError::MalformedDiff(
+            "no hunks found in diff".to_string(),
+        ));
+    }
+
+    Ok(files)
 }
 
 /// Extract the original-file start line from a `@@ -L[,S] +L[,S] @@` header.
@@ -268,25 +367,9 @@ fn normalize_path(path: &Path) -> PathBuf {
     out
 }
 
-/// Apply a unified diff `patch` to the file at `path`.
-///
-/// # Arguments
-/// * `workspace_root` – All target paths must resolve within this directory.
-/// * `path`           – Path of the file to patch (relative or absolute).
-/// * `patch`          – Unified diff text (UTF-8).
-///
-/// # Atomicity
-/// The function writes output to a temp file adjacent to the target, then
-/// renames it over the target.  If anything fails, the original is unchanged.
-///
-/// # Errors
-/// Returns [`PatchError`] for path traversal, malformed diffs, stale context,
-/// and I/O errors.
-pub fn apply_patch(
-    workspace_root: &Path,
-    path: &Path,
-    patch: &str,
-) -> Result<(), PatchError> {
+/// Resolve a patch target path against `workspace_root`, enforcing the
+/// workspace boundary (lexical + canonical for existing files).
+fn resolve_target(workspace_root: &Path, path: &Path) -> Result<PathBuf, PatchError> {
     // ── 1. Workspace boundary check ──────────────────────────────────────────
     // Stage 1: lexical rejection — reject any path that contains `..`
     // components relative to the workspace root.  This catches traversal
@@ -319,8 +402,179 @@ pub fn apply_patch(
         target
     };
 
+    Ok(abs_target)
+}
+
+/// Strip a `a/` / `b/` prefix (or any `x/` prefix) from a diff path.
+fn strip_diff_prefix(path: &str) -> &str {
+    let trimmed = path.trim();
+    if trimmed == "/dev/null" {
+        return trimmed;
+    }
+    let stripped = trimmed.trim_start_matches(['a', 'b', 'x']);
+    if stripped.starts_with('/') {
+        stripped.trim_start_matches('/')
+    } else {
+        trimmed
+    }
+}
+
+/// Apply a multi-file unified diff inside `workspace_root`.
+///
+/// Returns the list of paths (relative) that were modified, created, or
+/// deleted.  The diff is fully validated and rendered **before any file is
+/// written**, so a stale hunk anywhere in the patch leaves every file
+/// untouched.  Each file is then applied atomically (temp file + rename).
+/// As with [`apply_patch`], all paths must resolve within `workspace_root`.
+///
+/// A `--- /dev/null` section creates a new file; a `+++ /dev/null` section
+/// deletes the file.
+pub fn apply_patch_multi(
+    workspace_root: &Path,
+    diff: &str,
+) -> Result<Vec<String>, PatchError> {
+    let files = parse_files(diff)?;
+    let mut applied = Vec::with_capacity(files.len());
+
+    // ── Phase 1: validate & render every target (no writes) ────────────────
+    struct PlannedWrite {
+        target: PathBuf,
+        content: Option<String>, // None => delete
+        rel: String,
+    }
+    let mut plan: Vec<PlannedWrite> = Vec::with_capacity(files.len());
+
+    for file in &files {
+        let is_delete = file.new_path.trim() == "/dev/null";
+        let rel = strip_diff_prefix(&file.new_path);
+        if !is_delete && rel.is_empty() {
+            return Err(PatchError::MalformedDiff(format!(
+                "empty target path for file section '{}'",
+                file.old_path
+            )));
+        }
+
+        if is_delete {
+            let old_rel = strip_diff_prefix(&file.old_path);
+            let target = resolve_target(workspace_root, Path::new(old_rel))?;
+            plan.push(PlannedWrite {
+                target,
+                content: None,
+                rel: old_rel.to_string(),
+            });
+            continue;
+        }
+
+        let abs_target = resolve_target(workspace_root, Path::new(rel))?;
+
+        // ── Read original file (empty string if creating a new file) ──────────
+        let original = if abs_target.exists() {
+            fs::read_to_string(&abs_target).map_err(PatchError::Io)?
+        } else {
+            String::new()
+        };
+
+        // Split preserving line endings so we can faithfully reconstruct the
+        // file.
+        let file_lines: Vec<&str> = split_lines_keep_endings(&original);
+
+        // ── Apply hunks (pure; nothing written yet) ───────────────────────────
+        let new_content = apply_hunks(&file_lines, &file.hunks)?;
+
+        plan.push(PlannedWrite {
+            target: abs_target,
+            content: Some(new_content),
+            rel: rel.to_string(),
+        });
+    }
+
+    // ── Phase 2: commit every planned write (temp file + atomic rename) ────
+    for entry in &plan {
+        match &entry.content {
+            None => {
+                // Deletion.
+                if entry.target.exists() {
+                    fs::remove_file(&entry.target).map_err(PatchError::Io)?;
+                }
+            }
+            Some(new_content) => {
+                let parent = entry.target.parent().unwrap_or(Path::new("."));
+                fs::create_dir_all(parent).map_err(PatchError::Io)?;
+
+                // Use a sibling temp file so the rename is guaranteed to be
+                // on the same filesystem (otherwise it would be a copy+delete,
+                // not atomic).
+                let tmp_path = entry.target.with_extension(format!(
+                    "patch_{}.tmp",
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.subsec_nanos())
+                        .unwrap_or(0)
+                ));
+
+                {
+                    let mut tmp = fs::File::create(&tmp_path).map_err(PatchError::Io)?;
+                    tmp.write_all(new_content.as_bytes())
+                        .map_err(PatchError::Io)?;
+                    tmp.flush().map_err(PatchError::Io)?;
+                    // `tmp` is dropped (and thus flushed to OS) here.
+                }
+
+                fs::rename(&tmp_path, &entry.target).map_err(|e| {
+                    // Best-effort cleanup if rename fails.
+                    let _ = fs::remove_file(&tmp_path);
+                    PatchError::Io(e)
+                })?;
+            }
+        }
+        applied.push(entry.rel.clone());
+    }
+
+    Ok(applied)
+}
+
+/// Apply a unified diff `patch` to the file at `path`.
+///
+/// # Arguments
+/// * `workspace_root` – All target paths must resolve within this directory.
+/// * `path`           – Path of the file to patch (relative or absolute).
+/// * `patch`          – Unified diff text (UTF-8).
+///
+/// # Atomicity
+/// The function writes output to a temp file adjacent to the target, then
+/// renames it over the target.  If anything fails, the original is unchanged.
+///
+/// # Errors
+/// Returns [`PatchError`] for path traversal, malformed diffs, stale context,
+/// and I/O errors.
+pub fn apply_patch(
+    workspace_root: &Path,
+    path: &Path,
+    patch: &str,
+) -> Result<(), PatchError> {
+    // Accept both header-ful and header-less (hunk-only) single-file diffs.
+    let files = match parse_files(patch) {
+        Ok(files) => {
+            if files.len() != 1 {
+                return Err(PatchError::MalformedDiff(format!(
+                    "expected a single-file diff, found {} file section(s); use apply_patch_multi instead",
+                    files.len()
+                )));
+            }
+            files
+        }
+        Err(_) if patch.contains("@@") => vec![FileDiff {
+            old_path: String::new(),
+            new_path: String::new(),
+            hunks: parse_hunks(patch)?,
+        }],
+        Err(e) => return Err(e),
+    };
+
+    let abs_target = resolve_target(workspace_root, path)?;
+
     // ── 2. Parse the diff ────────────────────────────────────────────────────
-    let hunks = parse_hunks(patch)?;
+    let hunks = &files[0].hunks;
 
     // ── 3. Read original file (empty string if creating a new file) ──────────
     let original = if abs_target.exists() {
@@ -334,12 +588,10 @@ pub fn apply_patch(
     let file_lines: Vec<&str> = split_lines_keep_endings(&original);
 
     // ── 4. Apply hunks ───────────────────────────────────────────────────────
-    let new_content = apply_hunks(&file_lines, &hunks)?;
+    let new_content = apply_hunks(&file_lines, hunks)?;
 
     // ── 5. Atomic write: temp file → rename ─────────────────────────────────
-    let parent = abs_target
-        .parent()
-        .unwrap_or(Path::new("."));
+    let parent = abs_target.parent().unwrap_or(Path::new("."));
     fs::create_dir_all(parent).map_err(PatchError::Io)?;
 
     // Use a sibling temp file so the rename is guaranteed to be on the same
@@ -674,5 +926,133 @@ mod tests {
         apply_patch(&root, Path::new("append.txt"), patch).unwrap();
         let result = fs::read_to_string(root.join("append.txt")).unwrap();
         assert_eq!(result, "existing line\nnew last line\n");
+    }
+
+    // ── Test 11: Multi-file diff ─────────────────────────────────────────────
+
+    #[test]
+    fn test_multi_file_apply() {
+        let root = tmp_dir();
+        write_file(&root, "a.txt", "one\ntwo\n");
+        write_file(&root, "b.txt", "alpha\nbeta\n");
+
+        let patch = "\
+--- a/a.txt
++++ b/a.txt
+@@ -1,2 +1,2 @@
+ one
+-two
++TWO
+--- a/b.txt
++++ b/b.txt
+@@ -1,2 +1,2 @@
+-alpha
++ALPHA
+ beta
+";
+        let applied = apply_patch_multi(&root, patch).expect("multi-file patch");
+        assert_eq!(applied.len(), 2);
+        assert!(applied.contains(&"a.txt".to_string()));
+        assert!(applied.contains(&"b.txt".to_string()));
+        assert_eq!(fs::read_to_string(root.join("a.txt")).unwrap(), "one\nTWO\n");
+        assert_eq!(fs::read_to_string(root.join("b.txt")).unwrap(), "ALPHA\nbeta\n");
+    }
+
+    // ── Test 12: Multi-file new file + delete ────────────────────────────────
+
+    #[test]
+    fn test_multi_file_create_and_delete() {
+        let root = tmp_dir();
+        write_file(&root, "old.txt", "bye\n");
+
+        let patch = "\
+--- /dev/null
++++ b/new.txt
+@@ -0,0 +1,2 @@
++hello
++world
+--- a/old.txt
++++ /dev/null
+@@ -1,1 +0,0 @@
+-bye
+";
+        let applied = apply_patch_multi(&root, patch).expect("create + delete");
+        assert_eq!(applied.len(), 2);
+        assert_eq!(
+            fs::read_to_string(root.join("new.txt")).unwrap(),
+            "hello\nworld\n"
+        );
+        assert!(!root.join("old.txt").exists(), "deleted file should be gone");
+    }
+
+    // ── Test 13: Multi-file stale context leaves all files untouched ────────
+
+    #[test]
+    fn test_multi_file_stale_leaves_others_untouched() {
+        let root = tmp_dir();
+        write_file(&root, "good.txt", "keep\n");
+        write_file(&root, "bad.txt", "line one\nline MODIFIED\n");
+
+        let patch = "\
+--- a/good.txt
++++ b/good.txt
+@@ -1,1 +1,1 @@
+-keep
++KEEP
+--- a/bad.txt
++++ b/bad.txt
+@@ -1,2 +1,2 @@
+ line one
+-line two
++line TWO
+";
+        let err = apply_patch_multi(&root, patch)
+            .expect_err("stale context in second file should fail");
+        assert!(matches!(err, PatchError::StaleContext { .. }));
+        // The first file must NOT have been modified (all-or-nothing per file,
+        // and the first file is only committed after the full parse succeeds).
+        assert_eq!(fs::read_to_string(root.join("good.txt")).unwrap(), "keep\n");
+    }
+
+    // ── Test 14: apply_patch rejects multi-file diffs ────────────────────────
+
+    #[test]
+    fn test_apply_patch_rejects_multi_file() {
+        let root = tmp_dir();
+        write_file(&root, "a.txt", "one\n");
+        write_file(&root, "b.txt", "two\n");
+
+        let patch = "\
+--- a/a.txt
++++ b/a.txt
+@@ -1,1 +1,1 @@
+-one
++ONE
+--- a/b.txt
++++ b/b.txt
+@@ -1,1 +1,1 @@
+-two
++TWO
+";
+        let err = apply_patch(&root, Path::new("a.txt"), patch)
+            .expect_err("multi-file diff should be rejected by apply_patch");
+        assert!(matches!(err, PatchError::MalformedDiff(_)));
+    }
+
+    // ── Test 15: multi-file path traversal rejected ──────────────────────────
+
+    #[test]
+    fn test_multi_file_traversal_rejected() {
+        let root = tmp_dir();
+        let patch = "\
+--- a/../escape.txt
++++ b/../escape.txt
+@@ -1,1 +1,1 @@
+-old
++new
+";
+        let err = apply_patch_multi(&root, patch)
+            .expect_err("traversal should be rejected");
+        assert!(matches!(err, PatchError::PathEscape(_)));
     }
 }
