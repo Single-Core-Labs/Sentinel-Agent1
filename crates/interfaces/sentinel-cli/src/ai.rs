@@ -294,6 +294,11 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
                 std::process::exit(1);
             }
         }
+        let (p, c) = (agent.prompt_tokens(), agent.completion_tokens());
+        println!(
+            "\n[sentinel] session summary: prompt_tokens={} completion_tokens={} total_tokens={}",
+            p, c, p + c
+        );
         println!();
         return Ok(());
     }
