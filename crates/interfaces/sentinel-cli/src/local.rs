@@ -176,7 +176,7 @@ async fn chat_loop(
             continue;
         }
 
-        match agent.run_with_approval(thread, &input, approval.as_ref()).await {
+        match agent.run_with_approval(thread, &input, approval.as_ref(), &None).await {
             Ok(sentinel_core::AgentOutput::Success { text }) => {
                 if !text.is_empty() { println!("\n{}", text); }
             }

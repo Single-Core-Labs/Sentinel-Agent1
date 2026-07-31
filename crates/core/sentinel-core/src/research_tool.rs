@@ -79,7 +79,7 @@ impl Tool for ResearchTool {
                 thread.add_message(sentinel_protocol::Message::user(
                     "[SYSTEM: CONTEXT LIMIT REACHED] Summarize your findings NOW. Do NOT call any more tools."
                 ));
-                match agent.run_with_approval(&mut thread, "Summarize now.", &approval).await {
+                match agent.run_with_approval(&mut thread, "Summarize now.", &approval, &None).await {
                     Ok(output) => return ToolOutput::ok(output.text_or_empty()),
                     Err(_) => return ToolOutput::err("Research context exhausted."),
                 }
@@ -92,7 +92,7 @@ impl Tool for ResearchTool {
                 ));
             }
 
-            match agent.run_with_approval(&mut thread, "", &approval).await {
+            match agent.run_with_approval(&mut thread, "", &approval, &None).await {
                 Ok(output) => {
                     total_tokens = agent.prompt_tokens() + agent.completion_tokens();
                     match output {
@@ -113,7 +113,7 @@ impl Tool for ResearchTool {
         thread.add_message(sentinel_protocol::Message::user(
             "[SYSTEM: ITERATION LIMIT] Summarize ALL findings so far."
         ));
-        match agent.run_with_approval(&mut thread, "Final summary.", &approval).await {
+        match agent.run_with_approval(&mut thread, "Final summary.", &approval, &None).await {
             Ok(output) => ToolOutput::ok(output.text_or_empty()),
             Err(_) => ToolOutput::err("Research agent hit iteration limit."),
         }

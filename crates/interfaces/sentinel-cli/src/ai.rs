@@ -122,6 +122,7 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     let mut model_id = config.agent.default_model.clone();
     let mut yolo_mode = config.agent.yolo_mode;
     let mut prompt_arg: Option<String> = None;
+    let mut hook_command: Option<String> = None;
     {
         let mut iter = args.iter();
         while let Some(arg) = iter.next() {
@@ -135,12 +136,15 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
                     }
                 }
                 "--prompt" => prompt_arg = iter.next().cloned(),
+                "--hook-command" => hook_command = iter.next().cloned(),
                 "-h" | "--help" => {
-                    println!("Usage: sentinel ai [model-id] [--resume <session-id> | --new] [--yolo] [--model <id>] [--prompt <text>]");
-                    println!("  --resume <id>  Continue a previously saved session");
-                    println!("  --new          Start a fresh session (ignores --resume)");
-                    println!("  --yolo         Auto-approve tool actions");
-                    println!("  --prompt <t>   Run a single turn non-interactively, then exit");
+                    println!("Usage: sentinel ai [model-id] [--resume <session-id> | --new] [--yolo] [--model <id>] [--prompt <text>] [--hook-command <cmd>]");
+                    println!("  --resume <id>     Continue a previously saved session");
+                    println!("  --new             Start a fresh session (ignores --resume)");
+                    println!("  --yolo            Auto-approve tool actions");
+                    println!("  --prompt <t>      Run a single turn non-interactively, then exit");
+                    println!("  --hook-command <c> Policy script gating every tool call:");
+                    println!("                     stdout: 'allow' | 'deny <reason>' | 'ask' (fail-closed)");
                     return Ok(());
                 }
                 _ if arg.starts_with('-') => {}
@@ -194,9 +198,23 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         tool_registry.register(tool);
     }
     let tools = Arc::new(tool_registry);
+
+    let plugin_registry = Arc::new(sentinel_plugin_system::PluginRegistry::new());
+    let plugin_dir = plugin_dir();
+    let loaded_plugins = sentinel_plugin_system::load_plugins_dir(&plugin_dir);
+    for plugin in loaded_plugins {
+        if let Err(e) = plugin_registry.register(plugin).await {
+            eprintln!("{} Failed to load plugin: {}", "W".yellow(), e);
+        }
+    }
+    if !plugin_dir.exists() {
+        let _ = std::fs::create_dir_all(&plugin_dir);
+    }
+
     let agent = sentinel_core::Agent::new(provider, tools, config.clone())
         .with_compressor(headroom_compressor)
-        .with_model(model_id.clone());
+        .with_model(model_id.clone())
+        .with_plugin_registry(plugin_registry.clone());
 
     let store = sentinel_core::JsonFileThreadStore::new(session_dir());
 
@@ -236,9 +254,21 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         Box::new(CliApprovalGate)
     };
 
+    let policy: Option<std::sync::Arc<dyn sentinel_core::PolicyEngine>> = match hook_command {
+        Some(cmd) => {
+            if prompt_arg.is_some() {
+                eprintln!(" {} Policy script active: {}", "⚖".yellow().bold(), cmd.yellow());
+            } else {
+                println!(" {} Policy script active: {}", "⚖".yellow().bold(), cmd.yellow());
+            }
+            Some(std::sync::Arc::new(sentinel_core::ScriptPolicyEngine::new(cmd)))
+        }
+        None => None,
+    };
+
     // Non-interactive single-shot mode (used by the eval harness)
     if let Some(one_shot) = prompt_arg {
-        let result = agent.run_with_approval(&mut thread, &one_shot, approval.as_ref()).await;
+        let result = agent.run_with_approval(&mut thread, &one_shot, approval.as_ref(), &policy).await;
         if let Err(e) = store.save_thread(&thread).await {
             eprintln!("{} Failed to save session: {}", "W".yellow(), e);
         }
@@ -303,7 +333,7 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
             continue;
         }
 
-        let result = agent.run_with_approval(&mut thread, &input, approval.as_ref()).await;
+        let result = agent.run_with_approval(&mut thread, &input, approval.as_ref(), &policy).await;
         if let Err(e) = store.save_thread(&thread).await {
             eprintln!("{} Failed to save session: {}", "W".yellow(), e);
         }
@@ -378,6 +408,16 @@ fn session_dir() -> std::path::PathBuf {
         .or_else(|_| std::env::var("HOME"))
         .map(|h| std::path::PathBuf::from(h).join(".sentinel").join("threads"))
         .unwrap_or_else(|_| std::path::PathBuf::from("sentinel_threads"))
+}
+
+fn plugin_dir() -> std::path::PathBuf {
+    if let Ok(home) = std::env::var("SENTINEL_HOME") {
+        return std::path::PathBuf::from(home).join("plugins");
+    }
+    std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .map(|h| std::path::PathBuf::from(h).join(".sentinel").join("plugins"))
+        .unwrap_or_else(|_| std::path::PathBuf::from("plugins"))
 }
 
 async fn list_sessions(store: &sentinel_core::JsonFileThreadStore) {

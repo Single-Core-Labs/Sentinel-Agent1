@@ -332,6 +332,7 @@ impl PipelineAgent {
                 &None,
                 &None,
                 &None,
+                &self.agent.plugin_registry,
             ).await;
 
             for result in &tool_results {

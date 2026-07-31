@@ -96,7 +96,7 @@ pub async fn run_sub_agent_team_with_approval(
                 task.description,
                 task.instruction,
             );
-            let output = agent.run_with_approval(&mut thread, &instruction, &*approval).await
+            let output = agent.run_with_approval(&mut thread, &instruction, &*approval, &None).await
                 .unwrap_or_else(|e| AgentOutput::error(e.to_string()));
 
             SubTaskResult {

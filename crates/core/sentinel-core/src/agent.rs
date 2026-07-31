@@ -12,7 +12,7 @@ use sentinel_protocol::{
 use sentinel_provider::{ModelProvider, ProviderError};
 use sentinel_tools::{ToolRegistry, ToolContext};
 use sentinel_config::SentinelConfig;
-use sentinel_plugin_system::{PluginRegistry, PluginEvent};
+use sentinel_plugin_system::{PluginRegistry, PluginEvent, PluginAction};
 use crate::thread::{AgentThread, ThreadStatus, ApprovalRequest};
 use crate::prompt::SystemPromptManager;
 use crate::event::{SharedEventStore, SessionEvent};
@@ -172,7 +172,7 @@ impl Agent {
     }
 
     pub async fn run(&self, thread: &mut AgentThread, user_input: &str) -> AgentResult {
-        self.run_with_approval(thread, user_input, &AutoApprovalGate).await
+        self.run_with_approval(thread, user_input, &AutoApprovalGate, &None).await
     }
 
     pub async fn run_with_approval(
@@ -180,8 +180,9 @@ impl Agent {
         thread: &mut AgentThread,
         user_input: &str,
         approval: &dyn ApprovalGate,
+        policy: &Option<Arc<dyn PolicyEngine>>,
     ) -> AgentResult {
-        let result = self.run_with_approval_inner(thread, user_input, approval).await;
+        let result = self.run_with_approval_inner(thread, user_input, approval, policy).await;
         self.dispatch_plugin_event(&PluginEvent::SessionEnded {
             session_id: thread.id.to_string(),
         }).await;
@@ -196,6 +197,7 @@ impl Agent {
         thread: &mut AgentThread,
         user_input: &str,
         approval: &dyn ApprovalGate,
+        policy: &Option<Arc<dyn PolicyEngine>>,
     ) -> AgentResult {
         let now = chrono::Utc::now();
         let sid = thread.id;
@@ -360,7 +362,8 @@ impl Agent {
                 &self.compressor,
                 &None,
                 &None,
-                &None,
+                policy,
+                &self.plugin_registry,
             ).await;
 
             for result in &tool_results {
@@ -611,6 +614,7 @@ impl Agent {
                 &None,
                 &None,
                 &None,
+                &self.plugin_registry,
             ).await;
 
             for result in &tool_results {
@@ -665,8 +669,8 @@ impl Agent {
         }
     }
 
-    async fn dispatch_plugin_event(&self, event: &PluginEvent) {
-        self.plugin_registry.dispatch(event).await;
+    async fn dispatch_plugin_event(&self, event: &PluginEvent) -> PluginAction {
+        self.plugin_registry.dispatch(event).await
     }
 
     async fn build_request(&self, thread: &AgentThread) -> CompletionRequest {
@@ -709,6 +713,7 @@ pub(crate) async fn execute_tools_concurrent(
     sandbox: &Option<crate::sandbox::SharedSandbox>,
     event_bus: &Option<EventBus>,
     policy: &Option<Arc<dyn PolicyEngine>>,
+    plugins: &Arc<PluginRegistry>,
 ) -> Vec<ToolResult> {
     let mut ordered_results: BTreeMap<usize, ToolResult> = BTreeMap::new();
     let mut set: JoinSet<(usize, ToolResult)> = JoinSet::new();
@@ -726,6 +731,20 @@ pub(crate) async fn execute_tools_concurrent(
                 tool_call_id: tool_call_id.clone(),
                 name: name.clone(),
                 output: "Budget exhausted — tool execution skipped".into(),
+                is_error: true,
+            });
+            continue;
+        }
+
+        // Plugin veto (before user approval)
+        if let PluginAction::Veto(reason) = plugins.dispatch(&PluginEvent::BeforeToolCall {
+            tool_name: name.clone(),
+            args: args.clone(),
+        }).await {
+            ordered_results.insert(i, ToolResult {
+                tool_call_id: tool_call_id.clone(),
+                name: name.clone(),
+                output: format!("Vetoed by plugin policy: {}", reason),
                 is_error: true,
             });
             continue;
@@ -830,6 +849,7 @@ pub(crate) async fn execute_tools_concurrent(
         let cancel = cancel.clone();
         let evt_handler = events.read().unwrap().clone();
         let compressor = Arc::clone(compressor);
+        let plugins = Arc::clone(plugins);
 
         let tool_call_id_cancel = tool_call_id.clone();
         let name_cancel = name.clone();
@@ -846,7 +866,14 @@ pub(crate) async fn execute_tools_concurrent(
                     })
                 }
                 result = async {
+                    let args_for_event = args.clone();
                     let output = tools.execute(&name, args, &ctx).await;
+                    plugins.dispatch(&PluginEvent::AfterToolCall {
+                        tool_name: name.clone(),
+                        args: args_for_event,
+                        result: output.text.clone(),
+                        is_error: output.is_error,
+                    }).await;
                     let compressed = compressor.compress(&name, &output.text, output.is_error).await;
                     evt_handler.handle_event(AgentEvent::ToolResult {
                         name: name.clone(),

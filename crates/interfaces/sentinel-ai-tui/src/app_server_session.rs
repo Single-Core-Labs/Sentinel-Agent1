@@ -104,7 +104,7 @@ impl AppServerSession {
 
         // Run the full agent loop (plan → tool calls → observe → answer)
         let mut thread = session.thread.lock().await;
-        let result = session.agent.run_with_approval(&mut thread, prompt, &gate).await;
+        let result = session.agent.run_with_approval(&mut thread, prompt, &gate, &None).await;
         drop(thread);
 
         // Restore the null handler so future calls start clean
