@@ -81,19 +81,33 @@ mod tests {
         writeln!(file, "[agent]\ndefault_model = \"gpt-4o\"").unwrap();
         drop(file);
 
-        let mut rx = watch_config(Some(config_path.to_str().unwrap()), std::time::Duration::from_millis(100));
+        let mut rx = watch_config(Some(config_path.to_str().unwrap()), std::time::Duration::from_millis(20));
 
-        rx.changed().await.unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(5), rx.changed())
+            .await
+            .expect("timed out waiting for initial config")
+            .unwrap();
         let initial = rx.borrow_and_update().clone();
-        assert!(initial.is_some(), "Expected initial config to load");
+        assert_eq!(
+            initial.as_ref().map(|c| c.agent.default_model.clone()),
+            Some("gpt-4o".to_string()),
+            "Expected initial config to load"
+        );
 
         let mut file = std::fs::File::create(&config_path).unwrap();
         writeln!(file, "[agent]\ndefault_model = \"o3-mini\"").unwrap();
         drop(file);
 
-        rx.changed().await.unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(5), rx.changed())
+            .await
+            .expect("timed out waiting for config reload")
+            .unwrap();
         let reloaded = rx.borrow_and_update().clone();
-        assert!(reloaded.is_some(), "Expected config to reload");
+        assert_eq!(
+            reloaded.as_ref().map(|c| c.agent.default_model.clone()),
+            Some("o3-mini".to_string()),
+            "Expected config to reload"
+        );
 
         let _ = std::fs::remove_file(&config_path);
         let _ = std::fs::remove_dir(&dir);
