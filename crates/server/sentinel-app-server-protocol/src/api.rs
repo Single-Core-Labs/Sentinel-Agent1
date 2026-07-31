@@ -62,6 +62,8 @@ pub mod methods {
 
     // GPU
     pub const GPU_QUERY: &str = "gpu/query";
+    pub const GPU_EMULATE: &str = "gpu/emulate";
+    pub const GPU_PROFILE: &str = "gpu/profile";
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -201,6 +203,35 @@ pub struct ToolCallResult {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthLoginParams {
     pub token: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GpuEmulateParams {
+    pub file_path: String,
+    /// Run the ~100-config launch sweep and include the best config (default true).
+    #[serde(default = "default_true")]
+    pub sweep: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GpuEmulateResult {
+    pub language: String,
+    pub report: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GpuProfileParams {
+    pub file_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GpuProfileResult {
+    pub language: String,
+    pub report: String,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

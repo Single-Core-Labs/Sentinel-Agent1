@@ -31,6 +31,7 @@ sentinel-analytics = { workspace = true }
 sentinel-agent-identity = { workspace = true }
 sentinel-agent-graph-store = { workspace = true }
 sentinel-headroom = { workspace = true }
+sentinel-gpu-profiler = { workspace = true }
 
 axum = { version = "0.7", features = ["ws"] }
 tower-http = { version = "0.5", features = ["fs", "cors"] }

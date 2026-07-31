@@ -171,9 +171,37 @@ function App() {
     }
   }
 
-  const handleSlashCommand = (cmd: string) => {
+  const runGpuRpc = async (method: string, params: Record<string, unknown>, label: string) => {
+    setMessages((prev) => [...prev, { id: generateId(), role: 'user', content: label }])
+    setIsProcessing(true)
+    try {
+      const result = (await client.call(method, params)) as Record<string, unknown>
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: generateId(),
+          role: 'system',
+          content: `[${method}] ${(result?.report as string) ?? 'No report.'}`,
+        },
+      ])
+    } catch (err: unknown) {
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: generateId(),
+          role: 'system',
+          content: `Error: ${err instanceof Error ? err.message : 'GPU RPC failed'}`,
+        },
+      ])
+    } finally {
+      setIsProcessing(false)
+    }
+  }
+
+  const handleSlashCommand = async (cmd: string) => {
     const parts = cmd.split(/\s+/)
     const command = parts[0].toLowerCase()
+    const args = parts.slice(1).join(' ')
 
     switch (command) {
       case '/help':
@@ -190,6 +218,8 @@ function App() {
   /models   - List available models
   /backends - Show detected local LLM backends
   /gpu      - Show GPU stats
+  /emulate <file>        - GPU emulation + launch sweep (zero-token)
+  /profile <file>        - Static kernel analysis (zero-token)
   /connect  - Reconnect to backend
   /exit     - Exit the agent
 ${commandRegistry.getHelpText()}`,
@@ -261,6 +291,37 @@ ${commandRegistry.getHelpText()}`,
             },
           ])
         }
+        break
+
+      case '/emulate':
+      case '/emulate-sweep':
+        if (!args) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: generateId(),
+              role: 'system',
+              content: 'Usage: /emulate <path-to-kernel-file>  (CUDA .cu, Triton .py, ...)',
+            },
+          ])
+          break
+        }
+        runGpuRpc('gpu/emulate', { file_path: args, sweep: true }, `/emulate ${args}`)
+        break
+
+      case '/profile':
+        if (!args) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: generateId(),
+              role: 'system',
+              content: 'Usage: /profile <path-to-kernel-file>',
+            },
+          ])
+          break
+        }
+        runGpuRpc('gpu/profile', { file_path: args }, `/profile ${args}`)
         break
 
       case '/connect':

@@ -66,7 +66,6 @@ fn try_spawn_ts_agent(args: &[String]) -> bool {
                     if !up {
                         let _ = server_child.take().map(|mut c| c.kill());
                         eprintln!("{} Could not start WebSocket server on {}", "W".yellow(), TUI_WS_ADDR);
-                        eprintln!("   Falling back to inline terminal UI.");
                         return false;
                     }
                 }
@@ -97,7 +96,7 @@ fn try_spawn_ts_agent(args: &[String]) -> bool {
             true
         }
         Err(e) => {
-            eprintln!("{} Could not start TUI ({}) — falling back to inline terminal UI.", "W".yellow(), e);
+            eprintln!("{} Could not start TUI ({}) — OpenTUI is the only interactive UI.", "W".yellow(), e);
             if let Some(mut s) = server_child {
                 let _ = s.kill();
             }
@@ -151,6 +150,15 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
                 _ => model_id = arg.clone(),
             }
         }
+    }
+
+    // The inline terminal REPL is gone — OpenTUI (bun) is the only interactive UI.
+    // Without bun and without --prompt there is nothing to do.
+    if prompt_arg.is_none() {
+        eprintln!("{} No interactive TUI available (bun required).", "W".yellow());
+        eprintln!("   Install bun (https://bun.sh) and rerun, or use one-shot mode:");
+        eprintln!("       sentinel ai <model> --prompt \"<text>\"");
+        return Ok(());
     }
 
     let provider_info = config.providers()
@@ -251,7 +259,6 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     print_divider();
     println!(" Session: {}", thread.id.to_string().green().bold());
     println!(" {} Resume later with: sentinel ai --resume {}", "→".cyan().bold(), thread.id.to_string().dimmed());
-    println!("{}", "Type your message or /help for commands.".dimmed());
 
     let approval: Box<dyn sentinel_core::ApprovalGate> = if yolo_mode {
         Box::new(sentinel_core::AutoApprovalGate)
@@ -300,114 +307,8 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
             p, c, p + c
         );
         println!();
-        return Ok(());
     }
-
-    loop {
-        print!("{} ", ">".yellow().bold());
-        use std::io::Write;
-        std::io::stdout().flush()?;
-
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input)?;
-        let input = input.trim().to_string();
-
-        if input.is_empty() {
-            continue;
-        }
-
-        if input.eq_ignore_ascii_case("exit") || input.eq_ignore_ascii_case("quit") {
-            break;
-        }
-
-        // Slash commands
-        if input.starts_with('/') {
-            match input.as_str() {
-                "/sessions" => list_sessions(&store).await,
-                _ => {
-                    if let Some(rest) = input.strip_prefix("/resume ") {
-                        match store.load_thread(rest.trim()).await {
-                            Ok(t) => {
-                                thread = t;
-                                println!(" Resumed session {}", rest.trim().green().bold());
-                            }
-                            Err(e) => {
-                                crate::display::print_error(&format!("Could not load session: {}", e));
-                            }
-                        }
-                    } else {
-                        handle_slash_command(&input).await;
-                    }
-                }
-            }
-            continue;
-        }
-
-        let result = agent.run_with_approval(&mut thread, &input, approval.as_ref(), &policy).await;
-        if let Err(e) = store.save_thread(&thread).await {
-            eprintln!("{} Failed to save session: {}", "W".yellow(), e);
-        }
-        match result {
-            Ok(output) => match output {
-                sentinel_core::AgentOutput::Success { text } => {
-                    if !text.is_empty() {
-                        println!("\n{}", text);
-                    }
-                }
-                sentinel_core::AgentOutput::Error { message } => {
-                    crate::display::print_error(&message);
-                }
-            },
-            Err(e) => {
-                crate::display::print_error(&e.to_string());
-            }
-        }
-        println!();
-    }
-
-    let stats = format!("turns: {}, iterations: {}", thread.turn, thread.iterations);
-    println!("\n{} {}", "Done.".green().bold(), stats.dimmed());
-
     Ok(())
-}
-
-async fn handle_slash_command(cmd: &str) {
-    match cmd {
-        "/help" | "/h" => {
-            println!();
-            println!(" {}", "Commands:".yellow().bold());
-            println!("  /help, /h         Show this help");
-            println!("  /auth             Configure provider API keys");
-            println!("  /models           List available models");
-            println!("  /sessions         List saved sessions");
-            println!("  /resume <id>      Resume a saved session");
-            println!("  /exit, /quit      Exit");
-            println!("  /clear            Clear screen");
-            println!();
-        }
-        "/auth" => {
-            println!();
-            println!(" {} Run this in your terminal to add a provider:", "●".cyan().bold());
-            println!("       sentinel auth login");
-            println!();
-        }
-        "/models" | "/model" => {
-            println!();
-            println!(" {} Use a model by passing it as an argument:", "●".cyan().bold());
-            println!("       sentinel ai <model-id>");
-            println!("  Or set it in sentinel.toml → agent.default_model");
-            println!();
-        }
-        "/clear" => {
-            print!("\x1B[2J\x1B[H");
-            use std::io::Write;
-            let _ = std::io::stdout().flush();
-        }
-        _ => {
-            println!(" {} Unknown command: {}", "✖".red().bold(), cmd);
-            println!("   Type /help for available commands.");
-        }
-    }
 }
 
 fn session_dir() -> std::path::PathBuf {
@@ -428,23 +329,4 @@ fn plugin_dir() -> std::path::PathBuf {
         .or_else(|_| std::env::var("HOME"))
         .map(|h| std::path::PathBuf::from(h).join(".sentinel").join("plugins"))
         .unwrap_or_else(|_| std::path::PathBuf::from("plugins"))
-}
-
-async fn list_sessions(store: &sentinel_core::JsonFileThreadStore) {
-    match store.list_threads().await {
-        Ok(ids) if !ids.is_empty() => {
-            println!();
-            println!(" {} Saved sessions:", "●".cyan().bold());
-            for id in ids {
-                println!("    {}  ({})", id.dimmed(), "resume: sentinel ai --resume".dimmed());
-            }
-            println!();
-        }
-        Ok(_) => {
-            println!(" {} No saved sessions yet.", "●".cyan().bold());
-        }
-        Err(e) => {
-            println!(" {} Could not list sessions: {}", "✖".red().bold(), e);
-        }
-    }
 }

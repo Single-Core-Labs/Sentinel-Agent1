@@ -185,6 +185,8 @@ impl RequestHandler {
             methods::AUTH_STATUS => self.handle_auth_status().await,
             methods::DIAGNOSTICS => self.handle_diagnostics().await,
             methods::GPU_QUERY => self.handle_gpu_query(),
+            methods::GPU_EMULATE => self.handle_gpu_emulate(req.params).await,
+            methods::GPU_PROFILE => self.handle_gpu_profile(req.params).await,
             _ => Err(JsonRpcError::method_not_found(format!("Unknown method: {}", req.method))),
         };
 
@@ -797,6 +799,89 @@ impl RequestHandler {
             "vram_used_gb": mem_used_mb.map(|m| m / 1024.0),
             "util_gpu": util.and_then(|s| s.trim().parse::<f64>().ok()),
             "temp_c": temp.and_then(|s| s.trim().parse::<f64>().ok()),
+        }))
+    }
+
+    /// Zero-token GPU kernel emulation for the OpenTUI frontend (/emulate).
+    async fn handle_gpu_emulate(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
+        let p: api::GpuEmulateParams = parse_params(params)?;
+        let source = std::fs::read_to_string(&p.file_path)
+            .map_err(|e| JsonRpcError::invalid_params(format!("cannot read '{}': {}", p.file_path, e)))?;
+        let fname = std::path::Path::new(&p.file_path)
+            .file_name().and_then(|n| n.to_str()).unwrap_or(&p.file_path)
+            .to_string();
+
+        let language = sentinel_gpu_profiler::langs::detect_language(&fname, &source);
+        let arch = sentinel_gpu_profiler::GpuArch::Ampere86;
+        let arches = vec![arch];
+        let req = sentinel_gpu_profiler::emulate::EmulateRequest {
+            source,
+            filename: fname.clone(),
+            config: Default::default(),
+            arches,
+            language,
+            sweep: p.sweep,
+        };
+        let out = sentinel_gpu_profiler::emulate::run_emulation(&req);
+
+        let mut report = String::new();
+        report.push_str(&format!("Language: {}\n", out.language.name()));
+        if !out.config_hint.is_empty() {
+            report.push_str(&format!("Hint: {}\n", out.config_hint.trim()));
+        }
+        if !out.report.is_empty() {
+            report.push_str(&out.report);
+        }
+        if let Some(sweep) = &out.sweep_result {
+            report.push_str("\n");
+            report.push_str(&sentinel_gpu_profiler::emulate::format_sweep_table(&sweep.entries));
+            if !sweep.entries.is_empty() {
+                report.push_str(&sentinel_gpu_profiler::emulate::format_sweep_recommendations(&sweep.entries));
+            }
+        }
+        Ok(serde_json::json!({
+            "language": out.language.name(),
+            "report": report,
+        }))
+    }
+
+    /// Zero-token static kernel analysis for the OpenTUI frontend (/profile).
+    async fn handle_gpu_profile(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
+        let p: api::GpuProfileParams = parse_params(params)?;
+        let source = std::fs::read_to_string(&p.file_path)
+            .map_err(|e| JsonRpcError::invalid_params(format!("cannot read '{}': {}", p.file_path, e)))?;
+        let fname = std::path::Path::new(&p.file_path)
+            .file_name().and_then(|n| n.to_str()).unwrap_or(&p.file_path)
+            .to_string();
+
+        let result = sentinel_gpu_profiler::langs::analyze(&fname, &source);
+        let mut report = String::new();
+        report.push_str(&format!("Language: {}\n", result.language.name()));
+        if !result.config_hint.is_empty() {
+            report.push_str(&format!("Hint: {}\n", result.config_hint.trim()));
+        }
+        if result.issues.is_empty() {
+            report.push_str("No issues found.\n");
+        } else {
+            report.push_str(&format!("{} issue(s):\n", result.issues.len()));
+            for issue in &result.issues {
+                let sev = match issue.severity {
+                    sentinel_gpu_profiler::cuda::Severity::Error => "error",
+                    sentinel_gpu_profiler::cuda::Severity::Warn => "warn",
+                    sentinel_gpu_profiler::cuda::Severity::Info => "info",
+                };
+                report.push_str(&format!(
+                    "  L{} [{}] {} → {}\n",
+                    issue.line,
+                    sev,
+                    issue.message,
+                    issue.suggestion
+                ));
+            }
+        }
+        Ok(serde_json::json!({
+            "language": result.language.name(),
+            "report": report,
         }))
     }
 }
