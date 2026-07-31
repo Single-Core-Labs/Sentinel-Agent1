@@ -56,6 +56,7 @@ pub struct Agent {
     pub(crate) provider: Arc<dyn ModelProvider>,
     pub(crate) tools: Arc<ToolRegistry>,
     pub(crate) config: Arc<SentinelConfig>,
+    pub(crate) model: String,
     pub(crate) events: RwLock<Arc<dyn EventHandler>>,
     pub(crate) event_store: SharedEventStore,
     pub(crate) prompt_manager: SystemPromptManager,
@@ -88,6 +89,7 @@ impl Agent {
     ) -> Self {
         Self {
             provider, tools, config,
+            model: String::new(),
             events: RwLock::new(Arc::new(NullEventHandler)),
             event_store: crate::event::create_event_store(),
             prompt_manager: SystemPromptManager::new(),
@@ -103,6 +105,19 @@ impl Agent {
     pub fn with_phase_callback(mut self, cb: Arc<dyn Fn(crate::thread::Phase) + Send + Sync>) -> Self {
         self.phase_callback = Some(cb);
         self
+    }
+
+    /// Override the model used for LLM requests (defaults to `config.agent.default_model`).
+    pub fn with_model(mut self, model: impl Into<String>) -> Self {
+        let model = model.into();
+        if !model.is_empty() {
+            self.model = model;
+        }
+        self
+    }
+
+    fn effective_model(&self) -> &str {
+        if self.model.is_empty() { &self.config.agent.default_model } else { &self.model }
     }
 
     pub fn prompt_tokens(&self) -> u64 { self.total_prompt_tokens.load(Ordering::Relaxed) }
@@ -223,7 +238,7 @@ impl Agent {
             };
 
             self.dispatch_plugin_event(&PluginEvent::BeforeModelRequest {
-                model: self.config.agent.default_model.clone(),
+                model: self.effective_model().to_string(),
                 prompt_tokens: 0,
             }).await;
 
@@ -418,7 +433,7 @@ impl Agent {
             context_text,
         );
 
-        let req = CompletionRequest::new(&self.config.agent.default_model)
+        let req = CompletionRequest::new(self.effective_model())
             .with_message(Message::user(prompt))
             .with_system("You are a conversation summarizer. Produce a concise 2-3 paragraph summary.");
 
@@ -656,9 +671,9 @@ impl Agent {
 
     async fn build_request(&self, thread: &AgentThread) -> CompletionRequest {
         let messages = thread.context.messages().to_vec();
-        let compressed = self.compressor.compress_conversation(&messages, &self.config.agent.default_model).await;
+        let compressed = self.compressor.compress_conversation(&messages, self.effective_model()).await;
 
-        let mut req = CompletionRequest::new(&self.config.agent.default_model);
+        let mut req = CompletionRequest::new(self.effective_model());
         for msg in compressed {
             req = req.with_message(msg);
         }
@@ -837,6 +852,7 @@ pub(crate) async fn execute_tools_concurrent(
                         name: name.clone(),
                         output: compressed.clone(),
                         is_error: output.is_error,
+                        sandboxed: output.sandboxed,
                     }).await;
                     ToolResult {
                         tool_call_id,
@@ -889,7 +905,7 @@ pub type AgentOutputStream = Box<dyn tokio_stream::Stream<Item = Result<sentinel
 pub enum AgentEvent {
     Thinking { text: String },
     ToolCall { name: String, args: serde_json::Value },
-    ToolResult { name: String, output: String, is_error: bool },
+    ToolResult { name: String, output: String, is_error: bool, sandboxed: bool },
     Completed { text: String },
     Error { message: String },
     TurnEnd { turn: u32, iteration: u32 },

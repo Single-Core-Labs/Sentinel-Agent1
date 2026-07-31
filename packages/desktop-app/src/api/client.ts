@@ -4,6 +4,7 @@ import type {
   CreateSessionResult,
   ChatResult,
   SessionInfo,
+  SessionSummary,
   Diagnostics,
   ToolDef,
 } from "./types"
@@ -47,11 +48,16 @@ export class JsonRpcClient {
 
       ws.onmessage = (event) => {
         try {
-          const msg: JsonRpcResponse = JSON.parse(event.data)
+          const msg: JsonRpcResponse & { method?: string; params?: unknown } = JSON.parse(event.data)
 
-          // Check if it's a notification (no id or id is null)
+          // Server notification (no id) – dispatch to event handlers
           if (msg.id === undefined || msg.id === null) {
-            // Could be a server event
+            if (msg.method === "event" && msg.params) {
+              const data = msg.params as { event?: string }
+              if (data.event) {
+                this.eventHandlers.forEach((handler) => handler(data.event as string, msg.params))
+              }
+            }
             return
           }
 
@@ -167,5 +173,17 @@ export class JsonRpcClient {
 
   async getConfig(): Promise<Record<string, unknown>> {
     return this.call("config/get")
+  }
+
+  async subscribeEvents(): Promise<{ subscribed: boolean }> {
+    return this.call("event/subscribe")
+  }
+
+  async browserList(): Promise<{ sessions: SessionSummary[] }> {
+    return this.call("session/browserList")
+  }
+
+  async submitDialogResponse(requestId: string, response: string): Promise<{ request_id: string; selected: string }> {
+    return this.call("dialog/submitResponse", { request_id: requestId, response })
   }
 }

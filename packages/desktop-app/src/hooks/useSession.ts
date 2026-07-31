@@ -7,6 +7,7 @@ interface UseSessionReturn {
   error: string | null
   createSession: (model?: string) => Promise<string>
   destroySession: () => Promise<void>
+  switchSession: (id: string) => void
 }
 
 export function useSession(client: JsonRpcClient | null): UseSessionReturn {
@@ -36,12 +37,16 @@ export function useSession(client: JsonRpcClient | null): UseSessionReturn {
   const destroySession = useCallback(async () => {
     if (!clientRef.current || !sessionId) return
     try {
-      await clientRef.current.call("session/destroy", { model: sessionId })
+      await clientRef.current.call("session/destroy", { session_id: sessionId })
     } catch {
       // ignore
     }
     setSessionId(null)
   }, [sessionId])
+
+  const switchSession = useCallback((id: string) => {
+    setSessionId(id)
+  }, [])
 
   // Auto-create session on connect
   useEffect(() => {
@@ -50,5 +55,5 @@ export function useSession(client: JsonRpcClient | null): UseSessionReturn {
     }
   }, [client?.connected, sessionId, creating, createSession])
 
-  return { sessionId, creating, error, createSession, destroySession }
+  return { sessionId, creating, error, createSession, destroySession, switchSession }
 }

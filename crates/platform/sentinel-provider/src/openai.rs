@@ -16,31 +16,32 @@ pub struct OpenAIProvider {
 
 impl OpenAIProvider {
     pub fn new(info: ProviderInfo) -> Result<Self, ProviderError> {
-        let api_key = info.resolve_api_key()
-            .ok_or_else(|| ProviderError::MissingApiKey { provider: info.id.clone() })?;
+        // Local OpenAI-compatible servers (Ollama, vLLM, LM Studio) often need no key.
+        let api_key = info.resolve_api_key().unwrap_or_default();
+
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(
+            reqwest::header::CONTENT_TYPE,
+            "application/json".parse().expect("valid header value"),
+        );
+        if !api_key.is_empty() {
+            headers.insert(
+                reqwest::header::AUTHORIZATION,
+                format!("Bearer {}", api_key).parse().expect("valid header value"),
+            );
+        }
+        for (k, v) in &info.extra_headers {
+            if let (Ok(name), Ok(val)) = (
+                reqwest::header::HeaderName::from_bytes(k.as_bytes()),
+                reqwest::header::HeaderValue::from_str(v),
+            ) {
+                headers.insert(name, val);
+            }
+        }
 
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(info.timeout_secs))
-            .default_headers({
-                let mut h = reqwest::header::HeaderMap::new();
-                h.insert(
-                    reqwest::header::CONTENT_TYPE,
-                    "application/json".parse().expect("valid header value"),
-                );
-                h.insert(
-                    reqwest::header::AUTHORIZATION,
-                    format!("Bearer {}", api_key).parse().expect("valid header value"),
-                );
-                for (k, v) in &info.extra_headers {
-                    if let (Ok(name), Ok(val)) = (
-                        reqwest::header::HeaderName::from_bytes(k.as_bytes()),
-                        reqwest::header::HeaderValue::from_str(v),
-                    ) {
-                        h.insert(name, val);
-                    }
-                }
-                h
-            })
+            .default_headers(headers)
             .build()
             .map_err(ProviderError::Reqwest)?;
 

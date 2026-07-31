@@ -4,3 +4,16 @@ max_turns = 50
 max_iterations = 100
 yolo_mode = false
 verbose = false
+
+
+[[providers]]
+id = "ollama-local"
+name = "Ollama Local"
+base_url = "http://localhost:11434/v1"
+
+[[providers.models]]
+id = "qwen3:8b"
+name = "Qwen3 8B"
+context_window = 32768
+supports_streaming = true
+supports_tools = true

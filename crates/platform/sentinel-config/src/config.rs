@@ -111,3 +111,101 @@ impl Default for SentinelConfig {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp_toml(name: &str, content: &str) -> String {
+        let path = std::env::temp_dir().join(format!(
+            "sentinel-config-test-{}-{}.toml",
+            std::process::id(),
+            name
+        ));
+        std::fs::write(&path, content).unwrap();
+        path.to_string_lossy().into_owned()
+    }
+
+    #[test]
+    fn parses_full_config_file() {
+        let path = temp_toml("full", r#"
+[agent]
+default_model = "qwen3:8b"
+max_turns = 9
+yolo_mode = true
+
+[[providers]]
+id = "ollama-local"
+name = "Ollama Local"
+base_url = "http://localhost:11434/v1"
+
+[[providers.models]]
+id = "qwen3:8b"
+name = "Qwen3 8B"
+context_window = 32768
+supports_tools = true
+
+[[mcp_servers]]
+id = "fs"
+name = "Filesystem"
+transport = { type = "stdio", command = "npx", args = ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"] }
+"#);
+        let cfg = SentinelConfig::load_from(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(cfg.agent.default_model, "qwen3:8b");
+        assert_eq!(cfg.agent.max_turns, 9);
+        assert!(cfg.agent.yolo_mode);
+        assert_eq!(cfg.providers.len(), 1);
+        assert_eq!(cfg.providers()[0].models[0].id, "qwen3:8b");
+        assert!(cfg.providers()[0].models[0].supports_tools);
+        assert_eq!(cfg.mcp_servers().len(), 1);
+        assert_eq!(cfg.mcp_servers()[0].id, "fs");
+    }
+
+    #[test]
+    fn missing_auth_key_parses_as_no_auth() {
+        let path = temp_toml("noauth", r#"
+[[providers]]
+id = "local"
+name = "Local"
+base_url = "http://localhost:9999/v1"
+
+[[providers.models]]
+id = "m"
+name = "M"
+"#);
+        let cfg = SentinelConfig::load_from(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+
+        let p = cfg.provider("local").unwrap();
+        assert_eq!(p.resolve_api_key(), None);
+    }
+
+    #[test]
+    fn defaults_apply_when_file_only_sets_agent() {
+        let path = temp_toml("defaults", "[agent]\ndefault_model = \"x\"\n");
+        let cfg = SentinelConfig::load_from(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(cfg.agent.default_model, "x");
+        assert!(!cfg.agent.verbose);
+        assert!(cfg.providers().is_empty(), "raw parse must not inject default providers");
+    }
+
+    #[test]
+    fn default_config_has_full_turn_limits_and_builtin_providers() {
+        let cfg = SentinelConfig::default();
+        assert_eq!(cfg.agent.max_turns, 50);
+        assert_eq!(cfg.agent.max_iterations, 100);
+        assert!(cfg.providers().iter().any(|p| p.id == "openai"));
+        assert!(cfg.provider("anthropic").is_some());
+    }
+
+    #[test]
+    fn provider_lookup_is_by_id() {
+        let cfg = SentinelConfig::default();
+        assert!(cfg.provider("anthropic").is_some());
+        assert!(cfg.provider("does-not-exist").is_none());
+    }
+}

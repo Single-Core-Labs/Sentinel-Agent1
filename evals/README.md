@@ -40,11 +40,27 @@ bun run evals:budget         # Context budget tests
 
 | Env Var | Description | Default |
 |---------|-------------|---------|
-| `SENTINEL_BIN` | Path to the `sentinel` binary | `./target/debug/sentinel.exe` |
+| `SENTINEL_BIN` | Path to the `sentinel` binary | Auto-resolved: `./target/debug/sentinel.exe` → `./target/release/sentinel.exe` → `sentinel` on PATH |
 | `SENTINEL_EVAL_MODEL` | Model under test | `claude-3-5-haiku-20241022` |
 | `SENTINEL_JUDGE_MODEL` | Model used for LLM-as-judge | Same as `SENTINEL_EVAL_MODEL` |
 | `EVAL_CATEGORY` | Only run evals of this category | (all categories) |
 | `RUN_EVALS` | Set to `1` to actually execute evals | (skip USUALLY_PASSES in CI) |
+
+### How evals drive the agent
+
+Each eval spawns the binary in **single-shot mode**:
+
+```
+sentinel ai <model> --yolo --prompt "<prompt>"
+```
+
+- `--prompt` runs exactly one agent turn and exits (no REPL).
+- `SENTINEL_NON_INTERACTIVE=1` disables the TypeScript TUI spawn.
+- Tool calls are written to the `SENTINEL_ACTIVITY_LOG` JSONL file as
+  `tool_call` / `tool_result` records (`sandboxed` reflects real jail usage).
+- `sandbox-safety` evals expect the `run_shell_command` tool, which executes
+  inside `OSJailSandbox` (Job Object on Windows, bubblewrap on Linux).
+- The LLM judge calls `sentinel completion --model <m> --system-prompt <s> <prompt>`.
 
 ---
 

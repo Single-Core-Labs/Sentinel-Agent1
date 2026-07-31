@@ -63,32 +63,57 @@ pub async fn run_main(cli: Cli) -> anyhow::Result<()> {
         return server.run_stdio().await.map_err(|e| anyhow::anyhow!("MCP error: {}", e));
     }
 
-    // Resolve the prompt – either from STDIN or from subcommands.
-    let prompt = if let Some(sub) = cli.subcommand {
+    // Resolve the session and prompt – either from STDIN or from subcommands.
+    let (session_id, prompt) = if let Some(sub) = cli.subcommand {
         match sub {
             cli::SubCommand::Resume { session_id } => {
-                format!("[Resuming session {}]", session_id)
+                // Restore the persisted session: the server loads history from the
+                // thread store, so subsequent chat() calls continue the conversation.
+                let res = client.call(
+                    api::methods::GET_SESSION,
+                    Some(serde_json::json!({ "session_id": session_id })),
+                ).await?;
+                let status = res.get("status").and_then(|v| v.as_str()).unwrap_or("unknown");
+                let turn = res.get("turn").and_then(|v| v.as_u64()).unwrap_or(0);
+                if !cli.json {
+                    eprintln!(
+                        "Resuming session {} (status: {}, turn: {})",
+                        session_id, status, turn
+                    );
+                }
+                let prompt = read_stdin()?;
+                (session_id, prompt)
             }
             cli::SubCommand::Review { path } => {
-                std::fs::read_to_string(&path).unwrap_or_else(|_| "<failed to read>".into())
+                let session_res = client
+                    .call(api::methods::CREATE_SESSION, Some(serde_json::json!({ "model": null })))
+                    .await?;
+                let session_id = session_res["session_id"].as_str().unwrap_or_default().to_string();
+                let prompt = std::fs::read_to_string(&path).unwrap_or_else(|_| "<failed to read>".into());
+                (session_id, prompt)
             }
             cli::SubCommand::Mcp => unreachable!(), // handled above
         }
     } else {
-        // No subcommand – read the prompt from stdin.
-        use std::io::Read;
-        let mut buf = String::new();
-        std::io::stdin().read_to_string(&mut buf)?;
-        buf
+        // No subcommand – create a fresh session and read the prompt from stdin.
+        let session_res = client
+            .call(api::methods::CREATE_SESSION, Some(serde_json::json!({ "model": null })))
+            .await?;
+        let session_id = session_res["session_id"].as_str().unwrap_or_default().to_string();
+        let prompt = read_stdin()?;
+        (session_id, prompt)
     };
-
-    // Create session
-    let session_res = client.call(api::methods::CREATE_SESSION, Some(serde_json::json!({ "model": null }))).await?;
-    let session_id = session_res["session_id"].as_str().unwrap_or_default().to_string();
 
     let response = client.chat(&session_id, &prompt).await?;
     let completed = ThreadEvent::new("completed", serde_json::json!({ "text": response }));
     processor.process_event(&completed)?;
 
     Ok(())
+}
+
+fn read_stdin() -> anyhow::Result<String> {
+    use std::io::Read;
+    let mut buf = String::new();
+    std::io::stdin().read_to_string(&mut buf)?;
+    Ok(buf)
 }

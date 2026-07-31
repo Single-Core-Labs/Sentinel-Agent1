@@ -19,6 +19,7 @@ futures = "0.3"
 async-trait.workspace = true
 
 sentinel-core = { workspace = true }
+sentinel-protocol = { workspace = true }
 sentinel-config = { workspace = true }
 sentinel-provider = { workspace = true }
 sentinel-tools = { workspace = true }

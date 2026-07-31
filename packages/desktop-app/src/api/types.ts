@@ -12,6 +12,17 @@ export interface JsonRpcResponse {
   error?: { code: number; message: string; data?: unknown }
 }
 
+export interface JsonRpcNotification {
+  jsonrpc: "2.0"
+  method: string
+  params?: unknown
+}
+
+export interface ServerEvent {
+  event: string
+  [key: string]: unknown
+}
+
 export interface CreateSessionParams {
   model?: string
 }
@@ -40,9 +51,33 @@ export interface SessionInfo {
 
 export interface Diagnostics {
   version: string
+  uptime_secs?: number
   active_sessions: number
   total_tokens_in: number
   total_tokens_out: number
+}
+
+export interface SessionSummary {
+  id: string
+  title: string
+  created_at: number
+  last_active_at: number
+  total_tokens: number
+  message_count: number
+}
+
+export interface AskUserEvent {
+  event: "ask_user"
+  request_id: string
+  prompt: string
+  options: string[]
+  allow_custom: boolean
+}
+
+export interface TokenCountEvent {
+  event: "token_count"
+  prompt: number
+  completion: number
 }
 
 export interface ToolDef {

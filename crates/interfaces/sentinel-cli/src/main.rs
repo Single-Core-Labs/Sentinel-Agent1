@@ -9,6 +9,7 @@ mod diagnostics;
 mod ai;
 mod local;
 mod web;
+mod completion;
 
 use colored::*;
 
@@ -34,6 +35,7 @@ async fn main() -> anyhow::Result<()> {
         "--help" | "-h" | "help" => print_help(),
         "--version" | "-V" => println!("Sentinel v{}", env!("CARGO_PKG_VERSION")),
         "exec" => exec::run(sub_args).await?,
+        "completion" => completion::run(sub_args).await?,
         "ai" => ai::run(sub_args).await?,
         "local" => local::run(sub_args).await?,
         "auth" => auth::run(sub_args).await?,
@@ -61,6 +63,7 @@ fn print_help() {
     println!("  ai [model]            Interactive agent session (Rust native)");
     println!("  local [model]         Run a local model via Ollama");
     println!("  exec <model> <prompt>  Run the agent with a prompt (Rust native)");
+    println!("  completion [--model <id>] [--system-prompt <text>] <prompt>  One-shot completion (LLM judge)");
     println!("  auth login|logout|status Authentication management");
     println!("  server start|stop|status App server control");
     println!("  web [--port <n>]        Start HTTP server with Web UI");

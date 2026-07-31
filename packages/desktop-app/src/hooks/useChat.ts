@@ -8,6 +8,7 @@ interface UseChatReturn {
   error: string | null
   sendMessage: (text: string) => Promise<void>
   clearMessages: () => void
+  loadMessages: (messages: Message[]) => void
 }
 
 let messageIdCounter = 0
@@ -68,8 +69,13 @@ export function useChat(client: JsonRpcClient | null, sessionId: string | null):
     setError(null)
   }, [])
 
+  const loadMessages = useCallback((msgs: Message[]) => {
+    setMessages(msgs)
+    setError(null)
+  }, [])
+
   const clientRef = useRef(client)
   clientRef.current = client
 
-  return { messages, sending, error, sendMessage, clearMessages }
+  return { messages, sending, error, sendMessage, clearMessages, loadMessages }
 }

@@ -1,6 +1,6 @@
 use std::sync::Arc;
 use std::net::SocketAddr;
-use sentinel_app_server_protocol::rpc::JsonRpcMessage;
+use sentinel_app_server_protocol::rpc::{JsonRpcMessage, JsonRpcResponse};
 use sentinel_app_server_transport::{TransportServer, TransportKind, Authenticator, TransportEvent, MessageSink};
 use sentinel_config::SentinelConfig;
 use sentinel_tools::ToolRegistry;
@@ -79,12 +79,72 @@ impl AppServer {
     where
         S: tokio_stream::Stream<Item = TransportEvent> + Send + Unpin,
     {
+        use sentinel_app_server_protocol::api::methods;
+        use sentinel_app_server_protocol::api::ServerEvent;
+        use sentinel_app_server_protocol::rpc::JsonRpcNotification;
         use tokio_stream::StreamExt;
+
+        // (session_id, event receiver) pairs for active event subscriptions.
+        let mut subscriptions: Vec<(String, tokio::sync::broadcast::Receiver<ServerEvent>)> = Vec::new();
+
         while let Some(event) = stream.next().await {
             match event {
                 TransportEvent::Message(JsonRpcMessage::Request(req)) => {
-                    let response = handler.handle(req).await;
-                    sink.send(&JsonRpcMessage::Response(response)).await?;
+                    if req.method == methods::EVENT_SUBSCRIBE {
+                        // Wire the client to the session's event channel.
+                        match handler.subscribe_events(req.params).await {
+                            Ok(session_id) => {
+                                if let Some(session) = handler.get_session(&session_id).await {
+                                    subscriptions.push((session_id.clone(), session.events.subscribe()));
+                                    let resp = JsonRpcResponse {
+                                        jsonrpc: "2.0".into(),
+                                        id: req.id,
+                                        result: Some(serde_json::json!({
+                                            "subscribed": true,
+                                            "session_id": session_id,
+                                        })),
+                                        error: None,
+                                    };
+                                    sink.send(&JsonRpcMessage::Response(resp)).await?;
+                                } else {
+                                    let resp = JsonRpcResponse {
+                                        jsonrpc: "2.0".into(),
+                                        id: req.id,
+                                        result: None,
+                                        error: Some(sentinel_app_server_protocol::rpc::JsonRpcError::internal_error(
+                                            "Session vanished after subscribe",
+                                        )),
+                                    };
+                                    sink.send(&JsonRpcMessage::Response(resp)).await?;
+                                }
+                            }
+                            Err(err) => {
+                                let resp = JsonRpcResponse {
+                                    jsonrpc: "2.0".into(),
+                                    id: req.id,
+                                    result: None,
+                                    error: Some(err),
+                                };
+                                sink.send(&JsonRpcMessage::Response(resp)).await?;
+                            }
+                        }
+                    } else if req.method == methods::EVENT_UNSUBSCRIBE {
+                        let session_id = req.params.as_ref()
+                            .and_then(|p| p.get("session_id"))
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("");
+                        subscriptions.retain(|(sid, _)| sid != session_id);
+                        let resp = JsonRpcResponse {
+                            jsonrpc: "2.0".into(),
+                            id: req.id,
+                            result: Some(serde_json::json!({ "unsubscribed": true })),
+                            error: None,
+                        };
+                        sink.send(&JsonRpcMessage::Response(resp)).await?;
+                    } else {
+                        let response = handler.handle(req).await;
+                        sink.send(&JsonRpcMessage::Response(response)).await?;
+                    }
                 }
                 TransportEvent::Message(JsonRpcMessage::Notification(notif))
                     if notif.method == "exit" || notif.method == "shutdown" => { break; }
@@ -97,6 +157,40 @@ impl AppServer {
                     tracing::warn!("transport error: {}", e);
                 }
                 _ => {}
+            }
+
+            // Forward any pending session events to the client.
+            let mut i = 0;
+            while i < subscriptions.len() {
+                let (session_id, rx) = &mut subscriptions[i];
+                let mut drop_sub = false;
+                loop {
+                    match rx.try_recv() {
+                        Ok(evt) => {
+                            let notif = JsonRpcNotification {
+                                jsonrpc: "2.0".into(),
+                                method: "event".into(),
+                                params: Some(serde_json::to_value(evt).unwrap_or_default()),
+                            };
+                            if sink.send(&JsonRpcMessage::Notification(notif)).await.is_err() {
+                                drop_sub = true;
+                                break;
+                            }
+                        }
+                        Err(tokio::sync::broadcast::error::TryRecvError::Empty) => break,
+                        Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => continue,
+                        Err(tokio::sync::broadcast::error::TryRecvError::Closed) => {
+                            tracing::debug!("event channel closed for session {}", session_id);
+                            drop_sub = true;
+                            break;
+                        }
+                    }
+                }
+                if drop_sub {
+                    subscriptions.remove(i);
+                } else {
+                    i += 1;
+                }
             }
         }
         Ok(())

@@ -10,14 +10,15 @@ use uuid::Uuid;
 use thiserror::Error;
 
 mod thread;
-pub use thread::AgentThread;
+pub use thread::{AgentThread, ThreadMessage};
 
 /// Unique identifier for an agent instance.
 pub type AgentId = Uuid;
 
-/// Core agent struct – in a real implementation this would embed the LLM
-/// client, tool registry, and other runtime state.  Here we keep only the
-/// fields needed for the skeleton.
+/// A live agent: model identity plus the full conversation thread.
+///
+/// Runtime state (LLM client, tool registry) lives in the host crate;
+/// this struct tracks the model and the thread that drives it.
 #[derive(Debug)]
 pub struct Agent {
     /// Human‑readable identifier for the model (e.g. "gpt-4o").

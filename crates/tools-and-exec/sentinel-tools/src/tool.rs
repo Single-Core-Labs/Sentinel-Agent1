@@ -28,14 +28,22 @@ impl ToolContext {
 pub struct ToolOutput {
     pub text: String,
     pub is_error: bool,
+    /// True when the execution ran inside an OS-level sandbox jail.
+    pub sandboxed: bool,
 }
 
 impl ToolOutput {
     pub fn ok(text: impl Into<String>) -> Self {
-        Self { text: text.into(), is_error: false }
+        Self { text: text.into(), is_error: false, sandboxed: false }
     }
     pub fn err(text: impl Into<String>) -> Self {
-        Self { text: text.into(), is_error: true }
+        Self { text: text.into(), is_error: true, sandboxed: false }
+    }
+    pub fn ok_sandboxed(text: impl Into<String>) -> Self {
+        Self { text: text.into(), is_error: false, sandboxed: true }
+    }
+    pub fn err_sandboxed(text: impl Into<String>) -> Self {
+        Self { text: text.into(), is_error: true, sandboxed: true }
     }
 }
 
@@ -89,7 +97,7 @@ impl Tool for TruncatingTool {
                 output.text.len(),
                 output.text.len() - self.max_output_chars,
             );
-            ToolOutput { text: truncated, is_error: output.is_error }
+            ToolOutput { text: truncated, is_error: output.is_error, sandboxed: output.sandboxed }
         } else {
             output
         }

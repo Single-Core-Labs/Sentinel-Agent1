@@ -1,0 +1,32 @@
+{
+  "id": "40b3799d-5460-403f-992a-77b1da9d928d",
+  "conversation": {
+    "id": "0a953847-0553-44f7-8704-20512a632a32",
+    "turns": [
+      {
+        "id": "e1a61b79-8fb7-4f08-b87a-14568ea7337f",
+        "number": 1,
+        "items": [
+          {
+            "UserMessage": {
+              "id": "69ca3231-962e-4779-8ba4-55f427b779c0",
+              "text": "Run the command: echo sandboxed_ok. Then reply with exactly: SMOKE-OK",
+              "timestamp": "2026-07-31T02:58:58.186690900Z"
+            }
+          }
+        ],
+        "created_at": "2026-07-31T02:58:58.186683200Z"
+      }
+    ],
+    "created_at": "2026-07-31T02:58:58.186384900Z",
+    "updated_at": "2026-07-31T02:58:58.186684600Z"
+  },
+  "turn": 0,
+  "iterations": 1,
+  "max_turns": 50,
+  "max_iterations": 100,
+  "yolo_mode": true,
+  "parent_thread_id": null,
+  "budget_cost_cap_usd": null,
+  "budget_total_spend_usd": 0.0
+}

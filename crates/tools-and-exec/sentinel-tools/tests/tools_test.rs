@@ -1,6 +1,23 @@
 use sentinel_tools::{ToolRegistry, ToolContext};
 
 #[tokio::test]
+async fn test_run_shell_command_sandboxed() {
+    let registry = ToolRegistry::new();
+    let ctx = ToolContext::new();
+    let workdir = std::env::temp_dir();
+
+    let echo = "echo sandboxed_ok";
+    let args = serde_json::json!({
+        "command": echo,
+        "workdir": workdir.to_str().unwrap(),
+    });
+    let result = registry.execute("run_shell_command", args, &ctx).await;
+    assert!(!result.is_error, "sandboxed exec failed: {}", result.text);
+    assert!(result.sandboxed, "expected sandboxed=true, got false");
+    assert!(result.text.contains("sandboxed_ok"), "unexpected output: {}", result.text);
+}
+
+#[tokio::test]
 async fn test_read_write_roundtrip() {
     let registry = ToolRegistry::new();
     let ctx = ToolContext::new();
@@ -58,8 +75,9 @@ async fn test_bash_echo() {
 
     let args = serde_json::json!({ "command": "echo hello" });
 
-    let result = registry.execute("bash", args, &ctx).await;
-    assert!(result.text.contains("hello"), "bash echo failed: {}", result.text);
+    let result = registry.execute("run_shell_command", args, &ctx).await;
+    assert!(result.text.contains("hello"), "run_shell_command echo failed: {}", result.text);
+    assert!(result.sandboxed, "run_shell_command must report sandboxed");
 }
 
 #[tokio::test]
@@ -88,6 +106,67 @@ async fn test_glob_pattern() {
 }
 
 #[tokio::test]
+async fn test_apply_patch_tool() {
+    let registry = ToolRegistry::new();
+    let ctx = ToolContext::new();
+    let tmp_dir = std::env::temp_dir().join("sentinel-apply-patch-test");
+    let _ = std::fs::create_dir_all(&tmp_dir);
+    std::fs::write(tmp_dir.join("a.txt"), "one\ntwo\n").unwrap();
+    std::fs::write(tmp_dir.join("b.txt"), "alpha\nbeta\n").unwrap();
+
+    let diff = "\
+--- a/a.txt
++++ b/a.txt
+@@ -1,2 +1,2 @@
+ one
+-two
++TWO
+--- a/b.txt
++++ b/b.txt
+@@ -1,2 +1,2 @@
+-alpha
++ALPHA
+ beta
+";
+    let args = serde_json::json!({
+        "diff": diff,
+        "base_path": tmp_dir.to_str().unwrap()
+    });
+    let result = registry.execute("apply_patch", args, &ctx).await;
+    assert!(!result.is_error, "apply_patch failed: {}", result.text);
+    assert!(result.text.contains("2 file(s)"), "expected 2 files: {}", result.text);
+    assert_eq!(std::fs::read_to_string(tmp_dir.join("a.txt")).unwrap(), "one\nTWO\n");
+    assert_eq!(std::fs::read_to_string(tmp_dir.join("b.txt")).unwrap(), "ALPHA\nbeta\n");
+
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+}
+
+#[tokio::test]
+async fn test_apply_patch_tool_rejects_traversal() {
+    let registry = ToolRegistry::new();
+    let ctx = ToolContext::new();
+    let tmp_dir = std::env::temp_dir().join("sentinel-apply-patch-traversal");
+    let _ = std::fs::create_dir_all(&tmp_dir);
+
+    let diff = "\
+--- a/../escape.txt
++++ b/../escape.txt
+@@ -1,1 +1,1 @@
+-old
++new
+";
+    let args = serde_json::json!({
+        "diff": diff,
+        "base_path": tmp_dir.to_str().unwrap()
+    });
+    let result = registry.execute("apply_patch", args, &ctx).await;
+    assert!(result.is_error, "traversal should be rejected");
+    assert!(result.text.contains("escapes"), "unexpected message: {}", result.text);
+
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+}
+
+#[tokio::test]
 async fn test_tool_defs() {
     let registry = ToolRegistry::new();
     let defs = registry.list();
@@ -95,8 +174,9 @@ async fn test_tool_defs() {
     assert!(names.contains(&"read"), "read tool missing");
     assert!(names.contains(&"write"), "write tool missing");
     assert!(names.contains(&"edit"), "edit tool missing");
-    assert!(names.contains(&"bash"), "bash tool missing");
+    assert!(names.contains(&"apply_patch"), "apply_patch tool missing");
+    assert!(names.contains(&"run_shell_command"), "run_shell_command tool missing");
     assert!(names.contains(&"glob"), "glob tool missing");
     assert!(names.contains(&"grep"), "grep tool missing");
-    assert_eq!(defs.len(), 18, "expected 18 built-in tools, got {}", defs.len());
+    assert_eq!(defs.len(), 19, "expected 19 built-in tools, got {}", defs.len());
 }

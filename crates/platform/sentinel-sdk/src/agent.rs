@@ -141,7 +141,7 @@ impl EventHandler for HookWiredEventHandler {
                     args: args.clone(),
                 });
             }
-            AgentEvent::ToolResult { name, output, is_error } => {
+            AgentEvent::ToolResult { name, output, is_error, .. } => {
                 self.hooks.dispatch(&HookEvent::AfterToolCall {
                     name: name.clone(),
                     output: output.clone(),

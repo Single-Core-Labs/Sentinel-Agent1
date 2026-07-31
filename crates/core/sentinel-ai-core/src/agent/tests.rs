@@ -23,5 +23,19 @@ mod tests {
             // Ensure the new ID is reachable.
             let _ = registry.get(id3).await.expect("new agent");
         });
+    #[test]
+    fn thread_history_and_tokens() {
+        let mut thread = AgentThread::default();
+        assert_eq!(thread.estimated_tokens(), 0);
+        thread.system_prompt = Some("You are sentinel.".to_string());
+        thread.push_message("user", "hello world", 5);
+        thread.push_message("assistant", "hi", 0);
+        // 5 + estimate("hi") => 5 + 1 = 6 plus system prompt estimate (17 chars / 4 = 4)
+        assert_eq!(thread.estimated_tokens(), 10);
+        assert_eq!(thread.history.len(), 2);
+        thread.clear_history();
+        assert_eq!(thread.history.len(), 0);
+        assert!(thread.increment_turn());
+        assert!(thread.increment_iteration());
     }
 }

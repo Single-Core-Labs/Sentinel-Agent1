@@ -8,9 +8,10 @@ pub fn builtin_tools() -> Vec<Arc<dyn Tool>> {
         Arc::new(ReadTool),
         Arc::new(WriteTool),
         Arc::new(EditTool),
+        Arc::new(ApplyPatchTool),
         Arc::new(GlobTool),
         Arc::new(GrepTool),
-        Arc::new(BashTool),
+        Arc::new(RunShellCommandTool),
         Arc::new(WebSearchTool),
         Arc::new(WebFetchTool),
         Arc::new(PlanTool),
@@ -141,6 +142,53 @@ impl Tool for EditTool {
     }
 }
 
+// ── ApplyPatch ──────────────────────────────────────────────────────
+pub struct ApplyPatchTool;
+#[async_trait]
+impl Tool for ApplyPatchTool {
+    fn name(&self) -> &str { "apply_patch" }
+    fn description(&self) -> &str {
+        "Apply a git-style unified diff to one or more files. Supports multi-file diffs, \
+         new-file creation (--- /dev/null) and file deletion (+++ /dev/null). All paths \
+         must resolve inside the workspace root. The whole diff is validated before any \
+         file is written."
+    }
+    fn is_mutating(&self) -> bool { true }
+    fn input_schema(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "diff": { "type": "string", "description": "Unified diff text (git diff format)" },
+                "base_path": { "type": "string", "description": "Workspace root to apply within (defaults to the agent workspace)" }
+            },
+            "required": ["diff"]
+        })
+    }
+
+    async fn execute(&self, args: serde_json::Value, ctx: &ToolContext) -> ToolOutput {
+        let diff = args["diff"].as_str().unwrap_or("");
+        if diff.is_empty() {
+            return ToolOutput::err("diff is required");
+        }
+        let base = args["base_path"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .or(ctx.workspace_dir.as_deref())
+            .unwrap_or(".");
+        let base_path = std::path::Path::new(base);
+        match sentinel_ai_core::apply_patch::apply_patch_multi(base_path, diff) {
+            Ok(changed) => {
+                let mut out = format!("Applied patch to {} file(s):", changed.len());
+                for path in changed {
+                    out.push_str(&format!("\n- {}", path));
+                }
+                ToolOutput::ok(out)
+            }
+            Err(e) => ToolOutput::err(format!("Patch failed: {}", e)),
+        }
+    }
+}
+
 // ── Glob ─────────────────────────────────────────────────────────
 pub struct GlobTool;
 #[async_trait]
@@ -239,20 +287,22 @@ fn walk_dir(dir: &str, include: Option<&str>) -> std::io::Result<Vec<String>> {
     Ok(files)
 }
 
-// ── Bash ─────────────────────────────────────────────────────────
-pub struct BashTool;
+// ── RunShellCommand (sandboxed) ─────────────────────────────────
+pub struct RunShellCommandTool;
 #[async_trait]
-impl Tool for BashTool {
-    fn name(&self) -> &str { "bash" }
-    fn description(&self) -> &str { "Execute a shell command and capture output" }
+impl Tool for RunShellCommandTool {
+    fn name(&self) -> &str { "run_shell_command" }
+    fn description(&self) -> &str {
+        "Execute a shell command inside an OS-level sandbox jail and capture output. On Windows commands run under a Job Object (kill-on-close, process limits); on Linux under bubblewrap when available."
+    }
     fn is_mutating(&self) -> bool { true }
     fn input_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
             "properties": {
-                "command": { "type": "string", "description": "Command to execute" },
+                "command": { "type": "string", "description": "Shell command to execute" },
                 "timeout": { "type": "integer", "description": "Timeout in milliseconds" },
-                "workdir": { "type": "string", "description": "Working directory" }
+                "workdir": { "type": "string", "description": "Working directory (defaults to workspace)" }
             },
             "required": ["command"]
         })
@@ -260,43 +310,52 @@ impl Tool for BashTool {
 
     async fn execute(&self, args: serde_json::Value, ctx: &ToolContext) -> ToolOutput {
         let command = args["command"].as_str().unwrap_or("");
-        if command.is_empty() { return ToolOutput::err("command is required"); }
+        if command.is_empty() {
+            return ToolOutput::err("command is required");
+        }
 
-        let _timeout = args["timeout"].as_u64().unwrap_or(120_000);
+        let timeout_ms = args["timeout"].as_u64().unwrap_or(120_000);
         let workdir = args["workdir"].as_str()
-            .or(ctx.workspace_dir.as_deref())
             .or(ctx.sandbox_dir.as_deref())
+            .or(ctx.workspace_dir.as_deref())
             .unwrap_or(".");
 
+        let workdir = if !workdir.is_empty()
+            && !std::path::Path::new(workdir).is_dir() {
+            std::env::current_dir()
+                .map(|d| d.to_string_lossy().into_owned())
+                .unwrap_or_else(|_| ".".to_string())
+        } else {
+            workdir.to_string()
+        };
+
+        let jail = sentinel_exec::OSJailSandbox::new(&workdir).with_mode(sentinel_exec::JailMode::Auto);
+
         #[cfg(target_os = "windows")]
-        let shell = "powershell";
+        let (shell, shell_arg) = ("cmd", "/C");
         #[cfg(not(target_os = "windows"))]
-        let shell = "sh";
+        let (shell, shell_arg) = ("sh", "-c");
 
-        let result = tokio::process::Command::new(shell)
-            .arg("-c")
-            .arg(command)
-            .current_dir(workdir)
-            .output()
-            .await;
+        let run = async {
+            jail.run(shell, &[shell_arg, command], None).await
+        };
 
-        match result {
-            Ok(output) => {
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let stderr = String::from_utf8_lossy(&output.stderr);
+        match tokio::time::timeout(std::time::Duration::from_millis(timeout_ms), run).await {
+            Ok(Ok(output)) => {
                 let mut text = String::new();
-                if !stdout.is_empty() { text.push_str(&stdout); }
-                if !stderr.is_empty() {
+                if !output.stdout.is_empty() { text.push_str(&output.stdout); }
+                if !output.stderr.is_empty() {
                     if !text.is_empty() { text.push('\n'); }
-                    text.push_str(&stderr);
+                    text.push_str(&output.stderr);
                 }
-                if output.status.success() {
-                    ToolOutput::ok(text)
+                if output.success() {
+                    ToolOutput::ok_sandboxed(text)
                 } else {
-                    ToolOutput::err(text)
+                    ToolOutput::err_sandboxed(format!("exit code {}: {}", output.exit_code, text))
                 }
             }
-            Err(e) => ToolOutput::err(format!("Command failed: {}", e)),
+            Ok(Err(e)) => ToolOutput::err_sandboxed(format!("Command failed: {}", e)),
+            Err(_) => ToolOutput::err_sandboxed(format!("Command timed out after {} ms", timeout_ms)),
         }
     }
 }
