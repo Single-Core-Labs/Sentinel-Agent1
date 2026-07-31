@@ -11,6 +11,7 @@ mod local;
 mod web;
 mod completion;
 mod plugin_cmd;
+mod gpu_optimize;
 
 use colored::*;
 

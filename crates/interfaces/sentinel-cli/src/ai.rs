@@ -197,6 +197,11 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     for tool in headroom_memory_tools {
         tool_registry.register(tool);
     }
+
+    // Auto-Optimize Loop: wraps write/edit with a GPU kernel sweep report and
+    // exposes the standalone gpu_optimize_kernel tool (see gpu_optimize.rs).
+    crate::gpu_optimize::GpuOptimizeKernelTool::register_gpu_tools(&mut tool_registry);
+
     let tools = Arc::new(tool_registry);
 
     let plugin_registry = Arc::new(sentinel_plugin_system::PluginRegistry::new());
