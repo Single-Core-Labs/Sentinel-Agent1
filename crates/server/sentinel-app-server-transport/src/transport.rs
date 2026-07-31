@@ -279,43 +279,69 @@ mod tests {
     use super::*;
     use tokio_stream::StreamExt;
 
-    fn free_tcp_addr() -> std::net::SocketAddr {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let addr = listener.local_addr().unwrap();
-        drop(listener);
-        addr
+    /// Picks a loopback address with a random dynamic port, without ever binding
+    /// it first. Binding an ephemeral port, releasing it, and immediately
+    /// re-binding on Windows can leave the port in a transient state where
+    /// `connect()` to it blackholes (SYN silently dropped) or the re-bind fails
+    /// with WSAEADDRINUSE (10048).
+    fn loopback_test_addr() -> std::net::SocketAddr {
+        use std::time::{SystemTime, UNIX_EPOCH};
+        let mut state = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos() as u64
+            ^ 0x9e3779b97f4a7c15;
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        let port = 49152 + (state % 16384) as u16;
+        std::net::SocketAddr::from(([127, 0, 0, 1], port))
     }
 
-    #[tokio::test]
-    async fn tcp_transport_round_trip() {
-        let addr = free_tcp_addr();
+    /// One full TCP round-trip attempt with timeouts on every step. Returns Err
+    /// on transient failure so the caller can retry with a fresh port.
+    async fn tcp_round_trip_once() -> Result<(), String> {
+        let addr = loopback_test_addr();
         let server = TransportServer::new(TransportKind::Tcp {
             addr: addr.to_string(),
         });
 
-        let (mut stream, mut sink, _client_id) = server.accept().await.expect("accept");
-
         let client = tokio::spawn(async move {
-            let mut tcp = tokio::net::TcpStream::connect(addr).await.unwrap();
-            use tokio::io::AsyncWriteExt;
+            let mut tcp = tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                tokio::net::TcpStream::connect(addr),
+            )
+            .await
+            .map_err(|_| "connect timed out".to_string())?
+            .map_err(|e| format!("connect failed: {e}"))?;
             tcp.write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}\n").await.unwrap();
             tcp.flush().await.unwrap();
             let mut buf = String::new();
-            use tokio::io::AsyncBufReadExt;
             let mut reader = tokio::io::BufReader::new(tcp);
-            reader.read_line(&mut buf).await.unwrap();
-            buf
+            tokio::time::timeout(std::time::Duration::from_secs(5), reader.read_line(&mut buf))
+                .await
+                .map_err(|_| "client read timed out".to_string())?
+                .map_err(|e| format!("client read failed: {e}"))?;
+            Ok(buf)
         });
 
+        let (mut stream, mut sink, _client_id) = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            server.accept(),
+        )
+        .await
+        .map_err(|_| "accept timed out".to_string())?
+        .map_err(|e| format!("accept failed: {e}"))?;
+
         let event = tokio::time::timeout(std::time::Duration::from_secs(5), stream.next()).await
-            .expect("timeout waiting for request")
-            .expect("stream ended");
+            .map_err(|_| "timeout waiting for request".to_string())?
+            .ok_or_else(|| "stream ended".to_string())?;
         match event {
             TransportEvent::Message(JsonRpcMessage::Request(req)) => {
                 assert_eq!(req.method, "ping");
                 assert_eq!(req.id, 1);
             }
-            other => panic!("unexpected event: {:?}", other),
+            other => return Err(format!("unexpected event: {:?}", other)),
         }
 
         let resp = JsonRpcMessage::Response(JsonRpcResponse {
@@ -324,10 +350,25 @@ mod tests {
             result: Some(serde_json::json!({"pong": true})),
             error: None,
         });
-        sink.send(&resp).await.expect("send response");
+        sink.send(&resp).await.map_err(|e| format!("send response: {e}"))?;
 
-        let line = client.await.expect("client task");
+        let line: String = client
+            .await
+            .map_err(|e| format!("client task panicked: {e}"))?
+            .map_err(|e: String| e)?;
         assert!(line.contains("\"pong\"") && line.contains("\"id\":1"), "got: {}", line);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn tcp_transport_round_trip() {
+        for attempt in 0..8u32 {
+            match tcp_round_trip_once().await {
+                Ok(()) => return,
+                Err(e) => eprintln!("tcp round trip attempt {attempt} failed: {e}"),
+            }
+        }
+        panic!("tcp round trip failed after 8 attempts");
     }
 
     #[tokio::test]
