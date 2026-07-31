@@ -1,0 +1,626 @@
+{
+  "nodes": [
+    {
+      "id": "architecture_doc",
+      "label": "System Architecture — Platform-Agent",
+      "entity_type": "document",
+      "file_type": "document",
+      "description": "Design document for 6 system architecture upgrades to agent framework",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED"
+    },
+    {
+      "id": "feature_cost_aware_routing",
+      "label": "Cost-aware model routing",
+      "entity_type": "feature",
+      "file_type": "document",
+      "description": "Routes to cheap/balanced/powerful models based on complexity scoring",
+      "parent": "architecture_doc",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED",
+      "attributes": {
+        "layer": "Core Loop (phase.rs)",
+        "priority": "High",
+        "complexity_signals": ["Token count", "Tool error rate", "Tool types", "Phase context"]
+      }
+    },
+    {
+      "id": "feature_sandboxed_execution",
+      "label": "Sandboxed execution",
+      "entity_type": "feature",
+      "file_type": "document",
+      "description": "Isolated tool execution via Sandbox trait (LocalSandbox, DockerSandbox future)",
+      "parent": "architecture_doc",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED",
+      "attributes": {
+        "layer": "Tool Execution",
+        "priority": "High",
+        "implementations": ["LocalSandbox", "DockerSandbox"]
+      }
+    },
+    {
+      "id": "feature_worktree_parallel",
+      "label": "Worktree-isolated parallel agents",
+      "entity_type": "feature",
+      "file_type": "document",
+      "description": "Multi-threaded agent execution with git worktree isolation per stage",
+      "parent": "architecture_doc",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED",
+      "attributes": {
+        "layer": "Orchestration",
+        "priority": "Medium"
+      }
+    },
+    {
+      "id": "feature_diffs_first",
+      "label": "Diffs-first execution",
+      "entity_type": "feature",
+      "file_type": "document",
+      "description": "Preview and approve file modifications before applying via unified diff",
+      "parent": "architecture_doc",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED",
+      "attributes": {
+        "layer": "Safety (Approval Gate)",
+        "priority": "High"
+      }
+    },
+    {
+      "id": "feature_cost_transparency",
+      "label": "Cost transparency UX",
+      "entity_type": "feature",
+      "file_type": "document",
+      "description": "Real-time cost display per tool call and per turn with budget tracking",
+      "parent": "architecture_doc",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED",
+      "attributes": {
+        "layer": "CLI Presentation",
+        "priority": "High"
+      }
+    },
+    {
+      "id": "feature_memory_file",
+      "label": "Long-term memory to file",
+      "entity_type": "feature",
+      "file_type": "document",
+      "description": "Persist session summaries to PROJECT.md with SQLite backing store",
+      "parent": "architecture_doc",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED",
+      "attributes": {
+        "layer": "Context / Persistence",
+        "priority": "Medium"
+      }
+    },
+    {
+      "id": "gpu_emulator_doic",
+      "label": "GPU Emulator — DOIC",
+      "entity_type": "document",
+      "file_type": "document",
+      "description": "Document of Intent & Charter for cycle-approximate GPU kernel emulator",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED"
+    },
+    {
+      "id": "emulator_pipeline",
+      "label": "Emulation Pipeline (5 stages)",
+      "entity_type": "concept",
+      "file_type": "document",
+      "description": "Sequential analysis: instruction extraction, memory analysis, divergence, occupancy, latency modeling",
+      "parent": "gpu_emulator_doic",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED",
+      "attributes": {
+        "stages": [
+          "extract_instruction_profile",
+          "analyze_memory",
+          "analyze_divergence",
+          "calculate_occupancy",
+          "build_latency_model"
+        ],
+        "execution_time": "<100ms"
+      }
+    },
+    {
+      "id": "archspec_data_type",
+      "label": "ArchSpec: GPU architecture specification",
+      "entity_type": "data_type",
+      "file_type": "document",
+      "description": "Core struct defining GPU arch properties: compute_cap, sm_count, warps_per_sm, bandwidth, etc.",
+      "parent": "gpu_emulator_doic",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED",
+      "attributes": {
+        "covers_architectures": 10,
+        "families": ["Ampere", "Ada", "Hopper", "Blackwell", "Volta", "Pascal"]
+      }
+    },
+    {
+      "id": "emulator_design_decisions",
+      "label": "GPU Emulator Design Decisions",
+      "entity_type": "rationale",
+      "file_type": "document",
+      "description": "5 key design choices: static analysis over ISA simulation, family-based latency, loop heuristics, etc.",
+      "parent": "gpu_emulator_doic",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED",
+      "attributes": {
+        "decisions": [
+          "Static analysis over binary simulation",
+          "Architecture family-based latency parameterization",
+          "Loop unroll factor heuristic (8x per loop)",
+          "Default launch config: grid=(100,1,1) block=(256,1,1)",
+          "Reuse GpuLanguage from langs.rs"
+        ]
+      }
+    },
+    {
+      "id": "sweep_engine_doic",
+      "label": "Config Sweep Engine — DOIC",
+      "entity_type": "document",
+      "file_type": "document",
+      "description": "Zero-cost config space explorer on top of GPU emulator, ~100 configs per sweep",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED"
+    },
+    {
+      "id": "sweep_dimensions",
+      "label": "Sweep config dimensions",
+      "entity_type": "concept",
+      "file_type": "document",
+      "description": "Configuration space: 7 block_x, 3 block_y, 6 shared_mem variations = ~100 configs",
+      "parent": "sweep_engine_doic",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED",
+      "attributes": {
+        "block_x_values": [64, 96, 128, 192, 256, 384, 512],
+        "block_y_values": [1, 2, 4],
+        "shared_mem_kb_values": [0, 8, 16, 32, 48, 64]
+      }
+    },
+    {
+      "id": "sweep_scoring_formula",
+      "label": "Sweep scoring formula (6-factor weighted)",
+      "entity_type": "concept",
+      "file_type": "document",
+      "description": "Composite score: cycles (30%), occupancy (20%), SM util (15%), coalescing (10%), sector util (5%), IPC (10%)",
+      "parent": "sweep_engine_doic",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED",
+      "attributes": {
+        "base_sum": "0.90",
+        "penalties": ["bank_conflicts", "register_spills"],
+        "final_formula": "base_sum * (1 - bank_penalty - spill_penalty)"
+      }
+    },
+    {
+      "id": "compressor_pipeline_doc",
+      "label": "Compressor Pipeline Wiring",
+      "entity_type": "document",
+      "file_type": "document",
+      "description": "Two-tier compression wiring for agent: per-tool-output and conversation-level",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED"
+    },
+    {
+      "id": "compression_tier_tool_output",
+      "label": "Per-tool-output compression",
+      "entity_type": "concept",
+      "file_type": "document",
+      "description": "Compress individual tool result strings via ContentCompressor trait",
+      "parent": "compressor_pipeline_doc",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED",
+      "attributes": {
+        "scope": "Individual tool result strings",
+        "implementation": "HeadroomAgentCompressor::compress()"
+      }
+    },
+    {
+      "id": "compression_tier_conversation",
+      "label": "Conversation-level compression",
+      "entity_type": "concept",
+      "file_type": "document",
+      "description": "Compress entire message list before LLM call via ContentCompressor::compress_conversation",
+      "parent": "compressor_pipeline_doc",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED",
+      "attributes": {
+        "scope": "All messages before LLM",
+        "implementation": "sentinel_headroom::Compressor::compress()"
+      }
+    },
+    {
+      "id": "headroom_compressor_internals",
+      "label": "Headroom Compressor internal flow",
+      "entity_type": "concept",
+      "file_type": "document",
+      "description": "Compressor pipeline stages: CacheAligner → CacheOptimizer → ContentCompressor → IntelligentContext",
+      "parent": "compressor_pipeline_doc",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED",
+      "attributes": {
+        "stages": [
+          "CacheAligner (system prompt)",
+          "CacheOptimizer (provider-specific cache breakpoints)",
+          "ContentCompressor (tool output routing)",
+          "IntelligentContext (6-factor scoring + budget dropping)"
+        ]
+      }
+    },
+    {
+      "id": "memory_system_integration",
+      "label": "Memory system integration in compressor",
+      "entity_type": "concept",
+      "file_type": "document",
+      "description": "Optional PersistentMemory subsystem: extract from dropped messages, inject into system prompt",
+      "parent": "compressor_pipeline_doc",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED",
+      "attributes": {
+        "enabled_by_default": true,
+        "storage": "in-memory SQLite or persistent file"
+      }
+    },
+    {
+      "id": "desktop_app_icons",
+      "label": "Desktop app Tauri icons",
+      "entity_type": "asset",
+      "file_type": "image",
+      "description": "Multiple resolution app icons (32x32, 128x128, 128x128@2x) for Tauri desktop application",
+      "confidence_score": 0.95,
+      "extraction_type": "INFERRED",
+      "attributes": {
+        "resolutions": ["32x32", "128x128", "128x128@2x"],
+        "format": "PNG",
+        "framework": "Tauri"
+      }
+    },
+    {
+      "id": "logo_dark_svg",
+      "label": "Logo (dark theme)",
+      "entity_type": "asset",
+      "file_type": "image",
+      "description": "SVG logo with dark background, complex path-based design (~1241 viewBox height)",
+      "confidence_score": 0.95,
+      "extraction_type": "EXTRACTED",
+      "attributes": {
+        "theme": "dark",
+        "format": "SVG",
+        "color": "white fill"
+      }
+    },
+    {
+      "id": "benchmark_chart_agentic",
+      "label": "Benchmark chart: Agentic vs baseline",
+      "entity_type": "asset",
+      "file_type": "image",
+      "description": "SVG chart comparing performance metrics (LOC 46%, tokens 78%, cost 80%, time 73%) across 4 arms on Haiku 4.5",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED",
+      "attributes": {
+        "metrics": ["LOC", "tokens", "cost", "time"],
+        "arms": ["baseline", "caveman", "ponytail", "yagni-oneliner"],
+        "safety_tier": "adversarial (path-traversal, SQLi, etc)",
+        "model": "Claude Haiku 4.5"
+      }
+    },
+    {
+      "id": "aws_logo_svg",
+      "label": "AWS logo",
+      "entity_type": "asset",
+      "file_type": "image",
+      "description": "AWS official logo in SVG format with orange accent color (#FF9900)",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED",
+      "attributes": {
+        "format": "SVG",
+        "primary_color": "#252F3E",
+        "accent_color": "#FF9900"
+      }
+    },
+    {
+      "id": "crate_sentinel_core",
+      "label": "Crate: sentinel-core",
+      "entity_type": "code",
+      "file_type": "code",
+      "description": "Core agent functionality crate containing routing, compression, sandboxing, worktrees",
+      "confidence_score": 0.95,
+      "extraction_type": "INFERRED",
+      "attributes": {
+        "modules": [
+          "phase.rs (CostAwareRouter)",
+          "cost.rs (CostTracker)",
+          "sandbox.rs (Sandbox trait)",
+          "worktree.rs (WorktreeManager)",
+          "diff_capture.rs (DiffCapture)",
+          "memory_file.rs (MemoryFileManager)",
+          "compression.rs (ContentCompressor trait)"
+        ]
+      }
+    },
+    {
+      "id": "crate_sentinel_cli",
+      "label": "Crate: sentinel-cli",
+      "entity_type": "code",
+      "file_type": "code",
+      "description": "Command-line interface with event handlers and cost display",
+      "confidence_score": 0.95,
+      "extraction_type": "INFERRED",
+      "attributes": {
+        "modules": [
+          "exec.rs (CLI entry point)",
+          "handler.rs (CliEventHandler)",
+          "display.rs (cost formatting)"
+        ]
+      }
+    },
+    {
+      "id": "crate_sentinel_headroom",
+      "label": "Crate: sentinel-headroom",
+      "entity_type": "code",
+      "file_type": "code",
+      "description": "Compression and memory system integration with vendor-specific optimizations",
+      "confidence_score": 0.95,
+      "extraction_type": "INFERRED",
+      "attributes": {
+        "modules": [
+          "integration.rs (HeadroomAgentCompressor)",
+          "compress.rs (Compressor with memory)",
+          "config.rs (MemoryConfig)",
+          "memory/ (PersistentMemory, embeddings, tools)"
+        ]
+      }
+    },
+    {
+      "id": "crate_sentinel_gpu_profiler",
+      "label": "Crate: sentinel-gpu-profiler",
+      "entity_type": "code",
+      "file_type": "code",
+      "description": "GPU emulator and config sweep engine (emulate.rs, langs.rs, bench.rs, profile.rs)",
+      "confidence_score": 0.95,
+      "extraction_type": "INFERRED",
+      "attributes": {
+        "modules": [
+          "emulate.rs (emulation pipeline + sweep)",
+          "langs.rs (8-language detection)",
+          "bench.rs (heuristic scoring)",
+          "profile.rs (runtime validation)"
+        ]
+      }
+    },
+    {
+      "id": "protocol_message_bridge",
+      "label": "Message protocol ↔ Headroom bridge",
+      "entity_type": "concept",
+      "file_type": "code",
+      "description": "Type mapping between sentinel_protocol::Message and sentinel_headroom::config::Message",
+      "parent": "compressor_pipeline_doc",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED",
+      "attributes": {
+        "mapping_location": "integration.rs:203-247",
+        "protocol_fields": ["role", "content", "tool_call_id", "name"]
+      }
+    },
+    {
+      "id": "file_architecture_md",
+      "label": "File: docs/design/architecture.md",
+      "entity_type": "document",
+      "file_type": "document",
+      "description": "Complete system architecture specification with 6 upgrades and integration flow",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED"
+    },
+    {
+      "id": "file_gpu_emulator_doic_md",
+      "label": "File: docs/design/gpu-emulator-doic.md",
+      "entity_type": "document",
+      "file_type": "document",
+      "description": "GPU emulator design intent and charter with edge cases and test strategy",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED"
+    },
+    {
+      "id": "file_sweep_doic_md",
+      "label": "File: docs/design/gpu-emulator-sweep-doic.md",
+      "entity_type": "document",
+      "file_type": "document",
+      "description": "Config sweep engine specification with scoring and integration points",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED"
+    },
+    {
+      "id": "file_compressor_pipeline_md",
+      "label": "File: docs/wiring/compressor-pipeline.md",
+      "entity_type": "document",
+      "file_type": "document",
+      "description": "Compression wiring specification: two-tier architecture and memory integration",
+      "confidence_score": 1.0,
+      "extraction_type": "EXTRACTED"
+    }
+  ],
+  "edges": [
+    {
+      "source": "architecture_doc",
+      "target": "feature_cost_aware_routing",
+      "relationship": "contains",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "architecture_doc",
+      "target": "feature_sandboxed_execution",
+      "relationship": "contains",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "architecture_doc",
+      "target": "feature_worktree_parallel",
+      "relationship": "contains",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "architecture_doc",
+      "target": "feature_diffs_first",
+      "relationship": "contains",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "architecture_doc",
+      "target": "feature_cost_transparency",
+      "relationship": "contains",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "architecture_doc",
+      "target": "feature_memory_file",
+      "relationship": "contains",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "crate_sentinel_core",
+      "target": "feature_cost_aware_routing",
+      "relationship": "implements",
+      "confidence_score": 0.95
+    },
+    {
+      "source": "crate_sentinel_core",
+      "target": "feature_sandboxed_execution",
+      "relationship": "implements",
+      "confidence_score": 0.95
+    },
+    {
+      "source": "crate_sentinel_core",
+      "target": "feature_memory_file",
+      "relationship": "implements",
+      "confidence_score": 0.95
+    },
+    {
+      "source": "gpu_emulator_doic",
+      "target": "emulator_pipeline",
+      "relationship": "describes",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "gpu_emulator_doic",
+      "target": "archspec_data_type",
+      "relationship": "defines",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "gpu_emulator_doic",
+      "target": "emulator_design_decisions",
+      "relationship": "documents",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "sweep_engine_doic",
+      "target": "sweep_dimensions",
+      "relationship": "specifies",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "sweep_engine_doic",
+      "target": "sweep_scoring_formula",
+      "relationship": "defines",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "sweep_engine_doic",
+      "target": "gpu_emulator_doic",
+      "relationship": "depends_on",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "crate_sentinel_gpu_profiler",
+      "target": "gpu_emulator_doic",
+      "relationship": "implements",
+      "confidence_score": 0.95
+    },
+    {
+      "source": "crate_sentinel_gpu_profiler",
+      "target": "sweep_engine_doic",
+      "relationship": "implements",
+      "confidence_score": 0.95
+    },
+    {
+      "source": "compressor_pipeline_doc",
+      "target": "compression_tier_tool_output",
+      "relationship": "describes",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "compressor_pipeline_doc",
+      "target": "compression_tier_conversation",
+      "relationship": "describes",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "compressor_pipeline_doc",
+      "target": "headroom_compressor_internals",
+      "relationship": "details",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "compressor_pipeline_doc",
+      "target": "memory_system_integration",
+      "relationship": "documents",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "compressor_pipeline_doc",
+      "target": "protocol_message_bridge",
+      "relationship": "specifies",
+      "confidence_score": 1.0
+    },
+    {
+      "source": "crate_sentinel_headroom",
+      "target": "compressor_pipeline_doc",
+      "relationship": "implements",
+      "confidence_score": 0.95
+    },
+    {
+      "source": "crate_sentinel_cli",
+      "target": "feature_cost_transparency",
+      "relationship": "implements",
+      "confidence_score": 0.95
+    },
+    {
+      "source": "benchmark_chart_agentic",
+      "target": "architecture_doc",
+      "relationship": "measures",
+      "confidence_score": 0.85
+    },
+    {
+      "source": "desktop_app_icons",
+      "target": "crate_sentinel_core",
+      "relationship": "asset_for",
+      "confidence_score": 0.75
+    },
+    {
+      "source": "logo_dark_svg",
+      "target": "crate_sentinel_core",
+      "relationship": "asset_for",
+      "confidence_score": 0.75
+    }
+  ],
+  "metadata": {
+    "chunk_number": 4,
+    "total_chunks": 7,
+    "source_files_count": 22,
+    "extraction_timestamp": "2026-07-31",
+    "files_processed": [
+      "F:\\Single Core Labs\\Sentinel-Agent1\\docs\\design\\architecture.md",
+      "F:\\Single Core Labs\\Sentinel-Agent1\\docs\\design\\gpu-emulator-doic.md",
+      "F:\\Single Core Labs\\Sentinel-Agent1\\docs\\design\\gpu-emulator-sweep-doic.md",
+      "F:\\Single Core Labs\\Sentinel-Agent1\\docs\\wiring\\compressor-pipeline.md",
+      "F:\\Single Core Labs\\Sentinel-Agent1\\packages\\desktop-app\\src-tauri\\icons\\*",
+      "F:\\Single Core Labs\\Sentinel-Agent1\\ponytail\\assets\\*.svg",
+      "F:\\Single Core Labs\\Sentinel-Agent1\\ponytail\\assets\\*.png",
+      "F:\\Single Core Labs\\Sentinel-Agent1\\single-core-plaftform\\*.*"
+    ]
+  }
+}
