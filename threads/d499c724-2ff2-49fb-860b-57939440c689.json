@@ -1,0 +1,58 @@
+{
+  "id": "d499c724-2ff2-49fb-860b-57939440c689",
+  "conversation": {
+    "id": "3f7d69e6-c633-4878-ae2a-8c169bbaf3dd",
+    "turns": [
+      {
+        "id": "5715d9fb-4f37-4765-904b-1bc8fad3efd3",
+        "number": 1,
+        "items": [
+          {
+            "UserMessage": {
+              "id": "63b37c71-3da5-4af3-839d-43e9db53d61f",
+              "text": "Use the glob tool to list files, then say DONE",
+              "timestamp": "2026-08-02T08:47:11.990418400Z"
+            }
+          },
+          {
+            "AssistantText": {
+              "id": "52b92960-4c54-4390-aa58-731102286949",
+              "text": "",
+              "timestamp": "2026-08-02T08:47:49.727996Z"
+            }
+          },
+          {
+            "AssistantToolCall": {
+              "id": "7bdfb4d3-f7a4-4dbd-9fc0-bf20c5ec9a0d",
+              "tool_call_id": "call_4sm1b8ws",
+              "name": "glob",
+              "arguments": {
+                "path": ".",
+                "pattern": "*"
+              },
+              "timestamp": "2026-08-02T08:47:49.728036700Z"
+            }
+          },
+          {
+            "AssistantText": {
+              "id": "3865f361-5cbf-494f-bd16-1b4521f68cdb",
+              "text": "The glob tool call was denied by the policy. This could indicate:\n1. The specified path pattern is restricted by security policies\n2. The workspace doesn't contain files matching the pattern\n3. The pattern syntax needs correction\n\nWould you like me to:\n1. Try a different file pattern?\n2. Check the current directory contents using a different method?\n3. Explain the security policies in place?",
+              "timestamp": "2026-08-02T08:48:18.621673600Z"
+            }
+          }
+        ],
+        "created_at": "2026-08-02T08:47:11.990414300Z"
+      }
+    ],
+    "created_at": "2026-08-02T08:47:11.990248200Z",
+    "updated_at": "2026-08-02T08:48:18.621669700Z"
+  },
+  "turn": 1,
+  "iterations": 2,
+  "max_turns": 50,
+  "max_iterations": 100,
+  "yolo_mode": true,
+  "parent_thread_id": null,
+  "budget_cost_cap_usd": null,
+  "budget_total_spend_usd": 0.011685000000000001
+}

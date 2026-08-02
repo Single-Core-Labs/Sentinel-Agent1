@@ -1,0 +1,32 @@
+{
+  "id": "fcbc32c2-7c9f-45f0-84c8-89b2c1aaf475",
+  "conversation": {
+    "id": "44adc6af-50f5-4894-a220-cab0fa167715",
+    "turns": [
+      {
+        "id": "f50a7f89-53c9-45f0-9ab6-17a1c936feda",
+        "number": 1,
+        "items": [
+          {
+            "UserMessage": {
+              "id": "d140e190-38ad-4408-9679-b3a47c05431b",
+              "text": "Reply with exactly: AGENT_OK",
+              "timestamp": "2026-08-02T08:42:11.757515100Z"
+            }
+          }
+        ],
+        "created_at": "2026-08-02T08:42:11.757511400Z"
+      }
+    ],
+    "created_at": "2026-08-02T08:42:11.757375200Z",
+    "updated_at": "2026-08-02T08:42:11.757512200Z"
+  },
+  "turn": 0,
+  "iterations": 1,
+  "max_turns": 50,
+  "max_iterations": 100,
+  "yolo_mode": true,
+  "parent_thread_id": null,
+  "budget_cost_cap_usd": null,
+  "budget_total_spend_usd": 0.0
+}

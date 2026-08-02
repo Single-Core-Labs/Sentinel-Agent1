@@ -1,0 +1,39 @@
+{
+  "id": "adbade3a-e565-41a3-9fa4-0981a5decfe5",
+  "conversation": {
+    "id": "0cbd36ed-269d-43c2-bf6a-10b4c2a22594",
+    "turns": [
+      {
+        "id": "b0beae8b-0113-4e6e-9e1a-a2c25ed2b3d7",
+        "number": 1,
+        "items": [
+          {
+            "UserMessage": {
+              "id": "6b33ec49-ec39-42ef-830f-2ed11f77cb87",
+              "text": "Reply with exactly: AGENT_OK",
+              "timestamp": "2026-08-02T08:42:18.858010300Z"
+            }
+          },
+          {
+            "AssistantText": {
+              "id": "7dcaf93f-6dea-467c-ae3a-d59e79e0216c",
+              "text": "AGENT_OK",
+              "timestamp": "2026-08-02T08:42:43.040438800Z"
+            }
+          }
+        ],
+        "created_at": "2026-08-02T08:42:18.858006100Z"
+      }
+    ],
+    "created_at": "2026-08-02T08:42:18.857860600Z",
+    "updated_at": "2026-08-02T08:42:43.040431900Z"
+  },
+  "turn": 0,
+  "iterations": 1,
+  "max_turns": 50,
+  "max_iterations": 100,
+  "yolo_mode": true,
+  "parent_thread_id": null,
+  "budget_cost_cap_usd": null,
+  "budget_total_spend_usd": 0.004797
+}
