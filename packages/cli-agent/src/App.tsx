@@ -45,6 +45,8 @@ function App() {
     error: null,
   })
   const [isProcessing, setIsProcessing] = createSignal(false)
+  const [thinkingSecs, setThinkingSecs] = createSignal(0)
+  const [exitArmed, setExitArmed] = createSignal(false)
   const [showHelp, setShowHelp] = createSignal(false)
   const [gpuStats, setGpuStats] = createSignal<GpuStats | null>(null)
 
@@ -94,6 +96,18 @@ function App() {
 
   useKeyboard((key) => {
     if (key.name === 'escape') {
+      if (exitArmed()) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: generateId(),
+            role: 'system',
+            content: 'Exit cancelled. Session kept for /resume.',
+          },
+        ])
+        setExitArmed(false)
+        return
+      }
       client?.close()
       process.exit(0)
     }
@@ -121,6 +135,11 @@ function App() {
   }
 
   const doChat = async (message: string) => {
+    setThinkingSecs(0)
+    setIsProcessing(true)
+    const timer = setInterval(() => {
+      setThinkingSecs((s) => s + 1)
+    }, 1000)
     try {
       if (conn().status !== 'connected') {
         setMessages((prev) => [
@@ -167,6 +186,7 @@ function App() {
         },
       ])
     } finally {
+      clearInterval(timer)
       setIsProcessing(false)
     }
   }
@@ -212,16 +232,18 @@ function App() {
             id: generateId(),
             role: 'system',
             content: `Available commands:
-  /help     - Show this help
+  /help  /models   - Show this help / list models you can actually use
+  /model           - Show providers + which API keys are set, [CURRENT] model
+  /sessions        - List saved sessions (resume with sentinel ai --resume <id>)
+  /save <path>     - Export this session to a JSON file
   /clear    - Clear the conversation
   /auth     - Authenticate with a provider
-  /models   - List available models
   /backends - Show detected local LLM backends
   /gpu      - Show GPU stats
   /emulate <file>        - GPU emulation + launch sweep (zero-token)
   /profile <file>        - Static kernel analysis (zero-token)
   /connect  - Reconnect to backend
-  /exit     - Exit the agent
+  /exit     - Exit the agent (confirms first to protect your session)
 ${commandRegistry.getHelpText()}`,
           },
         ])
@@ -250,15 +272,181 @@ ${commandRegistry.getHelpText()}`,
         break
 
       case '/models':
+      case '/model': {
         setMessages((prev) => [
           ...prev,
           {
             id: generateId(),
             role: 'system',
-            content: `Connected model: ${conn().model ?? 'unknown'}`,
+            content: 'Fetching available models...',
+          },
+        ])
+        try {
+          const cfg = (await client.call('config/get')) as {
+            providers?: Array<{
+              id: string
+              name: string
+              api_key_set: boolean
+              models?: Array<{ id: string; name: string }>
+            }>
+          }
+          const connState = conn()
+          const providers = cfg?.providers ?? []
+          const lines: string[] = []
+          lines.push(`Connected: ${connState.model ?? 'unknown'}`)
+          lines.push('')
+          if (providers.length === 0) {
+            lines.push('No providers configured. Add sentinel.toml and API keys, then /reconnect.')
+          }
+          for (const p of providers) {
+            const status = p.api_key_set ? '✓' : '✗'
+            const note = p.api_key_set ? '' : ' (key not set)'
+            lines.push(`${status} ${p.name}${note}`)
+            for (const m of p.models ?? []) {
+              const current = m.id === connState.model ? '  [CURRENT]' : ''
+              const suffix = current || (p.api_key_set ? '' : '  [requires key]')
+              lines.push(`  • ${m.id}${suffix}`)
+            }
+          }
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: generateId(),
+              role: 'system',
+              content: lines.join('\n'),
+            },
+          ])
+        } catch (err: unknown) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: generateId(),
+              role: 'system',
+              content: `Failed to fetch models: ${err instanceof Error ? err.message : 'request failed'}`,
+            },
+          ])
+        }
+        break
+      }
+
+      case '/sessions': {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: generateId(),
+            role: 'system',
+            content: 'Listing sessions...',
+          },
+        ])
+        try {
+          const result = (await client.call('session/browserList')) as {
+            sessions?: Array<{ id: string; title: string; message_count: number }>
+          }
+          const sessions = result?.sessions ?? []
+          const lines: string[] = ['Saved sessions (resume with /resume <id>):', '']
+          if (sessions.length === 0) {
+            lines.push('  (none)')
+          }
+          for (const s of sessions) {
+            lines.push(`  ${s.id === conn().sessionId ? '→' : ' '} ${s.id}  — ${s.title}  (${s.message_count} msgs)`)
+          }
+          lines.push('', `  /save <path>   Export this session to a file`)
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: generateId(),
+              role: 'system',
+              content: lines.join('\n'),
+            },
+          ])
+        } catch (err: unknown) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: generateId(),
+              role: 'system',
+              content: `Failed to list sessions: ${err instanceof Error ? err.message : 'request failed'}`,
+            },
+          ])
+        }
+        break
+      }
+
+      case '/save': {
+        if (!args) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: generateId(),
+              role: 'system',
+              content: 'Usage: /save <path>  — export current session history to a JSON file',
+            },
+          ])
+          break
+        }
+        try {
+          const hist = (await client.call('chat/getHistory', {
+            session_id: conn().sessionId,
+          })) as { conversation?: unknown }
+          const payload = JSON.stringify(
+            {
+              sentinel_session: conn().sessionId,
+              model: conn().model,
+              exported_at: new Date().toISOString(),
+              conversation: hist.conversation ?? null,
+            },
+            null,
+            2,
+          )
+          const res = (await client.call('fs/writeFile', {
+            path: args,
+            content: payload,
+          })) as { message?: string }
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: generateId(),
+              role: 'system',
+              content: `Session saved to ${args}${res?.message ? ` (${res.message})` : ''}`,
+            },
+          ])
+        } catch (err: unknown) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: generateId(),
+              role: 'system',
+              content: `Save failed: ${err instanceof Error ? err.message : 'request failed'}`,
+            },
+          ])
+        }
+        break
+      }
+
+      case '/resume': {
+        if (!args) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: generateId(),
+              role: 'system',
+              content: 'Usage: /resume <session-id>.  Tip: run `sentinel ai --resume <id>` from a terminal too.',
+            },
+          ])
+          break
+        }
+        // The RPC layer has no side-channel to reset the UI session, so point the
+        // user at the supported CLI path and stop pretending otherwise.
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: generateId(),
+            role: 'system',
+            content: `Resume in a terminal:  sentinel ai --resume ${args}`,
           },
         ])
         break
+      }
 
       case '/backends':
       case '/engines':
@@ -329,6 +517,23 @@ ${commandRegistry.getHelpText()}`,
         break
 
       case '/exit':
+        if (!exitArmed()) {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: generateId(),
+              role: 'system',
+              content:
+                '⚠  Session will be lost.\n' +
+                `  Session ID: ${conn().sessionId ?? 'unknown'}\n` +
+                '  Resume later with: sentinel ai --resume <id>\n' +
+                '  Or export it first: /save <path>\n' +
+                '  Type /exit again to confirm, Escape to cancel.',
+            },
+          ])
+          setExitArmed(true)
+          break
+        }
         client?.close()
         process.exit(0)
         break
@@ -481,7 +686,7 @@ ${commandRegistry.getHelpText()}`,
           )}
         </For>
         {isProcessing() && (
-          <text fg={YELLOW}>Processing...</text>
+          <text fg={YELLOW}>{`⏳ Thinking... ${thinkingSecs() > 0 ? `${thinkingSecs()}s` : ''}`}</text>
         )}
       </box>
 

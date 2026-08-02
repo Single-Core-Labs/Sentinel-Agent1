@@ -132,17 +132,39 @@ published to the repo.
 
 ---
 
-## Not modified (tracked, see GitHub)
+### #55 (`/model` hardcoded examples) — dynamic model listing with API-key status
 
-| # | Title | Reason |
-|---|-------|--------|
-| #11 | CLI freezes on navigation / API key entry | Frontend (OpenTUI package) — separate workspace. |
-| #12 | OpenRouter support | Provider feature request. |
-| #37 / #39 / #40 / #44 | Issue templates / telemetry / docs site / deps bump | Process/tooling. |
-| #55 | `/model` hardcoded examples | Interactive REPL (`local.rs`/OpenTUI) — scheduled next. |
-| #56 | No save-on-exit warning | Interactive REPL — scheduled next (add confirmation + `/save`). |
-| #59 | Progress feedback during long LLM calls | Interactive REPL streaming — scheduled next. |
-| #68 | Build blocker documentation | Documented root cause + fix in this repo's `ISSUES_FIXED.md`. |
+- **Problem:** `/model`/`/models` in the OpenTUI frontend showed a hardcoded
+  model list that gave false hope (e.g. Claude/OpenAI shown to a user who only
+  has a Gemini key).
+- **Fix:** `config/get` in `sentinel-app-server/handler.rs` now reports
+  `api_key_set` per provider (via `ProviderInfo::resolve_api_key`). The frontend
+  `/model` command now lists exactly the configured providers, marks `✓`-vs-`✗`
+  by key availability, tags models `[requires key]` and `[CURRENT]`, and links
+  to `sentinel.toml`/key setup. No hardcoded model lists remain.
+- **Files:** `crates/server/sentinel-app-server/src/handler.rs`,
+  `packages/cli-agent/src/App.tsx`. Test added:
+  `handler::tests::config_get_reports_api_key_availability`.
+
+### #56 — No Warning When Session Will Be Lost (silent data loss)
+
+- **Problem:** `/exit` closed the TUI immediately — 30 minutes of context lost
+  with no warning.
+- **Fix:** `/exit` now requires confirmation. First invocation prints
+  `⚠ Session will be lost`, the session ID, the resume command
+  (`sentinel ai --resume <id>`), the `/save <path>` export tip, and asks to
+  confirm (type `/exit` again) or cancel (Escape). New `/sessions` lists saved
+  sessions with `/resume <id>`; new `/save <path>` exports the current session
+  history to JSON via `chat/getHistory` + `fs/writeFile`.
+- **Files:** `packages/cli-agent/src/App.tsx`.
+
+### #59 — No Progress Feedback (users thought CLI hung)
+
+- **Problem:** During a 10s+ LLM call the TUI showed only a static
+  `Processing...` with no indication of liveness.
+- **Fix:** Replaced with a live `⏳ Thinking... Ns` indicator that counts elapsed
+  seconds while the agent runs, so the user always sees progress.
+- **Files:** `packages/cli-agent/src/App.tsx`.
 
 ---
 
