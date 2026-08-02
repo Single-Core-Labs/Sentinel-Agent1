@@ -94,6 +94,7 @@ mod tests {
             "Expected initial config to load"
         );
 
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         let mut file = std::fs::File::create(&config_path).unwrap();
         writeln!(file, "[agent]\ndefault_model = \"o3-mini\"").unwrap();
         drop(file);
