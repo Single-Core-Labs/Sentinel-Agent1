@@ -68,7 +68,7 @@ Assert-True "policy deny blocks tool call" $out5 @("denied")
 Remove-Item $deny -ErrorAction SilentlyContinue
 
 # T6 policy hook allow -> tool call executes
-$allow = New-Item
+$allow = New-TemporaryFile
 Set-Content -Path $allow -Value 'Write-Output "allow"'
 $out6 = & $Bin ai $Model --prompt "Use the glob tool with pattern 'crates/*', then reply ONLY-DONE" --yolo --hook-command "powershell -File $allow" 2>&1
 Assert-True "policy allow fetches real glob result" $out6 @("crates\\", "ONLY-DONE")
