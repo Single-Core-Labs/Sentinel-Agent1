@@ -107,20 +107,44 @@ published to the repo.
   to `stderr`.
 - **Files:** `ai.rs`, `exec.rs`.
 
-### #65 (`resume`/`exec` BMP minor) — Plugin Load Failures Skipped
+### #65 — Plugin Load Failures Silently Skipped (partial plugin set loaded)
 
-- **Problem:** Plugin registration failures used `Ok` ignoring errors.
-- **Fix:** `register(plugin).await?` errors now printed (`W Failed to register plugin:`);
-  success count shown. (Matches the previously merged branch behaviour.)
-- **Files:** `ai.rs`.
+- **Problem:** A failing plugin was silently skipped; no count of loaded vs failed
+  plugins, so users got a partial feature set with no visibility.
+- **Fix:** `ai.rs` now tallies `loaded_count` and collects `failed_plugins`, prints
+  `✓ N plugins loaded`, and a `✖ M plugins failed:` summary listing each error.
+- **Files:** `crates/interfaces/sentinel-cli/src/ai.rs`.
 
-### #66 — `--resume` and `--new` Conflict
+### #66 — `--resume` and `--new` Conflict (unclear precedence)
 
-- **Problem:** Using both flags was allowed, with unclear precedence.
-- **Fix:** Argument parsing now validates a non-empty session id for `--resume`,
-  and `--resume` + `--new` together produces a hard error. (Already present in the
-  reverted fix branch; restored.)
-- **Files:** `ai.rs`.
+- **Problem:** Both were allowed; precedence depended on argument order.
+- **Fix:** Argument parsing (`CliArgs::parse`) now rejects any combination of
+  `--resume` and `--new` regardless of order (exit 1, `Cannot specify both`),
+  validates that `--resume` has a non-empty session id, and validates `--model`
+  has an argument. The same validation runs before the TS TUI launch so the
+  outcome is order-independent in both UIs. Unit tests added.
+- **Files:** `crates/interfaces/sentinel-cli/src/ai.rs`.
+
+### #67 (META — 7 logical bugs) — all constituent bugs now addressed
+
+The meta-issue enumerated code bugs across the CLI. Status of each:
+
+| Meta row | Code bug | Status |
+|---|---|---|
+| #60 | Config parse errors silent | **Fixed** (warning + fallback, all entry points) |
+| #61 | Unknown CLI flags ignored | **Fixed** (exit 1, all commands) |
+| #62 | Plugin dir TOCTOU race | **Fixed** (create dir before load) |
+| #63 | Missing `--prompt` validation | **Fixed** (empty/missing text → exit 1, tested) |
+| #64 | Resume ID no validation | **Fixed** (missing/empty id → exit 1, tested) |
+| #65 | Debug output in production | **Verified clean** (grep: no `dbg!`/`[DEBUG]` in CLI) |
+| #66 | MCP init failures silent | **Fixed** (per-server connect/tools-list reporting) |
+| #67 | Plugin load failures silent | **Fixed** (loaded/failed tally, see real #65) |
+| #68 | `--resume` vs `--new` conflict | **Fixed** (see real #66) |
+
+The meta's "#65/#66/#67" labels do not line up with the real issue numbers
+(real #65 = plugin load, real #66 = resume/new conflict, real #67 = this meta);
+the table above uses the real issue numbers. QA checklist: unit tests added for
+argument validation (`ai::tests`, 8 cases) and config-get API key flags.
 
 ---
 
@@ -128,7 +152,7 @@ published to the repo.
 
 | # | Title | Status |
 |---|-------|--------|
-| #63 | Debug Statements in Production Code | Already clean — no `[DEBUG]` `eprintln!` anywhere in the CLI. Verified by grep. |
+| #65-meta | Debug Statements in Production Code | Already clean — no `dbg!`/`[DEBUG]` eprintln! anywhere in the CLI. Verified by grep. |
 
 ---
 
