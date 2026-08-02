@@ -26,6 +26,9 @@ impl ProviderKind {
                     "Local provider '{}' must be created via from_local()", info.id
                 )))
             }
+            // OpenRouter serves an OpenAI-compatible REST API
+            // (https://openrouter.ai/api/v1) — forward to the OpenAI client.
+            "openrouter" | "open-router" => Ok(Self::OpenAI(OpenAIProvider::new(info)?)),
             _ => Ok(Self::OpenAI(OpenAIProvider::new(info)?)),
         }
     }
@@ -76,6 +79,42 @@ impl ModelProvider for ProviderKind {
             Self::Google(p) => p.supports_tool(tool),
             Self::Local(p) => p.supports_tool(tool),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sentinel_provider_info::{AuthConfig, ModelEntry};
+
+    fn openrouter_info() -> ProviderInfo {
+        ProviderInfo {
+            id: "openrouter".into(),
+            name: "OpenRouter".into(),
+            base_url: "https://openrouter.ai/api/v1".into(),
+            auth: AuthConfig::EnvKey {
+                var: "OPENROUTER_API_KEY".into(),
+            },
+            models: vec![ModelEntry {
+                id: "openrouter/auto".into(),
+                name: "OpenRouter Auto".into(),
+                context_window: 128_000,
+                supports_streaming: true,
+                supports_tools: true,
+            }],
+            timeout_secs: 120,
+            extra_headers: Default::default(),
+        }
+    }
+
+    #[test]
+    fn openrouter_routes_to_openai_compatible_provider() {
+        std::env::set_var("OPENROUTER_API_KEY", "sk-test");
+        let kind = ProviderKind::from_info(openrouter_info()).expect("openrouter builds");
+        // OpenRouter talks OpenAI-compatible REST, so it constructs an OpenAI client.
+        assert!(matches!(kind, ProviderKind::OpenAI(_)));
+        assert_eq!(kind.name(), "OpenRouter");
+        std::env::remove_var("OPENROUTER_API_KEY");
     }
 }
 

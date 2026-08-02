@@ -214,6 +214,88 @@ argument validation (`ai::tests`, 8 cases) and config-get API key flags.
   (added `env_var` to each `ProviderInfo`), `lib.rs`, `env_store.rs` (new),
   `crates/interfaces/sentinel-cli/src/main.rs`. Tests: `env_store` (2 passed).
 
+### #11 — Terminal Freeze + API Keys Ignored (provider picker never wired to input)
+
+- **Problem:** `sentinel-ai-tui`'s `ProviderPicker` is rendered first every startup,
+  but `handle_key_event` never routed any key to it — arrow keys/Escape did
+  nothing (freeze), and a paste at the API-key prompt went nowhere, so the CLI
+  still reported a missing API key.
+- **Fix:** `App::handle_key_event` now routes all input to the picker while it is
+  unfinished (`handle_provider_picker_key`): ↑↓/j/k navigate and Enter confirm
+  providers/models, printable chars push into the ApiKeyInput/BaseUrlInput fields,
+  Backspace pops, Escape goes back a step. Choosing a model now emits
+  `ProviderModelSelected` and **persists the key immediately** (`set_var` +
+  `write_env_key` to `.env`) using each provider's real env var
+  (`GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …).
+- **Key persistence / loading (was "API keys ignored"):** New
+  `sentinel-ai-tui/src/env_store.rs` (`write_env_key` + `load_env`), called from
+  `App::new`, plus a matching `load_dotenv()` at the top of `sentinel-cli`'s `main`
+  so keys saved by the picker are honored by the CLI provider preflight on the
+  next run. `.env` values never override already-exported env vars.
+- **Files:** `crates/interfaces/sentinel-ai-tui/src/app.rs`, `provider_picker.rs`
+  (added `env_var` to each `ProviderInfo`), `lib.rs`, `env_store.rs` (new),
+  `crates/interfaces/sentinel-cli/src/main.rs`. Tests: `env_store` (2 passed).
+
+### #39 — Anonymous Crash Reporting (opt-in consent + crash hook)
+
+- **Problem:** A fatal error anywhere in the Rust/TS loop was invisible unless the
+  user manually reported it — no opt-in consent, and the crash hook was never
+  installed at boot.
+- **Fix:** New `sentinel-analytics/src/consent.rs` — `TelemetryConsent`
+  (Unset/OptedIn/OptedOut), a persisted marker (`telemetry.opt`) saved via
+  `$SENTINEL_HOME┃$HOME`, and `prompt_for_consent_once()` so the user is asked
+  exactly once during the initial boot. Non-interactive runs
+  (`SENTINEL_NON_INTERACTIVE`/`--prompt`) auto-opt-out and never block.
+  `telemetry::boot()` in the CLI installs `install_crash_hook` at every
+  `ai` start: opt-in users write local crash JSON + feed the analytics client;
+  opt-out users still get a local dump so a crash is never lost off-team.
+- **CLI surface:** new `sentinel telemetry on|off|status` subcommand
+  (`crates/interfaces/sentinel-cli/src/telemetry.rs`).
+- **Files:** `sentinel-analytics/src/consent.rs`, `crash.rs` (added
+  `is_hook_initialized`), `cli/src/telemetry.rs` (new), `cli/src/ai.rs`,
+  `cli/src/main.rs`, `cli/Cargo.toml`. Tests: `consent` (3), `crash` (4).
+
+### #12 — OpenRouter provider (routing + free-system)
+
+The issue's TS file names (`providers/index.ts`, `provider-picker.tsx`) don't
+exist in this codebase — provider routing lives in Rust. The same intent applied:
+
+- `sentinel-cli/src/model_selector.rs` — added `("openrouter", "openrouter/")`
+  as the **first** prefix in `PREFIX_PROVIDERS` (before any OpenAI `o*` prefix)
+  so `openrouter/…` models route to OpenRouter and are never stolen by OpenAI.
+- `sentinel-provider/src/provider.rs` — `from_info` explicitly maps
+  `openrouter`/`open-router` to the OpenAI-compatible client
+  (`https://openrouter.ai/api/v1`).
+- Tests: 3 new routing cases in `model_selector` (`openrouter/auto`→OpenRouter,
+  `o4-mini`→OpenAI, free-tier gemma→OpenRouter) + 1 in `sentinel-provider`.
+  The TUI free model was already the working `openrouter/google/gemma-4-31b-it:free`.
+
+### #37 — Community conventions (Setup Issue Templates & Contribution)
+
+- Added `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1).
+- `CONTRIBUTING.md` — new "Reporting Bugs" section requiring template use, OS
+  version, and full terminal logs; both links point at the correct repo
+  (`Sentinel-Agent1`).
+- `.github/ISSUE_TEMPLATE/bug_report.md` — strict OS + mandatory **Terminal
+  Logs** code block with an "incomplete issues are closed" note.
+- `.github/pull_request_template.md` — mandatory commands-run / OS / repro step.
+
+### #40 — Documentation website (scoped static site)
+
+- New `docs-site/` with a dependency-free Node builder (`build.mjs`) that renders
+  four guides (Quick Start, Providers, Custom Tools, Sub-Agents) into static
+  HTML under `docs-site/dist` (dark theme, tables, code, autolinks).
+- `.github/workflows/pages-docs.yml` — builds on `main` pushes touching
+  `docs-site/**`, uploads to Pages artifact, deploys via `deploy-pages@v4`.
+
+### #44 — Dependabot Actions bump (5 updates)
+
+- Applied the exact `actions` group bump from PR #44: `checkout@v6→v7`,
+  `claude-code-action v1.0.137→v1.0.181`, `upload-artifact@v4→v7`,
+  `download-artifact@v4→v8`, `cache@v4→v6` across `claude.yml`,
+  `claude-review.yml`, `main-branch.yml`, `pr-checks.yml`, `release.yml`
+  (28 action refs; zero stale refs remain).
+
 ---
 
 ## How to verify

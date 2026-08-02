@@ -185,6 +185,11 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         eprintln!("{} {}", "✖".red().bold(), e);
         std::process::exit(1);
     }
+    // #39 — opt-in telemetry consent, asked once at boot; non-interactive runs
+    // default to opt-out. Then install the crash hook so panics are saved.
+    let non_interactive = std::env::var("SENTINEL_NON_INTERACTIVE").as_deref() == Ok("1")
+        || args.iter().any(|a| a == "--prompt");
+    crate::telemetry::boot(non_interactive);
     if try_spawn_ts_agent(args) {
         return Ok(());
     }

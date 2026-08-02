@@ -1,10 +1,14 @@
 ---
 name: Bug Report
 about: Report a bug or unexpected behavior
-title: '[Bug] '
+title: '[Bug]'
 labels: bug
 assignees: ''
 ---
+
+> [!IMPORTANT]
+> Issues missing the required **Environment** and **Terminal Logs** sections
+> will be closed as incomplete.
 
 ## Description
 
@@ -22,13 +26,23 @@ assignees: ''
 
 ## Environment
 
-- OS: [e.g. Windows 11, macOS 14, Ubuntu 22.04]
+- OS: [e.g. Windows 11 24H2, macOS 15, Ubuntu 24.04] **(required)**
+- CPU/Architecture: [e.g. x86_64, arm64]
 - Rust version: `rustc --version`
-- CLI version: `sentinel --version`
+- CLI version: `sentinel --version` or commit SHA
+- Frontend (if relevant): `bun --version`, node version
 
-## Logs / Screenshots
+## Terminal Logs
 
-<!-- If applicable, paste relevant logs or screenshots. -->
+<!-- REQUIRED: paste the exact terminal output, error message, and stack trace.
+     Include the full command you ran and any warning lines. -->
+```text
+
+```
+
+## Screenshots / Session Recordings
+
+<!-- Optional but helpful. -->
 
 ## Additional Context
 

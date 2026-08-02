@@ -90,11 +90,15 @@ impl std::fmt::Display for SelectError {
 }
 
 /// (provider_id, model_id_prefix) pairs used for prefix-based detection.
+/// Order matters: more specific prefixes first so a route isn't stolen by a
+/// shorter, earlier prefix (e.g. `openrouter/…` must never match OpenAI).
 const PREFIX_PROVIDERS: &[(&str, &str)] = &[
+    ("openrouter", "openrouter/"),
     ("openai", "gpt-"),
     ("openai", "o1"),
     ("openai", "o3"),
     ("openai", "o4"),
+    ("openai", "o-"),
     ("anthropic", "claude-"),
     ("google-ai-studio", "gemini-"),
     ("deepseek", "deepseek-"),
@@ -278,5 +282,62 @@ mod tests {
         let cfg = SentinelConfig::default();
         let err = resolve_model(&cfg, "ollama/llama3.2").unwrap_err();
         assert!(matches!(err, SelectError::LocalUnavailable { .. }));
+    }
+
+    fn test_config_multi(providers: Vec<ProviderInfo>) -> SentinelConfig {
+        SentinelConfig {
+            providers,
+            ..Default::default()
+        }
+    }
+
+    fn openrouter_provider() -> ProviderInfo {
+        ProviderInfo {
+            id: "openrouter".into(),
+            name: "OpenRouter".into(),
+            base_url: "https://openrouter.ai/api/v1".into(),
+            auth: AuthConfig::EnvKey {
+                var: "OPENROUTER_API_KEY".into(),
+            },
+            models: vec![
+                model("openrouter/auto"),
+                model("openrouter/google/gemma-4-31b-it:free"),
+            ],
+            timeout_secs: 120,
+            extra_headers: Default::default(),
+        }
+    }
+
+    #[test]
+    fn openrouter_prefix_routes_to_openrouter_not_openai() {
+        let cfg = test_config_multi(vec![
+            openrouter_provider(),
+            test_config(vec![model("o4-mini")]).providers.remove(0),
+        ]);
+        std::env::set_var("OPENROUTER_API_KEY", "sk-test");
+        std::env::set_var("OPENAI_API_KEY", "sk-test");
+
+        // 1) `openrouter/…` must resolve to OpenRouter, not the OpenAI provider.
+        let sel = resolve_model(&cfg, "openrouter/auto").unwrap();
+        assert_eq!(sel.provider.id, "openrouter");
+        assert_eq!(sel.model_id, "openrouter/auto");
+
+        // 2) an o-prefixed model still goes to OpenAI (prefix stealing must not happen).
+        let sel2 = resolve_model(&cfg, "o4-mini").unwrap();
+        assert_eq!(sel2.provider.id, "openai");
+
+        // 3) free-tier OpenRouter model resolves too.
+        let sel3 = resolve_model(&cfg, "openrouter/google/gemma-4-31b-it:free").unwrap();
+        assert_eq!(sel3.provider.id, "openrouter");
+
+        std::env::remove_var("OPENROUTER_API_KEY");
+        std::env::remove_var("OPENAI_API_KEY");
+    }
+
+    #[test]
+    fn openrouter_model_without_config_lists_available() {
+        let cfg = SentinelConfig::default();
+        let err = resolve_model(&cfg, "openrouter/auto").unwrap_err();
+        assert!(matches!(err, SelectError::NoProvider { .. }));
     }
 }

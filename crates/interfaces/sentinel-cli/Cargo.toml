@@ -22,6 +22,7 @@ sentinel-core = { workspace = true }
 sentinel-protocol = { workspace = true }
 sentinel-config = { workspace = true }
 sentinel-provider = { workspace = true }
+sentinel-analytics = { workspace = true }
 sentinel-tools = { workspace = true }
 sentinel-mcp = { workspace = true }
 sentinel-plugin-system = { workspace = true }

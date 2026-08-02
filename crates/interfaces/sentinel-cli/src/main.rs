@@ -13,6 +13,7 @@ mod web;
 mod completion;
 mod plugin_cmd;
 mod gpu_optimize;
+mod telemetry;
 
 use colored::*;
 
@@ -46,6 +47,7 @@ async fn main() -> anyhow::Result<()> {
         "auth" => auth::run(sub_args).await?,
         "server" => server::run(sub_args).await?,
         "plugin" => plugin_cmd::run(sub_args).await?,
+        "telemetry" => telemetry::run(sub_args).await?,
         "web" => web::run(sub_args).await?,
         "proxy" => proxy::run(sub_args).await?,
         "diagnostics" => diagnostics::run(sub_args).await?,
@@ -100,6 +102,7 @@ fn print_help() {
     println!("  auth login|logout|status Authentication management");
     println!("  server start|stop|status App server control");
     println!("  plugin install|list|remove Plugin management (tools + policy hooks)");
+    println!("  telemetry on|off|status  Anonymous crash-reporting consent");
     println!("  web [--port <n>]        Start HTTP server with Web UI");
     println!("  proxy                  Headroom HTTP compression proxy");
     println!("  diagnostics            System diagnostic checks");

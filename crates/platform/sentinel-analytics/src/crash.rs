@@ -44,6 +44,11 @@ impl CrashReport {
 
 static CRASH_HOOK_INITIALIZED: AtomicBool = AtomicBool::new(false);
 
+/// Whether the crash hook has already been installed (idempotency probe).
+pub fn is_hook_initialized() -> bool {
+    CRASH_HOOK_INITIALIZED.load(Ordering::Relaxed)
+}
+
 /// Install a global panic hook that forwards crashes to the analytics client.
 ///
 /// This is idempotent — subsequent calls are no-ops. The hook captures
