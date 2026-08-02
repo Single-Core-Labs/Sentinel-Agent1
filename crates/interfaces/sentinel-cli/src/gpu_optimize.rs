@@ -83,8 +83,41 @@ impl GpuOptimizeKernelTool {
         }
     }
 
-    /// Resolve the emulation target arch from the real GPU; fall back to
+    /// Map a compute-capability or architecture string ("h100", "rtx4090", "b200", "8.9") to GpuArch.
+    fn parse_arch_arg(raw: &str) -> Option<GpuArch> {
+        let lower = raw.to_lowercase().replace('_', "").replace('-', "");
+        if lower.contains("h100") || lower.contains("sm90") || lower == "9.0" {
+            Some(GpuArch::Hopper90)
+        } else if lower.contains("b200") || lower.contains("blackwell") || lower.contains("sm100") || lower == "10.0" {
+            Some(GpuArch::Blackwell100)
+        } else if lower.contains("4090") || lower.contains("ada") || lower.contains("sm89") || lower == "8.9" {
+            Some(GpuArch::Ada89)
+        } else if lower.contains("a100") || lower.contains("sm80") || lower == "8.0" {
+            Some(GpuArch::Ampere80)
+        } else if lower.contains("3090") || lower.contains("sm86") || lower == "8.6" {
+            Some(GpuArch::Ampere86)
+        } else if lower.contains("turing") || lower.contains("sm75") || lower == "7.5" {
+            Some(GpuArch::Turing75)
+        } else if lower.contains("volta") || lower.contains("sm70") || lower == "7.0" {
+            Some(GpuArch::Volta70)
+        } else if lower.contains("pascal") || lower.contains("sm61") || lower == "6.1" {
+            Some(GpuArch::Pascal61)
+        } else {
+            Self::arch_from_cc(raw)
+        }
+    }
+
+    /// Resolve the emulation target arch from user args or the real GPU; fall back to
     /// Ampere86 (SM86) when the machine reports nothing usable.
+    fn resolve_arch_from_args(args: &serde_json::Value) -> GpuArch {
+        if let Some(override_arch) = args["arch"].as_str() {
+            if let Some(parsed) = Self::parse_arch_arg(override_arch) {
+                return parsed;
+            }
+        }
+        Self::resolve_arch()
+    }
+
     fn resolve_arch() -> GpuArch {
         if let Some(name) = vram::detect_gpu_name() {
             if let Some(cc) = vram::compute_capability_from_name(&name) {
@@ -304,7 +337,8 @@ impl Tool for GpuOptimizeKernelTool {
         };
 
         let gpu_name = vram::detect_gpu_name();
-        let report = Self::build_report(&fname, &source, Self::resolve_arch(), run_real_bench, gpu_name).await;
+        let target_arch = Self::resolve_arch_from_args(&args);
+        let report = Self::build_report(&fname, &source, target_arch, run_real_bench, gpu_name).await;
 
         match (&inner_output, report) {
             (Some(output), Some(report)) => ToolOutput::ok(format!(
