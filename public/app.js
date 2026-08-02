@@ -205,6 +205,64 @@
     // PTX/SASS panes
     codePtx.textContent = synthesizePTX(report);
     codeSass.textContent = synthesizeSASS(report);
+    // Bottleneck visualization
+    renderBottleneck(report);
+  }
+
+  // ---------- Bottleneck Visualization ----------
+  let prevBottleneckPct = null;
+  let prevBottleneckStep = null;
+  function renderBottleneck(report) {
+    const bar = document.getElementById('pipeline-bar');
+    const diagnosisEl = document.getElementById('bottleneck-diagnosis');
+    if (!bar || !diagnosisEl) return;
+    // Base percentages for steps
+    const steps = [
+      {name: 'Data Load', pct: 30},
+      {name: 'Preprocess', pct: 15},
+      {name: 'Forward', pct: 30},
+      {name: 'Backward', pct: 15},
+      {name: 'Sync', pct: 10},
+    ];
+    const bottleneck = (report.bottleneck || '').toLowerCase();
+    // Adjust percentages based on reported bottleneck heuristics
+    if (bottleneck.includes('memory')) {
+      steps[0].pct += 5; // Data Load
+      steps[2].pct -= 5; // Forward
+    } else if (bottleneck.includes('compute')) {
+      steps[2].pct += 5; // Forward
+      steps[0].pct -= 5; // Data Load
+    } else if (bottleneck.includes('sync')) {
+      steps[4].pct += 5; // Sync
+      steps[2].pct -= 5; // Forward
+    }
+    // Normalize to 100% (simple scaling)
+    const total = steps.reduce((s, s0) => s + s0.pct, 0);
+    steps.forEach(s => s.pct = Math.round((s.pct / total) * 100));
+    // Identify bottleneck step: if we have a known match, use it; else max pct
+    let bottleneckStep = steps.find(s => bottleneck.includes(s.name.toLowerCase())) || steps.reduce((a, b) => (a.pct > b.pct ? a : b));
+    // Render bar segments
+    bar.innerHTML = '';
+    steps.forEach(s => {
+      const seg = document.createElement('div');
+      seg.className = 'segment' + (s.name === bottleneckStep.name ? ' bottleneck' : '');
+      seg.style.flex = `${s.pct}`;
+      seg.textContent = s.name;
+      bar.appendChild(seg);
+    });
+    // Diagnosis text
+    const recText = report.recommendations && report.recommendations.length ? report.recommendations[0] : 'Optimize pipeline steps as needed.';
+    // Trend arrow based on bottleneck percentage change
+    let trend = '';
+    if (prevBottleneckPct !== null && prevBottleneckStep && prevBottleneckStep.name === bottleneckStep.name) {
+      const delta = bottleneckStep.pct - prevBottleneckPct;
+      if (delta > 5) trend = ' ▲';
+      else if (delta < -5) trend = ' ▼';
+    }
+    diagnosisEl.textContent = `${recText}${trend}`;
+    // Save state for next update
+    prevBottleneckPct = bottleneckStep.pct;
+    prevBottleneckStep = bottleneckStep;
   }
 
   function updateGpuSpec(archName) {
@@ -408,7 +466,61 @@
      ch.addEventListener('change', () => { renderGpuList(); updateCompareTray(); });
    });
 
-   renderGpuList();
-   setInterval(updateUtilizations, 2000);
+    renderGpuList();
+    setInterval(updateUtilizations, 2000);
 
- })();
+    // ---------- Chat UI ----------
+    const chatMessages = document.getElementById('chat-messages');
+    const chatInput = document.getElementById('chat-input');
+
+    function addChatMessage(content, type) {
+      const container = document.createElement('div');
+      container.className = 'msg-container ' + (type === 'user' ? 'msg-user' : 'msg-assistant');
+      if (type === 'user') {
+        const bubble = document.createElement('div');
+        bubble.className = 'msg-bubble';
+        bubble.innerHTML = content;
+        container.appendChild(bubble);
+      } else {
+        const text = document.createElement('div');
+        text.className = 'msg-text';
+        text.innerHTML = content;
+        container.appendChild(text);
+      }
+      chatMessages.appendChild(container);
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+      return container;
+    }
+
+    function generateMockResponse(userMsg) {
+      if (/idle/.test(userMsg.toLowerCase())) {
+        return `Node 3 is idle because its <span class="metric-chip">GPU Util: 0%</span>. Consider dispatching more work.`;
+      }
+      return `I’m a placeholder response.`;
+    }
+
+    function simulateAssistantReply(userMsg) {
+      const placeholder = addChatMessage('<span class="typing-cursor"></span>', 'assistant');
+      const response = generateMockResponse(userMsg);
+      let idx = 0;
+      const interval = setInterval(() => {
+        if (idx < response.length) {
+          placeholder.querySelector('.msg-text').innerHTML = response.slice(0, ++idx) + '<span class="typing-cursor"></span>';
+          chatMessages.scrollTop = chatMessages.scrollHeight;
+        } else {
+          clearInterval(interval);
+          placeholder.querySelector('.msg-text').innerHTML = response;
+        }
+      }, 30);
+    }
+
+    chatInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && chatInput.value.trim()) {
+        const msg = chatInput.value.trim();
+        addChatMessage(msg, 'user');
+        chatInput.value = '';
+        simulateAssistantReply(msg);
+      }
+    });
+
+  })();
