@@ -120,6 +120,21 @@ impl Agent {
         if self.model.is_empty() { &self.config.agent.default_model } else { &self.model }
     }
 
+    /// Public accessor for the resolved model name (for use by CLI slash commands).
+    pub fn effective_model_pub(&self) -> &str {
+        self.effective_model()
+    }
+
+    /// Initiate a streaming completion directly against the underlying provider.
+    /// Used by slash commands (e.g. /optimize) that want to stream a single
+    /// free-form prompt without going through the full agent tool-call loop.
+    pub async fn provider_stream(
+        &self,
+        req: &sentinel_protocol::CompletionRequest,
+    ) -> Result<AgentOutputStream, sentinel_provider::ProviderError> {
+        self.provider.complete_stream(req).await
+    }
+
     pub fn prompt_tokens(&self) -> u64 { self.total_prompt_tokens.load(Ordering::Relaxed) }
     pub fn completion_tokens(&self) -> u64 { self.total_completion_tokens.load(Ordering::Relaxed) }
 

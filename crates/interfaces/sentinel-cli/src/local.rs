@@ -169,7 +169,7 @@ async fn chat_loop(
                 "/backends" | "/engines" => cmd_backends().await,
                 "/profile" => cmd_profile(arg).await,
                 "/emulate" | "/emu" => cmd_emulate(arg).await,
-                "/optimize" | "/opt" => cmd_optimize(arg, sys, extended).await,
+                "/optimize" | "/opt" => cmd_optimize(arg, sys, extended, agent, thread).await,
                 "/gpu-context" | "/gpuctx" => cmd_gpu_context(sys, extended).await,
                 _ => eprintln!(" {} Unknown command. Type /help.", "✖".red().bold()),
             }
@@ -1416,7 +1416,10 @@ async fn ping() -> Result<(), String> {
 
 // ── AI Feature Commands ──
 
-async fn cmd_optimize(arg: &str, sys: &SysInfo, extended: &sentinel_gpu_profiler::vram::ExtendedGpuInfo) {
+async fn cmd_optimize(arg: &str, sys: &SysInfo, extended: &sentinel_gpu_profiler::vram::ExtendedGpuInfo, agent: &sentinel_core::Agent, thread: &mut sentinel_core::AgentThread) {
+    use futures::StreamExt;
+    use sentinel_protocol::{CompletionRequest, Message};
+
     let arg = arg.trim();
     if arg.is_empty() {
         println!();
@@ -1486,45 +1489,123 @@ async fn cmd_optimize(arg: &str, sys: &SysInfo, extended: &sentinel_gpu_profiler
         extended,
     );
 
-    // Step 4: Build optimization prompt
+    // Step 4: Print analysis before calling LLM
+    println!(" {} {} ({})", "Target:".dimmed(), arch_spec.name, arch_spec.compute_cap);
+    println!(" {} {} | {}", "Language:".dimmed(), language.name().green(), fname);
+    println!();
+    println!(" {} {}", "Bottleneck:".bold(), bottleneck.primary.yellow().bold());
+    for d in &bottleneck.details {
+        println!("   {} {}", "→".cyan(), d);
+    }
+    println!();
+
+    // Step 5: Build the optimization prompt
     let prompt = optimizer::build_optimization_prompt(
         &source, fname, &language, &target_arch, &bottleneck, &gpu_ctx,
     );
 
-    // Step 5: Run through LLM (uses the agent's provider)
-    // For now, show what would be sent
-    println!(" {} Optimization Prompt:", "•".yellow().bold());
-    println!();
-    println!("   Target: {} ({})", arch_spec.name, arch_spec.compute_cap);
-    println!("   Language: {} | File: {}", language.name().green(), fname);
+    // Step 6: Stream the LLM response
+    println!(" {} Calling LLM for kernel optimization...", "●".cyan().bold());
     println!();
 
-    println!("   {} Bottleneck Analysis:", "Bottlenecks:".bold());
-    println!("   Primary: {}", bottleneck.primary);
-    for d in &bottleneck.details {
-        println!("     ! {}", d);
+    let req = CompletionRequest::new(agent.effective_model_pub())
+        .with_message(Message::user(&prompt));
+
+    let mut stream = match agent.provider_stream(&req).await {
+        Ok(s) => s,
+        Err(e) => {
+            println!(" {} LLM call failed: {}", "✖".red(), e);
+            println!("   {} Make sure Ollama is running and a model is loaded.", "ℹ".cyan().bold());
+            return;
+        }
+    };
+
+    // Stream tokens to stdout in real time
+    print!(" {} ", "✦".green().bold());
+    use std::io::Write;
+    std::io::stdout().flush().ok();
+
+    let mut full_response = String::new();
+    while let Some(chunk) = stream.next().await {
+        match chunk {
+            Ok(c) => {
+                for choice in c.choices {
+                    if let Some(text) = choice.delta.content {
+                        print!("{}", text);
+                        std::io::stdout().flush().ok();
+                        full_response.push_str(&text);
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln!("\n {} Stream error: {}", "✖".red(), e);
+                break;
+            }
+        }
     }
     println!();
+    println!();
 
-    // Speedup estimate (using the same kernel as placeholder for now)
-    // In the full implementation, this would call the LLM and get back optimized code
-    let speedup = optimizer::estimate_speedup(&before, &before);
+    // Step 7: Extract the optimized kernel from the LLM response
+    let optimized_source = optimizer::extract_kernel_from_response(&full_response);
+
+    if optimized_source.is_empty() || optimized_source == source {
+        println!(" {} LLM did not return a modified kernel.", "ℹ".yellow().bold());
+        return;
+    }
+
+    // Step 8: Re-emulate the optimized kernel to measure real speedup
+    println!(" {} Re-emulating optimized kernel...", "●".cyan().bold());
+    let after = emulate::emulate(&optimized_source, &config, &target_arch);
+    let speedup = optimizer::estimate_speedup(&before, &after);
+    let diff = optimizer::compute_diff(&source, &optimized_source);
+
+    // Step 9: Print the final optimization report
+    let llm_notes = full_response.lines()
+        .take(4)
+        .filter(|l| l.starts_with("//") || l.starts_with('#') || l.starts_with("/*"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
     let opt_output = optimizer::OptimizeOutput {
         original_source: source.clone(),
-        optimized_source: source.clone(),
-        diff: optimizer::compute_diff(&source, &source),
+        optimized_source: optimized_source.clone(),
+        diff,
         bottleneck_report: bottleneck,
         speedup_estimate: Some(speedup),
-        llm_optimization_notes: "LLM optimization not yet integrated — run with a configured provider".into(),
+        llm_optimization_notes: if llm_notes.is_empty() {
+            "See streamed output above for optimization notes.".into()
+        } else {
+            llm_notes
+        },
         compiled_ok: None,
         correctness_passed: None,
     };
-    let report = optimizer::format_optimize_output(&opt_output);
-    println!("{report}");
+
+    println!("{}", optimizer::format_optimize_output(&opt_output));
+
+    // Step 10: Offer to write optimized file
+    let out_path = format!("{}.optimized.cu", file_part.trim_end_matches(".cu").trim_end_matches(".py"));
+    println!(" {} Save optimized kernel to {}? [y/N] ", "?".yellow().bold(), out_path.cyan());
+    std::io::stdout().flush().ok();
+
+    let mut answer = String::new();
+    std::io::stdin().read_line(&mut answer).ok();
+    if answer.trim().eq_ignore_ascii_case("y") {
+        match std::fs::write(&out_path, &optimized_source) {
+            Ok(_) => println!(" {} Saved to {}", "✔".green(), out_path.cyan()),
+            Err(e) => println!(" {} Failed to write: {}", "✖".red(), e),
+        }
+    }
     println!();
-    println!(" {} {}", "Note:".yellow().bold(), "Full LLM optimization requires a configured provider.");
-    println!("   Run `sentinel ai` with a cloud API key or use the local Ollama setup.");
-    println!("   The prompt is ready at: {}", prompt.lines().next().unwrap_or("").dimmed());
+
+    // Record the interaction in the agent thread conversation for context continuity
+    thread.conversation.add_user_message(&format!("/optimize {}", arg));
+    thread.conversation.add_assistant_text(&format!(
+        "Optimized {} for {}. Bottleneck: {}. Estimated speedup: {:.2}x.",
+        fname, arch_spec.name, opt_output.bottleneck_report.primary,
+        opt_output.speedup_estimate.as_ref().map(|s| s.speedup_x).unwrap_or(1.0),
+    ));
 }
 
 async fn cmd_gpu_context(sys: &SysInfo, extended: &sentinel_gpu_profiler::vram::ExtendedGpuInfo) {
