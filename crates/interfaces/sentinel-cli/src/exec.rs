@@ -44,22 +44,19 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         std::process::exit(1);
     }
 
-    let provider_info = config.providers()
-        .iter()
-        .find(|p| p.models.iter().any(|m| m.id == model_id))
-        .or_else(|| config.providers().first())
-        .cloned();
-
-    let provider_info = match provider_info {
-        Some(p) => p,
-        None => {
-            eprintln!("{} No provider found for model '{}'", "Error:".red().bold(), model_id);
+    // #49/#52/#53 — centralized model+provider resolution with validation and
+    // API-key preflight, instead of a silent fallback to the first provider.
+    let selected = match crate::model_selector::resolve_model(&config, &model_id) {
+        Ok(sel) => sel,
+        Err(e) => {
+            eprintln!("✖ {}", e);
             std::process::exit(1);
         }
     };
+    let model_id = selected.model_id;
 
     let provider = Arc::new(
-        sentinel_provider::ProviderKind::from_info(provider_info)?
+        sentinel_provider::ProviderKind::from_info(selected.provider.clone())?
     );
 
     let mut tool_registry = sentinel_tools::ToolRegistry::new();
@@ -67,13 +64,21 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     let mcp_servers = config.mcp_servers();
     if !mcp_servers.is_empty() {
         println!(" {} MCP servers configured", format!("{}", mcp_servers.len()).yellow());
-        let mcp_clients: Vec<Arc<sentinel_mcp::McpClient>> = mcp_servers.iter().map(|def| {
-            Arc::new(sentinel_mcp::McpClient::new(&def.id, def.transport.clone()))
-        }).collect();
-
-        let count = sentinel_mcp::register_all_mcp_tools(&mut tool_registry, mcp_clients).await;
-        if count > 0 {
-            println!("   {} MCP tools registered", format!("{}", count).green());
+        for def in mcp_servers {
+            let client = Arc::new(sentinel_mcp::McpClient::new(&def.id, def.transport.clone()));
+            match sentinel_mcp::register_mcp_tools(&mut tool_registry, client).await {
+                Ok(count) => {
+                    if count > 0 {
+                        println!("   {} MCP tools registered from '{}'", format!("{}", count).green(), def.id.green());
+                    } else {
+                        eprintln!("{} MCP server '{}' is connected but exposes no tools", "W".yellow(), def.id);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("✖ MCP server '{}' failed to connect: {}", def.id, e);
+                    eprintln!("   Tools from this server unavailable");
+                }
+            }
         }
     }
 

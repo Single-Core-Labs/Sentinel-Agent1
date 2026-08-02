@@ -24,6 +24,7 @@ pub struct ProviderInfo {
     pub auth_type: String,
     pub docs_url: String,
     pub api_key_instructions: String,
+    pub env_var: String,
     pub models: Vec<ProviderModel>,
 }
 
@@ -73,6 +74,7 @@ impl ProviderPicker {
                 auth_type: "api_key".into(),
                 docs_url: "https://aistudio.google.com/apikey".into(),
                 api_key_instructions: "Get your key at https://aistudio.google.com/apikey".into(),
+                env_var: "GOOGLE_API_KEY".into(),
                 models: vec![
                     ProviderModel {
                         provider_id: "google-ai-studio".into(),
@@ -96,6 +98,7 @@ impl ProviderPicker {
                 auth_type: "api_key".into(),
                 docs_url: "https://console.anthropic.com/".into(),
                 api_key_instructions: "Get your key at https://console.anthropic.com/settings/keys".into(),
+                env_var: "ANTHROPIC_API_KEY".into(),
                 models: vec![
                     ProviderModel {
                         provider_id: "anthropic".into(),
@@ -119,6 +122,7 @@ impl ProviderPicker {
                 auth_type: "api_key".into(),
                 docs_url: "https://platform.openai.com/".into(),
                 api_key_instructions: "Get your key at https://platform.openai.com/api-keys".into(),
+                env_var: "OPENAI_API_KEY".into(),
                 models: vec![
                     ProviderModel {
                         provider_id: "openai".into(),
@@ -142,6 +146,7 @@ impl ProviderPicker {
                 auth_type: "api_key".into(),
                 docs_url: "https://platform.deepseek.com/".into(),
                 api_key_instructions: "Get your key at https://platform.deepseek.com/api_keys".into(),
+                env_var: "DEEPSEEK_API_KEY".into(),
                 models: vec![
                     ProviderModel {
                         provider_id: "deepseek".into(),
@@ -158,6 +163,7 @@ impl ProviderPicker {
                 auth_type: "api_key".into(),
                 docs_url: "https://build.nvidia.com/".into(),
                 api_key_instructions: "Get your key at https://build.nvidia.com/".into(),
+                env_var: "NVIDIA_API_KEY".into(),
                 models: vec![
                     ProviderModel {
                         provider_id: "nvidia-nim".into(),
@@ -181,6 +187,7 @@ impl ProviderPicker {
                 auth_type: "api_key".into(),
                 docs_url: "https://models.dev/".into(),
                 api_key_instructions: "Get your key at https://models.dev/".into(),
+                env_var: "MODELSDEV_API_KEY".into(),
                 models: vec![
                     ProviderModel {
                         provider_id: "models-dev".into(),
@@ -204,6 +211,7 @@ impl ProviderPicker {
                 auth_type: "oauth".into(),
                 docs_url: "https://github.com/settings/tokens".into(),
                 api_key_instructions: "Log in with GitHub to use your Copilot account".into(),
+                env_var: "GITHUB_TOKEN".into(),
                 models: vec![
                     ProviderModel {
                         provider_id: "github-copilot".into(),
@@ -220,6 +228,7 @@ impl ProviderPicker {
                 auth_type: "api_key".into(),
                 docs_url: "https://openrouter.ai/".into(),
                 api_key_instructions: "Get your key at https://openrouter.ai/keys".into(),
+                env_var: "OPENROUTER_API_KEY".into(),
                 models: vec![
                     ProviderModel {
                         provider_id: "openrouter".into(),

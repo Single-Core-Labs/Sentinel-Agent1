@@ -761,6 +761,7 @@ impl RequestHandler {
             "providers": self.config.providers().iter().map(|p| serde_json::json!({
                 "id": p.id,
                 "name": p.name,
+                "api_key_set": p.resolve_api_key().is_some(),
                 "models": p.models.iter().map(|m| serde_json::json!({
                     "id": m.id,
                     "name": m.name,
@@ -1074,5 +1075,29 @@ mod tests {
     fn token_estimate() {
         assert_eq!(estimate_tokens("abcd"), 1);
         assert!(estimate_tokens("hello world this is a test") > 1);
+    }
+
+    #[tokio::test]
+    async fn config_get_reports_api_key_availability() {
+        // Ensure the config/get payload flags whether each provider has a key.
+        std::env::set_var("OPENAI_API_KEY", "sk-test-abc");
+        std::env::remove_var("ANTHROPIC_API_KEY");
+
+        let cfg = Arc::new(SentinelConfig::default());
+        let handler = RequestHandler::new(cfg.clone(), Arc::new(AnalyticsPipeline::default()), Arc::new(ToolRegistry::new()));
+
+        let result = handler.handle_config_get().expect("config get");
+        let providers = result["providers"].as_array().expect("providers array");
+
+        let openai = providers.iter().find(|p| p["id"] == "openai").expect("openai provider");
+        assert_eq!(openai["api_key_set"], serde_json::json!(true));
+
+        let anthropic = providers.iter().find(|p| p["id"] == "anthropic").expect("anthropic provider");
+        assert_eq!(anthropic["api_key_set"], serde_json::json!(false));
+
+        // Every provider entry exposes the flag.
+        for p in providers {
+            assert!(p.get("api_key_set").is_some(), "provider {} missing api_key_set", p["id"]);
+        }
     }
 }

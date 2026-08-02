@@ -23,7 +23,14 @@ pub struct AppServerSession {
 
 impl AppServerSession {
     pub fn new() -> Result<Self> {
-        let config = Arc::new(SentinelConfig::load().unwrap_or_default());
+        // #60 – surface config parse errors instead of silently using defaults
+        let config = Arc::new(match SentinelConfig::load() {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("{} Warning: config error: {}; using defaults", "W", e);
+                SentinelConfig::default()
+            }
+        });
         let analytics = Arc::new(AnalyticsPipeline::new());
         let tools = {
             let mut reg = ToolRegistry::new();

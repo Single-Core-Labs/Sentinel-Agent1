@@ -10,11 +10,17 @@
 
 ## Testing
 
-<!-- How this change was tested. -->
+<!-- How this change was tested. Copy the relevant terminal output below. -->
+
+### Commands run
+```text
+
+```
 
 - [ ] `cargo clippy -- -D warnings`
 - [ ] `cargo test --workspace`
 - [ ] `cargo fmt --check`
+- [ ] Tested on OS/version: [e.g. Windows 11 24H2, macOS 15, Ubuntu 24.04]
 
 ## Related
 

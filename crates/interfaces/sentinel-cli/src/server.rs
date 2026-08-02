@@ -30,7 +30,14 @@ async fn cmd_start(args: &[String]) -> anyhow::Result<()> {
         None
     };
 
-    let config = sentinel_config::SentinelConfig::load().unwrap_or_default();
+    // #60 – surface config parse errors instead of silently using defaults
+    let config = match sentinel_config::SentinelConfig::load() {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("{} Warning: config error: {}; using defaults", "W".yellow(), e);
+            sentinel_config::SentinelConfig::default()
+        }
+    };
     let server = sentinel_app_server::AppServer::new(config);
 
     match maybe_addr {

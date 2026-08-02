@@ -3,6 +3,7 @@ mod app_event;
 mod app_event_sender;
 mod app_server_session;
 mod chatwidget;
+mod env_store;
 mod event_bridge;
 mod model_picker;
 mod provider_picker;

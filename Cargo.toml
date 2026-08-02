@@ -76,3 +76,24 @@ sentinel-sdk = { path = "crates/platform/sentinel-sdk" }
 sentinel-proxy = { path = "crates/platform/sentinel-proxy" }
 sentinel-ai-test-support = { path = "crates/platform/sentinel-ai-test-support" }
 
+# Fast dev-loop compilation (issue #47, #50): keep debug builds light and
+# incremental so the feedback cycle stays under ~2 minutes. Release builds
+# stay optimized with link-time optimization.
+[profile.dev]
+opt-level = 0
+incremental = true
+codegen-units = 256
+
+[profile.dev.package."*"]
+opt-level = 0
+
+# Release binaries are shipped to users, so favor small/fast startup over size so
+# download times stay low. Size is traded against raw throughput; add per-package
+# `[profile.release.package.*]` overrides if any crate needs more optimization.
+[profile.release]
+opt-level = "s"        # Optimize for size while keeping some performance (use "z" for max size)
+lto = true             # Link-time optimization
+codegen-units = 1      # Single codegen unit for maximum inlining
+panic = "abort"        # Smaller binaries; catch_unwind is only used in #[cfg(test)]
+strip = true           # Remove debug symbols from shipped binaries
+

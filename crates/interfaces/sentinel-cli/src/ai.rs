@@ -105,7 +105,91 @@ fn try_spawn_ts_agent(args: &[String]) -> bool {
     }
 }
 
+struct CliArgs {
+    resume_id: Option<String>,
+    model_id: String,
+    yolo_mode: bool,
+    prompt_arg: Option<String>,
+    hook_command: Option<String>,
+}
+
+impl CliArgs {
+    fn parse(args: &[String], default_model: &str) -> Result<CliArgs, String> {
+        let mut out = CliArgs {
+            resume_id: None,
+            model_id: default_model.to_string(),
+            yolo_mode: false,
+            prompt_arg: None,
+            hook_command: None,
+        };
+        let mut resume_or_new_seen = false;
+        let mut iter = args.iter();
+        while let Some(arg) = iter.next() {
+            match arg.as_str() {
+                "--resume" => {
+                    if resume_or_new_seen {
+                        return Err("Cannot specify both --resume and --new".into());
+                    }
+                    match iter.next() {
+                        Some(id) if !id.is_empty() && !id.starts_with('-') => {
+                            out.resume_id = Some(id.clone());
+                            resume_or_new_seen = true;
+                        }
+                        _ => return Err("--resume requires a session-id argument".into()),
+                    }
+                }
+                "--new" => {
+                    if resume_or_new_seen {
+                        return Err("Cannot specify both --resume and --new".into());
+                    }
+                    out.resume_id = None;
+                    resume_or_new_seen = true;
+                }
+                "--yolo" => out.yolo_mode = true,
+                "--model" => match iter.next() {
+                    Some(m) if !m.starts_with('-') => out.model_id = m.clone(),
+                    _ => return Err("--model requires a model id argument".into()),
+                },
+                "--prompt" => match iter.next() {
+                    Some(p) if !p.is_empty() => out.prompt_arg = Some(p.clone()),
+                    _ => return Err("--prompt requires non-empty text".into()),
+                },
+                "--hook-command" => {
+                    if let Some(c) = iter.next() {
+                        out.hook_command = Some(c.clone());
+                    }
+                }
+                _ if arg.starts_with('-') => return Err(format!("Unknown flag: '{}'", arg)),
+                _ => out.model_id = arg.clone(),
+            }
+        }
+        Ok(out)
+    }
+}
+
 pub async fn run(args: &[String]) -> anyhow::Result<()> {
+    if args.iter().any(|a| a == "-h" || a == "--help") {
+        println!("Usage: sentinel ai [model-id] [--resume <session-id> | --new] [--yolo] [--model <id>] [--prompt <text>] [--hook-command <cmd>]");
+        println!("  --resume <id>     Continue a previously saved session (mutually exclusive with --new)");
+        println!("  --new             Start a fresh session (mutually exclusive with --resume)");
+        println!("  --yolo            Auto-approve tool actions");
+        println!("  --model <id>      Select a model (e.g. gpt-4o, claude-sonnet-4, gemini-2.5-flash)");
+        println!("  --prompt <t>      Run a single turn non-interactively, then exit");
+        println!("  --hook-command <c> Policy script gating every tool call:");
+        println!("                     stdout: 'allow' | 'deny <reason>' | 'ask' (fail-closed)");
+        return Ok(());
+    }
+    // #61/#63/#64/#66 — validate flags up front so outcomes don't depend on
+    // which UI runs (TS TUI vs Rust fallback).
+    if let Err(e) = CliArgs::parse(args, "") {
+        eprintln!("{} {}", "✖".red().bold(), e);
+        std::process::exit(1);
+    }
+    // #39 — opt-in telemetry consent, asked once at boot; non-interactive runs
+    // default to opt-out. Then install the crash hook so panics are saved.
+    let non_interactive = std::env::var("SENTINEL_NON_INTERACTIVE").as_deref() == Ok("1")
+        || args.iter().any(|a| a == "--prompt");
+    crate::telemetry::boot(non_interactive);
     if try_spawn_ts_agent(args) {
         return Ok(());
     }
@@ -117,40 +201,18 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         }
     });
 
-    let mut resume_id: Option<String> = None;
-    let mut model_id = config.agent.default_model.clone();
-    let mut yolo_mode = config.agent.yolo_mode;
-    let mut prompt_arg: Option<String> = None;
-    let mut hook_command: Option<String> = None;
-    {
-        let mut iter = args.iter();
-        while let Some(arg) = iter.next() {
-            match arg.as_str() {
-                "--resume" => resume_id = iter.next().cloned(),
-                "--new" => resume_id = None,
-                "--yolo" => yolo_mode = true,
-                "--model" => {
-                    if let Some(m) = iter.next() {
-                        model_id = m.clone();
-                    }
-                }
-                "--prompt" => prompt_arg = iter.next().cloned(),
-                "--hook-command" => hook_command = iter.next().cloned(),
-                "-h" | "--help" => {
-                    println!("Usage: sentinel ai [model-id] [--resume <session-id> | --new] [--yolo] [--model <id>] [--prompt <text>] [--hook-command <cmd>]");
-                    println!("  --resume <id>     Continue a previously saved session");
-                    println!("  --new             Start a fresh session (ignores --resume)");
-                    println!("  --yolo            Auto-approve tool actions");
-                    println!("  --prompt <t>      Run a single turn non-interactively, then exit");
-                    println!("  --hook-command <c> Policy script gating every tool call:");
-                    println!("                     stdout: 'allow' | 'deny <reason>' | 'ask' (fail-closed)");
-                    return Ok(());
-                }
-                _ if arg.starts_with('-') => {}
-                _ => model_id = arg.clone(),
-            }
+    let parsed = match CliArgs::parse(args, &config.agent.default_model) {
+        Ok(cli) => cli,
+        Err(e) => {
+            eprintln!("{} {}", "✖".red().bold(), e);
+            std::process::exit(1);
         }
-    }
+    };
+    let resume_id = parsed.resume_id;
+    let model_id = parsed.model_id;
+    let yolo_mode = parsed.yolo_mode;
+    let prompt_arg = parsed.prompt_arg;
+    let hook_command = parsed.hook_command;
 
     // The inline terminal REPL is gone — OpenTUI (bun) is the only interactive UI.
     // Without bun and without --prompt there is nothing to do.
@@ -161,41 +223,42 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let provider_info = config.providers()
-        .iter()
-        .find(|p| p.models.iter().any(|m| m.id == model_id))
-        .or_else(|| config.providers().first())
-        .cloned();
-
-    let provider = match provider_info {
-        Some(ref p) => {
-            match sentinel_provider::ProviderKind::from_info(p.clone()) {
-                Ok(provider) => Arc::new(provider),
-                Err(e) => {
-                    eprintln!("✖ Provider '{}' needs setup: {}", p.name, e);
-                    eprintln!("   → Run: sentinel auth login");
-                    return Ok(());
-                }
-            }
-        }
-        None => {
-            eprintln!("✖ No provider configured for model '{}'.", model_id);
-            eprintln!("   → Add a [[providers]] section to sentinel.toml, or run: sentinel auth login");
+    // #49/#52/#53 — centralized model+provider resolution with validation and
+    // API-key preflight, instead of a silent fallback to the first provider.
+    let selected = match crate::model_selector::resolve_model(&config, &model_id) {
+        Ok(sel) => sel,
+        Err(e) => {
+            eprintln!("✖ {}", e);
             return Ok(());
         }
     };
+    let provider = match sentinel_provider::ProviderKind::from_info(selected.provider.clone()) {
+        Ok(provider) => Arc::new(provider),
+        Err(e) => {
+            eprintln!("✖ Provider '{}' needs setup: {}", selected.provider.name, e);
+            eprintln!("   → Run: sentinel auth login");
+            return Ok(());
+        }
+    };
+    let model_id = selected.model_id;
 
     let mut tool_registry = sentinel_tools::ToolRegistry::new();
 
     let mcp_servers = config.mcp_servers();
-    if !mcp_servers.is_empty() {
-        let mcp_clients: Vec<Arc<sentinel_mcp::McpClient>> = mcp_servers.iter().map(|def| {
-            Arc::new(sentinel_mcp::McpClient::new(&def.id, def.transport.clone()))
-        }).collect();
-
-        let count = sentinel_mcp::register_all_mcp_tools(&mut tool_registry, mcp_clients).await;
-        if count > 0 {
-            println!("   {} MCP tools registered", format!("{}", count).green());
+    for def in mcp_servers {
+        let client = Arc::new(sentinel_mcp::McpClient::new(&def.id, def.transport.clone()));
+        match sentinel_mcp::register_mcp_tools(&mut tool_registry, client).await {
+            Ok(count) => {
+                if count > 0 {
+                    println!("   {} MCP tools registered from '{}'", format!("{}", count).green(), def.id.green());
+                } else {
+                    eprintln!("{} MCP server '{}' is connected but exposes no tools", "W".yellow(), def.id);
+                }
+            }
+            Err(e) => {
+                eprintln!("✖ MCP server '{}' failed to connect: {}", def.id, e);
+                eprintln!("   Tools from this server unavailable");
+            }
         }
     }
 
@@ -214,14 +277,28 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
 
     let plugin_registry = Arc::new(sentinel_plugin_system::PluginRegistry::new());
     let plugin_dir = plugin_dir();
-    let loaded_plugins = sentinel_plugin_system::load_plugins_dir(&plugin_dir);
-    for plugin in loaded_plugins {
-        if let Err(e) = plugin_registry.register(plugin).await {
-            eprintln!("{} Failed to load plugin: {}", "W".yellow(), e);
+    if !plugin_dir.exists() {
+        if let Err(e) = std::fs::create_dir_all(&plugin_dir) {
+            eprintln!("{} Could not create plugin directory '{}': {}", "W".yellow(), plugin_dir.display(), e);
         }
     }
-    if !plugin_dir.exists() {
-        let _ = std::fs::create_dir_all(&plugin_dir);
+    let loaded_plugins = sentinel_plugin_system::load_plugins_dir(&plugin_dir);
+    let mut loaded_count = 0;
+    let mut failed_plugins: Vec<String> = Vec::new();
+    for plugin in loaded_plugins {
+        match plugin_registry.register(plugin).await {
+            Ok(_) => loaded_count += 1,
+            Err(e) => failed_plugins.push(e.to_string()),
+        }
+    }
+    if loaded_count > 0 {
+        println!(" {} plugins loaded", format!("{}", loaded_count).green().bold());
+    }
+    if !failed_plugins.is_empty() {
+        eprintln!("{} {} plugins failed:", "✖".red().bold(), failed_plugins.len());
+        for err in failed_plugins {
+            eprintln!("  {} {}", "•".red(), err);
+        }
     }
 
     let agent = sentinel_core::Agent::new(provider, tools, config.clone())
@@ -329,4 +406,74 @@ fn plugin_dir() -> std::path::PathBuf {
         .or_else(|_| std::env::var("HOME"))
         .map(|h| std::path::PathBuf::from(h).join(".sentinel").join("plugins"))
         .unwrap_or_else(|_| std::path::PathBuf::from("plugins"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CliArgs;
+
+    fn parse(args: &[&str]) -> Result<CliArgs, String> {
+        let owned: Vec<String> = args.iter().map(|s| s.to_string()).collect();
+        CliArgs::parse(&owned, "gpt-4o-mini")
+    }
+
+    #[test]
+    fn defaults_apply() {
+        let a = parse(&[]).unwrap();
+        assert_eq!(a.model_id, "gpt-4o-mini");
+        assert_eq!(a.resume_id, None);
+        assert!(!a.yolo_mode);
+        assert_eq!(a.prompt_arg, None);
+    }
+
+    #[test]
+    fn model_flag_and_positional() {
+        let a = parse(&["--model", "gemini-2.5-flash"]).unwrap();
+        assert_eq!(a.model_id, "gemini-2.5-flash");
+        let b = parse(&["claude-sonnet-4"]).unwrap();
+        assert_eq!(b.model_id, "claude-sonnet-4");
+    }
+
+    #[test]
+    fn unknown_flag_rejected() {
+        // #61
+        assert!(parse(&["--modle"]).is_err());
+        assert!(parse(&["-x"]).is_err());
+        assert!(parse(&["--definitely-not-a-flag"]).is_err());
+    }
+
+    #[test]
+    fn resume_requires_id() {
+        // #64 — resume with no / empty id fails fast.
+        assert!(parse(&["--resume"]).is_err());
+        assert!(parse(&["--resume", "--yolo"]).is_err());
+        let a = parse(&["--resume", "abc123"]).unwrap();
+        assert_eq!(a.resume_id.as_deref(), Some("abc123"));
+    }
+
+    #[test]
+    fn resume_and_new_conflict() {
+        // #66 — conflict rejected regardless of order.
+        assert!(parse(&["--resume", "abc123", "--new"]).is_err());
+        assert!(parse(&["--new", "--resume", "abc123"]).is_err());
+    }
+
+    #[test]
+    fn new_sets_no_resume() {
+        let a = parse(&["--new"]).unwrap();
+        assert_eq!(a.resume_id, None);
+    }
+
+    #[test]
+    fn prompt_requires_text() {
+        // #63 — --prompt must have non-empty text.
+        assert!(parse(&["--prompt"]).is_err());
+        let a = parse(&["--prompt", "hello world"]).unwrap();
+        assert_eq!(a.prompt_arg.as_deref(), Some("hello world"));
+    }
+
+    #[test]
+    fn yolo_flag() {
+        assert!(parse(&["--yolo"]).unwrap().yolo_mode);
+    }
 }

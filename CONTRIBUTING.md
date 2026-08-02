@@ -1,11 +1,24 @@
 # Contributing to Sentinel AI
 
+We're glad you want to contribute! Please read the
+[Code of Conduct](CODE_OF_CONDUCT.md) before participating, and stick to the
+[issue templates](.github/ISSUE_TEMPLATE/) and
+[PR template](.github/pull_request_template.md) when filing issues and PRs.
+
 ## Getting Started
 
 1. Fork the repo and clone your fork.
 2. Install Rust nightly (`rustup default nightly`).
 3. Run `cargo build --workspace` to verify it compiles.
 4. Run `cargo test --workspace` to verify tests pass.
+
+## Reporting Bugs
+
+- **Always** use the [Bug Report template](.github/ISSUE_TEMPLATE/bug_report.md).
+- **Always** include your exact OS version, `sentinel --version`, and the
+  **full terminal logs** for the failing command. Issues without logs and OS
+  version will be closed as incomplete.
+- Search existing issues before filing a duplicate.
 
 ## Development Setup
 
@@ -53,4 +66,4 @@ crates/               # Rust workspace (21 crates)
 
 ## Questions?
 
-Open a [Discussion](https://github.com/Single-Core-Labs/Sentinel-Agent/discussions) or ask in `#contributors` on Discord.
+Open a [Discussion](https://github.com/Single-Core-Labs/Sentinel-Agent1/discussions) or ask in `#contributors` on Discord.

@@ -29,7 +29,15 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
                 i += 1;
                 static_dir = args.get(i).cloned();
             }
-            _ => {}
+            // #61 – unknown flags are an error, not silently ignored
+            other if other.starts_with('-') => {
+                eprintln!("{} Unknown flag: '{}'. Run 'sentinel web --help' for usage.", "Error:".red().bold(), other);
+                std::process::exit(1);
+            }
+            _ => {
+                eprintln!("{} Unexpected argument: '{}'. Run 'sentinel web --help' for usage.", "Error:".red().bold(), args[i]);
+                std::process::exit(1);
+            }
         }
         i += 1;
     }
@@ -42,7 +50,14 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     println!("   Port: {}", port.to_string().yellow());
     println!();
 
-    let config = sentinel_config::SentinelConfig::load().unwrap_or_default();
+    // #60 – surface config parse errors instead of silently using defaults
+    let config = match sentinel_config::SentinelConfig::load() {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("{} Warning: config error: {}; using defaults", "W".yellow(), e);
+            sentinel_config::SentinelConfig::default()
+        }
+    };
     let server = AppServer::new(config);
 
     // Open browser after a short delay

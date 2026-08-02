@@ -1,4 +1,5 @@
 mod approval;
+mod model_selector;
 mod display;
 mod handler;
 mod exec;
@@ -12,6 +13,7 @@ mod web;
 mod completion;
 mod plugin_cmd;
 mod gpu_optimize;
+mod telemetry;
 
 use colored::*;
 
@@ -25,6 +27,8 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let args: Vec<String> = std::env::args().collect();
+
+    crate::load_dotenv();
 
     if args.len() < 2 {
         return ai::run(&[]).await;
@@ -43,6 +47,7 @@ async fn main() -> anyhow::Result<()> {
         "auth" => auth::run(sub_args).await?,
         "server" => server::run(sub_args).await?,
         "plugin" => plugin_cmd::run(sub_args).await?,
+        "telemetry" => telemetry::run(sub_args).await?,
         "web" => web::run(sub_args).await?,
         "proxy" => proxy::run(sub_args).await?,
         "diagnostics" => diagnostics::run(sub_args).await?,
@@ -54,6 +59,33 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn load_dotenv() {
+    let candidates = std::env::var("SENTINEL_HOME")
+        .map(|h| std::path::PathBuf::from(h).join(".env"))
+        .into_iter()
+        .chain(std::iter::once(std::path::PathBuf::from(".env")))
+        .collect::<Vec<_>>();
+
+    for path in candidates {
+        if path.exists() {
+            if let Ok(contents) = std::fs::read_to_string(&path) {
+                for line in contents.lines() {
+                    let trimmed = line.trim();
+                    if trimmed.is_empty() || trimmed.starts_with('#') {
+                        continue;
+                    }
+                    if let Some((key, value)) = trimmed.split_once('=') {
+                        let key = key.trim();
+                        if !key.is_empty() && std::env::var_os(key).is_none() {
+                            std::env::set_var(key, value.trim());
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn print_help() {
@@ -70,13 +102,23 @@ fn print_help() {
     println!("  auth login|logout|status Authentication management");
     println!("  server start|stop|status App server control");
     println!("  plugin install|list|remove Plugin management (tools + policy hooks)");
+    println!("  telemetry on|off|status  Anonymous crash-reporting consent");
     println!("  web [--port <n>]        Start HTTP server with Web UI");
     println!("  proxy                  Headroom HTTP compression proxy");
     println!("  diagnostics            System diagnostic checks");
     println!();
+    println!("{}", "Common flags:".yellow().bold());
+    println!("  --model <id>          Pick a model (e.g. gpt-4o, claude-sonnet-4, gemini-2.5-flash, ollama/qwen3:8b)");
+    println!("  --prompt <text>      Run one non-interactive turn, then exit");
+    println!("  --resume <session-id> Continue a previous session");
+    println!("  --new                Start a fresh session");
+    println!("  --yolo               Auto-approve tool actions (dangerous)");
+    println!();
     println!("{}", "Examples:".yellow().bold());
     println!("  sentinel ai");
-    println!("  sentinel ai zai-org/GLM-5.2:novita");
+    println!("  sentinel ai --model gemini-2.5-flash");
+    println!("  sentinel ai --model gpt-4o --prompt \"debug why the k8s pod crashes\"");
+    println!("  sentinel ai --resume <session-id>");
     println!("  sentinel exec gpt-4o-mini \"write hello world\"");
     println!("  sentinel auth login --token <token>");
     println!("  sentinel diagnostics");
@@ -84,6 +126,8 @@ fn print_help() {
     println!("  sentinel proxy --host 0.0.0.0 --port 8787");
     println!();
     println!("{}", "Configuration:".yellow().bold());
-    println!("  See sentinel.example.toml for options");
-    println!("  Config files: sentinel.toml, config.toml, .sentinel.toml");
+    println!("  Copy sentinel.example.toml to sentinel.toml and edit defaults");
+    println!("  Config priority: ./sentinel.toml > ./config.toml > ./.sentinel.toml");
+    println!("  API keys: add to .env (e.g. OPENAI_API_KEY=sk-... ) or your shell");
+    println!("  See https://github.com/Single-Core-Labs/Sentinel-Agent1#readme for details");
 }
