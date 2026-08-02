@@ -192,6 +192,30 @@ argument validation (`ai::tests`, 8 cases) and config-get API key flags.
 
 ---
 
+### #11 — Terminal Freeze + API Keys Ignored (provider picker never wired to input)
+
+- **Problem:** `sentinel-ai-tui`'s `ProviderPicker` is rendered first every startup,
+  but `handle_key_event` never routed any key to it — arrow keys/Escape did
+  nothing (freeze), and a paste at the API-key prompt went nowhere, so the CLI
+  still reported a missing API key.
+- **Fix:** `App::handle_key_event` now routes all input to the picker while it is
+  unfinished (`handle_provider_picker_key`): ↑↓/j/k navigate and Enter confirm
+  providers/models, printable chars push into the ApiKeyInput/BaseUrlInput fields,
+  Backspace pops, Escape goes back a step. Choosing a model now emits
+  `ProviderModelSelected` and **persists the key immediately** (`set_var` +
+  `write_env_key` to `.env`) using each provider's real env var
+  (`GOOGLE_API_KEY`, `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, …).
+- **Key persistence / loading (was "API keys ignored"):** New
+  `sentinel-ai-tui/src/env_store.rs` (`write_env_key` + `load_env`), called from
+  `App::new`, plus a matching `load_dotenv()` at the top of `sentinel-cli`'s `main`
+  so keys saved by the picker are honored by the CLI provider preflight on the
+  next run. `.env` values never override already-exported env vars.
+- **Files:** `crates/interfaces/sentinel-ai-tui/src/app.rs`, `provider_picker.rs`
+  (added `env_var` to each `ProviderInfo`), `lib.rs`, `env_store.rs` (new),
+  `crates/interfaces/sentinel-cli/src/main.rs`. Tests: `env_store` (2 passed).
+
+---
+
 ## How to verify
 
 ```bash

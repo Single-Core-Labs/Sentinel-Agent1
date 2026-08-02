@@ -27,6 +27,8 @@ async fn main() -> anyhow::Result<()> {
 
     let args: Vec<String> = std::env::args().collect();
 
+    crate::load_dotenv();
+
     if args.len() < 2 {
         return ai::run(&[]).await;
     }
@@ -55,6 +57,33 @@ async fn main() -> anyhow::Result<()> {
     }
 
     Ok(())
+}
+
+fn load_dotenv() {
+    let candidates = std::env::var("SENTINEL_HOME")
+        .map(|h| std::path::PathBuf::from(h).join(".env"))
+        .into_iter()
+        .chain(std::iter::once(std::path::PathBuf::from(".env")))
+        .collect::<Vec<_>>();
+
+    for path in candidates {
+        if path.exists() {
+            if let Ok(contents) = std::fs::read_to_string(&path) {
+                for line in contents.lines() {
+                    let trimmed = line.trim();
+                    if trimmed.is_empty() || trimmed.starts_with('#') {
+                        continue;
+                    }
+                    if let Some((key, value)) = trimmed.split_once('=') {
+                        let key = key.trim();
+                        if !key.is_empty() && std::env::var_os(key).is_none() {
+                            std::env::set_var(key, value.trim());
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 fn print_help() {

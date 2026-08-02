@@ -19,7 +19,7 @@ use crate::{
     chatwidget::{ChatWidget, DisplayEvent},
     display,
     model_picker::ModelPicker,
-    provider_picker::{PickerPhase, ProviderPicker},
+    provider_picker::{PickerPhase, ProviderInfo, ProviderPicker},
     theme::{self, ThemeConfig},
 };
 
@@ -103,6 +103,7 @@ const SLASH_COMMANDS: &[(&str, &str)] = &[
 
 impl App {
     pub async fn new() -> Result<Self> {
+        crate::env_store::load_env();
         let (tx, rx) = mpsc::unbounded_channel();
         let sender = AppEventSender::new(tx);
         let server = Arc::new(AppServerSession::new()?);
@@ -283,6 +284,11 @@ impl App {
     }
 
     async fn handle_key_event(&mut self, key: Event) {
+        if !self.provider_picker.finished() {
+            self.handle_provider_picker_key(key).await;
+            return;
+        }
+
         match &self.mode {
             InputMode::ModelPicker => {
                 if let Event::Key(key_event) = key {
@@ -445,6 +451,97 @@ impl App {
                 }
             }
         }
+    }
+
+    async fn handle_provider_picker_key(&mut self, key: Event) {
+        let Event::Key(key_event) = key else { return };
+        if key_event.kind != KeyEventKind::Press {
+            return;
+        }
+
+        match key_event.code {
+            KeyCode::Up | KeyCode::Char('k') => {
+                match self.provider_picker.phase {
+                    PickerPhase::Providers => self.provider_picker.prev_provider(),
+                    PickerPhase::Models => self.provider_picker.prev_model(),
+                    _ => {}
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                match self.provider_picker.phase {
+                    PickerPhase::Providers => self.provider_picker.next_provider(),
+                    PickerPhase::Models => self.provider_picker.next_model(),
+                    _ => {}
+                }
+            }
+            KeyCode::Char(c) => {
+                if matches!(self.provider_picker.phase, PickerPhase::ApiKeyInput | PickerPhase::BaseUrlInput) {
+                    self.provider_picker.push_char(c);
+                }
+            }
+            KeyCode::Backspace => {
+                if matches!(self.provider_picker.phase, PickerPhase::ApiKeyInput | PickerPhase::BaseUrlInput) {
+                    self.provider_picker.pop_char();
+                }
+            }
+            KeyCode::Enter => {
+                match self.provider_picker.phase {
+                    PickerPhase::Providers => self.provider_picker.select_provider(),
+                    PickerPhase::ApiKeyInput => {
+                        self.provider_picker.submit_api_key();
+                    }
+                    PickerPhase::BaseUrlInput => self.provider_picker.submit_base_url(),
+                    PickerPhase::Models => {
+                        if let Some(model) = self.provider_picker.select_model() {
+                            let provider = self.provider_picker
+                                .selected_provider
+                                .and_then(|i| self.provider_picker.providers.get(i))
+                                .cloned();
+                            let api_key = self.provider_picker.api_key_input.trim().to_string();
+                            if let Some(p) = provider {
+                                if !api_key.is_empty() && !p.env_var.is_empty() {
+                                    self.persist_env_keys(&p, &api_key).await;
+                                }
+                            }
+                            let sender = self.sender.clone();
+                            sender.send(AppEvent::ProviderModelSelected(
+                                model.model_id,
+                                api_key,
+                                self.provider_picker.base_url_input.trim().to_string(),
+                            ));
+                        }
+                    }
+                    PickerPhase::Done => {}
+                }
+            }
+            KeyCode::Esc => {
+                self.provider_picker.go_back();
+            }
+            _ => {}
+        }
+    }
+
+    async fn persist_env_key(&self, env_var: &str, api_key: &str) {
+        std::env::set_var(env_var, api_key);
+        if crate::env_store::write_env_key(env_var, api_key).is_err() {
+            let mut chat = self.chat.lock().await;
+            chat.append(sentinel_ai_exec::ThreadEvent::new(
+                "error",
+                serde_json::json!({ "message": format!("Failed to save {} to .env", env_var) }),
+            ));
+        }
+    }
+
+    async fn persist_env_keys(&mut self, provider: &ProviderInfo, api_key: &str) {
+        let env_var = provider.env_var.clone();
+        if !env_var.is_empty() && !api_key.is_empty() {
+            self.persist_env_key(&env_var, api_key).await;
+        }
+        let mut chat = self.chat.lock().await;
+        chat.append(sentinel_ai_exec::ThreadEvent::new(
+            "thinking",
+            serde_json::json!({ "text": format!("{} API key saved to .env", provider.name) }),
+        ));
     }
 
     fn filtered_suggestions(&self) -> Vec<(&'static str, &'static str)> {
