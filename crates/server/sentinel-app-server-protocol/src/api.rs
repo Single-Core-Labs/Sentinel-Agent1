@@ -208,6 +208,9 @@ pub struct AuthLoginParams {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GpuEmulateParams {
     pub file_path: String,
+    /// Optional GPU architecture name or compute capability identifier. Example: "H100", "sm_90", "9.0".
+    #[serde(default)]
+    pub arch: Option<String>,
     /// Run the ~100-config launch sweep and include the best config (default true).
     #[serde(default = "default_true")]
     pub sweep: bool,

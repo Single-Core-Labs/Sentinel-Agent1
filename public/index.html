@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sentinel GPU Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="topbar glass">
+    <div class="brand">🧠 Sentinel AI</div>
+    <div class="status">
+      <span id="ws-status" class="status-dot disconnected"></span>
+      <span id="ws-label">WS: Disconnected</span>
+    </div>
+    <div class="telemetry" id="telemetry">
+      <span id="gpu-name">GPU: –</span>
+      <span id="gpu-util">Util: –%</span>
+      <span id="gpu-temp">Temp: –°C</span>
+    </div>
+  </header>
+
+  <main class="main">
+    <section class="controls glass">
+      <div class="control-group">
+        <label>GPU Target</label>
+        <div class="chip-group" id="gpu-targets">
+          <button class="chip active" data-arch="H100">H100</button>
+          <button class="chip" data-arch="RTX 4090">RTX 4090</button>
+          <button class="chip" data-arch="B200">B200</button>
+          <select id="gpu-arch-select" class="arch-select">
+            <option value="Pascal61">Pascal (GTX 1080 Ti)</option>
+            <option value="Volta70">Volta (Tesla V100)</option>
+            <option value="Turing75">Turing (RTX 2080 Ti)</option>
+            <option value="Ampere80">Ampere 80 (A100)</option>
+            <option value="Ampere86" selected>Ampere 86 (RTX 3090)</option>
+            <option value="Ada89">Ada Lovelace (RTX 4090)</option>
+            <option value="Hopper90">Hopper (H100)</option>
+            <option value="Hopper92">Hopper (H200)</option>
+            <option value="Blackwell100">Blackwell (RTX 5090)</option>
+            <option value="Blackwell102">Blackwell (B200)</option>
+          </select>
+        </div>
+      </div>
+      <div class="control-group">
+        <label>Kernel</label>
+        <select id="kernel-select" class="kernel-select">
+          <option value="test-kernels/vec_add.cu">vec_add.cu (CUDA)</option>
+          <option value="test-kernels/matmul_triton.py">matmul_triton.py (Triton)</option>
+        </select>
+        <input type="text" id="custom-kernel" placeholder="or type custom path" class="kernel-input" />
+        <button id="load-kernel" class="btn">Load</button>
+      </div>
+      <div class="control-group actions">
+        <button id="run-emulate" class="btn primary">Emulate (auto‑sweep)</button>
+        <button id="run-profile" class="btn">Profile</button>
+      </div>
+    </section>
+
+    <div class="split-pane">
+      <section class="code-pane glass" id="code-pane">
+        <div class="tabs" id="code-tabs">
+          <button class="tab active" data-tab="cuda">CUDA</button>
+          <button class="tab" data-tab="ptx">PTX</button>
+          <button class="tab" data-tab="sass">SASS</button>
+        </div>
+        <pre class="code" id="code-cuda"></pre>
+        <pre class="code" id="code-ptx" style="display:none;"></pre>
+        <pre class="code" id="code-sass" style="display:none;"></pre>
+      </section>
+
+      <section class="metrics-pane glass" id="metrics-pane">
+        <h2>Metrics</h2>
+        <div class="grid metrics-grid">
+          <div class="card" id="card-time"><span class="label">Est. Time</span><span class="value" id="stat-time">–</span></div>
+          <div class="card" id="card-cycles"><span class="label">Cycles</span><span class="value" id="stat-cycles">–</span></div>
+          <div class="card" id="card-ipc"><span class="label">IPC</span><span class="value" id="stat-ipc">–</span></div>
+          <div class="card" id="card-bottleneck"><span class="label">Bottleneck</span><span class="value" id="stat-bottleneck">–</span></div>
+          <div class="card" id="card-occupancy"><span class="label">Occupancy</span><span class="value" id="stat-occupancy">–</span></div>
+          <div class="card" id="card-smutil"><span class="label">SM Util</span><span class="value" id="stat-smutil">–</span></div>
+          <div class="card" id="card-coalesce"><span class="label">Coalesce</span><span class="value" id="stat-coalesce">–</span></div>
+          <div class="card" id="card-region"><span class="label">Region</span><span class="value" id="stat-region">–</span></div>
+        </div>
+        <h3>GPU Spec</h3>
+        <pre class="spec" id="gpu-spec">–</pre>
+      </section>
+    </div>
+
+    <section class="recommendations glass" id="recommendations">
+      <h2>Recommendations</h2>
+      <pre id="rec-content">–</pre>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

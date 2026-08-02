@@ -813,7 +813,26 @@ impl RequestHandler {
             .to_string();
 
         let language = sentinel_gpu_profiler::langs::detect_language(&fname, &source);
-        let arch = sentinel_gpu_profiler::GpuArch::Ampere86;
+        // Resolve optional architecture override – default to Ampere86 if unspecified or unknown.
+        let arch = if let Some(ref name) = p.arch {
+            // Normalise to lower case for simple matching.
+            let n = name.trim().to_ascii_lowercase();
+            match n.as_str() {
+                "sm_61" | "pascal" | "6.1" | "gtx 1080 ti" | "1080" => Some(sentinel_gpu_profiler::GpuArch::Pascal61),
+                "sm_70" | "volta" | "7.0" | "v100" => Some(sentinel_gpu_profiler::GpuArch::Volta70),
+                "sm_75" | "turing" | "7.5" | "rtx 2080 ti" | "2080" => Some(sentinel_gpu_profiler::GpuArch::Turing75),
+                "sm_80" | "ampere" | "8.0" | "a100" => Some(sentinel_gpu_profiler::GpuArch::Ampere80),
+                "sm_86" | "8.6" | "rtx 3090" | "3090" => Some(sentinel_gpu_profiler::GpuArch::Ampere86),
+                "sm_89" | "ada" | "ada lovelace" | "8.9" | "rtx 4090" | "4090" => Some(sentinel_gpu_profiler::GpuArch::Ada89),
+                "sm_90" | "hopper" | "9.0" | "h100" => Some(sentinel_gpu_profiler::GpuArch::Hopper90),
+                "sm_92" | "9.2" | "h200" => Some(sentinel_gpu_profiler::GpuArch::Hopper92),
+                "sm_100" | "blackwell" | "10.0" | "rtx 5090" | "5090" => Some(sentinel_gpu_profiler::GpuArch::Blackwell100),
+                "sm_102" | "10.2" | "b200" => Some(sentinel_gpu_profiler::GpuArch::Blackwell102),
+                _ => None,
+            }
+        } else {
+            None
+        }.unwrap_or(sentinel_gpu_profiler::GpuArch::Ampere86);
         let arches = vec![arch];
         let req = sentinel_gpu_profiler::emulate::EmulateRequest {
             source,

@@ -41,7 +41,13 @@ impl HttpServer {
         if dev_path.exists() {
             return dev_path.to_string_lossy().to_string();
         }
-        "desktop/dist".to_string()
+        // Fallback to bundled web UI in ./public when the desktop build is absent
+        let public_path = std::path::Path::new("public");
+        if public_path.exists() {
+            return "public".to_string();
+        }
+        // As a final fallback retain the original path (will trigger a 404 if truly missing)
+        "public".to_string()
     }
 
     pub async fn run(&self, addr: &SocketAddr) -> anyhow::Result<()> {

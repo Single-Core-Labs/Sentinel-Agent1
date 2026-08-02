@@ -70,10 +70,10 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         });
     }
 
-    match static_dir {
-        Some(dir) => server.run_http_with_dir(&addr, &dir).await,
-        None => server.run_http(&addr).await,
-    }?;
+    // Always serve static assets from a directory – use the user supplied path
+    // when provided, otherwise fall back to the bundled dashboard in ./public.
+    let dir = static_dir.unwrap_or_else(|| "./public".to_string());
+    server.run_http_with_dir(&addr, &dir).await?;
 
     Ok(())
 }
