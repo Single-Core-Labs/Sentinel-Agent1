@@ -60,8 +60,46 @@
       </div>
     </section>
 
+    <!-- GPU Selector UI -->
+    <section class="gpu-selector glass" id="gpu-selector">
+      <aside class="sidebar" id="gpu-filters">
+        <h3>Filters</h3>
+        <div class="filter-group">
+          <strong>Family</strong>
+          <label><input type="checkbox" class="family-filter" value="Hopper" checked> Hopper</label><br>
+          <label><input type="checkbox" class="family-filter" value="Ampere" checked> Ampere</label><br>
+          <label><input type="checkbox" class="family-filter" value="Ada" checked> Ada</label><br>
+          <label><input type="checkbox" class="family-filter" value="Blackwell" checked> Blackwell</label>
+        </div>
+        <div class="filter-group">
+          <strong>VRAM</strong>
+          <label><input type="checkbox" class="vram-filter" value="<8" checked> &lt;8 GB</label><br>
+          <label><input type="checkbox" class="vram-filter" value="8-24" checked> 8‑24 GB</label><br>
+          <label><input type="checkbox" class="vram-filter" value=">24" checked> &gt;24 GB</label>
+        </div>
+        <div class="filter-group">
+          <strong>Region</strong>
+          <label><input type="checkbox" class="region-filter" value="us-east" checked> US‑East</label><br>
+          <label><input type="checkbox" class="region-filter" value="us-west" checked> US‑West</label><br>
+          <label><input type="checkbox" class="region-filter" value="eu-central" checked> EU‑Central</label>
+        </div>
+        <div class="filter-group">
+          <strong>Availability</strong>
+          <label><input type="checkbox" class="avail-filter" checked> Only available</label>
+        </div>
+      </aside>
+      <section class="gpu-list" id="gpu-list">
+        <!-- GPU cards will be injected here -->
+      </section>
+    </section>
+
+    <div class="compare-tray glass hidden" id="compare-tray">
+      <h3>Comparison</h3>
+      <div class="compare-grid" id="compare-grid"></div>
+    </div>
+
     <div class="split-pane">
-      <section class="code-pane glass" id="code-pane">
+      <section class="code-pane" id="code-pane">
         <div class="tabs" id="code-tabs">
           <button class="tab active" data-tab="cuda">CUDA</button>
           <button class="tab" data-tab="ptx">PTX</button>
@@ -72,7 +110,7 @@
         <pre class="code" id="code-sass" style="display:none;"></pre>
       </section>
 
-      <section class="metrics-pane glass" id="metrics-pane">
+      <section class="metrics-pane" id="metrics-pane">
         <h2>Metrics</h2>
         <div class="grid metrics-grid">
           <div class="card" id="card-time"><span class="label">Est. Time</span><span class="value" id="stat-time">–</span></div>
@@ -89,7 +127,7 @@
       </section>
     </div>
 
-    <section class="recommendations glass" id="recommendations">
+    <section class="recommendations" id="recommendations">
       <h2>Recommendations</h2>
       <pre id="rec-content">–</pre>
     </section>

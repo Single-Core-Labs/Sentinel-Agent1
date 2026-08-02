@@ -200,7 +200,7 @@
     const recs = [];
     if (report.best_config) recs.push(`★ Best Config: ${report.best_config} (score: ${report.best_score?.toFixed(3)})`);
     recs.push(...(report.recommendations || []));
-    recs.push(...(report.issues || []).map(i => `L${i.line} [${i.sev}] ${i.msg} → ${i.suggestion}`);
+    recs.push(...(report.issues || []).map(i => `L${i.line} [${i.sev}] ${i.msg} → ${i.suggestion}`));
     recPre.textContent = recs.length ? recs.join('\n') : '–';
     // PTX/SASS panes
     codePtx.textContent = synthesizePTX(report);
@@ -294,12 +294,121 @@
     setTimeout(pollTelemetry, 3000);
   }
 
-  // ---------- Init ----------
-  connectWs();
-  setTimeout(pollTelemetry, 1000);
-  // default UI state
-  setActiveChip('H100');
-  updateGpuSpec('H100');
-  // load default kernel
-  loadKernel(kernelSelect.value);
-})();
+   // ---------- Init ----------
+   connectWs();
+   setTimeout(pollTelemetry, 1000);
+   // default UI state
+   setActiveChip('H100');
+   updateGpuSpec('H100');
+   // load default kernel
+   loadKernel(kernelSelect.value);
+
+   // ---------- GPU Selector Logic ----------
+   const GPU_CATALOG = [
+     {id:'gpu1', name:'H100', family:'Hopper', vram:80, price:3.2, region:'us-east', available:true},
+     {id:'gpu2', name:'A100', family:'Ampere', vram:40, price:2.5, region:'us-west', available:true},
+     {id:'gpu3', name:'RTX 4090', family:'Ada', vram:24, price:1.8, region:'eu-central', available:true},
+     {id:'gpu4', name:'RTX 3090', family:'Ampere', vram:24, price:1.5, region:'us-east', available:true},
+     {id:'gpu5', name:'RTX 3080', family:'Ampere', vram:10, price:0.9, region:'us-west', available:true},
+     {id:'gpu6', name:'RTX 2080 Ti', family:'Turing', vram:11, price:0.7, region:'eu-central', available:false},
+   ];
+   let selectedGPUs = [];
+   const gpuListEl = document.getElementById('gpu-list');
+   const compareTray = document.getElementById('compare-tray');
+   const compareGrid = document.getElementById('compare-grid');
+
+   function applyFilters() {
+     const families = Array.from(document.querySelectorAll('.family-filter:checked')).map(cb => cb.value);
+     const vramTiers = Array.from(document.querySelectorAll('.vram-filter:checked')).map(cb => cb.value);
+     const regions = Array.from(document.querySelectorAll('.region-filter:checked')).map(cb => cb.value);
+     const onlyAvail = document.querySelector('.avail-filter').checked;
+     return GPU_CATALOG.filter(g => {
+       if (!families.includes(g.family)) return false;
+       const vt = g.vram < 8 ? '<8' : (g.vram <= 24 ? '8-24' : '>24');
+       if (!vramTiers.includes(vt)) return false;
+       if (!regions.includes(g.region)) return false;
+       if (onlyAvail && !g.available) return false;
+       return true;
+     });
+   }
+
+   function renderGpuList() {
+     gpuListEl.innerHTML = '';
+     const filtered = applyFilters();
+     filtered.forEach(g => {
+       const card = document.createElement('div');
+       card.className = 'gpu-card';
+       card.dataset.id = g.id;
+       card.innerHTML = `<div class="title">${g.name}</div>
+         <div class="detail">Family: ${g.family}<br>VRAM: ${g.vram} GB<br>Price: $${g.price.toFixed(2)}/hr</div>
+         <div class="sparkline" id="spark-${g.id}"></div>`;
+       card.addEventListener('click', () => toggleSelect(g.id, card));
+       gpuListEl.appendChild(card);
+       // initialise sparkline bars (10 bars)
+       const sparkDiv = document.getElementById(`spark-${g.id}`);
+       for (let i = 0; i < 10; i++) {
+         const bar = document.createElement('div');
+         bar.style.width = '6%';
+         sparkDiv.appendChild(bar);
+       }
+     });
+   }
+
+   function toggleSelect(id, cardEl) {
+     const idx = selectedGPUs.indexOf(id);
+     if (idx === -1) { selectedGPUs.push(id); cardEl.classList.add('selected'); }
+     else { selectedGPUs.splice(idx, 1); cardEl.classList.remove('selected'); }
+     updateCompareTray();
+   }
+
+   function updateCompareTray() {
+     if (selectedGPUs.length >= 2) {
+       compareTray.classList.remove('hidden');
+       compareGrid.innerHTML = '';
+       selectedGPUs.forEach(id => {
+         const g = GPU_CATALOG.find(x => x.id === id);
+         const c = document.createElement('div');
+         c.className = 'compare-card';
+         c.innerHTML = `<div class="title">${g.name}</div>
+           <div class="detail">Family: ${g.family}<br>VRAM: ${g.vram} GB<br>Price: $${g.price.toFixed(2)}/hr<br>Region: ${g.region}<br>Util: <span id="util-${g.id}">–</span>%</div>`;
+         compareGrid.appendChild(c);
+       });
+     } else {
+       compareTray.classList.add('hidden');
+     }
+   }
+
+   function updateUtilizations() {
+     GPU_CATALOG.forEach(g => {
+       if (!g.available) return;
+       const util = Math.floor(Math.random() * 100);
+       const spark = document.getElementById(`spark-${g.id}`);
+       if (spark) {
+         const bars = spark.children;
+         // shift opacity to simulate trail
+         for (let i = 0; i < bars.length - 1; i++) bars[i].style.opacity = '0.3';
+         const newBar = document.createElement('div');
+         newBar.style.flex = '1';
+         newBar.style.background = 'var(--accent)';
+         newBar.style.opacity = (util / 100).toString();
+         spark.appendChild(newBar);
+         if (bars.length > 10) spark.removeChild(bars[0]);
+       }
+     });
+     // update comparison tray utilization values
+     selectedGPUs.forEach(id => {
+       const util = Math.floor(Math.random() * 100);
+       const el = document.getElementById(`util-${id}`);
+       if (el) el.textContent = util;
+     });
+   }
+
+   // Filter change listeners
+   document.querySelectorAll('.family-filter,.vram-filter,.region-filter,.avail-filter').forEach(ch => {
+     ch.addEventListener('change', () => { renderGpuList(); updateCompareTray(); });
+   });
+
+   renderGpuList();
+   setInterval(updateUtilizations, 2000);
+
+ })();
