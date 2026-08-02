@@ -64,6 +64,8 @@ pub mod methods {
     pub const GPU_QUERY: &str = "gpu/query";
     pub const GPU_EMULATE: &str = "gpu/emulate";
     pub const GPU_PROFILE: &str = "gpu/profile";
+    pub const GPU_NCU: &str = "gpu/ncu";
+    pub const GPU_DISASM: &str = "gpu/disasm";
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -270,4 +272,65 @@ pub enum ServerEvent {
     Error { message: String },
     #[serde(rename = "token_count")]
     TokenCount { prompt: u64, completion: u64 },
+}
+
+// ── NCU integration ──────────────────────────────────────────────────────────
+
+/// Parameters for `gpu/ncu` — run Nsight Compute on a kernel binary or
+/// source file and return a structured bottleneck report.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GpuNcuParams {
+    /// Path to the compiled CUDA binary or source file.
+    pub target: String,
+    /// Optional kernel name filter (passed to --kernel-name).
+    #[serde(default)]
+    pub kernel_name: Option<String>,
+    /// Extra raw flags forwarded verbatim to ncu (e.g. "--section SpeedOfLight").
+    #[serde(default)]
+    pub extra_flags: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NcuMetric {
+    pub name: String,
+    pub value: String,
+    pub unit: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GpuNcuResult {
+    /// Raw ncu stdout (truncated to 64 KB).
+    pub raw: String,
+    /// Structured bottleneck summary derived from parsed metrics.
+    pub bottleneck_summary: String,
+    /// Key metrics extracted from ncu CSV output.
+    pub metrics: Vec<NcuMetric>,
+    /// Whether `ncu` was found and executed successfully.
+    pub ncu_available: bool,
+}
+
+// ── PTX/SASS disassembler ─────────────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GpuDisasmParams {
+    /// Path to a .cubin, .fatbin, or .ptx file to disassemble.
+    pub file_path: String,
+    /// "ptx" or "sass" — which view to return (default "ptx").
+    #[serde(default = "default_ptx")]
+    pub mode: String,
+    /// Optional kernel name to filter output.
+    #[serde(default)]
+    pub kernel_name: Option<String>,
+}
+
+fn default_ptx() -> String { "ptx".into() }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GpuDisasmResult {
+    /// Disassembled text (PTX or SASS).
+    pub disasm: String,
+    /// Which tool was used: "nvdisasm", "cuobjdump", or "emulator".
+    pub source: String,
+    /// True if a real disassembler binary was found.
+    pub real_disasm: bool,
 }

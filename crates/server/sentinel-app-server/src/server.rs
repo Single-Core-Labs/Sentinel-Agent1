@@ -5,6 +5,7 @@ use sentinel_app_server_transport::{TransportServer, TransportKind, Authenticato
 use sentinel_config::SentinelConfig;
 use sentinel_tools::ToolRegistry;
 use sentinel_analytics::AnalyticsPipeline;
+use sentinel_core::thread_store::{ThreadStore, JsonFileThreadStore};
 use crate::handler::RequestHandler;
 use crate::http::HttpServer;
 
@@ -27,7 +28,55 @@ impl AppServer {
             reg.register(Arc::new(headroom_retrieve));
             Arc::new(reg)
         };
-        let handler = Arc::new(RequestHandler::new(config.clone(), analytics.clone(), tools));
+
+        // Gap 5: session persistence via JSON files.
+        // Use the thread_store config key: "json" → ~/.sentinel/threads/
+        // Set SENTINEL_THREAD_STORE=none to disable.
+        let thread_store: Option<Arc<dyn ThreadStore>> = match config.thread_store.as_str() {
+            "none" | "" => None,
+            "sqlite" => {
+                #[cfg(feature = "sqlite")]
+                {
+                    use sentinel_core::thread_store::SqliteThreadStore;
+                    let db_path = std::env::current_dir()
+                        .unwrap_or_else(|_| std::path::PathBuf::from("."))
+                        .join("sentinel_threads.db");
+                    match SqliteThreadStore::new(&db_path) {
+                        Ok(s) => {
+                            tracing::info!("Session store: SQLite at {}", db_path.display());
+                            Some(Arc::new(s) as Arc<dyn ThreadStore>)
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to open SQLite thread store: {} — sessions will not persist", e);
+                            None
+                        }
+                    }
+                }
+                #[cfg(not(feature = "sqlite"))]
+                {
+                    tracing::warn!("sqlite feature not enabled — sessions will not persist");
+                    None
+                }
+            }
+            _ => {
+                // Default: JSON files in ~/.sentinel/threads/
+                let dir = dirs::home_dir()
+                    .unwrap_or_else(|| std::path::PathBuf::from("."))
+                    .join(".sentinel")
+                    .join("threads");
+                if std::fs::create_dir_all(&dir).is_ok() {
+                    tracing::info!("Session store: JSON files at {}", dir.display());
+                    Some(Arc::new(JsonFileThreadStore::new(dir)) as Arc<dyn ThreadStore>)
+                } else {
+                    tracing::warn!("Cannot create session store dir — sessions will not persist");
+                    None
+                }
+            }
+        };
+
+        let handler = Arc::new(RequestHandler::new_with_store(
+            config.clone(), analytics.clone(), tools, thread_store,
+        ));
 
         Self {
             _config: config,

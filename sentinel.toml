@@ -5,6 +5,13 @@ max_iterations = 100
 yolo_mode = false
 verbose = false
 
+# Session persistence backend.
+# Options:
+#   "json"   — save threads as JSON files in ~/.sentinel/threads/ (default)
+#   "sqlite" — SQLite DB at ./sentinel_threads.db (requires --features sqlite)
+#   "none"   — disable persistence
+thread_store = "json"
+
 
 [[providers]]
 id = "ollama-local"

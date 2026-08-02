@@ -50,9 +50,19 @@ function wsSend(method, params = {}) {
 function handleWsMessage(raw) {
   let msg;
   try { msg = JSON.parse(raw); } catch { return; }
+
+  // ── Route by JSON-RPC id ──────────────────────────────────────────────────
+  if (msg.id && pendingRpc[msg.id]) {
+    const { resolve } = pendingRpc[msg.id];
+    delete pendingRpc[msg.id];
+    if (msg.error) resolve({ error: msg.error });
+    else resolve({ result: msg.result });
+    return;
+  }
+
+  // ── Unsolicited telemetry push (legacy) ──────────────────────────────────
   const result = msg.result;
   if (!result) return;
-
   if (result.type === 'kernel_launch') {
     kernelCount++;
     const { name, duration_us, sm_util, vram_used, arch } = result;
@@ -62,6 +72,152 @@ function handleWsMessage(raw) {
   } else if (result.type === 'telemetry') {
     ingestTelemetry(result);
   }
+}
+
+// ── Promise-based RPC helper ──────────────────────────────────────────────────
+const pendingRpc = {};
+
+function rpcCall(method, params = {}) {
+  return new Promise((resolve, reject) => {
+    const id = Date.now() + Math.random();
+    pendingRpc[id] = { resolve, reject };
+    // Auto-clean after 30s to avoid leaks.
+    setTimeout(() => {
+      if (pendingRpc[id]) { delete pendingRpc[id]; reject(new Error('RPC timeout')); }
+    }, 30000);
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ jsonrpc: '2.0', id, method, params }));
+    } else {
+      reject(new Error('WebSocket not open'));
+    }
+  });
+}
+
+// ── Live GPU query (replaces simulated metrics) ───────────────────────────────
+async function fetchLiveGpuQuery() {
+  try {
+    const { result, error } = await rpcCall('gpu/query');
+    if (error || !result) return;
+    // Map real GPU name → GPU_DATA entry and update util.
+    const name = (result.name || '').trim().toLowerCase();
+    const util = result.util_gpu ?? 0;
+    const vramUsed = result.vram_used_gb ?? 0;
+    const vramTotal = result.vram_total_gb ?? 0;
+    const temp = result.temp_c ?? 0;
+
+    // Update the first GPU_DATA entry that matches the real GPU name.
+    let matched = GPU_DATA.find(g => name.includes(g.name.toLowerCase()) || name.includes(g.arch.toLowerCase()));
+    if (!matched) matched = GPU_DATA[0]; // fallback to first entry
+    if (matched) {
+      matched.util = Math.round(util);
+      sparkHistory[matched.id].push(matched.util);
+      sparkHistory[matched.id].shift();
+    }
+
+    // Update virt pool alloc bar with real VRAM.
+    if (vramTotal > 0) {
+      const pct = Math.round((vramUsed / vramTotal) * 100);
+      const bar = document.getElementById('virtAllocBar');
+      const pctEl = document.getElementById('virtAllocPct');
+      if (bar) bar.style.width = pct + '%';
+      if (pctEl) pctEl.textContent = pct + '%';
+    }
+
+    // Push to terminal.
+    if (result.name) {
+      termLog('t-ok', `GPU: ${result.name}  util=${util.toFixed(0)}%  temp=${temp}°C  VRAM=${vramUsed.toFixed(1)}/${vramTotal.toFixed(1)}GB`);
+    }
+
+    renderGpuTable();
+  } catch (_) { /* server not up, use simulation */ }
+}
+
+// ── Real emulation RPC → feed bottleneck + terminal panels ───────────────────
+let lastEmulateFile = null;
+
+async function fetchLiveEmulation(filePath, arch = 'sm_86') {
+  if (!filePath) return;
+  try {
+    termLog('t-dim', `Emulating ${filePath} on ${arch}…`);
+    const { result, error } = await rpcCall('gpu/emulate', { file_path: filePath, arch, sweep: false });
+    if (error) { termLog('t-err', `gpu/emulate error: ${error.message}`); return; }
+    if (!result) return;
+
+    // Stream report lines to terminal.
+    (result.report || '').split('\n').filter(Boolean).forEach(line => {
+      const cls = line.startsWith('!') || line.toLowerCase().includes('warn') ? 't-warn'
+                : line.toLowerCase().includes('error') ? 't-err'
+                : line.startsWith('Language') || line.startsWith('Hint') ? 't-dim'
+                : 't-ok';
+      termLog(cls, line);
+    });
+
+    // Parse a bottleneck hint out of the report for the bottleneck panel.
+    const bottleneckMatch = (result.report || '').match(/bottleneck[:\s]+([^\n]+)/i);
+    if (bottleneckMatch) {
+      const diagEl = document.getElementById('diagnosisText');
+      if (diagEl) diagEl.textContent = bottleneckMatch[1].trim();
+    }
+
+    kernelCount++;
+    const fpsMeterEl = document.getElementById('fpsMeter');
+    if (fpsMeterEl) fpsMeterEl.textContent = kernelCount + ' emulations';
+  } catch (_) {}
+}
+
+// ── Real NCU RPC → feed bottleneck panel ─────────────────────────────────────
+async function fetchNcuProfile(target) {
+  if (!target) return;
+  try {
+    const { result, error } = await rpcCall('gpu/ncu', { target });
+    if (error || !result) return;
+
+    termLog(result.ncu_available ? 't-ok' : 't-warn',
+      result.ncu_available ? `NCU: ${result.metrics.length} metrics captured` : result.bottleneck_summary);
+
+    if (result.bottleneck_summary) {
+      const diagEl = document.getElementById('diagnosisText');
+      if (diagEl) diagEl.textContent = result.bottleneck_summary.split('\n')[0].trim();
+    }
+    // Push individual metrics to terminal.
+    result.metrics.slice(0, 6).forEach(m => {
+      termLog('t-dim', `  ${m.name} = ${m.value} ${m.unit}`);
+    });
+  } catch (_) {}
+}
+
+// ── Real PTX/SASS disassembly RPC → feed PTX panel ───────────────────────────
+async function fetchDisasm(filePath, mode = 'ptx') {
+  try {
+    const { result, error } = await rpcCall('gpu/disasm', { file_path: filePath, mode });
+    if (error || !result) return;
+    const asmEl = document.getElementById('asmSource');
+    const label = document.getElementById('asmPaneLabel');
+    if (asmEl) {
+      asmEl.textContent = result.disasm;
+      // Apply syntax colouring via lightweight regex replacement.
+      asmEl.innerHTML = colorisePtx(asmEl.textContent);
+    }
+    if (label) label.textContent = mode.toUpperCase() + (result.real_disasm ? '' : ' (sketch)');
+    const paneLabel = document.querySelector('.pane-asm .pane-label');
+    if (paneLabel && !result.real_disasm) {
+      paneLabel.style.color = 'var(--text-tertiary)';
+      paneLabel.title = `Source: ${result.source}`;
+    }
+  } catch (_) {}
+}
+
+function colorisePtx(text) {
+  // Very lightweight PTX syntax highlighting (no external deps).
+  return text
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/(\/\/[^\n]*)/g, '<span class="ptx-cmt">$1</span>')
+    .replace(/\b(ld|st|mov|add|mul|fma|bar|bra|ret|exit|cvta|cvt|setp|selp|atom)\b/g,
+             '<span class="ptx-op">$1</span>')
+    .replace(/\b(%[a-zA-Z_]\w*)\b/g, '<span class="ptx-reg">$1</span>')
+    .replace(/\b(\.param|\.reg|\.shared|\.global|\.local|\.entry|\.visible|\.version|\.target)\b/g,
+             '<span class="ptx-type">$1</span>')
+    .replace(/\b(\w+:)\s/g, '<span class="ptx-label">$1</span> ');
 }
 
 // ─── GPU Data ─────────────────────────────────────────────────────────────────
@@ -84,8 +240,15 @@ let selectedGpus = new Set();
 let sortKey = 'name';
 let sortAsc = true;
 
-// Simulate live utilisation
-function simulateLiveMetrics() {
+// Live metrics: tries real gpu/query first, falls back to simulation
+async function simulateLiveMetrics() {
+  // Attempt a real gpu/query RPC.  If WebSocket is open, use real data;
+  // otherwise keep the simulated path so the dashboard always shows something.
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    await fetchLiveGpuQuery();
+    return;
+  }
+  // Simulation fallback (no server or server has no GPU).
   GPU_DATA.forEach(g => {
     const base = { hopper: 82, ada: 65, blackwell: 91, ampere: 58 }[g.family] ?? 60;
     const noise = (Math.random() - 0.5) * 14;
@@ -96,7 +259,7 @@ function simulateLiveMetrics() {
   renderGpuTable();
   kernelsPerSec = Math.round(8 + Math.random() * 24);
   const el = document.getElementById('fpsMeter');
-  if (el) el.textContent = kernelsPerSec + ' kern/s';
+  if (el) el.textContent = kernelsPerSec + ' kern/s (sim)';
 }
 
 function updateGpuUtil(arch, util) {
@@ -466,12 +629,15 @@ function initPtxPanel() {
     document.getElementById('ptxToggle').classList.add('active');
     document.getElementById('sassToggle').classList.remove('active');
     renderPtxPanel();
+    // If a real file was previously disassembled, re-fetch in PTX mode.
+    if (lastEmulateFile) fetchDisasm(lastEmulateFile, 'ptx');
   });
   document.getElementById('sassToggle').addEventListener('click', () => {
     currentAsmMode = 'sass';
     document.getElementById('sassToggle').classList.add('active');
     document.getElementById('ptxToggle').classList.remove('active');
     renderPtxPanel();
+    if (lastEmulateFile) fetchDisasm(lastEmulateFile, 'sass');
   });
   renderPtxPanel();
 }

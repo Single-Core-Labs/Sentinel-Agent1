@@ -38,3 +38,6 @@ pub use messaging::*;
 pub use uploader::*;
 pub use sub_agent_tool::*;
 pub use compression::*;
+
+// Agent loop integration tests (Gap 6).
+mod agent_tests;

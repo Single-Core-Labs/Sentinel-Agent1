@@ -2838,6 +2838,7 @@ dependencies = [
  "async-trait",
  "axum",
  "colored",
+ "dirs",
  "futures-util",
  "hyper",
  "sentinel-agent-graph-store",
