@@ -1,559 +1,1009 @@
-/* Sentinel GPU Dashboard – WebSocket JSON‑RPC client */
-(() => {
-  const wsStatus = document.getElementById('ws-status');
-  const wsLabel = document.getElementById('ws-label');
-  const telemetryDiv = document.getElementById('telemetry');
-  const gpuNameSpan = document.getElementById('gpu-name');
-  const gpuUtilSpan = document.getElementById('gpu-util');
-  const gpuTempSpan = document.getElementById('gpu-temp');
+/* ═══════════════════════════════════════════════════════════════════════
+   SENTINEL GPU PROFILER — app.js
+   WebSocket telemetry + all 9 panel controllers
+   ═══════════════════════════════════════════════════════════════════════ */
 
-  const gpuTargets = document.getElementById('gpu-targets');
-  const archSelect = document.getElementById('gpu-arch-select');
-  const kernelSelect = document.getElementById('kernel-select');
-  const customKernelInput = document.getElementById('custom-kernel');
-  const loadBtn = document.getElementById('load-kernel');
-  const runEmulateBtn = document.getElementById('run-emulate');
-  const runProfileBtn = document.getElementById('run-profile');
-  const recPre = document.getElementById('rec-content');
+'use strict';
 
-  const codeTabs = document.getElementById('code-tabs');
-  const codeCuda = document.getElementById('code-cuda');
-  const codePtx = document.getElementById('code-ptx');
-  const codeSass = document.getElementById('code-sass');
-  const codeProfiled = document.getElementById('code-profiled');
+// ─── WebSocket ────────────────────────────────────────────────────────────────
+const WS_URL = 'ws://127.0.0.1:9090/ws';
+let ws = null;
+let wsReconnectTimer = null;
+let kernelCount = 0;
+let kernelsPerSec = 0;
+let kpsTimer = null;
 
-  const metricElems = {
-    time: document.getElementById('stat-time'),
-    cycles: document.getElementById('stat-cycles'),
-    ipc: document.getElementById('stat-ipc'),
-    bottleneck: document.getElementById('stat-bottleneck'),
-    occupancy: document.getElementById('stat-occupancy'),
-    smutil: document.getElementById('stat-smutil'),
-    coalesce: document.getElementById('stat-coalesce'),
-    region: document.getElementById('stat-region'),
-  };
-
-  const gpuSpecPre = document.getElementById('gpu-spec');
-
-  // ---------- WebSocket setup ----------
-  let ws;
-  let nextId = 1;
-  const pending = new Map();
-
-  function setWsStatus(connected) {
-    wsStatus.classList.toggle('connected', connected);
-    wsLabel.textContent = `WS: ${connected ? 'Connected' : 'Disconnected'}`;
-  }
-
-  function connectWs() {
-    const url = `ws://${location.host}/ws`;
-    ws = new WebSocket(url);
-    ws.addEventListener('open', () => setWsStatus(true));
-    ws.addEventListener('close', () => setWsStatus(false));
-    ws.addEventListener('error', () => setWsStatus(false));
-    ws.addEventListener('message', ev => onMessage(ev));
-  }
-
-  function onMessage(ev) {
-    try {
-      const msg = JSON.parse(ev.data);
-      if ('id' in msg) {
-        const { id } = msg;
-        const defer = pending.get(id);
-        if (defer) {
-          pending.delete(id);
-          if (msg.error) defer.reject(msg.error);
-          else defer.resolve(msg.result);
-        }
-      } else if (msg.method === 'event') {
-        // currently we ignore server‑sent events for this dashboard
-      }
-    } catch (e) {
-      console.error('Invalid WS message', e);
-    }
-  }
-
-  function rpc(method, params = {}) {
-    return new Promise((resolve, reject) => {
-      const id = String(nextId++);
-      pending.set(id, { resolve, reject });
-      ws.send(JSON.stringify({ jsonrpc: '2.0', id, method, params }));
-    });
-  }
-
-  // ---------- UI helpers ----------
-  function setActiveChip(target) {
-    document.querySelectorAll('.chip').forEach(ch => {
-      ch.classList.toggle('active', ch.dataset.arch === target);
-    });
-    // sync select box
-    archSelect.value = target;
-  }
-
-  function loadSampleKernel(path) {
-    // update UI selections
-    kernelSelect.value = path;
-    customKernelInput.value = '';
-    loadKernel(path);
-  }
-
-  function escapeHtml(s) {
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  }
-
-  function renderProfiledView(src) {
-    if (!codeProfiled) return;
-    const srcLines = src.split('\n');
-    let profHtml = '';
-    for (let i = 0; i < srcLines.length; i++) {
-      const line = srcLines[i];
-      let severity = 'fast';
-      if (/for|while|#pragma|__shared__|double|__restrict__/.test(line)) {
-        severity = (i + Math.floor(Math.random() * 10)) % 5 === 0 ? 'slow' : 'fast';
-      }
-      if (/__syncthreads|malloc|parallel|atomic/.test(line)) {
-        severity = 'critical';
-      }
-      const us = (Math.random() * 200 + 20).toFixed(0);
-      const mem = (Math.random() * 2 + 0.1).toFixed(1);
-      const calls = Math.floor(Math.random() * 5000);
-      let annotation = '';
-      if (severity !== 'fast' || i % 4 === 0) {
-        annotation = `<span class="annotation ${severity}" data-tooltip="time: ${us}μs\nmem: +${mem}GB\ncalls: ${calls}">${us}μs</span>`;
-      }
-      const hotClass = severity === 'slow' || severity === 'critical' ? ' hot' : '';
-      profHtml += `<div class="code-line${hotClass}"><span class="line-number">${i + 1}</span><span class="code-content">${escapeHtml(line)}</span>${annotation}</div>`;
-    }
-    codeProfiled.innerHTML = profHtml;
-  }
-
-  function loadKernel(path) {
-    rpc('fs/readFile', { path }).then(res => {
-      const src = res.content;
-      codeCuda.textContent = src;
-      // reset PTX/SASS panes until we have a report
-      codePtx.textContent = '// PTX view will appear after analysis';
-      codeSass.textContent = '// SASS view will appear after analysis';
-      renderProfiledView(src);
-    }).catch(err => alert('Failed to read kernel: ' + err.message));
-  }
-
-  // ---------- Parsing helpers ----------
-  function parseReport(text) {
-    const data = {};
-    const lines = text.split('\n');
-    let section = '';
-    for (const raw of lines) {
-      const line = raw.trim();
-      if (!line) continue;
-      if (line.startsWith('---')) { section = line; continue; }
-      const colon = line.indexOf(':');
-      if (colon === -1) continue;
-      const key = line.slice(0, colon).trim();
-      const val = line.slice(colon + 1).trim();
-      // capture primary metrics from the Execution section
-      switch (key) {
-        case 'Estimated Time': data.time_us = parseFloat(val.split(' ')[0]); break;
-        case 'Total Cycles': data.cycles = parseInt(val.replace(/,/g, ''), 10); break;
-        case 'IPC': data.ipc = parseFloat(val); break;
-        case 'Bottleneck': data.bottleneck = val; break;
-        case 'Occupancy': data.occupancy = parseFloat(val.replace('%', '')); break;
-        case 'SM Util': data.sm_util = parseFloat(val.replace('%', '')); break;
-        case 'Coalescing Eff.': data.coalesce = parseFloat(val.replace('%', '')); break;
-        case 'Arith. Intensity': data.arith_intensity = parseFloat(val);
-          // next line (ridge point) is optional; ignore.
-          break;
-        case 'Region': data.region = val; break;
-        case 'Bottleneck': data.bottleneck = val; break;
-        default:
-          // capture instruction mix values using known labels
-          if (key === 'Arithmetic') data.arith = parseInt(val, 10);
-          else if (key === 'Memory (global)') data.mem_global = parseInt(val, 10);
-          else if (key === 'Memory (shared)') data.mem_shared = parseInt(val, 10);
-          else if (key === 'Tensor Core') data.tensor = parseInt(val, 10);
-          else if (key === 'Sync') data.sync = parseInt(val, 10);
-          else if (key === 'Branches') data.branches = parseInt(val, 10);
-          break;
-      }
-    }
-    // Best Config extraction
-    const bestMatch = text.match(/★\s*Best Config:\s*([\w\s]+)\s*\(score:\s*([0-9.]+)\)/);
-    if (bestMatch) {
-      data.best_config = bestMatch[1].trim();
-      data.best_score = parseFloat(bestMatch[2]);
-    }
-    // Recommendations (lines prefixed with '!')
-    const recs = [];
-    const recRegex = /^\s*!\s*(.+)$/gm;
-    let m;
-    while ((m = recRegex.exec(text)) !== null) {
-      recs.push(m[1].trim());
-    }
-    data.recommendations = recs;
-    // Profile issues – lines like "L12 [warn] msg → suggestion"
-    const issues = [];
-    const issueRegex = /^\s*L(\d+) \[(error|warn|info)\] (.+?) → (.+)$/gm;
-    while ((m = issueRegex.exec(text)) !== null) {
-      issues.push({ line: parseInt(m[1], 10), sev: m[2], msg: m[3].trim(), suggestion: m[4].trim() });
-    }
-    data.issues = issues;
-    return data;
-  }
-
-  function synthesizePTX(report) {
-    // Very rough PTX from instruction mix – each category becomes a dummy instruction
-    const lines = [];
-    const add = (cnt, tmpl) => { for (let i = 0; i < cnt; i++) lines.push(tmpl.replace('{i}', i + 1)); };
-    if (report.arith) add(report.arith, '    // arithmetic op {i}');
-    if (report.mem_global) add(report.mem_global, '    ld.global.u32 r{i}, [addr];');
-    if (report.mem_shared) add(report.mem_shared, '    ld.shared.u32 r{i}, [s_addr];');
-    if (report.tensor) add(report.tensor, '    turing.tensor.fma.rN.f32 r{i}, r{i}, r{i};');
-    if (report.sync) add(report.sync, '    bar.sync 0;');
-    if (report.branches) add(report.branches, '    @p{i} bra LABEL{i};');
-    return lines.join('\n');
-  }
-
-  function synthesizeSASS(report) {
-    // Rough SASS – just echo PTX with a comment prefix
-    const ptx = synthesizePTX(report);
-    return ptx.split('\n').map(l => l.replace(/^\s+/, '    ')).join('\n');
-  }
-
-  function updateMetrics(report) {
-    metricElems.time.textContent = report.time_us ? `${report.time_us.toFixed(1)} µs` : '–';
-    metricElems.cycles.textContent = report.cycles ? report.cycles.toLocaleString() : '–';
-    metricElems.ipc.textContent = report.ipc?.toFixed(2) ?? '–';
-    metricElems.bottleneck.textContent = report.bottleneck ?? '–';
-    metricElems.occupancy.textContent = report.occupancy ? `${report.occupancy.toFixed(0)}%` : '–';
-    metricElems.smutil.textContent = report.sm_util ? `${report.sm_util.toFixed(0)}%` : '–';
-    metricElems.coalesce.textContent = report.coalesce ? `${report.coalesce.toFixed(0)}%` : '–';
-    metricElems.region.textContent = report.region ?? '–';
-    // Recommendations
-    const recs = [];
-    if (report.best_config) recs.push(`★ Best Config: ${report.best_config} (score: ${report.best_score?.toFixed(3)})`);
-    recs.push(...(report.recommendations || []));
-    recs.push(...(report.issues || []).map(i => `L${i.line} [${i.sev}] ${i.msg} → ${i.suggestion}`));
-    recPre.textContent = recs.length ? recs.join('\n') : '–';
-    // PTX/SASS panes
-    codePtx.textContent = synthesizePTX(report);
-    codeSass.textContent = synthesizeSASS(report);
-    // Bottleneck visualization
-    renderBottleneck(report);
-  }
-
-  // ---------- Bottleneck Visualization ----------
-  let prevBottleneckPct = null;
-  let prevBottleneckStep = null;
-  function renderBottleneck(report) {
-    const bar = document.getElementById('pipeline-bar');
-    const diagnosisEl = document.getElementById('bottleneck-diagnosis');
-    if (!bar || !diagnosisEl) return;
-    // Base percentages for steps
-    const steps = [
-      {name: 'Data Load', pct: 30},
-      {name: 'Preprocess', pct: 15},
-      {name: 'Forward', pct: 30},
-      {name: 'Backward', pct: 15},
-      {name: 'Sync', pct: 10},
-    ];
-    const bottleneck = (report.bottleneck || '').toLowerCase();
-    // Adjust percentages based on reported bottleneck heuristics
-    if (bottleneck.includes('memory')) {
-      steps[0].pct += 5; // Data Load
-      steps[2].pct -= 5; // Forward
-    } else if (bottleneck.includes('compute')) {
-      steps[2].pct += 5; // Forward
-      steps[0].pct -= 5; // Data Load
-    } else if (bottleneck.includes('sync')) {
-      steps[4].pct += 5; // Sync
-      steps[2].pct -= 5; // Forward
-    }
-    // Normalize to 100% (simple scaling)
-    const total = steps.reduce((s, s0) => s + s0.pct, 0);
-    steps.forEach(s => s.pct = Math.round((s.pct / total) * 100));
-    // Identify bottleneck step: if we have a known match, use it; else max pct
-    let bottleneckStep = steps.find(s => bottleneck.includes(s.name.toLowerCase())) || steps.reduce((a, b) => (a.pct > b.pct ? a : b));
-    // Render bar segments
-    bar.innerHTML = '';
-    steps.forEach(s => {
-      const seg = document.createElement('div');
-      seg.className = 'segment' + (s.name === bottleneckStep.name ? ' bottleneck' : '');
-      seg.style.flex = `${s.pct}`;
-      seg.textContent = s.name;
-      bar.appendChild(seg);
-    });
-    // Diagnosis text
-    const recText = report.recommendations && report.recommendations.length ? report.recommendations[0] : 'Optimize pipeline steps as needed.';
-    // Trend arrow based on bottleneck percentage change
-    let trend = '';
-    if (prevBottleneckPct !== null && prevBottleneckStep && prevBottleneckStep.name === bottleneckStep.name) {
-      const delta = bottleneckStep.pct - prevBottleneckPct;
-      if (delta > 5) trend = ' ▲';
-      else if (delta < -5) trend = ' ▼';
-    }
-    diagnosisEl.textContent = `${recText}${trend}`;
-    // Save state for next update
-    prevBottleneckPct = bottleneckStep.pct;
-    prevBottleneckStep = bottleneckStep;
-  }
-
-  function updateGpuSpec(archName) {
-    // Simple spec table based on known archs (mirrors ARCH_SPECS in Rust)
-    const specs = {
-      'Pascal61': {name:'GTX 1080 Ti', cc:'6.1', sm:28, bw:484, clock:1582, smem:98},
-      'Volta70': {name:'Tesla V100', cc:'7.0', sm:80, bw:900, clock:1530, smem:98},
-      'Turing75': {name:'RTX 2080 Ti', cc:'7.5', sm:68, bw:616, clock:1545, smem:64},
-      'Ampere80': {name:'A100', cc:'8.0', sm:108, bw:1555, clock:1410, smem:168},
-      'Ampere86': {name:'RTX 3090', cc:'8.6', sm:82, bw:936, clock:1695, smem:131},
-      'Ada89': {name:'RTX 4090', cc:'8.9', sm:128, bw:1008, clock:2520, smem:131},
-      'Hopper90': {name:'H100', cc:'9.0', sm:132, bw:3352, clock:1980, smem:232},
-      'Hopper92': {name:'H200', cc:'9.2', sm:132, bw:4800, clock:1980, smem:232},
-      'Blackwell100': {name:'RTX 5090', cc:'10.0', sm:170, bw:1792, clock:2520, smem:131},
-      'Blackwell102': {name:'B200', cc:'10.2', sm:168, bw:8000, clock:1980, smem:232},
+function wsConnect() {
+  try {
+    ws = new WebSocket(WS_URL);
+    ws.onopen = () => {
+      setWsStatus('connected');
+      if (wsReconnectTimer) { clearTimeout(wsReconnectTimer); wsReconnectTimer = null; }
+      termLog('t-ok', 'WebSocket connected to ' + WS_URL);
     };
-    const spec = specs[archName] || specs['Ampere86'];
-    gpuSpecPre.textContent = `${spec.name} (CC ${spec.cc})\nSMs: ${spec.sm}\nClock: ${spec.clock} MHz\nMemory BW: ${spec.bw} GB/s\nShared Mem/SM: ${spec.smem} KB`;
+    ws.onclose = () => {
+      setWsStatus('disconnected');
+      termLog('t-warn', 'WebSocket disconnected — reconnecting in 3s…');
+      wsReconnectTimer = setTimeout(wsConnect, 3000);
+    };
+    ws.onerror = () => setWsStatus('error');
+    ws.onmessage = (ev) => handleWsMessage(ev.data);
+  } catch (e) {
+    setWsStatus('error');
+    wsReconnectTimer = setTimeout(wsConnect, 5000);
   }
+}
 
-  // ---------- Event listeners ----------
-  // chip clicks
-  gpuTargets.addEventListener('click', e => {
-    const chip = e.target.closest('.chip');
-    if (!chip) return;
-    const arch = chip.dataset.arch;
-    setActiveChip(arch);
-    updateGpuSpec(arch);
-  });
-  archSelect.addEventListener('change', e => {
-    const arch = e.target.value;
-    setActiveChip(arch);
-    updateGpuSpec(arch);
-  });
+function setWsStatus(state) {
+  const dot   = document.getElementById('wsDot');
+  const label = document.getElementById('wsLabel');
+  dot.className = 'ws-dot ' + (state === 'connected' ? 'connected' : state === 'error' ? 'error' : '');
+  label.textContent = state === 'connected' ? 'live' : state === 'error' ? 'error' : 'reconnecting…';
+}
 
-  loadBtn.addEventListener('click', () => {
-    const path = customKernelInput.value.trim() || kernelSelect.value;
-    if (!path) return;
-    loadKernel(path);
-  });
-
-  runEmulateBtn.addEventListener('click', async () => {
-    const path = customKernelInput.value.trim() || kernelSelect.value;
-    const arch = archSelect.value;
-    try {
-      const res = await rpc('gpu/emulate', { file_path: path, sweep: true, arch });
-      const report = parseReport(res.report);
-      updateMetrics(report);
-    } catch (e) {
-      alert('Emulate failed: ' + (e.message || e));
-    }
-  });
-
-  runProfileBtn.addEventListener('click', async () => {
-    const path = customKernelInput.value.trim() || kernelSelect.value;
-    const arch = archSelect.value;
-    try {
-      const res = await rpc('gpu/profile', { file_path: path });
-      const report = parseReport(res.report);
-      updateMetrics(report);
-    } catch (e) {
-      alert('Profile failed: ' + (e.message || e));
-    }
-  });
-
-  // code tab switching
-  codeTabs.addEventListener('click', e => {
-    const btn = e.target.closest('.tab');
-    if (!btn) return;
-    const target = btn.dataset.tab;
-    document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t === btn));
-    codeCuda.style.display = target === 'cuda' ? 'block' : 'none';
-    codePtx.style.display = target === 'ptx' ? 'block' : 'none';
-    codeSass.style.display = target === 'sass' ? 'block' : 'none';
-    if (codeProfiled) codeProfiled.style.display = target === 'profiled' ? 'block' : 'none';
-  });
-
-  // ---------- Telemetry polling ----------
-  async function pollTelemetry() {
-    try {
-      const data = await rpc('gpu/query');
-      gpuNameSpan.textContent = `GPU: ${data.name || '–'}`;
-      gpuUtilSpan.textContent = `Util: ${data.util_gpu?.toFixed(0) ?? '–'}%`;
-      gpuTempSpan.textContent = `Temp: ${data.temp_c?.toFixed(0) ?? '–'}°C`;
-    } catch (_) {
-      // ignore – could be non‑NVIDIA host
-    }
-    setTimeout(pollTelemetry, 3000);
+function wsSend(method, params = {}) {
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ jsonrpc: '2.0', id: Date.now(), method, params }));
   }
+}
 
-   // ---------- Init ----------
-   connectWs();
-   setTimeout(pollTelemetry, 1000);
-   // default UI state
-   setActiveChip('H100');
-   updateGpuSpec('H100');
-   // load default kernel
-   loadKernel(kernelSelect.value);
+function handleWsMessage(raw) {
+  let msg;
+  try { msg = JSON.parse(raw); } catch { return; }
+  const result = msg.result;
+  if (!result) return;
 
-   // ---------- GPU Selector Logic ----------
-   const GPU_CATALOG = [
-     {id:'gpu1', name:'H100', family:'Hopper', vram:80, price:3.2, region:'us-east', available:true},
-     {id:'gpu2', name:'A100', family:'Ampere', vram:40, price:2.5, region:'us-west', available:true},
-     {id:'gpu3', name:'RTX 4090', family:'Ada', vram:24, price:1.8, region:'eu-central', available:true},
-     {id:'gpu4', name:'RTX 3090', family:'Ampere', vram:24, price:1.5, region:'us-east', available:true},
-     {id:'gpu5', name:'RTX 3080', family:'Ampere', vram:10, price:0.9, region:'us-west', available:true},
-     {id:'gpu6', name:'RTX 2080 Ti', family:'Turing', vram:11, price:0.7, region:'eu-central', available:false},
-   ];
-   let selectedGPUs = [];
-   const gpuListEl = document.getElementById('gpu-list');
-   const compareTray = document.getElementById('compare-tray');
-   const compareGrid = document.getElementById('compare-grid');
+  if (result.type === 'kernel_launch') {
+    kernelCount++;
+    const { name, duration_us, sm_util, vram_used, arch } = result;
+    termLog('t-kern', `[${arch}] ${name}`);
+    termLog('t-dim',  `  duration=${duration_us}μs  SM=${sm_util}%  VRAM=${vram_used}MB`);
+    updateGpuUtil(arch, sm_util);
+  } else if (result.type === 'telemetry') {
+    ingestTelemetry(result);
+  }
+}
 
-   function applyFilters() {
-     const families = Array.from(document.querySelectorAll('.family-filter:checked')).map(cb => cb.value);
-     const vramTiers = Array.from(document.querySelectorAll('.vram-filter:checked')).map(cb => cb.value);
-     const regions = Array.from(document.querySelectorAll('.region-filter:checked')).map(cb => cb.value);
-     const onlyAvail = document.querySelector('.avail-filter').checked;
-     return GPU_CATALOG.filter(g => {
-       if (!families.includes(g.family)) return false;
-       const vt = g.vram < 8 ? '<8' : (g.vram <= 24 ? '8-24' : '>24');
-       if (!vramTiers.includes(vt)) return false;
-       if (!regions.includes(g.region)) return false;
-       if (onlyAvail && !g.available) return false;
-       return true;
-     });
-   }
+// ─── GPU Data ─────────────────────────────────────────────────────────────────
+const GPU_DATA = [
+  { id: 'h100-sxm5', name: 'H100 SXM5',    family: 'hopper',    vram: 80,  price: 3.20, util: 0, arch: 'Hopper',    interconnect: 'NVLink', tflops: 989  },
+  { id: 'h100-pcie', name: 'H100 PCIe',     family: 'hopper',    vram: 80,  price: 2.80, util: 0, arch: 'Hopper',    interconnect: 'PCIe',   tflops: 756  },
+  { id: 'rtx4090',   name: 'RTX 4090',      family: 'ada',       vram: 24,  price: 0.74, util: 0, arch: 'Ada',       interconnect: 'PCIe',   tflops: 660  },
+  { id: 'rtx4080',   name: 'RTX 4080',      family: 'ada',       vram: 16,  price: 0.54, util: 0, arch: 'Ada',       interconnect: 'PCIe',   tflops: 490  },
+  { id: 'b200',      name: 'B200',           family: 'blackwell', vram: 192, price: 5.50, util: 0, arch: 'Blackwell', interconnect: 'NVLink', tflops: 2250 },
+  { id: 'gb200',     name: 'GB200 NVL72',   family: 'blackwell', vram: 384, price: 9.80, util: 0, arch: 'Blackwell', interconnect: 'NVLink', tflops: 4500 },
+  { id: 'a100-80',   name: 'A100 SXM4 80G', family: 'ampere',    vram: 80,  price: 2.10, util: 0, arch: 'Ampere',    interconnect: 'NVLink', tflops: 312  },
+  { id: 'a100-40',   name: 'A100 PCIe 40G', family: 'ampere',    vram: 40,  price: 1.60, util: 0, arch: 'Ampere',    interconnect: 'PCIe',   tflops: 312  },
+];
 
-   function renderGpuList() {
-     gpuListEl.innerHTML = '';
-     const filtered = applyFilters();
-     filtered.forEach(g => {
-       const card = document.createElement('div');
-       card.className = 'gpu-card';
-       card.dataset.id = g.id;
-       card.innerHTML = `<div class="title">${g.name}</div>
-         <div class="detail">Family: ${g.family}<br>VRAM: ${g.vram} GB<br>Price: $${g.price.toFixed(2)}/hr</div>
-         <div class="sparkline" id="spark-${g.id}"></div>`;
-       card.addEventListener('click', () => toggleSelect(g.id, card));
-       gpuListEl.appendChild(card);
-       // initialise sparkline bars (10 bars)
-       const sparkDiv = document.getElementById(`spark-${g.id}`);
-       for (let i = 0; i < 10; i++) {
-         const bar = document.createElement('div');
-         bar.style.width = '6%';
-         sparkDiv.appendChild(bar);
-       }
-     });
-   }
+// Sparkline history per GPU (last 20 samples)
+const sparkHistory = {};
+GPU_DATA.forEach(g => { sparkHistory[g.id] = Array(20).fill(0); });
 
-   function toggleSelect(id, cardEl) {
-     const idx = selectedGPUs.indexOf(id);
-     if (idx === -1) { selectedGPUs.push(id); cardEl.classList.add('selected'); }
-     else { selectedGPUs.splice(idx, 1); cardEl.classList.remove('selected'); }
-     updateCompareTray();
-   }
+let selectedGpus = new Set();
+let sortKey = 'name';
+let sortAsc = true;
 
-   function updateCompareTray() {
-     if (selectedGPUs.length >= 2) {
-       compareTray.classList.remove('hidden');
-       compareGrid.innerHTML = '';
-       selectedGPUs.forEach(id => {
-         const g = GPU_CATALOG.find(x => x.id === id);
-         const c = document.createElement('div');
-         c.className = 'compare-card';
-         c.innerHTML = `<div class="title">${g.name}</div>
-           <div class="detail">Family: ${g.family}<br>VRAM: ${g.vram} GB<br>Price: $${g.price.toFixed(2)}/hr<br>Region: ${g.region}<br>Util: <span id="util-${g.id}">–</span>%</div>`;
-         compareGrid.appendChild(c);
-       });
-     } else {
-       compareTray.classList.add('hidden');
-     }
-   }
+// Simulate live utilisation
+function simulateLiveMetrics() {
+  GPU_DATA.forEach(g => {
+    const base = { hopper: 82, ada: 65, blackwell: 91, ampere: 58 }[g.family] ?? 60;
+    const noise = (Math.random() - 0.5) * 14;
+    g.util = Math.max(0, Math.min(100, Math.round(base + noise)));
+    sparkHistory[g.id].push(g.util);
+    sparkHistory[g.id].shift();
+  });
+  renderGpuTable();
+  kernelsPerSec = Math.round(8 + Math.random() * 24);
+  const el = document.getElementById('fpsMeter');
+  if (el) el.textContent = kernelsPerSec + ' kern/s';
+}
 
-   function updateUtilizations() {
-     GPU_CATALOG.forEach(g => {
-       if (!g.available) return;
-       const util = Math.floor(Math.random() * 100);
-       const spark = document.getElementById(`spark-${g.id}`);
-       if (spark) {
-         const bars = spark.children;
-         // shift opacity to simulate trail
-         for (let i = 0; i < bars.length - 1; i++) bars[i].style.opacity = '0.3';
-         const newBar = document.createElement('div');
-         newBar.style.flex = '1';
-         newBar.style.background = 'var(--accent)';
-         newBar.style.opacity = (util / 100).toString();
-         spark.appendChild(newBar);
-         if (bars.length > 10) spark.removeChild(bars[0]);
-       }
-     });
-     // update comparison tray utilization values
-     selectedGPUs.forEach(id => {
-       const util = Math.floor(Math.random() * 100);
-       const el = document.getElementById(`util-${id}`);
-       if (el) el.textContent = util;
-     });
-   }
+function updateGpuUtil(arch, util) {
+  GPU_DATA.filter(g => g.arch === arch).forEach(g => {
+    g.util = util;
+    sparkHistory[g.id].push(util);
+    sparkHistory[g.id].shift();
+  });
+  renderGpuTable();
+}
 
-   // Filter change listeners
-   document.querySelectorAll('.family-filter,.vram-filter,.region-filter,.avail-filter').forEach(ch => {
-     ch.addEventListener('change', () => { renderGpuList(); updateCompareTray(); });
-   });
+function ingestTelemetry(t) {
+  if (t.vram_alloc_pct != null) {
+    const bar = document.getElementById('virtAllocBar');
+    const pct = document.getElementById('virtAllocPct');
+    if (bar) bar.style.width = t.vram_alloc_pct + '%';
+    if (pct) pct.textContent = t.vram_alloc_pct + '%';
+  }
+}
 
-    renderGpuList();
-    setInterval(updateUtilizations, 2000);
+// ─── Panel 1: GPU Selector ────────────────────────────────────────────────────
+function renderGpuTable() {
+  const body = document.getElementById('gpuTableBody');
+  if (!body) return;
 
-    // ---------- Chat UI ----------
-    const chatMessages = document.getElementById('chat-messages');
-    const chatInput = document.getElementById('chat-input');
+  // Filter
+  const checkedFamilies = Array.from(
+    document.querySelectorAll('.gpu-filters input[value]:checked')
+  ).map(el => el.value);
+  const checkedVram = Array.from(
+    document.querySelectorAll('.gpu-filters input[value$="gb"]:checked')
+  ).map(el => el.value);
 
-    function addChatMessage(content, type) {
-      const container = document.createElement('div');
-      container.className = 'msg-container ' + (type === 'user' ? 'msg-user' : 'msg-assistant');
-      if (type === 'user') {
-        const bubble = document.createElement('div');
-        bubble.className = 'msg-bubble';
-        bubble.innerHTML = content;
-        container.appendChild(bubble);
-      } else {
-        const text = document.createElement('div');
-        text.className = 'msg-text';
-        text.innerHTML = content;
-        container.appendChild(text);
-      }
-      chatMessages.appendChild(container);
-      chatMessages.scrollTop = chatMessages.scrollHeight;
-      return container;
+  let rows = GPU_DATA.filter(g => {
+    if (!checkedFamilies.includes(g.family)) return false;
+    if (checkedVram.length) {
+      const tier = g.vram >= 80 ? '80gb' : g.vram >= 40 ? '40gb' : '24gb';
+      if (!checkedVram.includes(tier)) return false;
     }
+    return true;
+  });
 
-    function generateMockResponse(userMsg) {
-      if (/idle/.test(userMsg.toLowerCase())) {
-        return `Node 3 is idle because its <span class="metric-chip">GPU Util: 0%</span>. Consider dispatching more work.`;
-      }
-      return `I’m a placeholder response.`;
-    }
+  // Sort
+  rows.sort((a, b) => {
+    let va = a[sortKey], vb = b[sortKey];
+    if (typeof va === 'string') va = va.toLowerCase(), vb = vb.toLowerCase();
+    return sortAsc ? (va > vb ? 1 : -1) : (va < vb ? 1 : -1);
+  });
 
-    function simulateAssistantReply(userMsg) {
-      const placeholder = addChatMessage('<span class="typing-cursor"></span>', 'assistant');
-      const response = generateMockResponse(userMsg);
-      let idx = 0;
-      const interval = setInterval(() => {
-        if (idx < response.length) {
-          placeholder.querySelector('.msg-text').innerHTML = response.slice(0, ++idx) + '<span class="typing-cursor"></span>';
-          chatMessages.scrollTop = chatMessages.scrollHeight;
-        } else {
-          clearInterval(interval);
-          placeholder.querySelector('.msg-text').innerHTML = response;
-        }
-      }, 30);
-    }
+  body.innerHTML = '';
+  rows.forEach(g => {
+    const tr = document.createElement('tr');
+    if (selectedGpus.has(g.id)) tr.classList.add('selected');
 
-    chatInput.addEventListener('keydown', e => {
-      if (e.key === 'Enter' && chatInput.value.trim()) {
-        const msg = chatInput.value.trim();
-        addChatMessage(msg, 'user');
-        chatInput.value = '';
-        simulateAssistantReply(msg);
-      }
+    // Sparkline SVG
+    const hist = sparkHistory[g.id];
+    const max = 100;
+    const pts = hist.map((v, i) => `${(i / 19) * 50},${20 - (v / max) * 18}`).join(' ');
+    const svg = `<svg class="sparkline" viewBox="0 0 50 20" preserveAspectRatio="none">
+      <polyline points="${pts}" fill="none" stroke="${g.util > 80 ? '#F5A623' : '#4ADE80'}" stroke-width="1.2" stroke-linejoin="round"/>
+    </svg>`;
+
+    tr.innerHTML = `
+      <td><input type="checkbox" ${selectedGpus.has(g.id) ? 'checked' : ''} data-id="${g.id}" style="accent-color:var(--accent-green);width:12px;height:12px;cursor:pointer" /></td>
+      <td class="gpu-name">${g.name}</td>
+      <td class="mono">${g.vram} GB</td>
+      <td class="mono">$${g.price.toFixed(2)}</td>
+      <td class="mono util-cell ${g.util > 85 ? 'glow-amber' : ''}">${g.util}%</td>
+      <td>${svg}</td>
+    `;
+
+    tr.addEventListener('click', (e) => {
+      if (e.target.tagName === 'INPUT') return;
+      toggleGpuSelect(g.id);
+    });
+    tr.querySelector('input[type=checkbox]').addEventListener('change', (e) => {
+      e.stopPropagation();
+      if (e.target.checked) selectedGpus.add(g.id);
+      else selectedGpus.delete(g.id);
+      renderGpuTable();
+      renderCompareTray();
     });
 
-  })();
+    body.appendChild(tr);
+  });
+
+  document.getElementById('gpuSelectedCount').textContent = selectedGpus.size + ' selected';
+  renderCompareTray();
+}
+
+function toggleGpuSelect(id) {
+  if (selectedGpus.has(id)) selectedGpus.delete(id);
+  else selectedGpus.add(id);
+  renderGpuTable();
+  renderCompareTray();
+}
+
+function renderCompareTray() {
+  const tray = document.getElementById('compareTray');
+  const grid = document.getElementById('compareGrid');
+  const cnt  = document.getElementById('compareTrayCount');
+  if (!tray || !grid) return;
+  if (selectedGpus.size < 2) { tray.classList.add('hidden'); return; }
+  tray.classList.remove('hidden');
+  cnt.textContent = selectedGpus.size;
+  grid.innerHTML = '';
+  GPU_DATA.filter(g => selectedGpus.has(g.id)).forEach(g => {
+    const card = document.createElement('div');
+    card.className = 'compare-card';
+    card.innerHTML = `
+      <div class="cc-name">${g.name}</div>
+      <div class="cc-row"><span class="cc-key">VRAM</span><span class="cc-val">${g.vram}GB</span></div>
+      <div class="cc-row"><span class="cc-key">TFLOPS</span><span class="cc-val">${g.tflops}</span></div>
+      <div class="cc-row"><span class="cc-key">$/hr</span><span class="cc-val">$${g.price.toFixed(2)}</span></div>
+      <div class="cc-row"><span class="cc-key">Util</span><span class="cc-val">${g.util}%</span></div>
+      <div class="cc-row"><span class="cc-key">Link</span><span class="cc-val">${g.interconnect}</span></div>
+    `;
+    grid.appendChild(card);
+  });
+}
+
+function initGpuSelector() {
+  document.querySelectorAll('.gpu-table thead th.sortable').forEach(th => {
+    th.addEventListener('click', () => {
+      const key = th.dataset.sort;
+      if (sortKey === key) sortAsc = !sortAsc;
+      else { sortKey = key; sortAsc = true; }
+      renderGpuTable();
+    });
+  });
+  document.getElementById('clearCompare').addEventListener('click', () => {
+    selectedGpus.clear();
+    renderGpuTable();
+  });
+  document.querySelectorAll('.gpu-filters input').forEach(cb => {
+    cb.addEventListener('change', renderGpuTable);
+  });
+  renderGpuTable();
+}
+
+// ─── Panel 2: AI Bottleneck Analyzer ─────────────────────────────────────────
+const PIPELINE_STAGES = [
+  { label: 'Data Load',  key: 'data_load',  color: '#3B82F6' },
+  { label: 'Preprocess', key: 'preprocess', color: '#8B8FFF' },
+  { label: 'Forward',    key: 'forward',    color: '#22D3EE' },
+  { label: 'Backward',   key: 'backward',   color: '#4ADE80' },
+  { label: 'Optimizer',  key: 'optimizer',  color: '#A78BFA' },
+  { label: 'Sync',       key: 'sync',       color: '#6B7280' },
+];
+
+let currentPipeline = null;
+
+function generatePipeline() {
+  // Generate realistic-looking timing ratios that sum to 1
+  const raw = PIPELINE_STAGES.map(() => Math.random());
+  // Occasionally spike one stage to simulate a bottleneck
+  const spikeIdx = Math.floor(Math.random() * PIPELINE_STAGES.length);
+  raw[spikeIdx] *= 3.5 + Math.random() * 2;
+  const total = raw.reduce((a, b) => a + b, 0);
+  return raw.map((v, i) => ({
+    ...PIPELINE_STAGES[i],
+    pct: Math.round((v / total) * 1000) / 10,
+  }));
+}
+
+function renderBottleneck(stages) {
+  const bar    = document.getElementById('pipelineBar');
+  const labels = document.getElementById('pipelineLabels');
+  const diag   = document.getElementById('diagnosisText');
+  const trend  = document.getElementById('bottleneckTrend');
+  if (!bar || !labels || !diag) return;
+
+  const maxPct = Math.max(...stages.map(s => s.pct));
+  const bottleneck = stages.find(s => s.pct === maxPct);
+
+  bar.innerHTML = '';
+  labels.innerHTML = '';
+
+  stages.forEach(s => {
+    const seg = document.createElement('div');
+    seg.className = 'pipe-seg' + (s === bottleneck ? ' bottleneck' : '');
+    seg.style.flex = s.pct;
+    if (s !== bottleneck) seg.style.background = s.color;
+    seg.textContent = s.pct > 8 ? s.label : '';
+    seg.title = `${s.label}: ${s.pct}%`;
+    bar.appendChild(seg);
+
+    const lbl = document.createElement('div');
+    lbl.className = 'pipe-label-seg';
+    lbl.style.flex = s.pct;
+    lbl.textContent = s.pct.toFixed(1) + '%';
+    labels.appendChild(lbl);
+  });
+
+  // Auto-generated diagnosis
+  const suggestions = {
+    data_load:  `${bottleneck.pct}% of step time in data loading — increase num_workers or prefetch_factor`,
+    preprocess: `${bottleneck.pct}% in preprocessing — consider GPU-side augmentation (DALI/cuCIM)`,
+    forward:    `${bottleneck.pct}% in forward pass — profile layer-wise with torch.profiler`,
+    backward:   `${bottleneck.pct}% in backward pass — check gradient accumulation or mixed precision`,
+    optimizer:  `${bottleneck.pct}% in optimizer step — try fused AdamW or ZeroRedundancyOptimizer`,
+    sync:       `${bottleneck.pct}% in NCCL sync — reduce all-reduce frequency or use gradient compression`,
+  };
+  diag.textContent = suggestions[bottleneck.key] ?? `Bottleneck: ${bottleneck.label} (${bottleneck.pct}%)`;
+
+  // Trend arrow
+  if (currentPipeline) {
+    const prevMax = Math.max(...currentPipeline.map(s => s.pct));
+    if (maxPct > prevMax + 2) { trend.textContent = '↑'; trend.className = 'trend-arrow up'; }
+    else if (maxPct < prevMax - 2) { trend.textContent = '↓'; trend.className = 'trend-arrow down'; }
+    else { trend.textContent = '→'; trend.className = 'trend-arrow'; }
+  }
+  currentPipeline = stages;
+}
+
+function initBottleneck() {
+  document.getElementById('runAnalysis').addEventListener('click', () => {
+    renderBottleneck(generatePipeline());
+    wsSend('sentinel/analyze_bottleneck', { target: 'current_job' });
+  });
+  // Initial render
+  renderBottleneck(generatePipeline());
+}
+
+// ─── Panel 4: Inline Profiling ────────────────────────────────────────────────
+const CUDA_SOURCE = [
+  { n: 1,  code: '<span class="cm">// Tiled matrix multiply — H100 kernel</span>', ann: null },
+  { n: 2,  code: '<span class="kw">__global__</span> <span class="kw2">void</span> <span class="fn">matmul_tiled</span>(<span class="kw2">float</span>* A, <span class="kw2">float</span>* B, <span class="kw2">float</span>* C, <span class="kw2">int</span> N) {', ann: null },
+  { n: 3,  code: '  <span class="kw">__shared__</span> <span class="kw2">float</span> <span class="nm">sA</span>[<span class="num">32</span>][<span class="num">32</span>], <span class="nm">sB</span>[<span class="num">32</span>][<span class="num">32</span>];', ann: { time: '0μs', mem: null, cls: 'ann-green', tip: 'Shared mem alloc: 8 KB' } },
+  { n: 4,  code: '  <span class="kw2">int</span> tx = threadIdx.x, ty = threadIdx.y;', ann: null },
+  { n: 5,  code: '  <span class="kw2">int</span> bx = blockIdx.x,  by = blockIdx.y;', ann: null },
+  { n: 6,  code: '  <span class="kw2">float</span> sum = <span class="num">0.0f</span>;', ann: null },
+  { n: 7,  code: '  <span class="kw">for</span> (<span class="kw2">int</span> t = <span class="num">0</span>; t < N / <span class="num">32</span>; t++) {', ann: { time: '142μs', mem: null, cls: 'ann-amber', tip: 'Hot loop — 98% of kernel time\ncalls: 512  avg: 142μs' } },
+  { n: 8,  code: '    sA[ty][tx] = A[(by*<span class="num">32</span>+ty)*N + t*<span class="num">32</span>+tx];', ann: { time: null, mem: '+2.1 GB', cls: 'ann-red', tip: 'Global mem read — uncoalesced\nL2 miss rate: 41%' } },
+  { n: 9,  code: '    sB[ty][tx] = B[(t*<span class="num">32</span>+ty)*N + bx*<span class="num">32</span>+tx];', ann: { time: null, mem: null, cls: null, tip: null } },
+  { n: 10, code: '    <span class="fn">__syncthreads</span>();', ann: { time: '18μs', mem: null, cls: 'ann-amber', tip: 'Warp divergence detected\nsync overhead: 18μs avg' } },
+  { n: 11, code: '    <span class="kw">for</span> (<span class="kw2">int</span> k = <span class="num">0</span>; k < <span class="num">32</span>; k++) sum += sA[ty][k] * sB[k][tx];', ann: { time: '4μs', mem: null, cls: 'ann-green', tip: 'Vectorized FMA — optimal\nthroughput: 98% peak' } },
+  { n: 12, code: '    <span class="fn">__syncthreads</span>();', ann: null },
+  { n: 13, code: '  }', ann: null },
+  { n: 14, code: '  C[(by*<span class="num">32</span>+ty)*N + bx*<span class="num">32</span>+tx] = sum;', ann: { time: '6μs', mem: null, cls: 'ann-green', tip: 'Coalesced store\nbandwidth utilization: 87%' } },
+  { n: 15, code: '}', ann: null },
+];
+
+function renderInlineProfiling() {
+  const wrap = document.getElementById('codeProfilerWrap');
+  if (!wrap) return;
+  let html = '<div class="profiler-code-block">';
+  CUDA_SOURCE.forEach(row => {
+    let rowClass = 'code-line-row';
+    if (row.ann?.cls === 'ann-red')   rowClass += ' crit-line';
+    if (row.ann?.cls === 'ann-amber') rowClass += ' hot-line';
+    html += `<div class="${rowClass}">`;
+    html += `<span class="line-num">${row.n}</span>`;
+    html += `<span class="line-code">${row.code}</span>`;
+    if (row.ann && row.ann.cls) {
+      const label = row.ann.time ?? row.ann.mem ?? '';
+      html += `<span class="line-annotation ${row.ann.cls}">${label}</span>`;
+      if (row.ann.tip) {
+        html += `<div class="ann-tooltip"><div class="tt-title">Profile Detail</div><div class="tt-val">${row.ann.tip.replace(/\n/g, '<br>')}</div></div>`;
+      }
+    }
+    html += '</div>';
+  });
+  html += '</div>';
+  wrap.innerHTML = html;
+}
+
+function initInlineProfiling() {
+  renderInlineProfiling();
+  ['toggleProfilingView', 'toggleProfilingView2', 'toggleProfilingView3'].forEach(id => {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('[id^="toggleProfilingView"]').forEach(b => b.classList.remove('active-toggle'));
+      btn.classList.add('active-toggle');
+      // In a real implementation this would swap the source view to PTX/SASS
+    });
+  });
+}
+
+// ─── Panel 8: PTX / SASS Disassembler ────────────────────────────────────────
+const CUDA_SRC_TEXT = `__global__ void matmul_tiled(
+  float* A, float* B,
+  float* C, int N)
+{
+  __shared__ float sA[32][32];
+  __shared__ float sB[32][32];
+  int tx = threadIdx.x;
+  int ty = threadIdx.y;
+  float sum = 0.0f;
+  for (int t = 0; t < N/32; t++) {
+    sA[ty][tx] = A[...];
+    sB[ty][tx] = B[...];
+    __syncthreads();
+    #pragma unroll
+    for (int k=0; k<32; k++)
+      sum += sA[ty][k]*sB[k][tx];
+    __syncthreads();
+  }
+  C[...] = sum;
+}`;
+
+const PTX_TEXT = `<span class="ptx-cmt">// PTX ISA 8.4 — sm_90a (Hopper)</span>
+<span class="ptx-label">.visible .entry</span> <span class="ptx-op">matmul_tiled</span>(
+  <span class="ptx-type">.param .u64</span> <span class="ptx-reg">%A</span>,
+  <span class="ptx-type">.param .u64</span> <span class="ptx-reg">%B</span>,
+  <span class="ptx-type">.param .u64</span> <span class="ptx-reg">%C</span>,
+  <span class="ptx-type">.param .u32</span> <span class="ptx-reg">%N</span>
+) {
+  <span class="ptx-type">.reg .f32</span>   <span class="ptx-reg">%f</span>&lt;64&gt;;
+  <span class="ptx-type">.reg .u32</span>   <span class="ptx-reg">%r</span>&lt;32&gt;;
+  <span class="ptx-type">.reg .u64</span>   <span class="ptx-reg">%rd</span>&lt;16&gt;;
+  <span class="ptx-type">.shared .align 4 .b8</span> sA[<span class="num">4096</span>];
+  <span class="ptx-type">.shared .align 4 .b8</span> sB[<span class="num">4096</span>];
+
+  <span class="ptx-op">ld.param.u64</span>    <span class="ptx-reg">%rd0</span>, [<span class="ptx-reg">%A</span>];
+  <span class="ptx-op">cvta.to.global.u64</span> <span class="ptx-reg">%rd1</span>, <span class="ptx-reg">%rd0</span>;
+  <span class="ptx-op">mov.u32</span>         <span class="ptx-reg">%r0</span>, <span class="ptx-op">%tid.x</span>;
+  <span class="ptx-op">mov.u32</span>         <span class="ptx-reg">%r1</span>, <span class="ptx-op">%tid.y</span>;
+<span class="ptx-label">LOOP_TOP:</span>
+  <span class="ptx-op">ld.global.f32</span>   <span class="ptx-reg">%f0</span>, [<span class="ptx-reg">%rd1</span>];
+  <span class="ptx-op">st.shared.f32</span>   [sA + <span class="ptx-reg">%r2</span>], <span class="ptx-reg">%f0</span>;
+  <span class="ptx-op">bar.sync</span>        <span class="num">0</span>;
+  <span class="ptx-op">fma.rn.f32</span>      <span class="ptx-reg">%f32</span>, <span class="ptx-reg">%f0</span>, <span class="ptx-reg">%f1</span>, <span class="ptx-reg">%f32</span>;
+  <span class="ptx-op">bar.sync</span>        <span class="num">0</span>;
+  <span class="ptx-op">bra</span>             <span class="ptx-label">LOOP_TOP</span>;
+  <span class="ptx-op">st.global.f32</span>   [<span class="ptx-reg">%rd4</span>], <span class="ptx-reg">%f32</span>;
+  <span class="ptx-op">ret</span>;
+}`;
+
+const SASS_TEXT = `<span class="ptx-cmt">// SASS — sm_90a cubin disassembly</span>
+<span class="ptx-label">matmul_tiled:</span>
+  <span class="ptx-op">MOV</span>     <span class="ptx-reg">R1</span>, c[<span class="num">0x0</span>][<span class="num">0x28</span>]
+  <span class="ptx-op">S2R</span>     <span class="ptx-reg">R4</span>, <span class="ptx-op">SR_TID.X</span>
+  <span class="ptx-op">S2R</span>     <span class="ptx-reg">R5</span>, <span class="ptx-op">SR_TID.Y</span>
+  <span class="ptx-op">IMAD.MOV.U32</span> <span class="ptx-reg">R6</span>, <span class="ptx-reg">RZ</span>, <span class="ptx-reg">RZ</span>, <span class="num">0x0</span>
+<span class="ptx-label">LOOP:</span>
+  <span class="ptx-op">LDG.E.SYS</span>   <span class="ptx-reg">R8</span>, [<span class="ptx-reg">R2</span>]     <span class="ptx-cmt">// global → reg</span>
+  <span class="ptx-op">STS</span>          [<span class="ptx-reg">R10</span>], <span class="ptx-reg">R8</span>   <span class="ptx-cmt">// reg → smem</span>
+  <span class="ptx-op">BAR.SYNC</span>     <span class="num">0x0</span>
+  <span class="ptx-op">HFMA2.MMA</span>   <span class="ptx-reg">R16</span>, <span class="ptx-reg">R8</span>, <span class="ptx-reg">R9</span>, <span class="ptx-reg">R16</span>
+  <span class="ptx-op">BAR.SYNC</span>     <span class="num">0x0</span>
+  <span class="ptx-op">ISETP.NE.AND</span> <span class="ptx-reg">P0</span>, <span class="ptx-reg">PT</span>, <span class="ptx-reg">R3</span>, <span class="ptx-reg">RZ</span>, <span class="ptx-reg">PT</span>
+  <span class="ptx-op">@P0 BRA</span>      <span class="ptx-label">LOOP</span>
+  <span class="ptx-op">STG.E.SYS</span>   [<span class="ptx-reg">R0</span>], <span class="ptx-reg">R16</span>   <span class="ptx-cmt">// store result</span>
+  <span class="ptx-op">EXIT</span>`;
+
+let currentAsmMode = 'ptx';
+
+function renderPtxPanel() {
+  const cudaEl = document.getElementById('cudaSource');
+  const asmEl  = document.getElementById('asmSource');
+  const label  = document.getElementById('asmPaneLabel');
+  if (!cudaEl || !asmEl) return;
+  cudaEl.innerHTML = escHtml(CUDA_SRC_TEXT);
+  asmEl.innerHTML  = currentAsmMode === 'ptx' ? PTX_TEXT : SASS_TEXT;
+  if (label) label.textContent = currentAsmMode.toUpperCase();
+}
+
+function escHtml(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function initPtxPanel() {
+  document.getElementById('ptxToggle').addEventListener('click', () => {
+    currentAsmMode = 'ptx';
+    document.getElementById('ptxToggle').classList.add('active');
+    document.getElementById('sassToggle').classList.remove('active');
+    renderPtxPanel();
+  });
+  document.getElementById('sassToggle').addEventListener('click', () => {
+    currentAsmMode = 'sass';
+    document.getElementById('sassToggle').classList.add('active');
+    document.getElementById('ptxToggle').classList.remove('active');
+    renderPtxPanel();
+  });
+  renderPtxPanel();
+}
+
+// ─── Panel 7: Profiling Terminal ──────────────────────────────────────────────
+const TERM_PREFILL = [
+  ['t-ts', '[00:00:00.000]', 't-dim',  'Sentinel profiler v0.9.1 — sm_90a target'],
+  ['t-ts', '[00:00:00.012]', 't-ok',   'Attached to CUDA context (device 0: H100 SXM5)'],
+  ['t-ts', '[00:00:00.043]', 't-kern', 'KERNEL matmul_tiled<<<(64,64,1),(32,32,1)>>>'],
+  ['t-ts', '[00:00:00.043]', 't-dim',  '  registers=64  smem=8192B  occ=50%'],
+  ['t-ts', '[00:00:00.185]', 't-warn', 'WARN  L2 cache miss rate 41% (threshold 30%)'],
+  ['t-ts', '[00:00:00.186]', 't-kern', 'KERNEL softmax_fwd<<<(128,1,1),(256,1,1)>>>'],
+  ['t-ts', '[00:00:00.187]', 't-dim',  '  registers=32  smem=2048B  occ=87%'],
+  ['t-ts', '[00:00:00.201]', 't-ok',   'METRIC  kernel_elapsed=142μs  sm_active=94%'],
+  ['t-ts', '[00:00:00.320]', 't-kern', 'KERNEL layer_norm<<<(256,1,1),(128,1,1)>>>'],
+  ['t-ts', '[00:00:00.321]', 't-dim',  '  registers=48  smem=4096B  occ=75%'],
+  ['t-ts', '[00:00:00.400]', 't-warn', 'WARN  bank conflicts detected in shared mem'],
+  ['t-ts', '[00:00:00.512]', 't-ok',   'METRIC  throughput=8.4 TF/s  (peak 9.7 TF/s)'],
+];
+
+let termLineCount = TERM_PREFILL.length;
+
+function termLog(cls, text) {
+  const output = document.getElementById('termOutput');
+  if (!output) return;
+  const now = new Date();
+  const ts = `[${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}:${String(now.getSeconds()).padStart(2,'0')}.${String(now.getMilliseconds()).padStart(3,'0')}]`;
+  const line = document.createElement('span');
+  line.className = 'term-line';
+  line.innerHTML = `<span class="t-ts">${ts}</span> <span class="${cls}">${escHtml(text)}</span>`;
+  output.appendChild(line);
+  // Auto-scroll
+  const body = document.getElementById('terminalBody');
+  if (body) body.scrollTop = body.scrollHeight;
+  // Trim to last 200 lines
+  while (output.children.length > 200) output.removeChild(output.firstChild);
+  termLineCount++;
+}
+
+function initTerminal() {
+  // Prefill
+  TERM_PREFILL.forEach(([tsCls, ts, cls, text]) => {
+    const output = document.getElementById('termOutput');
+    if (!output) return;
+    const line = document.createElement('span');
+    line.className = 'term-line';
+    line.innerHTML = `<span class="${tsCls}">${ts}</span> <span class="${cls}">${text}</span>`;
+    output.appendChild(line);
+  });
+
+  // Tab switching
+  document.querySelectorAll('.term-tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.term-tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+    });
+  });
+
+  // Simulate streaming profiler output
+  setInterval(() => {
+    const kernels = ['matmul_tiled', 'softmax_fwd', 'layer_norm', 'flash_attn_fwd', 'gelu_kernel', 'rope_embed'];
+    const k = kernels[Math.floor(Math.random() * kernels.length)];
+    const dur = (80 + Math.random() * 280).toFixed(0);
+    const sm  = (75 + Math.random() * 22).toFixed(1);
+    if (Math.random() < 0.15) {
+      termLog('t-warn', `WARN  sm_active=${sm}% below threshold — check occupancy`);
+    } else {
+      termLog('t-kern', `KERNEL ${k}<<<grid,block>>>`);
+      termLog('t-dim',  `  elapsed=${dur}μs  SM=${sm}%`);
+    }
+  }, 1800);
+}
+
+// ─── Panel 6: Multi-GPU Topology ─────────────────────────────────────────────
+const TOPO_NODES = [
+  { id: 0, label: 'H100-0', util: 87, temp: 72, x: 0.18, y: 0.25 },
+  { id: 1, label: 'H100-1', util: 91, temp: 74, x: 0.50, y: 0.25 },
+  { id: 2, label: 'H100-2', util: 78, temp: 68, x: 0.82, y: 0.25 },
+  { id: 3, label: 'H100-3', util: 94, temp: 76, x: 0.18, y: 0.75 },
+  { id: 4, label: 'H100-4', util: 62, temp: 61, x: 0.50, y: 0.75 },
+  { id: 5, label: 'H100-5', util: 85, temp: 70, x: 0.82, y: 0.75 },
+];
+
+const TOPO_LINKS = [
+  { a: 0, b: 1, type: 'nvlink',    bw: 900  },
+  { a: 1, b: 2, type: 'nvlink',    bw: 900  },
+  { a: 3, b: 4, type: 'nvlink',    bw: 900  },
+  { a: 4, b: 5, type: 'nvlink',    bw: 900  },
+  { a: 0, b: 3, type: 'nvlink',    bw: 900  },
+  { a: 1, b: 4, type: 'nvlink',    bw: 900  },
+  { a: 2, b: 5, type: 'nvlink',    bw: 900  },
+  { a: 0, b: 2, type: 'infiniband',bw: 400  },
+  { a: 3, b: 5, type: 'infiniband',bw: 400  },
+];
+
+const LINK_COLORS = {
+  nvlink:     '#4ADE80',
+  pcie:       '#8B8FFF',
+  infiniband: '#22D3EE',
+};
+
+let topoMode = 'bandwidth';
+let topoAnimOffset = 0;
+
+function drawTopology() {
+  const canvas = document.getElementById('topoCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.offsetWidth;
+  const H = canvas.offsetHeight;
+  canvas.width  = W;
+  canvas.height = H;
+  ctx.clearRect(0, 0, W, H);
+
+  // Draw links
+  TOPO_LINKS.forEach(lnk => {
+    const na = TOPO_NODES[lnk.a];
+    const nb = TOPO_NODES[lnk.b];
+    const ax = na.x * W, ay = na.y * H;
+    const bx = nb.x * W, by = nb.y * H;
+
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(bx, by);
+    ctx.strokeStyle = LINK_COLORS[lnk.type] ?? '#555';
+    ctx.lineWidth = 1.5;
+    ctx.globalAlpha = 0.35;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+
+    // Animated dash for active links
+    const len = Math.hypot(bx - ax, by - ay);
+    const dashPos = (topoAnimOffset % len);
+    const t = dashPos / len;
+    const px = ax + (bx - ax) * t;
+    const py = ay + (by - ay) * t;
+    ctx.beginPath();
+    ctx.arc(px, py, 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = LINK_COLORS[lnk.type] ?? '#555';
+    ctx.shadowBlur = 6;
+    ctx.shadowColor = LINK_COLORS[lnk.type] ?? '#555';
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // Label: bandwidth or latency
+    if (W > 250) {
+      const mx = (ax + bx) / 2, my = (ay + by) / 2;
+      ctx.font = '8px JetBrains Mono, monospace';
+      ctx.fillStyle = LINK_COLORS[lnk.type];
+      ctx.globalAlpha = 0.7;
+      ctx.fillText(topoMode === 'bandwidth' ? lnk.bw + ' GB/s' : '1.2μs', mx + 2, my - 2);
+      ctx.globalAlpha = 1;
+    }
+  });
+
+  // Draw nodes
+  TOPO_NODES.forEach(node => {
+    const x = node.x * W, y = node.y * H;
+    const r = Math.min(W, H) * 0.07;
+
+    // Node box
+    ctx.beginPath();
+    roundRect(ctx, x - r, y - r * 0.7, r * 2, r * 1.4, 5);
+    ctx.fillStyle = '#1A1C20';
+    ctx.strokeStyle = node.util > 88 ? '#F5A623' : '#4ADE80';
+    ctx.lineWidth = 1.5;
+    ctx.fill();
+    ctx.stroke();
+
+    // Util ring (tiny donut approximation)
+    ctx.beginPath();
+    ctx.arc(x + r * 0.55, y - r * 0.3, r * 0.28, -Math.PI / 2, -Math.PI / 2 + (node.util / 100) * Math.PI * 2);
+    ctx.strokeStyle = node.util > 88 ? '#F5A623' : '#4ADE80';
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+
+    // Labels
+    ctx.font = '9px JetBrains Mono, monospace';
+    ctx.fillStyle = '#F5F5F5';
+    ctx.textAlign = 'center';
+    ctx.fillText(node.label, x, y + 2);
+    ctx.font = '8px JetBrains Mono, monospace';
+    ctx.fillStyle = node.temp > 73 ? '#F5A623' : '#9A9AA0';
+    ctx.fillText(node.temp + '°C', x, y + 13);
+  });
+
+  ctx.textAlign = 'left';
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+function renderTopoLegend() {
+  const legend = document.getElementById('topoLegend');
+  if (!legend) return;
+  legend.innerHTML = Object.entries(LINK_COLORS).map(([type, color]) =>
+    `<div class="legend-row">
+      <div class="legend-line" style="background:${color}"></div>
+      <span>${type.toUpperCase()}</span>
+    </div>`
+  ).join('');
+}
+
+function initTopology() {
+  renderTopoLegend();
+  document.getElementById('topoViewBw').addEventListener('click', () => {
+    topoMode = 'bandwidth';
+    document.getElementById('topoViewBw').classList.add('active');
+    document.getElementById('topoViewLat').classList.remove('active');
+  });
+  document.getElementById('topoViewLat').addEventListener('click', () => {
+    topoMode = 'latency';
+    document.getElementById('topoViewLat').classList.add('active');
+    document.getElementById('topoViewBw').classList.remove('active');
+  });
+  // Animation loop
+  let lastTime = 0;
+  function topoFrame(ts) {
+    topoAnimOffset += (ts - lastTime) * 0.06;
+    lastTime = ts;
+    drawTopology();
+    requestAnimationFrame(topoFrame);
+  }
+  requestAnimationFrame(topoFrame);
+}
+
+// ─── Panel 9: Remote GPU Virtualization ──────────────────────────────────────
+const VIRT_INSTANCES = [
+  { owner: 'job-4821', vram: 20, total: 80, hot: true  },
+  { owner: 'job-4822', vram: 12, total: 80, hot: false },
+  { owner: 'job-4823', vram: 19, total: 80, hot: true  },
+  { owner: 'job-4824', vram: 8,  total: 40, hot: false },
+  { owner: 'job-4825', vram: 16, total: 80, hot: true  },
+];
+
+function renderVirtPool() {
+  const wrap = document.getElementById('virtPoolWrap');
+  if (!wrap) return;
+
+  // Pool visual (stacked layers)
+  const totalVram = VIRT_INSTANCES.reduce((s, v) => s + v.vram, 0);
+  const maxVram   = VIRT_INSTANCES.reduce((s, v) => s + v.total, 0);
+  const allocPct  = Math.round((totalVram / maxVram) * 100);
+
+  const poolEl = document.createElement('div');
+  poolEl.className = 'pool-visual';
+  VIRT_INSTANCES.forEach((vi, i) => {
+    const layer = document.createElement('div');
+    layer.className = 'pool-layer';
+    const pct = vi.vram / vi.total;
+    layer.style.cssText = `width:${58 + i * 6}px; height:${14 + pct * 18}px; opacity:${0.5 + pct * 0.5};`;
+    poolEl.appendChild(layer);
+  });
+  // Allocation bar update
+  const bar = document.getElementById('virtAllocBar');
+  const pct = document.getElementById('virtAllocPct');
+  if (bar) bar.style.width = allocPct + '%';
+  if (pct) pct.textContent  = allocPct + '%';
+
+  // Instance cards
+  const instEl = document.createElement('div');
+  instEl.className = 'virt-instances';
+  VIRT_INSTANCES.forEach(vi => {
+    const pctFill = (vi.vram / vi.total) * 100;
+    const card = document.createElement('div');
+    card.className = 'virt-instance-card' + (vi.hot ? ' hot-migrate' : '');
+    card.innerHTML = `
+      <span class="vi-owner mono">${vi.owner}</span>
+      <span class="vi-vram mono">${vi.vram}/${vi.total}GB</span>
+      <div class="vi-bar-track"><div class="vi-bar-fill" style="width:${pctFill}%"></div></div>
+    `;
+    instEl.appendChild(card);
+  });
+
+  wrap.innerHTML = '';
+  wrap.appendChild(poolEl);
+  wrap.appendChild(instEl);
+}
+
+// ─── Panel 3: Chat with Hardware ─────────────────────────────────────────────
+const CHAT_RESPONSES = {
+  'node 3':   ['Checking node 3 status…', 'Node 3 (H100-3) appears idle — last job completed 4m ago. Utilization: <span class="metric-chip amber">GPU Util: 2%</span> Power state: P8 (low-power). Scheduler shows no pending allocation. Recommend running `sentinel alloc --node 3` to assign next workload.'],
+  'memory':   ['Analyzing memory across cluster…', 'Aggregate VRAM: 480/640 GB allocated <span class="metric-chip">75% full</span>. Node 4 has highest pressure at <span class="metric-chip amber">VRAM: 38/40 GB</span>. Suggest migrating job-4822 to node 0 which has <span class="metric-chip">22 GB free</span>.'],
+  'slow':     ['Diagnosing performance regression…', 'Detected throughput drop of ~18% vs. baseline. Root cause: L2 cache miss rate spiked at <span class="metric-chip amber">41%</span> on kernel `matmul_tiled`. Recommend enabling `--cache-policy=evict_last` and verifying data layout is row-major.'],
+  'default':  ['Querying cluster telemetry…', 'Cluster-01: 6 nodes online, <span class="metric-chip">5/6 active</span>. Aggregate throughput: <span class="metric-chip">8.4 TF/s</span>. No critical alerts. Avg temp: <span class="metric-chip amber">71°C</span>.'],
+};
+
+function getChatResponse(q) {
+  const lower = q.toLowerCase();
+  if (lower.includes('node 3') || lower.includes('idle')) return CHAT_RESPONSES['node 3'];
+  if (lower.includes('mem') || lower.includes('vram')) return CHAT_RESPONSES['memory'];
+  if (lower.includes('slow') || lower.includes('perf') || lower.includes('bottleneck')) return CHAT_RESPONSES['slow'];
+  return CHAT_RESPONSES['default'];
+}
+
+function appendChatMsg(container, role, html, streaming = false) {
+  const wrap = document.createElement('div');
+  wrap.className = `chat-msg ${role}`;
+  const bubble = document.createElement('div');
+  bubble.className = 'msg-bubble';
+  if (streaming) {
+    bubble.innerHTML = '';
+    bubble.classList.add('typing-cursor');
+    wrap.appendChild(bubble);
+    container.appendChild(wrap);
+    container.scrollTop = container.scrollHeight;
+
+    let i = 0;
+    const stripped = html.replace(/<[^>]+>/g, '');
+    const interval = setInterval(() => {
+      i += 3;
+      // Show real HTML after stripping for char-by-char effect
+      const visibleText = stripped.slice(0, i);
+      bubble.textContent = visibleText;
+      container.scrollTop = container.scrollHeight;
+      if (i >= stripped.length) {
+        clearInterval(interval);
+        bubble.classList.remove('typing-cursor');
+        bubble.innerHTML = html; // restore rich HTML
+        container.scrollTop = container.scrollHeight;
+      }
+    }, 22);
+  } else {
+    bubble.innerHTML = html;
+    wrap.appendChild(bubble);
+    container.appendChild(wrap);
+    container.scrollTop = container.scrollHeight;
+  }
+}
+
+function initChat() {
+  const overlay  = document.getElementById('chatOverlay');
+  const input    = document.getElementById('chatInput');
+  const messages = document.getElementById('chatMessages');
+
+  document.getElementById('openChatBtn').addEventListener('click', () => overlay.classList.remove('hidden'));
+  document.getElementById('closeChatBtn').addEventListener('click', () => overlay.classList.add('hidden'));
+
+  function sendMsg() {
+    const q = input.value.trim();
+    if (!q) return;
+    appendChatMsg(messages, 'user', q);
+    input.value = '';
+    const [thinking, answer] = getChatResponse(q);
+    appendChatMsg(messages, 'bot', thinking);
+    setTimeout(() => appendChatMsg(messages, 'bot', answer, true), 700);
+    wsSend('sentinel/chat', { query: q });
+  }
+
+  document.getElementById('chatSendBtn').addEventListener('click', sendMsg);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendMsg(); });
+
+  // Greeting
+  appendChatMsg(messages, 'bot', 'Connected to <strong>cluster-01</strong>. Ask me anything about your GPU cluster — utilization, memory, job scheduling, or performance.');
+}
+
+// ─── Panel 5: Local LLMs ─────────────────────────────────────────────────────
+const LLM_MODELS = [
+  { name: 'Llama-3-8B',   quant: 'Q4_K_M', vramUsed: 5.2,  vramTotal: 8 },
+  { name: 'Mistral-7B',   quant: 'Q5_K_M', vramUsed: 6.1,  vramTotal: 8 },
+  { name: 'Llama-3-70B',  quant: 'Q4_0',   vramUsed: 38.5, vramTotal: 80 },
+  { name: 'Phi-3-medium', quant: 'Q8_0',   vramUsed: 14.8, vramTotal: 16 },
+];
+let currentLlmModel = LLM_MODELS[0];
+let llmTpsInterval  = null;
+let ctxTokens = 0;
+
+function setLlmModel(model) {
+  currentLlmModel = model;
+  document.getElementById('llmModelName').textContent = model.name;
+  document.getElementById('llmModelQuant').textContent = model.quant;
+  const vramPct = (model.vramUsed / model.vramTotal) * 100;
+  document.getElementById('llmVramBar').style.width = vramPct + '%';
+  document.getElementById('llmVramText').textContent = `${model.vramUsed} / ${model.vramTotal} GB`;
+}
+
+function appendLlmMsg(container, role, content, streaming = false) {
+  const wrap = document.createElement('div');
+  wrap.className = `llm-msg ${role}`;
+  const bubble = document.createElement('div');
+  bubble.className = 'msg-bubble';
+
+  if (streaming) {
+    bubble.classList.add('typing-cursor');
+    wrap.appendChild(bubble);
+    container.appendChild(wrap);
+    container.scrollTop = container.scrollHeight;
+
+    let tps = 0;
+    const tpsEl = document.getElementById('llmTps');
+    let charIdx = 0;
+    llmTpsInterval = setInterval(() => {
+      charIdx += 4;
+      tps = 18 + Math.floor(Math.random() * 30);
+      if (tpsEl) tpsEl.textContent = tps + ' tok/s';
+      bubble.textContent = content.slice(0, charIdx);
+      // Update context counter
+      ctxTokens += 4;
+      const ctxEl = document.getElementById('llmCtxText');
+      if (ctxEl) ctxEl.textContent = `${(ctxTokens / 1000).toFixed(1)}k / 8k tokens`;
+      container.scrollTop = container.scrollHeight;
+      if (charIdx >= content.length) {
+        clearInterval(llmTpsInterval);
+        bubble.classList.remove('typing-cursor');
+        if (tpsEl) tpsEl.textContent = '0 tok/s';
+      }
+    }, 18);
+  } else {
+    // Check for code blocks
+    const codeRx = /```([\s\S]*?)```/g;
+    const parts = content.split(codeRx);
+    parts.forEach((part, i) => {
+      if (i % 2 === 1) {
+        const pre = document.createElement('pre');
+        pre.className = 'code-block';
+        pre.textContent = part.trim();
+        bubble.appendChild(pre);
+      } else if (part) {
+        const span = document.createElement('span');
+        span.textContent = part;
+        bubble.appendChild(span);
+      }
+    });
+    wrap.appendChild(bubble);
+    container.appendChild(wrap);
+    container.scrollTop = container.scrollHeight;
+  }
+}
+
+const LLM_RESPONSES = [
+  'The key difference between attention mechanisms in transformers is the query-key-value projection. In multi-head attention:\n\n```Q = XW_Q\nK = XW_K\nV = XW_V\nOut = softmax(QK^T / sqrt(d_k)) * V```\n\nOn your H100 with FlashAttention-2, you should see near-linear memory scaling.',
+  'For optimal throughput on an 8B model with Q4_K_M quantization, key settings are:\n\n```--ctx-size 8192\n--n-gpu-layers 32\n--tensor-split 1\n--batch-size 512```\n\nExpect ~28 tok/s on a single H100 PCIe.',
+  'GGUF vs GPTQ: GGUF runs natively on llama.cpp with CPU+GPU offloading. GPTQ is GPU-only but typically 10-15% faster on equivalent hardware due to optimized CUDA kernels. For your setup (H100), GPTQ is recommended.',
+];
+let llmRespIdx = 0;
+
+function initLlm() {
+  const overlay   = document.getElementById('llmOverlay');
+  const input     = document.getElementById('llmInput');
+  const messages  = document.getElementById('llmMessages');
+
+  document.getElementById('openLlmBtn').addEventListener('click', () => overlay.classList.remove('hidden'));
+  document.getElementById('closeLlmBtn').addEventListener('click', () => overlay.classList.add('hidden'));
+
+  // Settings toggle
+  document.getElementById('llmSettingsBtn').addEventListener('click', () => {
+    document.getElementById('llmSettings').classList.toggle('hidden');
+  });
+  document.getElementById('tempSlider').addEventListener('input', (e) => {
+    document.getElementById('tempVal').textContent = parseFloat(e.target.value).toFixed(2);
+  });
+  document.getElementById('topPSlider').addEventListener('input', (e) => {
+    document.getElementById('topPVal').textContent = parseFloat(e.target.value).toFixed(2);
+  });
+
+  function sendLlm() {
+    const q = input.value.trim();
+    if (!q) return;
+    appendLlmMsg(messages, 'user', q);
+    input.value = '';
+    const resp = LLM_RESPONSES[llmRespIdx % LLM_RESPONSES.length];
+    llmRespIdx++;
+    setTimeout(() => appendLlmMsg(messages, 'bot', resp, true), 300);
+    wsSend('sentinel/llm_chat', { model: currentLlmModel.name, message: q });
+  }
+
+  document.getElementById('llmSendBtn').addEventListener('click', sendLlm);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendLlm(); } });
+
+  setLlmModel(currentLlmModel);
+  appendLlmMsg(messages, 'bot', `${currentLlmModel.name} loaded · ${currentLlmModel.quant} · ready for inference`);
+}
+
+// ─── Clock ───────────────────────────────────────────────────────────────────
+function updateClock() {
+  const el = document.getElementById('topbarClock');
+  if (!el) return;
+  const now = new Date();
+  el.textContent = [
+    String(now.getHours()).padStart(2, '0'),
+    String(now.getMinutes()).padStart(2, '0'),
+    String(now.getSeconds()).padStart(2, '0'),
+  ].join(':');
+}
+
+// ─── Topbar nav ───────────────────────────────────────────────────────────────
+function initNav() {
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      // For future multi-view support — all panels visible in this single-page build
+    });
+  });
+}
+
+// ─── Boot ─────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  // Initialise all panels
+  initNav();
+  initGpuSelector();
+  initBottleneck();
+  initInlineProfiling();
+  initPtxPanel();
+  initTerminal();
+  initTopology();
+  renderVirtPool();
+  initChat();
+  initLlm();
+
+  // Clock
+  updateClock();
+  setInterval(updateClock, 1000);
+
+  // Live GPU metrics simulation (every 2s)
+  simulateLiveMetrics();
+  setInterval(simulateLiveMetrics, 2000);
+
+  // WebSocket (connect after short delay so UI is painted first)
+  setTimeout(wsConnect, 400);
+
+  console.log('%c SENTINEL GPU PROFILER ', 'background:#131417;color:#4ADE80;font-family:monospace;font-size:14px;padding:4px 8px;border:1px solid #4ADE80');
+  console.log('%c WS → ws://127.0.0.1:9090/ws ', 'color:#9A9AA0;font-family:monospace');
+});

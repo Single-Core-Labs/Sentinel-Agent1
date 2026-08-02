@@ -28,26 +28,38 @@ impl HttpServer {
     }
 
     fn default_static_dir() -> String {
-        let exe_dir = std::env::current_exe()
-            .ok()
-            .and_then(|p| p.parent().map(|p| p.to_path_buf()));
-        if let Some(dir) = exe_dir {
-            let candidate = dir.join("desktop").join("dist");
-            if candidate.exists() {
-                return candidate.to_string_lossy().to_string();
+        // 1) Prefer desktop/dist next to the executable (production install).
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(exe_dir) = exe.parent() {
+                let candidate = exe_dir.join("desktop").join("dist");
+                if candidate.exists() {
+                    return candidate.to_string_lossy().to_string();
+                }
+                // Also check for a public/ folder next to the exe.
+                let pub_candidate = exe_dir.join("public");
+                if pub_candidate.join("index.html").exists() {
+                    return pub_candidate.to_string_lossy().to_string();
+                }
             }
         }
-        let dev_path = std::path::Path::new("desktop").join("dist");
-        if dev_path.exists() {
-            return dev_path.to_string_lossy().to_string();
+        // 2) Walk upward from cwd searching for public/index.html (dev layout).
+        if let Ok(cwd) = std::env::current_dir() {
+            for ancestor in cwd.ancestors() {
+                let candidate = ancestor.join("public");
+                if candidate.join("index.html").exists() {
+                    return candidate.to_string_lossy().to_string();
+                }
+                // Also accept desktop/dist while walking.
+                let dist = ancestor.join("desktop").join("dist");
+                if dist.exists() {
+                    return dist.to_string_lossy().to_string();
+                }
+            }
         }
-        // Fallback to bundled web UI in ./public when the desktop build is absent
-        let public_path = std::path::Path::new("public");
-        if public_path.exists() {
-            return "public".to_string();
-        }
-        // As a final fallback retain the original path (will trigger a 404 if truly missing)
-        "public".to_string()
+        // 3) Compile-time absolute path baked in by build.rs, or bare "public".
+        option_env!("SENTINEL_PUBLIC_DIR")
+            .unwrap_or("public")
+            .to_string()
     }
 
     pub async fn run(&self, addr: &SocketAddr) -> anyhow::Result<()> {

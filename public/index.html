@@ -3,152 +3,302 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Sentinel GPU Dashboard</title>
+  <title>Sentinel — GPU Profiler Dashboard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=JetBrains+Mono:wght@300;400;500;600&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-  <header class="topbar glass">
-    <div class="brand">🧠 Sentinel AI</div>
-    <div class="status">
-      <span id="ws-status" class="status-dot disconnected"></span>
-      <span id="ws-label">WS: Disconnected</span>
+  <!-- ═══════════════════════════════════════════════════════════ TOPBAR -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <div class="sentinel-logo">
+        <span class="logo-icon">⬡</span>
+        <span class="logo-name">SENTINEL</span>
+        <span class="logo-sub">GPU Profiler</span>
+      </div>
+      <nav class="topbar-tabs">
+        <button class="tab-btn active" data-panel="dashboard">Dashboard</button>
+        <button class="tab-btn" data-panel="profiler">Profiler</button>
+        <button class="tab-btn" data-panel="cluster">Cluster</button>
+        <button class="tab-btn" data-panel="chat">Chat</button>
+        <button class="tab-btn" data-panel="llm">Local LLMs</button>
+      </nav>
     </div>
-    <div class="telemetry" id="telemetry">
-      <span id="gpu-name">GPU: –</span>
-      <span id="gpu-util">Util: –%</span>
-      <span id="gpu-temp">Temp: –°C</span>
+    <div class="topbar-right">
+      <div class="ws-status" id="wsStatus">
+        <span class="ws-dot" id="wsDot"></span>
+        <span id="wsLabel">connecting…</span>
+      </div>
+      <div class="topbar-clock" id="topbarClock">--:--:--</div>
     </div>
   </header>
 
-  <main class="main">
-    <section class="controls glass">
-      <div class="control-group">
-        <label>GPU Target</label>
-        <div class="chip-group" id="gpu-targets">
-          <button class="chip active" data-arch="H100">H100</button>
-          <button class="chip" data-arch="RTX 4090">RTX 4090</button>
-          <button class="chip" data-arch="B200">B200</button>
-          <select id="gpu-arch-select" class="arch-select">
-            <option value="Pascal61">Pascal (GTX 1080 Ti)</option>
-            <option value="Volta70">Volta (Tesla V100)</option>
-            <option value="Turing75">Turing (RTX 2080 Ti)</option>
-            <option value="Ampere80">Ampere 80 (A100)</option>
-            <option value="Ampere86" selected>Ampere 86 (RTX 3090)</option>
-            <option value="Ada89">Ada Lovelace (RTX 4090)</option>
-            <option value="Hopper90">Hopper (H100)</option>
-            <option value="Hopper92">Hopper (H200)</option>
-            <option value="Blackwell100">Blackwell (RTX 5090)</option>
-            <option value="Blackwell102">Blackwell (B200)</option>
-          </select>
-        </div>
-      </div>
-      <div class="control-group">
-        <label>Kernel</label>
-        <select id="kernel-select" class="kernel-select">
-          <option value="test-kernels/vec_add.cu">vec_add.cu (CUDA)</option>
-          <option value="test-kernels/matmul_triton.py">matmul_triton.py (Triton)</option>
-        </select>
-        <input type="text" id="custom-kernel" placeholder="or type custom path" class="kernel-input" />
-        <button id="load-kernel" class="btn">Load</button>
-      </div>
-      <div class="control-group actions">
-        <button id="run-emulate" class="btn primary">Emulate (auto‑sweep)</button>
-        <button id="run-profile" class="btn">Profile</button>
-      </div>
-    </section>
+  <!-- ═══════════════════════════════════════════════ MAIN CONTENT AREA -->
+  <main class="main-grid">
 
-    <!-- GPU Selector UI -->
-    <section class="gpu-selector glass" id="gpu-selector">
-      <aside class="sidebar" id="gpu-filters">
-        <h3>Filters</h3>
+    <!-- ╔══════════════════════════════════════════════╗ -->
+    <!-- ║   PANEL 1 — GPU SELECTOR (left sidebar)     ║ -->
+    <!-- ╚══════════════════════════════════════════════╝ -->
+    <aside class="panel panel-gpu-selector" id="panelGpuSelector">
+      <div class="panel-header">
+        <span class="panel-title">GPU Selector</span>
+        <span class="panel-badge" id="gpuSelectedCount">0 selected</span>
+      </div>
+
+      <!-- Filters -->
+      <div class="gpu-filters">
         <div class="filter-group">
-          <strong>Family</strong>
-          <label><input type="checkbox" class="family-filter" value="Hopper" checked> Hopper</label><br>
-          <label><input type="checkbox" class="family-filter" value="Ampere" checked> Ampere</label><br>
-          <label><input type="checkbox" class="family-filter" value="Ada" checked> Ada</label><br>
-          <label><input type="checkbox" class="family-filter" value="Blackwell" checked> Blackwell</label>
+          <span class="filter-label">Family</span>
+          <label class="checkbox-row"><input type="checkbox" value="hopper" checked /> Hopper</label>
+          <label class="checkbox-row"><input type="checkbox" value="ada" checked /> Ada Lovelace</label>
+          <label class="checkbox-row"><input type="checkbox" value="blackwell" checked /> Blackwell</label>
+          <label class="checkbox-row"><input type="checkbox" value="ampere" checked /> Ampere</label>
         </div>
         <div class="filter-group">
-          <strong>VRAM</strong>
-          <label><input type="checkbox" class="vram-filter" value="<8" checked> &lt;8 GB</label><br>
-          <label><input type="checkbox" class="vram-filter" value="8-24" checked> 8‑24 GB</label><br>
-          <label><input type="checkbox" class="vram-filter" value=">24" checked> &gt;24 GB</label>
+          <span class="filter-label">VRAM Tier</span>
+          <label class="checkbox-row"><input type="checkbox" value="80gb" checked /> 80 GB+</label>
+          <label class="checkbox-row"><input type="checkbox" value="40gb" checked /> 40–79 GB</label>
+          <label class="checkbox-row"><input type="checkbox" value="24gb" checked /> 24–39 GB</label>
         </div>
-        <div class="filter-group">
-          <strong>Region</strong>
-          <label><input type="checkbox" class="region-filter" value="us-east" checked> US‑East</label><br>
-          <label><input type="checkbox" class="region-filter" value="us-west" checked> US‑West</label><br>
-          <label><input type="checkbox" class="region-filter" value="eu-central" checked> EU‑Central</label>
+      </div>
+
+      <!-- GPU Table -->
+      <div class="gpu-table-wrap">
+        <table class="gpu-table" id="gpuTable">
+          <thead>
+            <tr>
+              <th></th>
+              <th class="sortable" data-sort="name">GPU <span class="sort-icon">↕</span></th>
+              <th class="sortable" data-sort="vram">VRAM <span class="sort-icon">↕</span></th>
+              <th class="sortable" data-sort="price">$/hr <span class="sort-icon">↕</span></th>
+              <th class="sortable" data-sort="util">Util% <span class="sort-icon">↕</span></th>
+              <th>Load</th>
+            </tr>
+          </thead>
+          <tbody id="gpuTableBody">
+            <!-- Populated by app.js -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Comparison tray -->
+      <div class="compare-tray hidden" id="compareTray">
+        <div class="compare-tray-header">
+          <span>Comparing <span id="compareTrayCount">0</span> GPUs</span>
+          <button class="btn-ghost" id="clearCompare">Clear</button>
         </div>
-        <div class="filter-group">
-          <strong>Availability</strong>
-          <label><input type="checkbox" class="avail-filter" checked> Only available</label>
+        <div class="compare-grid" id="compareGrid">
+          <!-- Populated by app.js -->
         </div>
-      </aside>
-      <section class="gpu-list" id="gpu-list">
-        <!-- GPU cards will be injected here -->
+      </div>
+    </aside>
+
+    <!-- ╔══════════════════════════════════════════════╗ -->
+    <!-- ║   CENTER COLUMN — stacked panels            ║ -->
+    <!-- ╚══════════════════════════════════════════════╝ -->
+    <div class="center-col">
+
+      <!-- ── PANEL 2 · AI BOTTLENECK ──────────────────── -->
+      <section class="panel panel-bottleneck" id="panelBottleneck">
+        <div class="panel-header">
+          <span class="panel-title">AI Bottleneck Analyzer</span>
+          <div class="panel-controls">
+            <button class="btn-accent" id="runAnalysis">▶ Analyze</button>
+            <span class="trend-arrow" id="bottleneckTrend" title="trend">→</span>
+          </div>
+        </div>
+
+        <!-- Pipeline segments bar -->
+        <div class="pipeline-wrap">
+          <div class="pipeline-bar" id="pipelineBar">
+            <!-- Segments injected by app.js -->
+          </div>
+          <div class="pipeline-labels" id="pipelineLabels"></div>
+        </div>
+
+        <!-- Diagnosis line -->
+        <div class="diagnosis-line" id="diagnosisLine">
+          <span class="diag-prompt">▸</span>
+          <span id="diagnosisText" class="mono">Run analysis to detect bottleneck…</span>
+        </div>
       </section>
-    </section>
 
-    <div class="compare-tray glass hidden" id="compare-tray">
-      <h3>Comparison</h3>
-      <div class="compare-grid" id="compare-grid"></div>
-    </div>
-
-    <div class="split-pane">
-      <section class="code-pane" id="code-pane">
-        <div class="tabs" id="code-tabs">
-          <button class="tab active" data-tab="cuda">CUDA</button>
-          <button class="tab" data-tab="ptx">PTX</button>
-          <button class="tab" data-tab="sass">SASS</button>
-          <button class="tab" data-tab="profiled">Profiled</button>
+      <!-- ── PANEL 4 · INLINE PROFILING ──────────────── -->
+      <section class="panel panel-profiling" id="panelProfiling">
+        <div class="panel-header">
+          <span class="panel-title">Inline Profiling</span>
+          <div class="panel-controls">
+            <button class="btn-ghost active-toggle" id="toggleProfilingView" data-view="cuda">CUDA</button>
+            <button class="btn-ghost" id="toggleProfilingView2" data-view="ptx">PTX</button>
+            <button class="btn-ghost" id="toggleProfilingView3" data-view="sass">SASS</button>
+          </div>
         </div>
-        <pre class="code" id="code-cuda"></pre>
-        <pre class="code" id="code-ptx" style="display:none;"></pre>
-        <pre class="code" id="code-sass" style="display:none;"></pre>
-        <div class="code-editor" id="code-profiled" style="display:none;"></div>
+        <div class="code-profiler-wrap" id="codeProfilerWrap">
+          <!-- Populated by app.js -->
+        </div>
       </section>
 
-      <section class="metrics-pane" id="metrics-pane">
-        <h2>Metrics</h2>
-        <div class="grid metrics-grid">
-          <div class="card" id="card-time"><span class="label">Est. Time</span><span class="value" id="stat-time">–</span></div>
-          <div class="card" id="card-cycles"><span class="label">Cycles</span><span class="value" id="stat-cycles">–</span></div>
-          <div class="card" id="card-ipc"><span class="label">IPC</span><span class="value" id="stat-ipc">–</span></div>
-          <div class="card" id="card-bottleneck"><span class="label">Bottleneck</span><span class="value" id="stat-bottleneck">–</span></div>
-          <div class="card" id="card-occupancy"><span class="label">Occupancy</span><span class="value" id="stat-occupancy">–</span></div>
-          <div class="card" id="card-smutil"><span class="label">SM Util</span><span class="value" id="stat-smutil">–</span></div>
-          <div class="card" id="card-coalesce"><span class="label">Coalesce</span><span class="value" id="stat-coalesce">–</span></div>
-          <div class="card" id="card-region"><span class="label">Region</span><span class="value" id="stat-region">–</span></div>
+      <!-- ── PANEL 8 · PTX / SASS VIEWER ─────────────── -->
+      <section class="panel panel-ptx" id="panelPtx">
+        <div class="panel-header">
+          <span class="panel-title">PTX / SASS Disassembler</span>
+          <div class="panel-controls">
+            <div class="toggle-group">
+              <button class="toggle-btn active" id="ptxToggle" data-mode="ptx">PTX</button>
+              <button class="toggle-btn" id="sassToggle" data-mode="sass">SASS</button>
+            </div>
+          </div>
         </div>
-        <h3>GPU Spec</h3>
-        <pre class="spec" id="gpu-spec">–</pre>
+        <div class="ptx-split" id="ptxSplit">
+          <div class="ptx-pane pane-source">
+            <div class="pane-label">CUDA Source</div>
+            <pre class="code-view" id="cudaSource"></pre>
+          </div>
+          <div class="ptx-divider"></div>
+          <div class="ptx-pane pane-asm">
+            <div class="pane-label" id="asmPaneLabel">PTX</div>
+            <pre class="code-view" id="asmSource"></pre>
+            <div class="reg-pressure-strip" id="regPressureStrip" title="Register pressure heatmap"></div>
+          </div>
+        </div>
       </section>
-    </div>
 
-    <section class="recommendations" id="recommendations">
-      <h2>Recommendations</h2>
-      <pre id="rec-content">–</pre>
-    </section>
+    </div><!-- /center-col -->
 
-    <section class="bottleneck-card glass" id="bottleneck-card">
-      <h2>Pipeline Bottleneck</h2>
-      <div class="pipeline-bar" id="pipeline-bar"></div>
-      <div class="diagnosis" id="bottleneck-diagnosis"></div>
-    </section>
+    <!-- ╔══════════════════════════════════════════════╗ -->
+    <!-- ║   RIGHT COLUMN                              ║ -->
+    <!-- ╚══════════════════════════════════════════════╝ -->
+    <div class="right-col">
 
-    <section class="chat-panel glass" id="chat-panel">
-      <div class="chat-header"><h2>Cluster Chat</h2></div>
-      <div class="chat-messages" id="chat-messages"></div>
-      <div class="chat-input-bar">
-        <input type="text" id="chat-input" placeholder="Ask about your GPU cluster..." />
-        <span class="chat-status">connected to: cluster-01</span>
-      </div>
-    </section>
+      <!-- ── PANEL 7 · PROFILING TERMINAL ────────────── -->
+      <section class="panel panel-terminal" id="panelTerminal">
+        <div class="panel-header no-pad-bot">
+          <span class="panel-title">Profiling Terminal</span>
+          <div class="terminal-meta">
+            <span class="fps-counter" id="fpsMeter">0 kern/s</span>
+            <div class="terminal-tabs">
+              <button class="term-tab active" data-tab="trace">Trace</button>
+              <button class="term-tab" data-tab="summary">Summary</button>
+              <button class="term-tab" data-tab="timeline">Timeline</button>
+            </div>
+          </div>
+        </div>
+        <div class="terminal-body" id="terminalBody">
+          <div class="term-output" id="termOutput"></div>
+          <span class="term-cursor" id="termCursor">▌</span>
+        </div>
+      </section>
+
+      <!-- ── PANEL 6 · MULTI-GPU TOPOLOGY ────────────── -->
+      <section class="panel panel-topology" id="panelTopology">
+        <div class="panel-header">
+          <span class="panel-title">Multi-GPU Topology</span>
+          <div class="panel-controls">
+            <button class="toggle-btn active" id="topoViewBw" data-topo="bandwidth">Bandwidth</button>
+            <button class="toggle-btn" id="topoViewLat" data-topo="latency">Latency</button>
+          </div>
+        </div>
+        <div class="topology-wrap">
+          <canvas class="topo-canvas" id="topoCanvas"></canvas>
+          <div class="topo-legend" id="topoLegend"></div>
+        </div>
+      </section>
+
+      <!-- ── PANEL 9 · REMOTE GPU VIRTUALIZATION ──────── -->
+      <section class="panel panel-virt" id="panelVirt">
+        <div class="panel-header">
+          <span class="panel-title">Remote GPU Virtualization</span>
+          <div class="alloc-bar-wrap">
+            <span class="alloc-label">Pool</span>
+            <div class="alloc-bar-track">
+              <div class="alloc-bar-fill" id="virtAllocBar" style="width:64%"></div>
+            </div>
+            <span class="alloc-pct" id="virtAllocPct">64%</span>
+          </div>
+        </div>
+        <div class="virt-pool-wrap" id="virtPoolWrap">
+          <!-- Rendered by app.js -->
+        </div>
+      </section>
+
+    </div><!-- /right-col -->
+
   </main>
+
+  <!-- ═══════════════════════════════ CHAT PANEL (slide-over) -->
+  <div class="chat-overlay hidden" id="chatOverlay">
+    <div class="chat-panel" id="chatPanel">
+      <div class="chat-header">
+        <span class="panel-title">Chat with Hardware</span>
+        <div class="chat-status">
+          <span class="ws-dot small"></span>
+          <span class="mono" id="chatCluster">connected to: cluster-01</span>
+        </div>
+        <button class="btn-ghost" id="closeChatBtn">✕</button>
+      </div>
+      <div class="chat-messages" id="chatMessages"></div>
+      <div class="chat-input-bar">
+        <input class="chat-input" id="chatInput" type="text" placeholder='Ask about your cluster… e.g. "why is node 3 idle?"' autocomplete="off" />
+        <button class="btn-accent send-btn" id="chatSendBtn">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════ LOCAL LLM PANEL (slide-over) -->
+  <div class="llm-overlay hidden" id="llmOverlay">
+    <div class="llm-panel" id="llmPanel">
+      <div class="llm-header">
+        <div class="llm-model-info">
+          <span class="model-name" id="llmModelName">Llama-3-8B</span>
+          <span class="model-quant" id="llmModelQuant">Q4_K_M</span>
+          <span class="tps-counter mono" id="llmTps">0 tok/s</span>
+        </div>
+        <div class="llm-header-right">
+          <button class="btn-ghost settings-gear" id="llmSettingsBtn">⚙</button>
+          <button class="btn-ghost" id="closeLlmBtn">✕</button>
+        </div>
+      </div>
+
+      <!-- Inline settings (hidden by default) -->
+      <div class="llm-settings hidden" id="llmSettings">
+        <div class="slider-row">
+          <label>Temperature <span id="tempVal">0.7</span></label>
+          <input type="range" min="0" max="2" step="0.05" value="0.7" id="tempSlider" />
+        </div>
+        <div class="slider-row">
+          <label>Top-p <span id="topPVal">0.9</span></label>
+          <input type="range" min="0" max="1" step="0.01" value="0.9" id="topPSlider" />
+        </div>
+      </div>
+
+      <div class="llm-messages" id="llmMessages"></div>
+
+      <div class="llm-status-strip">
+        <div class="vram-strip-wrap">
+          <span class="strip-label">VRAM</span>
+          <div class="vram-bar-track">
+            <div class="vram-bar-fill" id="llmVramBar" style="width:42%"></div>
+          </div>
+          <span class="mono" id="llmVramText">16.8 / 40 GB</span>
+        </div>
+        <div class="ctx-strip">
+          <span class="strip-label mono" id="llmCtxText">3.2k / 8k tokens</span>
+        </div>
+      </div>
+      <div class="llm-input-bar">
+        <textarea class="llm-input" id="llmInput" rows="2" placeholder="Message the model…"></textarea>
+        <button class="btn-accent send-btn" id="llmSendBtn">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════ CHAT / LLM launch buttons -->
+  <div class="fab-cluster">
+    <button class="fab" id="openChatBtn" title="Chat with Hardware">💬</button>
+    <button class="fab" id="openLlmBtn" title="Local LLMs">🤖</button>
+  </div>
 
   <script src="app.js"></script>
 </body>

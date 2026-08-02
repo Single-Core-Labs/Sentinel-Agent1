@@ -70,9 +70,36 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         });
     }
 
-    // Always serve static assets from a directory – use the user supplied path
-    // when provided, otherwise fall back to the bundled dashboard in ./public.
-    let dir = static_dir.unwrap_or_else(|| "./public".to_string());
+    // Resolve the static directory to an absolute path so it works regardless
+    // of the working directory the process was launched from.
+    let dir = static_dir.unwrap_or_else(|| {
+        // 1) Prefer a `public/` sibling of the running executable (installed layout).
+        if let Ok(exe) = std::env::current_exe() {
+            if let Some(exe_dir) = exe.parent() {
+                let candidate = exe_dir.join("public");
+                if candidate.join("index.html").exists() {
+                    return candidate.to_string_lossy().to_string();
+                }
+            }
+        }
+        // 2) Walk up from cwd looking for a `public/index.html` (dev layout).
+        if let Ok(cwd) = std::env::current_dir() {
+            for ancestor in cwd.ancestors() {
+                let candidate = ancestor.join("public");
+                if candidate.join("index.html").exists() {
+                    return candidate.to_string_lossy().to_string();
+                }
+            }
+        }
+        // 3) Compile-time fallback: the source-tree absolute path baked in.
+        //    This is set by build.rs via the SENTINEL_PUBLIC_DIR env var if present,
+        //    otherwise we fall through to a relative path and let ServeDir 404.
+        option_env!("SENTINEL_PUBLIC_DIR")
+            .unwrap_or("public")
+            .to_string()
+    });
+
+    println!("   Static: {}", dir.yellow());
     server.run_http_with_dir(&addr, &dir).await?;
 
     Ok(())
