@@ -66,7 +66,7 @@ fn sentinel_binary() -> PathBuf {
 }
 
 fn model_name() -> String {
-    std::env::var("SENTINEL_E2E_MODEL").unwrap_or_else(|_| "openrouter/auto".to_string())
+    std::env::var("SENTINEL_E2E_MODEL").unwrap_or_else(|_| "ollama/qwen3:latest".to_string())
 }
 
 async fn run_rust_agent(task: &str) -> (String, Duration, bool) {

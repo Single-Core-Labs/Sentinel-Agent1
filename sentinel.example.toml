@@ -12,6 +12,20 @@ verbose = false
 #   google-ai-studio → env: GOOGLE_API_KEY
 #   deepseek   → env: DEEPSEEK_API_KEY
 
+# Zero-config Local LLM (Ollama)
+# [[providers]]
+# id = "ollama"
+# name = "Ollama Local"
+# base_url = "http://localhost:11434/v1"
+# auth = { type = "none" }
+#
+# [[providers.models]]
+# id = "ollama/qwen3:latest"
+# name = "Qwen3 Latest"
+# context_window = 32768
+# supports_streaming = true
+# supports_tools = true
+
 # Add a custom OpenAI-compatible provider:
 # [[providers]]
 # id = "my-local"

@@ -48,8 +48,26 @@ impl Tool for ReadTool {
     async fn execute(&self, args: serde_json::Value, _ctx: &ToolContext) -> ToolOutput {
         let path = args["file_path"].as_str().unwrap_or("");
         if path.is_empty() { return ToolOutput::err("file_path is required"); }
+        let offset = args["offset"].as_u64().map(|v| v as usize);
+        let limit = args["limit"].as_u64().map(|v| v as usize);
+
         match std::fs::read_to_string(path) {
-            Ok(content) => ToolOutput::ok(content),
+            Ok(content) => {
+                if offset.is_none() && limit.is_none() {
+                    return ToolOutput::ok(content);
+                }
+                let lines: Vec<&str> = content.lines().collect();
+                let start = offset.unwrap_or(1).saturating_sub(1);
+                if start >= lines.len() {
+                    return ToolOutput::ok("");
+                }
+                let end = match limit {
+                    Some(l) => (start + l).min(lines.len()),
+                    None => lines.len(),
+                };
+                let sliced = lines[start..end].join("\n");
+                ToolOutput::ok(sliced)
+            }
             Err(e) => ToolOutput::err(format!("Failed to read {}: {}", path, e)),
         }
     }
@@ -77,6 +95,14 @@ impl Tool for WriteTool {
         let path = args["file_path"].as_str().unwrap_or("");
         let content = args["content"].as_str().unwrap_or("");
         if path.is_empty() { return ToolOutput::err("file_path is required"); }
+        let p = std::path::Path::new(path);
+        if let Some(parent) = p.parent() {
+            if !parent.exists() {
+                if let Err(e) = std::fs::create_dir_all(parent) {
+                    return ToolOutput::err(format!("Failed to create directory {}: {}", parent.display(), e));
+                }
+            }
+        }
         match std::fs::write(path, content) {
             Ok(_) => ToolOutput::ok(format!("Wrote {} bytes to {}", content.len(), path)),
             Err(e) => ToolOutput::err(format!("Failed to write {}: {}", path, e)),

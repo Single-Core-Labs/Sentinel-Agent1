@@ -22,9 +22,15 @@ impl ProviderKind {
                 Ok(Self::Google(GoogleProvider::new(info)?))
             }
             "ollama" | "vllm" | "lm-studio" | "llamacpp" => {
-                Err(ProviderError::NotFound(format!(
-                    "Local provider '{}' must be created via from_local()", info.id
-                )))
+                let local_name = info.models.first().map(|m| m.id.clone()).unwrap_or_else(|| "qwen3:latest".into());
+                let base_url = if info.base_url.is_empty() {
+                    "http://localhost:11434/v1".to_string()
+                } else {
+                    info.base_url.clone()
+                };
+                let api_key = info.resolve_api_key().unwrap_or_else(|| "ollama".into());
+                let local = LocalProvider::new(info, local_name, base_url, api_key)?;
+                Ok(Self::Local(local))
             }
             // OpenRouter serves an OpenAI-compatible REST API
             // (https://openrouter.ai/api/v1) — forward to the OpenAI client.

@@ -38,10 +38,30 @@ impl ToolRegistry {
     }
 
     pub async fn execute(&self, name: &str, args: serde_json::Value, ctx: &ToolContext) -> ToolOutput {
-        match self.get(name) {
-            Some(tool) => tool.execute(args, ctx).await,
+        let output = match self.get(name) {
+            Some(tool) => tool.execute(args.clone(), ctx).await,
             None => ToolOutput::err(format!("Tool not found: {}", name)),
+        };
+
+        if let Ok(log_path) = std::env::var("SENTINEL_ACTIVITY_LOG") {
+            if !log_path.trim().is_empty() {
+                let log_entry = serde_json::json!({
+                    "timestamp": chrono::Utc::now().to_rfc3339(),
+                    "type": "tool_call",
+                    "tool": name,
+                    "args": args,
+                    "success": !output.is_error,
+                    "content": output.text,
+                    "sandboxed": output.sandboxed,
+                });
+                if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(&log_path) {
+                    use std::io::Write;
+                    let _ = writeln!(file, "{}", log_entry);
+                }
+            }
         }
+
+        output
     }
 
     pub fn tool_defs_for_model(&self, supports_tools: bool) -> Option<Vec<ToolDef>> {

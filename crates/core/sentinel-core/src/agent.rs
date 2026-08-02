@@ -244,15 +244,27 @@ impl Agent {
                 prompt_tokens: 0,
             }).await;
 
-            let response = match self.provider.complete(&req).await {
-                Ok(r) => r,
-                Err(e) => {
-                    self.event_store.append(SessionEvent::Error {
-                        session_id: sid.to_string(),
-                        timestamp: chrono::Utc::now(),
-                        message: format!("LLM call failed: {}", e),
-                    }).await;
-                    return Ok(AgentOutput::error(format!("LLM call failed: {}", e)));
+            let mut attempts = 0;
+            let response = loop {
+                match self.provider.complete(&req).await {
+                    Ok(r) => break r,
+                    Err(e) => {
+                        attempts += 1;
+                        let is_transient = matches!(
+                            &e,
+                            ProviderError::Reqwest(_) | ProviderError::RateLimitExceeded { .. } | ProviderError::RateLimited { .. } | ProviderError::Timeout { .. } | ProviderError::ServiceUnavailable { .. }
+                        );
+                        if attempts < 3 && is_transient {
+                            tokio::time::sleep(std::time::Duration::from_millis(500 * (1 << (attempts - 1)))).await;
+                            continue;
+                        }
+                        self.event_store.append(SessionEvent::Error {
+                            session_id: sid.to_string(),
+                            timestamp: chrono::Utc::now(),
+                            message: format!("LLM call failed after {} attempt(s): {}", attempts, e),
+                        }).await;
+                        return Ok(AgentOutput::error(format!("LLM call failed: {}", e)));
+                    }
                 }
             };
 
