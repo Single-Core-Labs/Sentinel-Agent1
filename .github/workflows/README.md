@@ -8,8 +8,10 @@ post-merge validation.
 
 | Workflow | Trigger | Scope | Runtime |
 |----------|---------|-------|---------|
-| `pr-checks.yml` | Pull request | fmt, shear, arg-lint, clippy, Bazel, Python — all ×3 OS | ~8 min |
+| `pr-checks.yml` | Pull request | fmt, tests, shear, arg-lint, clippy, security audit, Bazel — all ×3 OS | ~8 min |
 | `main-branch.yml` | Push to `main` | Bazel pre-warm, full clippy matrix, nextest, shear, arg-lint, release build, remote tests, notarization, packaging | ~25 min |
+| `release.yml` | Tag `v*` | 4-target cross-platform release binaries + GitHub Release | ~15 min |
+| `publish-crates.yml` | Tag `v*` | cargo-smart-release → crates.io | ~5 min |
 
 ## PR verification (`pr-checks.yml`)
 
@@ -20,9 +22,10 @@ Fast, cross-platform gate on every PR commit:
 | `fmt` | Linux | `cargo fmt --check` |
 | `shear` | Linux + macOS + Windows | `cargo shear --workspace` |
 | `arg-lint` | Linux + macOS + Windows | `argument-comment-lint` (dylint) |
+| `test` | Linux + macOS + Windows | `cargo test --locked --workspace` (dummy AI keys) |
+| `audit` | Linux | `cargo audit` (known-vulnerability scan) |
 | `clippy` | Linux + macOS + Windows | `cargo clippy -- -D warnings` |
 | `bazel` | Linux + macOS + Windows | `bazel test //...` |
-| `python` | Linux | Ruff check + format + pytest |
 
 ## Main branch checks (`main-branch.yml`)
 
@@ -67,6 +70,7 @@ Comprehensive validation after merge to `main`:
 | `MACOS_NOTARIZATION_EMAIL` | Apple ID for notarization. |
 | `MACOS_NOTARIZATION_PASSWORD` | App-specific password. |
 | `SENTINEL_RELEASE_TOKEN` | GitHub PAT for publishing releases. |
+| `CARGO_REGISTRY_TOKEN` | crates.io token for `publish-crates.yml`. |
 
 ## Manual triggers
 

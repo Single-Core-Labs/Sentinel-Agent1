@@ -60,6 +60,13 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    env:
+      # Dummy API keys so provider/auth integration tests never hit a live
+      # paid AI endpoint in CI; the CLI falls back to deterministic local paths.
+      OPENAI_API_KEY: sk-ci-dummy-not-a-real-key
+      ANTHROPIC_API_KEY: sk-ant-ci-dummy-not-a-real-key
+      GEMINI_API_KEY: ci-dummy-gemini-key
+      SENTINEL_NON_INTERACTIVE: '1'
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable

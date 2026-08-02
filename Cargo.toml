@@ -87,8 +87,13 @@ codegen-units = 256
 [profile.dev.package."*"]
 opt-level = 0
 
+# Release binaries are shipped to users, so favor small/fast startup over size so
+# download times stay low. Size is traded against raw throughput; add per-package
+# `[profile.release.package.*]` overrides if any crate needs more optimization.
 [profile.release]
-opt-level = 3
-codegen-units = 1
-lto = true
+opt-level = "s"        # Optimize for size while keeping some performance (use "z" for max size)
+lto = true             # Link-time optimization
+codegen-units = 1      # Single codegen unit for maximum inlining
+panic = "abort"        # Smaller binaries; catch_unwind is only used in #[cfg(test)]
+strip = true           # Remove debug symbols from shipped binaries
 

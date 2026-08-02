@@ -74,7 +74,43 @@ jobs:
         working-directory: tools/argument-comment-lint
 
   # ---------------------------------------------------------------------------
-  # Clippy — fast single-target on all three Tier-1 platforms
+  # Unit + integration tests. Dummy AI keys let tests that touch provider
+  # config/auth paths run without ever hitting a live, paid API.
+  # ---------------------------------------------------------------------------
+  test:
+    name: cargo test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      OPENAI_API_KEY: sk-ci-dummy-not-a-real-key
+      ANTHROPIC_API_KEY: sk-ant-ci-dummy-not-a-real-key
+      GEMINI_API_KEY: ci-dummy-gemini-key
+      SENTINEL_NON_INTERACTIVE: '1'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+      - run: cargo test --locked --workspace
+
+  # ---------------------------------------------------------------------------
+  # Security audit — fails the PR if any dependency has a known advisory
+  # ---------------------------------------------------------------------------
+  audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@cargo-audit
+      - name: Vulnerability scan
+        run: cargo audit
+
+  # ---------------------------------------------------------------------------
+  # Clippy — fast single-platform on all three Tier-1 platforms
   # ---------------------------------------------------------------------------
   clippy:
     name: Clippy (${{ matrix.os }})
