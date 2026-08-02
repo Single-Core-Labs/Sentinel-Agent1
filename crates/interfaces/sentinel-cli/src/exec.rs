@@ -67,13 +67,21 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     let mcp_servers = config.mcp_servers();
     if !mcp_servers.is_empty() {
         println!(" {} MCP servers configured", format!("{}", mcp_servers.len()).yellow());
-        let mcp_clients: Vec<Arc<sentinel_mcp::McpClient>> = mcp_servers.iter().map(|def| {
-            Arc::new(sentinel_mcp::McpClient::new(&def.id, def.transport.clone()))
-        }).collect();
-
-        let count = sentinel_mcp::register_all_mcp_tools(&mut tool_registry, mcp_clients).await;
-        if count > 0 {
-            println!("   {} MCP tools registered", format!("{}", count).green());
+        for def in mcp_servers {
+            let client = Arc::new(sentinel_mcp::McpClient::new(&def.id, def.transport.clone()));
+            match sentinel_mcp::register_mcp_tools(&mut tool_registry, client).await {
+                Ok(count) => {
+                    if count > 0 {
+                        println!("   {} MCP tools registered from '{}'", format!("{}", count).green(), def.id.green());
+                    } else {
+                        eprintln!("{} MCP server '{}' is connected but exposes no tools", "W".yellow(), def.id);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("✖ MCP server '{}' failed to connect: {}", def.id, e);
+                    eprintln!("   Tools from this server unavailable");
+                }
+            }
         }
     }
 
