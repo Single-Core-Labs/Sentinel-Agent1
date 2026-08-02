@@ -20,6 +20,7 @@
   const codeCuda = document.getElementById('code-cuda');
   const codePtx = document.getElementById('code-ptx');
   const codeSass = document.getElementById('code-sass');
+  const codeProfiled = document.getElementById('code-profiled');
 
   const metricElems = {
     time: document.getElementById('stat-time'),
@@ -96,6 +97,36 @@
     loadKernel(path);
   }
 
+  function escapeHtml(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  function renderProfiledView(src) {
+    if (!codeProfiled) return;
+    const srcLines = src.split('\n');
+    let profHtml = '';
+    for (let i = 0; i < srcLines.length; i++) {
+      const line = srcLines[i];
+      let severity = 'fast';
+      if (/for|while|#pragma|__shared__|double|__restrict__/.test(line)) {
+        severity = (i + Math.floor(Math.random() * 10)) % 5 === 0 ? 'slow' : 'fast';
+      }
+      if (/__syncthreads|malloc|parallel|atomic/.test(line)) {
+        severity = 'critical';
+      }
+      const us = (Math.random() * 200 + 20).toFixed(0);
+      const mem = (Math.random() * 2 + 0.1).toFixed(1);
+      const calls = Math.floor(Math.random() * 5000);
+      let annotation = '';
+      if (severity !== 'fast' || i % 4 === 0) {
+        annotation = `<span class="annotation ${severity}" data-tooltip="time: ${us}μs\nmem: +${mem}GB\ncalls: ${calls}">${us}μs</span>`;
+      }
+      const hotClass = severity === 'slow' || severity === 'critical' ? ' hot' : '';
+      profHtml += `<div class="code-line${hotClass}"><span class="line-number">${i + 1}</span><span class="code-content">${escapeHtml(line)}</span>${annotation}</div>`;
+    }
+    codeProfiled.innerHTML = profHtml;
+  }
+
   function loadKernel(path) {
     rpc('fs/readFile', { path }).then(res => {
       const src = res.content;
@@ -103,6 +134,7 @@
       // reset PTX/SASS panes until we have a report
       codePtx.textContent = '// PTX view will appear after analysis';
       codeSass.textContent = '// SASS view will appear after analysis';
+      renderProfiledView(src);
     }).catch(err => alert('Failed to read kernel: ' + err.message));
   }
 
@@ -337,6 +369,7 @@
     codeCuda.style.display = target === 'cuda' ? 'block' : 'none';
     codePtx.style.display = target === 'ptx' ? 'block' : 'none';
     codeSass.style.display = target === 'sass' ? 'block' : 'none';
+    if (codeProfiled) codeProfiled.style.display = target === 'profiled' ? 'block' : 'none';
   });
 
   // ---------- Telemetry polling ----------

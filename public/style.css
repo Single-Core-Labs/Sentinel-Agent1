@@ -304,3 +304,61 @@ body {
   50%{opacity:1;}
   100%{opacity:0;}
 }
+
+/* Code editor with inline profiling annotations */
+.code-editor {
+  flex:1;
+  overflow:auto;
+  padding:0.8rem;
+  background:var(--panel-bg);
+  border:none;
+  font-family:var(--font-mono);
+  font-size:0.85rem;
+  color:var(--text-primary);
+}
+.code-editor .code-line {
+  display:flex;
+  align-items:center;
+  position:relative;
+  min-height:1.2rem;
+}
+.code-editor .line-number {
+  width:2.5rem;
+  text-align:right;
+  margin-right:0.6rem;
+  color:var(--text-tertiary);
+  user-select:none;
+  flex-shrink:0;
+}
+.code-editor .code-content {
+  flex:1;
+  white-space:pre;
+}
+.code-editor .annotation {
+  margin-left:0.5rem;
+  padding:0 0.3rem;
+  border-radius:0.3rem;
+  font-size:0.75rem;
+  background:rgba(255,255,255,0.08);
+  color:var(--text-primary);
+  cursor:default;
+  position:relative;
+}
+.code-editor .annotation.fast { background:rgba(76,175,80,0.2); color:#4CAF50; }
+.code-editor .annotation.slow { background:rgba(255,165,0,0.2); color:#FF9800; }
+.code-editor .annotation.critical { background:rgba(255,85,85,0.2); color:#FF5555; }
+.code-editor .annotation:hover::after {
+  content: attr(data-tooltip);
+  position:absolute;
+  left:100%;
+  top:0;
+  background:var(--panel-bg);
+  border:1px solid var(--panel-border);
+  padding:0.3rem;
+  white-space:pre;
+  z-index:10;
+  max-width:220px;
+  font-size:0.75rem;
+  color:var(--text-primary);
+}
+.code-editor .code-line.hot { background:rgba(255,165,0,0.08); }
