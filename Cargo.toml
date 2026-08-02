@@ -76,3 +76,19 @@ sentinel-sdk = { path = "crates/platform/sentinel-sdk" }
 sentinel-proxy = { path = "crates/platform/sentinel-proxy" }
 sentinel-ai-test-support = { path = "crates/platform/sentinel-ai-test-support" }
 
+# Fast dev-loop compilation (issue #47, #50): keep debug builds light and
+# incremental so the feedback cycle stays under ~2 minutes. Release builds
+# stay optimized with link-time optimization.
+[profile.dev]
+opt-level = 0
+incremental = true
+codegen-units = 256
+
+[profile.dev.package."*"]
+opt-level = 0
+
+[profile.release]
+opt-level = 3
+codegen-units = 1
+lto = true
+

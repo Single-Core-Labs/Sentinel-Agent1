@@ -25,7 +25,10 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
                     println!("Usage: sentinel completion [--model <id>] [--system-prompt <text>] [prompt...]");
                     return Ok(());
                 }
-                _ if arg.starts_with('-') => {}
+                _ if arg.starts_with('-') => {
+                    eprintln!("{} Unknown flag: '{}'. Run 'sentinel completion --help' for usage.", "Error:".red().bold(), arg);
+                    std::process::exit(1);
+                }
                 _ => positionals.push(arg.clone()),
             }
         }

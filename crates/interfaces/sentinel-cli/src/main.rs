@@ -1,4 +1,5 @@
 mod approval;
+mod model_selector;
 mod display;
 mod handler;
 mod exec;
@@ -74,9 +75,18 @@ fn print_help() {
     println!("  proxy                  Headroom HTTP compression proxy");
     println!("  diagnostics            System diagnostic checks");
     println!();
+    println!("{}", "Common flags:".yellow().bold());
+    println!("  --model <id>          Pick a model (e.g. gpt-4o, claude-sonnet-4, gemini-2.5-flash, ollama/qwen3:8b)");
+    println!("  --prompt <text>      Run one non-interactive turn, then exit");
+    println!("  --resume <session-id> Continue a previous session");
+    println!("  --new                Start a fresh session");
+    println!("  --yolo               Auto-approve tool actions (dangerous)");
+    println!();
     println!("{}", "Examples:".yellow().bold());
     println!("  sentinel ai");
-    println!("  sentinel ai zai-org/GLM-5.2:novita");
+    println!("  sentinel ai --model gemini-2.5-flash");
+    println!("  sentinel ai --model gpt-4o --prompt \"debug why the k8s pod crashes\"");
+    println!("  sentinel ai --resume <session-id>");
     println!("  sentinel exec gpt-4o-mini \"write hello world\"");
     println!("  sentinel auth login --token <token>");
     println!("  sentinel diagnostics");
@@ -84,6 +94,8 @@ fn print_help() {
     println!("  sentinel proxy --host 0.0.0.0 --port 8787");
     println!();
     println!("{}", "Configuration:".yellow().bold());
-    println!("  See sentinel.example.toml for options");
-    println!("  Config files: sentinel.toml, config.toml, .sentinel.toml");
+    println!("  Copy sentinel.example.toml to sentinel.toml and edit defaults");
+    println!("  Config priority: ./sentinel.toml > ./config.toml > ./.sentinel.toml");
+    println!("  API keys: add to .env (e.g. OPENAI_API_KEY=sk-... ) or your shell");
+    println!("  See https://github.com/Single-Core-Labs/Sentinel-Agent1#readme for details");
 }

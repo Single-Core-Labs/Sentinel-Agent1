@@ -44,22 +44,19 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         std::process::exit(1);
     }
 
-    let provider_info = config.providers()
-        .iter()
-        .find(|p| p.models.iter().any(|m| m.id == model_id))
-        .or_else(|| config.providers().first())
-        .cloned();
-
-    let provider_info = match provider_info {
-        Some(p) => p,
-        None => {
-            eprintln!("{} No provider found for model '{}'", "Error:".red().bold(), model_id);
+    // #49/#52/#53 — centralized model+provider resolution with validation and
+    // API-key preflight, instead of a silent fallback to the first provider.
+    let selected = match crate::model_selector::resolve_model(&config, &model_id) {
+        Ok(sel) => sel,
+        Err(e) => {
+            eprintln!("✖ {}", e);
             std::process::exit(1);
         }
     };
+    let model_id = selected.model_id;
 
     let provider = Arc::new(
-        sentinel_provider::ProviderKind::from_info(provider_info)?
+        sentinel_provider::ProviderKind::from_info(selected.provider.clone())?
     );
 
     let mut tool_registry = sentinel_tools::ToolRegistry::new();

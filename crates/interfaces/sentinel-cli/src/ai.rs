@@ -146,7 +146,10 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
                     println!("                     stdout: 'allow' | 'deny <reason>' | 'ask' (fail-closed)");
                     return Ok(());
                 }
-                _ if arg.starts_with('-') => {}
+                _ if arg.starts_with('-') => {
+                    eprintln!("{} Unknown flag: '{}'. Run 'sentinel ai --help' for usage.", "✖".red().bold(), arg);
+                    std::process::exit(1);
+                }
                 _ => model_id = arg.clone(),
             }
         }
@@ -161,29 +164,24 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let provider_info = config.providers()
-        .iter()
-        .find(|p| p.models.iter().any(|m| m.id == model_id))
-        .or_else(|| config.providers().first())
-        .cloned();
-
-    let provider = match provider_info {
-        Some(ref p) => {
-            match sentinel_provider::ProviderKind::from_info(p.clone()) {
-                Ok(provider) => Arc::new(provider),
-                Err(e) => {
-                    eprintln!("✖ Provider '{}' needs setup: {}", p.name, e);
-                    eprintln!("   → Run: sentinel auth login");
-                    return Ok(());
-                }
-            }
-        }
-        None => {
-            eprintln!("✖ No provider configured for model '{}'.", model_id);
-            eprintln!("   → Add a [[providers]] section to sentinel.toml, or run: sentinel auth login");
+    // #49/#52/#53 — centralized model+provider resolution with validation and
+    // API-key preflight, instead of a silent fallback to the first provider.
+    let selected = match crate::model_selector::resolve_model(&config, &model_id) {
+        Ok(sel) => sel,
+        Err(e) => {
+            eprintln!("✖ {}", e);
             return Ok(());
         }
     };
+    let provider = match sentinel_provider::ProviderKind::from_info(selected.provider.clone()) {
+        Ok(provider) => Arc::new(provider),
+        Err(e) => {
+            eprintln!("✖ Provider '{}' needs setup: {}", selected.provider.name, e);
+            eprintln!("   → Run: sentinel auth login");
+            return Ok(());
+        }
+    };
+    let model_id = selected.model_id;
 
     let mut tool_registry = sentinel_tools::ToolRegistry::new();
 
@@ -220,14 +218,16 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
 
     let plugin_registry = Arc::new(sentinel_plugin_system::PluginRegistry::new());
     let plugin_dir = plugin_dir();
+    if !plugin_dir.exists() {
+        if let Err(e) = std::fs::create_dir_all(&plugin_dir) {
+            eprintln!("{} Could not create plugin directory '{}': {}", "W".yellow(), plugin_dir.display(), e);
+        }
+    }
     let loaded_plugins = sentinel_plugin_system::load_plugins_dir(&plugin_dir);
     for plugin in loaded_plugins {
         if let Err(e) = plugin_registry.register(plugin).await {
             eprintln!("{} Failed to load plugin: {}", "W".yellow(), e);
         }
-    }
-    if !plugin_dir.exists() {
-        let _ = std::fs::create_dir_all(&plugin_dir);
     }
 
     let agent = sentinel_core::Agent::new(provider, tools, config.clone())
