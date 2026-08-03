@@ -939,13 +939,10 @@ impl App {
                 DisplayEvent::Message(msg) => {
                     match msg.event_type.as_str() {
                         "user_message" => {
-                            lines.push(Line::from(Span::styled(
-                                format!("  You  {}", msg.text),
-                                Style::default().fg(c.user_fg),
-                            )));
+                            lines.extend(display::user_message_lines(&msg.text, c));
                         }
                         "completed" | "stream_chunk" => {
-                            lines.extend(display::markdown_to_lines(&msg.text));
+                            lines.extend(display::markdown_to_lines(&msg.text, c));
                         }
                         "thinking" => {
                             lines.extend(display::thinking_indicator(&msg.text));
@@ -1017,15 +1014,11 @@ impl App {
             )));
         }
 
-        let block = Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(c.border))
-            .title(format!(" Sentinel AI — {} ", self.model))
-            .title_alignment(ratatui::layout::Alignment::Center);
+        if !lines.is_empty() {
+            lines.push(display::separator_line(area.width));
+        }
 
         let paragraph = Paragraph::new(lines)
-            .block(block)
             .wrap(Wrap { trim: false });
 
         f.render_widget(paragraph, area);

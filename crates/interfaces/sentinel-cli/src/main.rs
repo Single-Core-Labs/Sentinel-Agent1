@@ -14,6 +14,7 @@ mod completion;
 mod plugin_cmd;
 mod gpu_optimize;
 mod telemetry;
+mod tui;
 
 use colored::*;
 
@@ -51,6 +52,7 @@ async fn main() -> anyhow::Result<()> {
         "web" => web::run(sub_args).await?,
         "proxy" => proxy::run(sub_args).await?,
         "diagnostics" => diagnostics::run(sub_args).await?,
+        "tui" => tui::run(sub_args).await?,
         other => {
             eprintln!("{} Unknown subcommand: '{}'", "Error:".red().bold(), other);
             eprintln!("Run 'sentinel --help' for usage.");
@@ -106,6 +108,7 @@ fn print_help() {
     println!("  web [--port <n>]        Start HTTP server with Web UI");
     println!("  proxy                  Headroom HTTP compression proxy");
     println!("  diagnostics            System diagnostic checks");
+    println!("  tui [--port <n>]        Terminal UI for app server");
     println!();
     println!("{}", "Common flags:".yellow().bold());
     println!("  --model <id>          Pick a model (e.g. gpt-4o, claude-sonnet-4, gemini-2.5-flash, ollama/qwen3:8b)");
