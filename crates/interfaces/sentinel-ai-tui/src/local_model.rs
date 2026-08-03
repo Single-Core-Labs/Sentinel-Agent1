@@ -21,13 +21,22 @@ pub fn detect_system() -> SystemInfo {
     };
 
     let arch = std::env::consts::ARCH.to_string();
-    let cpu_cores = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(0);
+    let cpu_cores = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(0);
 
     let memory_gb = sysinfo_gb();
     let gpu = detect_gpu();
     let has_ollama = which("ollama");
 
-    SystemInfo { os, arch, cpu_cores, memory_gb, gpu, has_ollama }
+    SystemInfo {
+        os,
+        arch,
+        cpu_cores,
+        memory_gb,
+        gpu,
+        has_ollama,
+    }
 }
 
 pub fn detect_gpu() -> Option<String> {
@@ -35,13 +44,12 @@ pub fn detect_gpu() -> Option<String> {
         run_cmd("wmic", &["path", "win32_VideoController", "get", "name"])
             .or_else(|| run_cmd("nvidia-smi", &["--query-gpu=name", "--format=csv,noheader"]))
     } else if cfg!(target_os = "macos") {
-        run_cmd("system_profiler", &["SPDisplaysDataType"])
-            .map(|s| {
-                s.lines()
-                    .find(|l| l.contains("Chipset Model") || l.contains("Metal"))
-                    .unwrap_or("Apple Silicon")
-                    .to_string()
-            })
+        run_cmd("system_profiler", &["SPDisplaysDataType"]).map(|s| {
+            s.lines()
+                .find(|l| l.contains("Chipset Model") || l.contains("Metal"))
+                .unwrap_or("Apple Silicon")
+                .to_string()
+        })
     } else {
         run_cmd("nvidia-smi", &["--query-gpu=name", "--format=csv,noheader"])
             .or_else(|| run_cmd("rocminfo", &[]).map(|_| "AMD GPU detected".into()))
@@ -189,11 +197,15 @@ fn start_oll_background() -> Result<()> {
 // --- helpers ---
 
 fn which(name: &str) -> bool {
-    PCommand::new(if cfg!(target_os = "windows") { "where" } else { "which" })
-        .arg(name)
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
+    PCommand::new(if cfg!(target_os = "windows") {
+        "where"
+    } else {
+        "which"
+    })
+    .arg(name)
+    .output()
+    .map(|o| o.status.success())
+    .unwrap_or(false)
 }
 
 fn run_cmd(cmd: &str, args: &[&str]) -> Option<String> {
@@ -217,21 +229,29 @@ fn sysinfo_gb() -> f64 {
             .unwrap_or(0.0)
     } else if cfg!(target_os = "macos") {
         run_cmd("sysctl", &["hw.memsize"])
-            .and_then(|s| s.split(':').nth(1).and_then(|v| v.trim().parse::<f64>().ok()))
+            .and_then(|s| {
+                s.split(':')
+                    .nth(1)
+                    .and_then(|v| v.trim().parse::<f64>().ok())
+            })
             .map(|b| b / 1_073_741_824.0)
             .unwrap_or(0.0)
     } else {
-        run_cmd("sh", &["-c", "grep MemTotal /proc/meminfo | awk '{print $2}'"])
-            .and_then(|s| s.trim().parse::<f64>().ok())
-            .map(|kb| kb / 1_048_576.0)
-            .unwrap_or(0.0)
+        run_cmd(
+            "sh",
+            &["-c", "grep MemTotal /proc/meminfo | awk '{print $2}'"],
+        )
+        .and_then(|s| s.trim().parse::<f64>().ok())
+        .map(|kb| kb / 1_048_576.0)
+        .unwrap_or(0.0)
     }
 }
 
 fn download_file(url: &str, dest: &std::path::Path) -> Result<()> {
-    let resp = reqwest::blocking::get(url)
-        .map_err(|e| anyhow::anyhow!("Download failed: {}", e))?;
-    let bytes = resp.bytes()
+    let resp =
+        reqwest::blocking::get(url).map_err(|e| anyhow::anyhow!("Download failed: {}", e))?;
+    let bytes = resp
+        .bytes()
         .map_err(|e| anyhow::anyhow!("Read response failed: {}", e))?;
     std::fs::write(dest, &bytes)?;
     Ok(())
@@ -244,7 +264,15 @@ pub fn format_system_info(info: &SystemInfo) -> String {
     };
     format!(
         "System: {} ({})\nCPU: {} cores\nMemory: {:.0} GB\nGPU: {}\nOllama: {}",
-        info.os, info.arch, info.cpu_cores, info.memory_gb, gpu_text,
-        if info.has_ollama { "installed" } else { "not found" }
+        info.os,
+        info.arch,
+        info.cpu_cores,
+        info.memory_gb,
+        gpu_text,
+        if info.has_ollama {
+            "installed"
+        } else {
+            "not found"
+        }
     )
 }

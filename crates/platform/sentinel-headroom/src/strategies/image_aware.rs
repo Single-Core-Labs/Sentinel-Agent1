@@ -1,18 +1,18 @@
-use std::sync::OnceLock;
-use std::num::NonZeroUsize;
-use std::collections::HashSet;
-use std::io::Cursor;
-use async_trait::async_trait;
-use base64::Engine as _;
-use image::{load_from_memory, DynamicImage, ImageFormat, imageops::FilterType};
-use lru::LruCache;
-use sha2::{Sha256, Digest};
-use tokio::sync::Mutex;
-use once_cell::sync::Lazy;
-use regex::Regex;
+use super::{CompressionResult, CompressionStrategy};
 use crate::classifier::ContentType;
 use crate::metrics::CompressionMetrics;
-use super::{CompressionStrategy, CompressionResult};
+use async_trait::async_trait;
+use base64::Engine as _;
+use image::{imageops::FilterType, load_from_memory, DynamicImage, ImageFormat};
+use lru::LruCache;
+use once_cell::sync::Lazy;
+use regex::Regex;
+use sha2::{Digest, Sha256};
+use std::collections::HashSet;
+use std::io::Cursor;
+use std::num::NonZeroUsize;
+use std::sync::OnceLock;
+use tokio::sync::Mutex;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImageTechnique {
@@ -45,18 +45,13 @@ pub struct ImageCompressorConfig {
     pub provider: ImageProvider,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ImageProvider {
     OpenAi,
     Anthropic,
     Google,
+    #[default]
     Auto,
-}
-
-impl Default for ImageProvider {
-    fn default() -> Self {
-        ImageProvider::Auto
-    }
 }
 
 impl Default for ImageCompressorConfig {
@@ -105,17 +100,19 @@ impl ImageCompressionResult {
         let pixel_count = self.output_width as u64 * self.output_height as u64;
         match provider {
             ImageProvider::OpenAi => {
-                if self.technique == ImageTechnique::FullLow || self.technique == ImageTechnique::Transcode {
+                if self.technique == ImageTechnique::FullLow
+                    || self.technique == ImageTechnique::Transcode
+                {
                     85
                 } else {
-                    let tiles = (pixel_count + 511) / 512;
+                    let tiles = pixel_count.div_ceil(512);
                     tiles * 170 + 85
                 }
             }
             ImageProvider::Anthropic => pixel_count / 750 + 10,
             ImageProvider::Google => {
-                let tw = (self.output_width as u64 + 767) / 768;
-                let th = (self.output_height as u64 + 767) / 768;
+                let tw = (self.output_width as u64).div_ceil(768);
+                let th = (self.output_height as u64).div_ceil(768);
                 tw * th * 258
             }
             ImageProvider::Auto => pixel_count / 500 + 10,
@@ -130,9 +127,8 @@ pub struct ImageCompressorConfigOut {
 
 static DATA_URI_RE: OnceLock<Regex> = OnceLock::new();
 fn data_uri_re() -> &'static Regex {
-    DATA_URI_RE.get_or_init(|| Regex::new(
-        r"^data:image/(jpeg|png|webp|gif|bmp|tiff);base64,"
-    ).unwrap())
+    DATA_URI_RE
+        .get_or_init(|| Regex::new(r"^data:image/(jpeg|png|webp|gif|bmp|tiff);base64,").unwrap())
 }
 
 fn parse_data_uri(data: &str) -> Option<(ImageFormat, Vec<u8>)> {
@@ -148,7 +144,9 @@ fn parse_data_uri(data: &str) -> Option<(ImageFormat, Vec<u8>)> {
     };
     let b64_start = cap.get(0)?.end();
     let b64_data = &data[b64_start..];
-    let bytes = base64::engine::general_purpose::STANDARD.decode(b64_data).ok()?;
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(b64_data)
+        .ok()?;
     Some((fmt, bytes))
 }
 
@@ -193,20 +191,58 @@ fn classify_query(query: &str) -> ImageTechnique {
     let lower = query.to_lowercase();
 
     let detail_kw = [
-        "count", "measure", "exact", "precise", "specific",
-        "tiny", "small", "fine", "subtle", "whisker", "spot",
-        "defect", "crack", "scratch", "difference",
+        "count",
+        "measure",
+        "exact",
+        "precise",
+        "specific",
+        "tiny",
+        "small",
+        "fine",
+        "subtle",
+        "whisker",
+        "spot",
+        "defect",
+        "crack",
+        "scratch",
+        "difference",
     ];
     let extract_kw = [
-        "read", "text", "ocr", "transcribe", "extract", "document",
-        "sign", "label", "serial", "barcode", "qrcode",
-        "word", "paragraph", "page", "spell",
+        "read",
+        "text",
+        "ocr",
+        "transcribe",
+        "extract",
+        "document",
+        "sign",
+        "label",
+        "serial",
+        "barcode",
+        "qrcode",
+        "word",
+        "paragraph",
+        "page",
+        "spell",
     ];
     let region_kw = [
-        "corner", "region", "area", "part", "portion", "section",
-        "left", "right", "top", "bottom", "center", "middle",
-        "background", "foreground", "edge", "border",
-        "upper", "lower",
+        "corner",
+        "region",
+        "area",
+        "part",
+        "portion",
+        "section",
+        "left",
+        "right",
+        "top",
+        "bottom",
+        "center",
+        "middle",
+        "background",
+        "foreground",
+        "edge",
+        "border",
+        "upper",
+        "lower",
     ];
 
     let detail = detail_kw.iter().filter(|k| lower.contains(*k)).count();
@@ -229,8 +265,13 @@ fn analyze_image(img: &DynamicImage) -> ImageAnalysis {
     let total_pixels = (w as u64) * (h as u64);
     if total_pixels == 0 {
         return ImageAnalysis {
-            width: w, height: h, entropy: 0.0, edge_density: 0.0,
-            color_diversity: 0, has_text: false, aspect_ratio: w as f64 / h.max(1) as f64,
+            width: w,
+            height: h,
+            entropy: 0.0,
+            edge_density: 0.0,
+            color_diversity: 0,
+            has_text: false,
+            aspect_ratio: w as f64 / h.max(1) as f64,
             file_size_bytes: 0,
         };
     }
@@ -240,7 +281,8 @@ fn analyze_image(img: &DynamicImage) -> ImageAnalysis {
     for pixel in gray.pixels() {
         histogram[pixel[0] as usize] += 1;
     }
-    let entropy: f64 = histogram.iter()
+    let entropy: f64 = histogram
+        .iter()
         .filter(|&&c| c > 0)
         .map(|&c| {
             let p = c as f64 / total_pixels as f64;
@@ -250,13 +292,25 @@ fn analyze_image(img: &DynamicImage) -> ImageAnalysis {
 
     let sobel_threshold = 30u16;
     let mut edge_pixels = 0u64;
-    let step = if w > 800 || h > 800 { 2.max(w / 400) } else { 1 };
+    let step = if w > 800 || h > 800 {
+        2.max(w / 400)
+    } else {
+        1
+    };
     for y in (1..h - 1).step_by(step as usize) {
         for x in (1..w - 1).step_by(step as usize) {
-            let gx = (gray.get_pixel(x + 1, y - 1)[0] as i32 + 2 * gray.get_pixel(x + 1, y)[0] as i32 + gray.get_pixel(x + 1, y + 1)[0] as i32)
-                - (gray.get_pixel(x - 1, y - 1)[0] as i32 + 2 * gray.get_pixel(x - 1, y)[0] as i32 + gray.get_pixel(x - 1, y + 1)[0] as i32);
-            let gy = (gray.get_pixel(x - 1, y + 1)[0] as i32 + 2 * gray.get_pixel(x, y + 1)[0] as i32 + gray.get_pixel(x + 1, y + 1)[0] as i32)
-                - (gray.get_pixel(x - 1, y - 1)[0] as i32 + 2 * gray.get_pixel(x, y - 1)[0] as i32 + gray.get_pixel(x + 1, y - 1)[0] as i32);
+            let gx = (gray.get_pixel(x + 1, y - 1)[0] as i32
+                + 2 * gray.get_pixel(x + 1, y)[0] as i32
+                + gray.get_pixel(x + 1, y + 1)[0] as i32)
+                - (gray.get_pixel(x - 1, y - 1)[0] as i32
+                    + 2 * gray.get_pixel(x - 1, y)[0] as i32
+                    + gray.get_pixel(x - 1, y + 1)[0] as i32);
+            let gy = (gray.get_pixel(x - 1, y + 1)[0] as i32
+                + 2 * gray.get_pixel(x, y + 1)[0] as i32
+                + gray.get_pixel(x + 1, y + 1)[0] as i32)
+                - (gray.get_pixel(x - 1, y - 1)[0] as i32
+                    + 2 * gray.get_pixel(x, y - 1)[0] as i32
+                    + gray.get_pixel(x + 1, y - 1)[0] as i32);
             let mag = ((gx * gx + gy * gy) as f64).sqrt() as u16;
             if mag > sobel_threshold {
                 edge_pixels += 1;
@@ -264,7 +318,11 @@ fn analyze_image(img: &DynamicImage) -> ImageAnalysis {
         }
     }
     let sampled = ((w.max(1) / step) * (h.max(1) / step)) as f64;
-    let edge_density = if sampled > 0.0 { edge_pixels as f64 / sampled } else { 0.0 };
+    let edge_density = if sampled > 0.0 {
+        edge_pixels as f64 / sampled
+    } else {
+        0.0
+    };
 
     let rgb = img.to_rgb8();
     let mut color_set = HashSet::new();
@@ -272,7 +330,8 @@ fn analyze_image(img: &DynamicImage) -> ImageAnalysis {
     for y in (0..h).step_by(color_step as usize) {
         for x in (0..w).step_by(color_step as usize) {
             let p = rgb.get_pixel(x, y);
-            let quantized = ((p[0] as u32 / 16) << 16) | ((p[1] as u32 / 16) << 8) | (p[2] as u32 / 16);
+            let quantized =
+                ((p[0] as u32 / 16) << 16) | ((p[1] as u32 / 16) << 8) | (p[2] as u32 / 16);
             color_set.insert(quantized);
         }
     }
@@ -464,14 +523,21 @@ fn compress_transcode(
     let new_h = new_h.max(96);
 
     let resized = if let Some(g) = gray {
-        DynamicImage::ImageLuma8(
-            image::imageops::resize(&g, new_w, new_h, FilterType::CatmullRom)
-        )
+        DynamicImage::ImageLuma8(image::imageops::resize(
+            &g,
+            new_w,
+            new_h,
+            FilterType::CatmullRom,
+        ))
     } else {
         img.resize_exact(new_w, new_h, FilterType::CatmullRom)
     };
 
-    let _quality = if analysis.has_text { 65 } else { config.min_quality.max(35) };
+    let _quality = if analysis.has_text {
+        65
+    } else {
+        config.min_quality.max(35)
+    };
     let mut out_bytes = Vec::new();
     {
         let mut cursor = Cursor::new(&mut out_bytes);
@@ -511,9 +577,7 @@ fn provider_dimension(provider: ImageProvider, analysis: &ImageAnalysis) -> u32 
     }
 }
 
-static IMAGE_CACHE: Lazy<Mutex<ImageCache>> = Lazy::new(|| {
-    Mutex::new(ImageCache::new(100))
-});
+static IMAGE_CACHE: Lazy<Mutex<ImageCache>> = Lazy::new(|| Mutex::new(ImageCache::new(100)));
 
 pub struct ImageAwareCompressor {
     config: ImageCompressorConfig,
@@ -552,11 +616,19 @@ impl ImageAwareCompressor {
         let max_dim = if provider == ImageProvider::Auto {
             self.config.max_dimension
         } else {
-            provider_dimension(provider, &ImageAnalysis {
-                width: img.width(), height: img.height(),
-                entropy: 0.0, edge_density: 0.0, color_diversity: 0,
-                has_text: false, aspect_ratio: 1.0, file_size_bytes: raw_bytes.len(),
-            })
+            provider_dimension(
+                provider,
+                &ImageAnalysis {
+                    width: img.width(),
+                    height: img.height(),
+                    entropy: 0.0,
+                    edge_density: 0.0,
+                    color_diversity: 0,
+                    has_text: false,
+                    aspect_ratio: 1.0,
+                    file_size_bytes: raw_bytes.len(),
+                },
+            )
         };
 
         let config = ImageCompressorConfig {
@@ -622,11 +694,19 @@ impl ImageAwareCompressor {
         let max_dim = if provider == ImageProvider::Auto {
             self.config.max_dimension
         } else {
-            provider_dimension(provider, &ImageAnalysis {
-                width: img.width(), height: img.height(),
-                entropy: 0.0, edge_density: 0.0, color_diversity: 0,
-                has_text: false, aspect_ratio: 1.0, file_size_bytes: raw_bytes.len(),
-            })
+            provider_dimension(
+                provider,
+                &ImageAnalysis {
+                    width: img.width(),
+                    height: img.height(),
+                    entropy: 0.0,
+                    edge_density: 0.0,
+                    color_diversity: 0,
+                    has_text: false,
+                    aspect_ratio: 1.0,
+                    file_size_bytes: raw_bytes.len(),
+                },
+            )
         };
 
         let mut config = self.config.clone();
@@ -655,19 +735,23 @@ impl ImageAwareCompressor {
             }
         }
 
-        let best = candidates.into_iter()
-            .max_by(|a, b| {
-                let a_score = a.savings_pct * a.quality_preserved;
-                let b_score = b.savings_pct * b.quality_preserved;
-                a_score.partial_cmp(&b_score).unwrap_or(std::cmp::Ordering::Equal)
-            })?;
+        let best = candidates.into_iter().max_by(|a, b| {
+            let a_score = a.savings_pct * a.quality_preserved;
+            let b_score = b.savings_pct * b.quality_preserved;
+            a_score
+                .partial_cmp(&b_score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })?;
 
         {
             let h = hash_str.clone();
             let mut cache = IMAGE_CACHE.lock().await;
-            cache.put(h, CachedResult {
-                result: best.clone(),
-            });
+            cache.put(
+                h,
+                CachedResult {
+                    result: best.clone(),
+                },
+            );
         }
 
         Some(best)
@@ -706,8 +790,10 @@ impl CompressionStrategy for ImageAwareCompressor {
 
         let header = format!(
             "‖ Image compressed: {}x{} → {}x{} ({:.0}% savings, {})\n",
-            result.original_width, result.original_height,
-            result.output_width, result.output_height,
+            result.original_width,
+            result.original_height,
+            result.output_width,
+            result.output_height,
             result.savings_pct,
             result.technique.name(),
         );
@@ -733,11 +819,14 @@ mod tests {
                 let r = (x * 255 / width) as u8;
                 let g = (y * 255 / height) as u8;
                 let b = ((x + y) * 128 / (width + height)) as u8;
-                img.as_mut_rgb8().unwrap().put_pixel(x, y, image::Rgb([r, g, b]));
+                img.as_mut_rgb8()
+                    .unwrap()
+                    .put_pixel(x, y, image::Rgb([r, g, b]));
             }
         }
         let mut bytes = Vec::new();
-        img.write_to(&mut std::io::Cursor::new(&mut bytes), ImageFormat::Jpeg).unwrap();
+        img.write_to(&mut std::io::Cursor::new(&mut bytes), ImageFormat::Jpeg)
+            .unwrap();
         let b64 = base64::engine::general_purpose::STANDARD.encode(&bytes);
         format!("data:image/jpeg;base64,{}", b64)
     }
@@ -762,11 +851,26 @@ mod tests {
     #[test]
     fn test_query_classification() {
         assert_eq!(classify_query("What is this?"), ImageTechnique::FullLow);
-        assert_eq!(classify_query("Describe the scene"), ImageTechnique::FullLow);
-        assert_eq!(classify_query("Count the number of items"), ImageTechnique::Preserve);
-        assert_eq!(classify_query("Read the serial number"), ImageTechnique::Transcode);
-        assert_eq!(classify_query("What's in the corner?"), ImageTechnique::Crop);
-        assert_eq!(classify_query("Transcribe this document"), ImageTechnique::Transcode);
+        assert_eq!(
+            classify_query("Describe the scene"),
+            ImageTechnique::FullLow
+        );
+        assert_eq!(
+            classify_query("Count the number of items"),
+            ImageTechnique::Preserve
+        );
+        assert_eq!(
+            classify_query("Read the serial number"),
+            ImageTechnique::Transcode
+        );
+        assert_eq!(
+            classify_query("What's in the corner?"),
+            ImageTechnique::Crop
+        );
+        assert_eq!(
+            classify_query("Transcribe this document"),
+            ImageTechnique::Transcode
+        );
     }
 
     #[test]
@@ -794,18 +898,26 @@ mod tests {
     async fn test_compress_large_image() {
         let compressor = ImageAwareCompressor::new();
         let data_uri = create_test_image(1024, 768);
-        let result = compressor.compress_auto(&data_uri, Some("What is this?")).await;
+        let result = compressor
+            .compress_auto(&data_uri, Some("What is this?"))
+            .await;
         assert!(result.is_some());
         let r = result.unwrap();
         assert_eq!(r.technique, ImageTechnique::FullLow);
-        assert!(r.savings_pct > 50.0, "savings should be >50% for large image: {}", r.savings_pct);
+        assert!(
+            r.savings_pct > 50.0,
+            "savings should be >50% for large image: {}",
+            r.savings_pct
+        );
     }
 
     #[tokio::test]
     async fn test_compress_preserve_query() {
         let compressor = ImageAwareCompressor::new();
         let data_uri = create_test_image(200, 200);
-        let result = compressor.compress_auto(&data_uri, Some("Count the whiskers")).await;
+        let result = compressor
+            .compress_auto(&data_uri, Some("Count the whiskers"))
+            .await;
         assert!(result.is_some());
         let r = result.unwrap();
         assert_eq!(r.technique, ImageTechnique::Preserve);
@@ -815,7 +927,9 @@ mod tests {
     async fn test_compress_transcode_query() {
         let compressor = ImageAwareCompressor::new();
         let data_uri = create_test_image(300, 200);
-        let result = compressor.compress_auto(&data_uri, Some("Read the serial number")).await;
+        let result = compressor
+            .compress_auto(&data_uri, Some("Read the serial number"))
+            .await;
         assert!(result.is_some());
         let r = result.unwrap();
         assert_eq!(r.technique, ImageTechnique::Transcode);
@@ -825,7 +939,9 @@ mod tests {
     async fn test_compress_crop_query() {
         let compressor = ImageAwareCompressor::new();
         let data_uri = create_test_image(400, 300);
-        let result = compressor.compress_auto(&data_uri, Some("What's in the corner?")).await;
+        let result = compressor
+            .compress_auto(&data_uri, Some("What's in the corner?"))
+            .await;
         assert!(result.is_some());
         let r = result.unwrap();
         assert_eq!(r.technique, ImageTechnique::Crop);
@@ -859,8 +975,13 @@ mod tests {
     #[test]
     fn test_provider_dimension() {
         let analysis = ImageAnalysis {
-            width: 2048, height: 1024, entropy: 5.0, edge_density: 0.1,
-            color_diversity: 256, has_text: false, aspect_ratio: 2.0,
+            width: 2048,
+            height: 1024,
+            entropy: 5.0,
+            edge_density: 0.1,
+            color_diversity: 256,
+            has_text: false,
+            aspect_ratio: 2.0,
             file_size_bytes: 100000,
         };
         assert_eq!(provider_dimension(ImageProvider::OpenAi, &analysis), 2048);

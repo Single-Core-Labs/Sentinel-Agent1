@@ -1,11 +1,11 @@
-use serde::{Deserialize, Serialize};
-use jsonwebtoken::{encode, decode, EncodingKey, DecodingKey, Header, Validation, Algorithm};
+use crate::bom::{resolve_backend_url, AgentBillOfMaterials};
+use crate::crypto::{generate_agent_key_material, KeyPair};
 use chrono::Utc;
-use uuid::Uuid;
-use crate::crypto::{KeyPair, generate_agent_key_material};
-use crate::bom::{AgentBillOfMaterials, resolve_backend_url};
+use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use uuid::Uuid;
 
 /// Claims embedded in an agent's JWT for authentication/authorization.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -73,7 +73,11 @@ impl AgentIdentity {
     }
 
     /// Create a JWT for this agent, optionally scoped to a task.
-    pub fn create_jwt(&self, _audience: &str, task_id: Option<&str>) -> Result<String, IdentityError> {
+    pub fn create_jwt(
+        &self,
+        _audience: &str,
+        task_id: Option<&str>,
+    ) -> Result<String, IdentityError> {
         let now = Utc::now().timestamp() as usize;
         let claims = AgentClaims {
             sub: self.agent_id.clone(),
@@ -89,8 +93,7 @@ impl AgentIdentity {
             alg: Algorithm::EdDSA,
             ..Default::default()
         };
-        encode(&header, &claims, &key)
-            .map_err(|e| IdentityError::JwtError(e.to_string()))
+        encode(&header, &claims, &key).map_err(|e| IdentityError::JwtError(e.to_string()))
     }
 
     /// Verify a JWT against this agent's public key.
@@ -111,7 +114,10 @@ impl AgentIdentity {
     }
 
     /// Register with a specific backend URL, with retry logic.
-    pub async fn register_with_backend(&self, backend_url: &str) -> Result<AgentRegistration, IdentityError> {
+    pub async fn register_with_backend(
+        &self,
+        backend_url: &str,
+    ) -> Result<AgentRegistration, IdentityError> {
         let reg = AgentRegistration {
             agent_id: self.agent_id.clone(),
             public_key: self.keypair.public_key_bytes(),
@@ -125,11 +131,7 @@ impl AgentIdentity {
         // Retry up to 3 times with exponential backoff
         let mut last_err = None;
         for attempt in 0..3 {
-            match client.post(&register_url)
-                .json(&self.bom)
-                .send()
-                .await
-            {
+            match client.post(&register_url).json(&self.bom).send().await {
                 Ok(resp) => {
                     if resp.status().is_success() {
                         tracing::info!(agent_id = %self.agent_id, backend = %backend_url, "agent registered");
@@ -137,9 +139,10 @@ impl AgentIdentity {
                         *lock = Some(reg.clone());
                         return Ok(reg);
                     }
-                    last_err = Some(IdentityError::RegistrationError(
-                        format!("HTTP {}", resp.status())
-                    ));
+                    last_err = Some(IdentityError::RegistrationError(format!(
+                        "HTTP {}",
+                        resp.status()
+                    )));
                 }
                 Err(e) => {
                     last_err = Some(IdentityError::RegistrationError(e.to_string()));
@@ -156,7 +159,10 @@ impl AgentIdentity {
 
     /// Build an `Authorization` header value for a task-specific assertion.
     /// Format: `Bearer <agent-jwt>`
-    pub fn authorization_header_for_agent_task(&self, task_id: &str) -> Result<String, IdentityError> {
+    pub fn authorization_header_for_agent_task(
+        &self,
+        task_id: &str,
+    ) -> Result<String, IdentityError> {
         let jwt = self.create_jwt("task", Some(task_id))?;
         Ok(format!("Bearer {}", jwt))
     }
@@ -189,19 +195,19 @@ fn pkcs8_private_key_der(keypair: &KeyPair) -> Vec<u8> {
     let pubkey = keypair.verifying_key.to_bytes();
     let mut der = Vec::with_capacity(85);
     der.extend_from_slice(&[
-        0x30, 0x53,             // SEQUENCE (83 bytes)
-        0x02, 0x01, 0x01,       // INTEGER 1 (v2)
-        0x30, 0x05,             // SEQUENCE (5 bytes)
-        0x06, 0x03,             // OID (3 bytes)
-        0x2b, 0x65, 0x70,       // 1.3.101.112 (Ed25519)
-        0x04, 0x22,             // OCTET STRING (34 bytes)
-        0x04, 0x20,             // OCTET STRING (32 bytes) — seed
+        0x30, 0x53, // SEQUENCE (83 bytes)
+        0x02, 0x01, 0x01, // INTEGER 1 (v2)
+        0x30, 0x05, // SEQUENCE (5 bytes)
+        0x06, 0x03, // OID (3 bytes)
+        0x2b, 0x65, 0x70, // 1.3.101.112 (Ed25519)
+        0x04, 0x22, // OCTET STRING (34 bytes)
+        0x04, 0x20, // OCTET STRING (32 bytes) — seed
     ]);
     der.extend_from_slice(&seed);
     der.extend_from_slice(&[
-        0xa1, 0x23,             // [1] EXPLICIT (35 bytes)
-        0x03, 0x21,             // BIT STRING (33 bytes)
-        0x00,                   // 0 unused bits
+        0xa1, 0x23, // [1] EXPLICIT (35 bytes)
+        0x03, 0x21, // BIT STRING (33 bytes)
+        0x00, // 0 unused bits
     ]);
     der.extend_from_slice(&pubkey);
     der

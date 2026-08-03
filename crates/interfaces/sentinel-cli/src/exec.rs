@@ -1,14 +1,18 @@
-use std::sync::Arc;
-use colored::*;
 use crate::approval::CliApprovalGate;
 use crate::display::{print_banner, print_divider};
 use crate::handler::CliEventHandler;
+use colored::*;
+use std::sync::Arc;
 
 pub async fn run(args: &[String]) -> anyhow::Result<()> {
     let config = Arc::new(match sentinel_config::SentinelConfig::load() {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("{} Warning: config error: {}; using defaults", "W".yellow(), e);
+            eprintln!(
+                "{} Warning: config error: {}; using defaults",
+                "W".yellow(),
+                e
+            );
             sentinel_config::SentinelConfig::default()
         }
     });
@@ -27,7 +31,9 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         for line in std::io::stdin().lines() {
             match line {
                 Ok(l) => {
-                    if l.trim().is_empty() { break; }
+                    if l.trim().is_empty() {
+                        break;
+                    }
                     input.push_str(&l);
                     input.push('\n');
                 }
@@ -40,7 +46,10 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     };
 
     if prompt.is_empty() {
-        eprintln!("{} sentinel exec [model] \"your prompt\"", "Usage:".yellow().bold());
+        eprintln!(
+            "{} sentinel exec [model] \"your prompt\"",
+            "Usage:".yellow().bold()
+        );
         std::process::exit(1);
     }
 
@@ -55,23 +64,34 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     };
     let model_id = selected.model_id;
 
-    let provider = Arc::new(
-        sentinel_provider::ProviderKind::from_info(selected.provider.clone())?
-    );
+    let provider = Arc::new(sentinel_provider::ProviderKind::from_info(
+        selected.provider.clone(),
+    )?);
 
     let mut tool_registry = sentinel_tools::ToolRegistry::new();
 
     let mcp_servers = config.mcp_servers();
     if !mcp_servers.is_empty() {
-        println!(" {} MCP servers configured", format!("{}", mcp_servers.len()).yellow());
+        println!(
+            " {} MCP servers configured",
+            format!("{}", mcp_servers.len()).yellow()
+        );
         for def in mcp_servers {
             let client = Arc::new(sentinel_mcp::McpClient::new(&def.id, def.transport.clone()));
             match sentinel_mcp::register_mcp_tools(&mut tool_registry, client).await {
                 Ok(count) => {
                     if count > 0 {
-                        println!("   {} MCP tools registered from '{}'", format!("{}", count).green(), def.id.green());
+                        println!(
+                            "   {} MCP tools registered from '{}'",
+                            format!("{}", count).green(),
+                            def.id.green()
+                        );
                     } else {
-                        eprintln!("{} MCP server '{}' is connected but exposes no tools", "W".yellow(), def.id);
+                        eprintln!(
+                            "{} MCP server '{}' is connected but exposes no tools",
+                            "W".yellow(),
+                            def.id
+                        );
                     }
                 }
                 Err(e) => {
@@ -100,12 +120,14 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     // let sandbox = std::sync::Arc::new(sentinel_core::sandbox::LocalSandbox::new(&std::env::current_dir().unwrap())?);
 
     // Configure pipeline with memory file
-    let mfm = sentinel_core::memory_file::MemoryFileManager::new(&std::env::current_dir().unwrap_or_default());
-    let pipeline_agent = sentinel_core::pipeline::PipelineAgent::new(agent)
-        .with_memory_file(mfm);
+    let mfm = sentinel_core::memory_file::MemoryFileManager::new(
+        &std::env::current_dir().unwrap_or_default(),
+    );
+    let pipeline_agent = sentinel_core::pipeline::PipelineAgent::new(agent).with_memory_file(mfm);
 
     // Optional: Set up worktree manager for parallel agents
-    let _wtm = sentinel_core::worktree::WorktreeManager::new(&std::env::current_dir().unwrap_or_default());
+    let _wtm =
+        sentinel_core::worktree::WorktreeManager::new(&std::env::current_dir().unwrap_or_default());
     // Use wtm.create_worktree("agent-1").await for parallel agent isolation
 
     let mut thread = sentinel_core::AgentThread::new(
@@ -116,7 +138,14 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
 
     print_banner();
     println!(" Model:  {}", model_id.green().bold());
-    println!(" Yolo:   {}", if config.agent.yolo_mode { "yes".green() } else { "no".yellow() });
+    println!(
+        " Yolo:   {}",
+        if config.agent.yolo_mode {
+            "yes".green()
+        } else {
+            "no".yellow()
+        }
+    );
     println!(" Pipeline: {}", "read → triage → draft → QA → send".cyan());
     print_divider();
 
@@ -126,7 +155,9 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         Box::new(CliApprovalGate)
     };
 
-    let result = pipeline_agent.run_pipeline(&mut thread, &prompt, approval.as_ref()).await;
+    let result = pipeline_agent
+        .run_pipeline(&mut thread, &prompt, approval.as_ref())
+        .await;
 
     match result {
         Ok(output) => match output {
@@ -142,7 +173,10 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         }
     }
 
-    let (prompt_tok, completion_tok) = (pipeline_agent.inner().prompt_tokens(), pipeline_agent.inner().completion_tokens());
+    let (prompt_tok, completion_tok) = (
+        pipeline_agent.inner().prompt_tokens(),
+        pipeline_agent.inner().completion_tokens(),
+    );
     let token_info = if prompt_tok > 0 || completion_tok > 0 {
         format!("{} in, {} out", prompt_tok, completion_tok)
     } else {

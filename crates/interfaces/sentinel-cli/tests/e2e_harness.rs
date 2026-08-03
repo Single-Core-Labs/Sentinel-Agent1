@@ -55,7 +55,10 @@ fn sentinel_binary() -> PathBuf {
     let candidates = [
         target_dir.join("debug").join("sentinel.exe"),
         target_dir.join("debug").join("sentinel"),
-        repo_root().join("target").join("debug").join("sentinel.exe"),
+        repo_root()
+            .join("target")
+            .join("debug")
+            .join("sentinel.exe"),
         repo_root().join("target").join("debug").join("sentinel"),
     ];
     candidates
@@ -132,7 +135,7 @@ async fn run_python_agent(task: &str) -> (String, Duration, bool) {
 /// without requiring exact string match (LLM outputs are inherently variable).
 fn outputs_structurally_match(rust: &str, python: &str) -> bool {
     let normalize = |s: &str| -> String {
-        let s = strip_ansi_escapes(&s);
+        let s = strip_ansi_escapes(s);
         s.lines()
             .map(|l| l.trim())
             .filter(|l| !l.is_empty())
@@ -324,8 +327,16 @@ async fn e2e_full_suite() {
         print_section_header(&format!("Task: {}", name));
         let r = run_task(name, prompt).await;
         let match_ok = outputs_structurally_match(&r.rust_output, &r.python_output);
-        println!("  Rust:   {} in {:?}", if r.rust_success { "OK" } else { "FAIL" }, r.rust_duration);
-        println!("  Python: {} in {:?}", if r.python_success { "OK" } else { "FAIL" }, r.python_duration);
+        println!(
+            "  Rust:   {} in {:?}",
+            if r.rust_success { "OK" } else { "FAIL" },
+            r.rust_duration
+        );
+        println!(
+            "  Python: {} in {:?}",
+            if r.python_success { "OK" } else { "FAIL" },
+            r.python_duration
+        );
         println!("  Structural match: {}", match_ok);
         results.push(r);
         all_passed = all_passed && match_ok;

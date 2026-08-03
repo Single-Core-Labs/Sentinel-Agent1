@@ -29,8 +29,7 @@ impl Daemon {
         // Write PID file
         if let Some(ref pid_path) = self.pid_file {
             if let Some(parent) = Path::new(pid_path).parent() {
-                std::fs::create_dir_all(parent)
-                    .map_err(|e| DaemonError::IoError(e.to_string()))?;
+                std::fs::create_dir_all(parent).map_err(|e| DaemonError::IoError(e.to_string()))?;
             }
             let pid = std::process::id();
             std::fs::write(pid_path, pid.to_string())

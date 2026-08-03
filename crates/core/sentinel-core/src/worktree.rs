@@ -25,25 +25,37 @@ impl WorktreeManager {
 
     /// Create a new worktree for an agent.
     pub async fn create_worktree(&self, name: &str) -> Result<PathBuf, String> {
-        let worktree_path = self.repo_root.parent()
-            .map(|p| p.join(format!("{}-{}", self.repo_root.file_name().unwrap_or_default().to_string_lossy(), name)))
+        let worktree_path = self
+            .repo_root
+            .parent()
+            .map(|p| {
+                p.join(format!(
+                    "{}-{}",
+                    self.repo_root
+                        .file_name()
+                        .unwrap_or_default()
+                        .to_string_lossy(),
+                    name
+                ))
+            })
             .unwrap_or_else(|| {
                 let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
                 cwd.join(format!("worktree-{}", name))
             });
 
-        let branch = format!("agent-{}-{}", name, std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis());
+        let branch = format!(
+            "agent-{}-{}",
+            name,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis()
+        );
 
-        self.run_git(&[
-            "branch", &branch, "HEAD"
-        ]).await?;
+        self.run_git(&["branch", &branch, "HEAD"]).await?;
 
-        self.run_git(&[
-            "worktree", "add", &worktree_path.to_string_lossy(), &branch
-        ]).await?;
+        self.run_git(&["worktree", "add", &worktree_path.to_string_lossy(), &branch])
+            .await?;
 
         let mut wts = self.worktrees.lock().await;
         wts.push(WorktreeEntry {
@@ -59,7 +71,9 @@ impl WorktreeManager {
     pub async fn cleanup(&self) -> Result<(), String> {
         let wts = self.worktrees.lock().await;
         for wt in wts.iter() {
-            let _ = self.run_git(&["worktree", "remove", &wt.path.to_string_lossy()]).await;
+            let _ = self
+                .run_git(&["worktree", "remove", &wt.path.to_string_lossy()])
+                .await;
             let _ = self.run_git(&["branch", "-D", &wt.branch]).await;
             let _ = std::fs::remove_dir_all(&wt.path);
         }

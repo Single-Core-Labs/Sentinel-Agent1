@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// Status of a thread spawn edge between parent and child agents.
@@ -73,7 +73,9 @@ impl AgentGraph {
     }
 
     pub fn upsert_edge(&mut self, parent: &str, child: &str, status: SpawnEdgeStatus) {
-        if let Some(edge) = self.edges.iter_mut()
+        if let Some(edge) = self
+            .edges
+            .iter_mut()
             .find(|e| e.parent_thread_id == parent && e.child_thread_id == child)
         {
             edge.status = status;
@@ -91,7 +93,9 @@ impl AgentGraph {
     }
 
     pub fn set_edge_status(&mut self, parent: &str, child: &str, status: SpawnEdgeStatus) {
-        if let Some(edge) = self.edges.iter_mut()
+        if let Some(edge) = self
+            .edges
+            .iter_mut()
             .find(|e| e.parent_thread_id == parent && e.child_thread_id == child)
         {
             edge.status = status;
@@ -101,7 +105,9 @@ impl AgentGraph {
 
     /// Get immediate children of a thread, ordered by creation time.
     pub fn children(&self, thread_id: &str) -> Vec<&ThreadSpawnEdge> {
-        let mut result: Vec<_> = self.edges.iter()
+        let mut result: Vec<_> = self
+            .edges
+            .iter()
             .filter(|e| e.parent_thread_id == thread_id)
             .collect();
         result.sort_by_key(|e| e.created_at);
@@ -113,7 +119,9 @@ impl AgentGraph {
         let mut result = Vec::new();
         let mut stack = vec![thread_id.to_string()];
         while let Some(current) = stack.pop() {
-            let mut children: Vec<_> = self.edges.iter()
+            let mut children: Vec<_> = self
+                .edges
+                .iter()
                 .filter(|e| e.parent_thread_id == current)
                 .collect();
             children.sort_by_key(|e| e.created_at);
@@ -126,9 +134,14 @@ impl AgentGraph {
     }
 
     pub fn root(&self) -> Vec<&ThreadSpawnEdge> {
-        let mut roots: Vec<_> = self.edges.iter()
+        let mut roots: Vec<_> = self
+            .edges
+            .iter()
             .filter(|e| {
-                !self.edges.iter().any(|other| other.child_thread_id == e.parent_thread_id)
+                !self
+                    .edges
+                    .iter()
+                    .any(|other| other.child_thread_id == e.parent_thread_id)
             })
             .collect();
         roots.sort_by_key(|e| e.created_at);
@@ -136,12 +149,19 @@ impl AgentGraph {
     }
 
     pub fn nodes(&self) -> Vec<AgentNode> {
-        let mut map: std::collections::BTreeMap<String, Option<String>> = std::collections::BTreeMap::new();
+        let mut map: std::collections::BTreeMap<String, Option<String>> =
+            std::collections::BTreeMap::new();
         for edge in &self.edges {
             map.entry(edge.parent_thread_id.clone()).or_insert(None);
-            map.entry(edge.child_thread_id.clone()).or_insert(Some(edge.parent_thread_id.clone()));
+            map.entry(edge.child_thread_id.clone())
+                .or_insert(Some(edge.parent_thread_id.clone()));
         }
-        map.into_iter().map(|(thread_id, parent_id)| AgentNode { thread_id, parent_id }).collect()
+        map.into_iter()
+            .map(|(thread_id, parent_id)| AgentNode {
+                thread_id,
+                parent_id,
+            })
+            .collect()
     }
 
     pub fn clear(&mut self) {

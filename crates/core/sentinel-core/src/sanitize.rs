@@ -81,14 +81,16 @@ mod tests {
     #[test]
     fn test_redacts_bearer_token() {
         let sanitizer = SecretSanitizer::new();
-        let result = sanitizer.sanitize_text("Authorization: Bearer xyz.abc123.def456.ghi789.jkl012.mno345");
+        let result =
+            sanitizer.sanitize_text("Authorization: Bearer xyz.abc123.def456.ghi789.jkl012.mno345");
         assert!(result.contains("[REDACTED]"));
     }
 
     #[test]
     fn test_redacts_api_key_json() {
         let sanitizer = SecretSanitizer::new();
-        let result = sanitizer.sanitize_text(r#"{"api_key": "sk-abcdef1234567890abcdef1234567890"}"#);
+        let result =
+            sanitizer.sanitize_text(r#"{"api_key": "sk-abcdef1234567890abcdef1234567890"}"#);
         assert!(!result.contains("sk-abcdef1234567890abcdef1234567890"));
         assert!(result.contains("[REDACTED]"));
     }
@@ -103,14 +105,16 @@ mod tests {
     #[test]
     fn test_redacts_anthropic_env_var() {
         let sanitizer = SecretSanitizer::new();
-        let result = sanitizer.sanitize_text("ANTHROPIC_API_KEY=sk-ant-abcdef1234567890abcdef1234567890");
+        let result =
+            sanitizer.sanitize_text("ANTHROPIC_API_KEY=sk-ant-abcdef1234567890abcdef1234567890");
         assert!(result.contains("[REDACTED]"));
     }
 
     #[test]
     fn test_redacts_nvidia_env_var() {
         let sanitizer = SecretSanitizer::new();
-        let result = sanitizer.sanitize_text("NVIDIA_NIM_API_KEY=nvapi-abcdef1234567890abcdef1234567890");
+        let result =
+            sanitizer.sanitize_text("NVIDIA_NIM_API_KEY=nvapi-abcdef1234567890abcdef1234567890");
         assert!(result.contains("[REDACTED]"));
     }
 

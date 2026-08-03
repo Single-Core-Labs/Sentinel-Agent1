@@ -1,13 +1,10 @@
 use sentinel_analytics::capture::AnalyticsDestination;
 use sentinel_analytics::client::AnalyticsEventsClient;
-use sentinel_analytics::queue::AnalyticsQueueConfig;
 use sentinel_analytics::fact::{AnalyticsFact, FactKind};
+use sentinel_analytics::queue::AnalyticsQueueConfig;
 
 fn null_client() -> AnalyticsEventsClient {
-    AnalyticsEventsClient::new(
-        AnalyticsDestination::Null,
-        AnalyticsQueueConfig::default(),
-    )
+    AnalyticsEventsClient::new(AnalyticsDestination::Null, AnalyticsQueueConfig::default())
 }
 
 #[tokio::test]

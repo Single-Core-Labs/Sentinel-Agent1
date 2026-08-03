@@ -1,9 +1,9 @@
-use std::sync::Arc;
 use async_trait::async_trait;
 use sentinel_tools::{Tool, ToolContext, ToolOutput};
+use std::sync::Arc;
 
-use super::types::*;
 use super::store::MemoryStore;
+use super::types::*;
 
 pub struct MemorizeTool {
     store: Arc<dyn MemoryStore>,
@@ -17,7 +17,9 @@ impl MemorizeTool {
 
 #[async_trait]
 impl Tool for MemorizeTool {
-    fn name(&self) -> &str { "headroom_memorize" }
+    fn name(&self) -> &str {
+        "headroom_memorize"
+    }
 
     fn description(&self) -> &str {
         "Store a fact, preference, decision, or other information in persistent memory. \
@@ -63,16 +65,19 @@ impl Tool for MemorizeTool {
             return ToolOutput::err("content must be 2000 characters or fewer");
         }
 
-        let user_id = args.get("user_id")
+        let user_id = args
+            .get("user_id")
             .and_then(|v| v.as_str())
             .unwrap_or("default");
 
-        let category_str = args.get("category")
+        let category_str = args
+            .get("category")
             .and_then(|v| v.as_str())
             .unwrap_or("fact");
         let category = MemoryCategory::from_str(category_str);
 
-        let importance = args.get("importance")
+        let importance = args
+            .get("importance")
             .and_then(|v| v.as_f64())
             .unwrap_or(0.5)
             .clamp(0.0, 1.0);
@@ -99,13 +104,16 @@ impl Tool for MemorizeTool {
         };
 
         match self.store.add(memory.clone()).await {
-            Ok(m) => ToolOutput::ok(serde_json::json!({
-                "status": "stored",
-                "memory_id": m.id,
-                "content": m.content,
-                "category": m.category.as_str(),
-                "importance": m.importance,
-            }).to_string()),
+            Ok(m) => ToolOutput::ok(
+                serde_json::json!({
+                    "status": "stored",
+                    "memory_id": m.id,
+                    "content": m.content,
+                    "category": m.category.as_str(),
+                    "importance": m.importance,
+                })
+                .to_string(),
+            ),
             Err(e) => ToolOutput::err(format!("Failed to store memory: {}", e)),
         }
     }
@@ -123,7 +131,9 @@ impl RecallTool {
 
 #[async_trait]
 impl Tool for RecallTool {
-    fn name(&self) -> &str { "headroom_recall" }
+    fn name(&self) -> &str {
+        "headroom_recall"
+    }
 
     fn description(&self) -> &str {
         "Search stored memories for information about the user, their preferences, \
@@ -165,16 +175,19 @@ impl Tool for RecallTool {
             return ToolOutput::err("query is required");
         }
 
-        let user_id = args.get("user_id")
+        let user_id = args
+            .get("user_id")
             .and_then(|v| v.as_str())
             .unwrap_or("default");
 
-        let top_k = args.get("top_k")
+        let top_k = args
+            .get("top_k")
             .and_then(|v| v.as_i64())
             .unwrap_or(5)
             .clamp(1, 20) as usize;
 
-        let category_filter = args.get("category")
+        let category_filter = args
+            .get("category")
             .and_then(|v| v.as_str())
             .filter(|s| !s.is_empty())
             .map(|s| vec![MemoryCategory::from_str(s)]);
@@ -186,27 +199,36 @@ impl Tool for RecallTool {
         match self.store.search(query, &filter).await {
             Ok(results) => {
                 if results.is_empty() {
-                    return ToolOutput::ok(serde_json::json!({
-                        "status": "no_results",
-                        "message": "No matching memories found"
-                    }).to_string());
+                    return ToolOutput::ok(
+                        serde_json::json!({
+                            "status": "no_results",
+                            "message": "No matching memories found"
+                        })
+                        .to_string(),
+                    );
                 }
 
-                let memories: Vec<serde_json::Value> = results.iter().map(|sm| {
-                    serde_json::json!({
-                        "content": sm.memory.content,
-                        "category": sm.memory.category.as_str(),
-                        "importance": sm.memory.importance,
-                        "score": format!("{:.2}", sm.score),
-                        "stored": sm.memory.created_at,
+                let memories: Vec<serde_json::Value> = results
+                    .iter()
+                    .map(|sm| {
+                        serde_json::json!({
+                            "content": sm.memory.content,
+                            "category": sm.memory.category.as_str(),
+                            "importance": sm.memory.importance,
+                            "score": format!("{:.2}", sm.score),
+                            "stored": sm.memory.created_at,
+                        })
                     })
-                }).collect();
+                    .collect();
 
-                ToolOutput::ok(serde_json::json!({
-                    "status": "found",
-                    "count": memories.len(),
-                    "memories": memories,
-                }).to_string())
+                ToolOutput::ok(
+                    serde_json::json!({
+                        "status": "found",
+                        "count": memories.len(),
+                        "memories": memories,
+                    })
+                    .to_string(),
+                )
             }
             Err(e) => ToolOutput::err(format!("Failed to search memories: {}", e)),
         }
@@ -225,7 +247,9 @@ impl ForgetTool {
 
 #[async_trait]
 impl Tool for ForgetTool {
-    fn name(&self) -> &str { "headroom_forget" }
+    fn name(&self) -> &str {
+        "headroom_forget"
+    }
 
     fn description(&self) -> &str {
         "Delete a specific memory by its ID. Use after headroom_recall to find the ID."
@@ -251,10 +275,13 @@ impl Tool for ForgetTool {
         }
 
         match self.store.delete(memory_id).await {
-            Ok(true) => ToolOutput::ok(serde_json::json!({
-                "status": "deleted",
-                "memory_id": memory_id,
-            }).to_string()),
+            Ok(true) => ToolOutput::ok(
+                serde_json::json!({
+                    "status": "deleted",
+                    "memory_id": memory_id,
+                })
+                .to_string(),
+            ),
             Ok(false) => ToolOutput::err(format!("Memory not found: {}", memory_id)),
             Err(e) => ToolOutput::err(format!("Failed to delete memory: {}", e)),
         }
@@ -273,7 +300,9 @@ impl MemoryStatsTool {
 
 #[async_trait]
 impl Tool for MemoryStatsTool {
-    fn name(&self) -> &str { "headroom_memory_stats" }
+    fn name(&self) -> &str {
+        "headroom_memory_stats"
+    }
 
     fn description(&self) -> &str {
         "Get statistics about stored memories for the current user."
@@ -292,20 +321,24 @@ impl Tool for MemoryStatsTool {
     }
 
     async fn execute(&self, args: serde_json::Value, _ctx: &ToolContext) -> ToolOutput {
-        let user_id = args.get("user_id")
+        let user_id = args
+            .get("user_id")
             .and_then(|v| v.as_str())
             .unwrap_or("default");
 
         match self.store.stats(user_id).await {
-            Ok(stats) => ToolOutput::ok(serde_json::json!({
-                "total": stats.total,
-                "active": stats.active,
-                "superseded": stats.superseded,
-                "by_category": stats.by_category.iter().map(|(c, n)| serde_json::json!({
-                    "category": c.as_str(),
-                    "count": n,
-                })).collect::<Vec<_>>(),
-            }).to_string()),
+            Ok(stats) => ToolOutput::ok(
+                serde_json::json!({
+                    "total": stats.total,
+                    "active": stats.active,
+                    "superseded": stats.superseded,
+                    "by_category": stats.by_category.iter().map(|(c, n)| serde_json::json!({
+                        "category": c.as_str(),
+                        "count": n,
+                    })).collect::<Vec<_>>(),
+                })
+                .to_string(),
+            ),
             Err(e) => ToolOutput::err(format!("Failed to get stats: {}", e)),
         }
     }
@@ -324,7 +357,9 @@ mod tests {
     async fn test_memorize_requires_content() {
         let store = create_store();
         let tool = MemorizeTool::new(store);
-        let result = tool.execute(serde_json::json!({}), &ToolContext::new()).await;
+        let result = tool
+            .execute(serde_json::json!({}), &ToolContext::new())
+            .await;
         assert!(result.is_error);
         assert!(result.text.contains("required"));
     }
@@ -335,28 +370,47 @@ mod tests {
         let memorize = MemorizeTool::new(store.clone());
         let recall = RecallTool::new(store.clone());
 
-        let mem_result = memorize.execute(serde_json::json!({
-            "content": "User prefers Python for backend work",
-            "category": "preference",
-            "importance": 0.8,
-        }), &ToolContext::new()).await;
+        let mem_result = memorize
+            .execute(
+                serde_json::json!({
+                    "content": "User prefers Python for backend work",
+                    "category": "preference",
+                    "importance": 0.8,
+                }),
+                &ToolContext::new(),
+            )
+            .await;
         assert!(!mem_result.is_error, "memorize failed: {}", mem_result.text);
 
-        let rec_result = recall.execute(serde_json::json!({
-            "query": "python preference",
-            "top_k": 5,
-        }), &ToolContext::new()).await;
+        let rec_result = recall
+            .execute(
+                serde_json::json!({
+                    "query": "python preference",
+                    "top_k": 5,
+                }),
+                &ToolContext::new(),
+            )
+            .await;
         assert!(!rec_result.is_error, "recall failed: {}", rec_result.text);
-        assert!(rec_result.text.contains("found"), "should find results: {}", rec_result.text);
+        assert!(
+            rec_result.text.contains("found"),
+            "should find results: {}",
+            rec_result.text
+        );
     }
 
     #[tokio::test]
     async fn test_recall_no_results() {
         let store = create_store();
         let recall = RecallTool::new(store);
-        let result = recall.execute(serde_json::json!({
-            "query": "nonexistent",
-        }), &ToolContext::new()).await;
+        let result = recall
+            .execute(
+                serde_json::json!({
+                    "query": "nonexistent",
+                }),
+                &ToolContext::new(),
+            )
+            .await;
         assert!(!result.is_error);
         assert!(result.text.contains("no_results"));
     }
@@ -368,22 +422,37 @@ mod tests {
         let forget = ForgetTool::new(store.clone());
         let recall = RecallTool::new(store.clone());
 
-        let mem_result = memorize.execute(serde_json::json!({
-            "content": "Test memory",
-            "category": "fact",
-        }), &ToolContext::new()).await;
+        let mem_result = memorize
+            .execute(
+                serde_json::json!({
+                    "content": "Test memory",
+                    "category": "fact",
+                }),
+                &ToolContext::new(),
+            )
+            .await;
 
         let parsed: serde_json::Value = serde_json::from_str(&mem_result.text).unwrap();
         let memory_id = parsed["memory_id"].as_str().unwrap().to_string();
 
-        let forget_result = forget.execute(serde_json::json!({
-            "memory_id": memory_id,
-        }), &ToolContext::new()).await;
+        let forget_result = forget
+            .execute(
+                serde_json::json!({
+                    "memory_id": memory_id,
+                }),
+                &ToolContext::new(),
+            )
+            .await;
         assert!(!forget_result.is_error);
 
-        let rec_result = recall.execute(serde_json::json!({
-            "query": "Test memory",
-        }), &ToolContext::new()).await;
+        let rec_result = recall
+            .execute(
+                serde_json::json!({
+                    "query": "Test memory",
+                }),
+                &ToolContext::new(),
+            )
+            .await;
         assert!(rec_result.text.contains("no_results"));
     }
 
@@ -393,17 +462,29 @@ mod tests {
         let memorize = MemorizeTool::new(store.clone());
         let stats_tool = MemoryStatsTool::new(store.clone());
 
-        memorize.execute(serde_json::json!({
-            "content": "Fact one",
-            "category": "fact",
-        }), &ToolContext::new()).await;
+        memorize
+            .execute(
+                serde_json::json!({
+                    "content": "Fact one",
+                    "category": "fact",
+                }),
+                &ToolContext::new(),
+            )
+            .await;
 
-        memorize.execute(serde_json::json!({
-            "content": "Prefers dark mode",
-            "category": "preference",
-        }), &ToolContext::new()).await;
+        memorize
+            .execute(
+                serde_json::json!({
+                    "content": "Prefers dark mode",
+                    "category": "preference",
+                }),
+                &ToolContext::new(),
+            )
+            .await;
 
-        let result = stats_tool.execute(serde_json::json!({}), &ToolContext::new()).await;
+        let result = stats_tool
+            .execute(serde_json::json!({}), &ToolContext::new())
+            .await;
         assert!(!result.is_error);
         let parsed: serde_json::Value = serde_json::from_str(&result.text).unwrap();
         assert_eq!(parsed["total"].as_i64(), Some(2));

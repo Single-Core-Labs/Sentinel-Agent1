@@ -16,7 +16,11 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
             Ok(())
         }
         _ => {
-            eprintln!("{} Unknown auth subcommand: '{}'", "Error:".red().bold(), sub);
+            eprintln!(
+                "{} Unknown auth subcommand: '{}'",
+                "Error:".red().bold(),
+                sub
+            );
             std::process::exit(1);
         }
     }
@@ -37,7 +41,10 @@ async fn cmd_login(args: &[String]) -> anyhow::Result<()> {
         println!(" {} Waiting for activation...", "⏳".yellow());
         Ok(())
     } else {
-        eprintln!("{} Usage: sentinel auth login --token <token> | --device", "Error:".red().bold());
+        eprintln!(
+            "{} Usage: sentinel auth login --token <token> | --device",
+            "Error:".red().bold()
+        );
         std::process::exit(1);
     }
 }
@@ -52,7 +59,10 @@ async fn cmd_status() -> anyhow::Result<()> {
     let identity = sentinel_agent_identity::AgentIdentity::new();
     println!("{}", "Authentication Status:".yellow().bold());
     println!("  Agent ID:    {}", identity.agent_id);
-    println!("  Public key:  {}", hex::encode(identity.keypair.public_key_bytes()));
+    println!(
+        "  Public key:  {}",
+        hex::encode(identity.keypair.public_key_bytes())
+    );
     println!("  Registered:  {}", "No".red());
     println!("  Authenticated: {}", "No".red());
     Ok(())

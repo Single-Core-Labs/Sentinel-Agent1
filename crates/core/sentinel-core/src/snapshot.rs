@@ -9,9 +9,19 @@ pub struct FileSnapshot {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FileChange {
-    Created { path: String, content: String },
-    Modified { path: String, before: String, after: String },
-    Deleted { path: String, before: String },
+    Created {
+        path: String,
+        content: String,
+    },
+    Modified {
+        path: String,
+        before: String,
+        after: String,
+    },
+    Deleted {
+        path: String,
+        before: String,
+    },
 }
 
 impl FileChange {
@@ -39,7 +49,9 @@ pub struct Snapshot {
 
 impl SnapshotManager {
     pub fn new() -> Self {
-        Self { snapshots: Vec::new() }
+        Self {
+            snapshots: Vec::new(),
+        }
     }
 
     pub fn take_snapshot<F>(
@@ -66,15 +78,15 @@ impl SnapshotManager {
             changes: changes.clone(),
         };
         self.snapshots.push(stored);
-        Snapshot { turn, before: before.clone(), after: before, changes }
+        Snapshot {
+            turn,
+            before: before.clone(),
+            after: before,
+            changes,
+        }
     }
 
-    pub fn update_after<F>(
-        &mut self,
-        turn: u32,
-        workspace_dir: Option<&str>,
-        file_reader: F,
-    )
+    pub fn update_after<F>(&mut self, turn: u32, workspace_dir: Option<&str>, file_reader: F)
     where
         F: Fn(&str) -> Option<String>,
     {
@@ -86,11 +98,15 @@ impl SnapshotManager {
     }
 
     pub fn last_changes(&self) -> &[FileChange] {
-        self.snapshots.last().map(|s| s.changes.as_slice()).unwrap_or(&[])
+        self.snapshots
+            .last()
+            .map(|s| s.changes.as_slice())
+            .unwrap_or(&[])
     }
 
     pub fn changes_at_turn(&self, turn: u32) -> &[FileChange] {
-        self.snapshots.iter()
+        self.snapshots
+            .iter()
             .find(|s| s.turn == turn)
             .map(|s| s.changes.as_slice())
             .unwrap_or(&[])
@@ -130,10 +146,12 @@ impl SnapshotManager {
     fn compute_changes(before: &[FileSnapshot], after: &[FileSnapshot]) -> Vec<FileChange> {
         let mut changes = Vec::new();
 
-        let before_map: HashMap<&str, &str> = before.iter()
+        let before_map: HashMap<&str, &str> = before
+            .iter()
             .map(|f| (f.path.as_str(), f.content.as_str()))
             .collect();
-        let after_map: HashMap<&str, &str> = after.iter()
+        let after_map: HashMap<&str, &str> = after
+            .iter()
             .map(|f| (f.path.as_str(), f.content.as_str()))
             .collect();
 
@@ -175,7 +193,25 @@ impl SnapshotManager {
 fn is_text_file(path: &Path) -> bool {
     // Basic heuristic: skip common binary extensions
     if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
-        !matches!(ext, "png" | "jpg" | "jpeg" | "gif" | "bmp" | "ico" | "mp3" | "mp4" | "avi" | "mov" | "bin" | "exe" | "dll" | "so" | "dylib" | "wasm")
+        !matches!(
+            ext,
+            "png"
+                | "jpg"
+                | "jpeg"
+                | "gif"
+                | "bmp"
+                | "ico"
+                | "mp3"
+                | "mp4"
+                | "avi"
+                | "mov"
+                | "bin"
+                | "exe"
+                | "dll"
+                | "so"
+                | "dylib"
+                | "wasm"
+        )
     } else {
         true
     }
@@ -202,9 +238,10 @@ mod tests {
     #[test]
     fn test_compute_changes_created() {
         let before = vec![];
-        let after = vec![
-            FileSnapshot { path: "a.txt".into(), content: "hello".into() },
-        ];
+        let after = vec![FileSnapshot {
+            path: "a.txt".into(),
+            content: "hello".into(),
+        }];
         let changes = SnapshotManager::compute_changes(&before, &after);
         assert_eq!(changes.len(), 1);
         assert!(matches!(&changes[0], FileChange::Created { .. }));
@@ -212,12 +249,14 @@ mod tests {
 
     #[test]
     fn test_compute_changes_modified() {
-        let before = vec![
-            FileSnapshot { path: "a.txt".into(), content: "hello".into() },
-        ];
-        let after = vec![
-            FileSnapshot { path: "a.txt".into(), content: "world".into() },
-        ];
+        let before = vec![FileSnapshot {
+            path: "a.txt".into(),
+            content: "hello".into(),
+        }];
+        let after = vec![FileSnapshot {
+            path: "a.txt".into(),
+            content: "world".into(),
+        }];
         let changes = SnapshotManager::compute_changes(&before, &after);
         assert_eq!(changes.len(), 1);
         assert!(matches!(&changes[0], FileChange::Modified { .. }));
@@ -225,9 +264,10 @@ mod tests {
 
     #[test]
     fn test_compute_changes_deleted() {
-        let before = vec![
-            FileSnapshot { path: "a.txt".into(), content: "hello".into() },
-        ];
+        let before = vec![FileSnapshot {
+            path: "a.txt".into(),
+            content: "hello".into(),
+        }];
         let after = vec![];
         let changes = SnapshotManager::compute_changes(&before, &after);
         assert_eq!(changes.len(), 1);
@@ -236,12 +276,14 @@ mod tests {
 
     #[test]
     fn test_compute_changes_unchanged() {
-        let before = vec![
-            FileSnapshot { path: "a.txt".into(), content: "same".into() },
-        ];
-        let after = vec![
-            FileSnapshot { path: "a.txt".into(), content: "same".into() },
-        ];
+        let before = vec![FileSnapshot {
+            path: "a.txt".into(),
+            content: "same".into(),
+        }];
+        let after = vec![FileSnapshot {
+            path: "a.txt".into(),
+            content: "same".into(),
+        }];
         let changes = SnapshotManager::compute_changes(&before, &after);
         assert!(changes.is_empty());
     }

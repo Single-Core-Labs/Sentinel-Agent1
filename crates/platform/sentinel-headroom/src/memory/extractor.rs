@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
-use super::types::*;
 use super::embeddings::text_to_vector;
 use super::store::MemoryStore;
+use super::types::*;
 use crate::config::Message;
 
 #[derive(Clone)]
@@ -24,9 +24,9 @@ impl Default for ExtractionConfig {
 
 pub fn parse_inline_memory_blocks(response: &str) -> Vec<ParsedMemory> {
     let mut memories = Vec::new();
-    let re = regex::Regex::new(
-        r#"(?is)<memory\s*(?:category=["']([^"']+)["']\s*)?>([^<]+)</memory>"#
-    ).expect("valid memory regex");
+    let re =
+        regex::Regex::new(r#"(?is)<memory\s*(?:category=["']([^"']+)["']\s*)?>([^<]+)</memory>"#)
+            .expect("valid memory regex");
 
     for cap in re.captures_iter(response) {
         let category_str = cap.get(1).map(|m| m.as_str()).unwrap_or("fact");
@@ -57,17 +57,35 @@ pub struct ParsedMemory {
 }
 
 fn infer_importance(content: &str) -> f64 {
-    let decisive_words = ["always", "never", "prefer", "decided", "chose", "selected", "is", "works", "uses", "runs", "critical"];
-    let important_words = ["important", "key", "significant", "major", "primary", "main", "core", "essential"];
+    let decisive_words = [
+        "always", "never", "prefer", "decided", "chose", "selected", "is", "works", "uses", "runs",
+        "critical",
+    ];
+    let important_words = [
+        "important",
+        "key",
+        "significant",
+        "major",
+        "primary",
+        "main",
+        "core",
+        "essential",
+    ];
     let lower = content.to_lowercase();
     let mut score = 0.5f64;
     for w in &decisive_words {
-        if lower.contains(w) { score += 0.1; }
+        if lower.contains(w) {
+            score += 0.1;
+        }
     }
     for w in &important_words {
-        if lower.contains(w) { score += 0.05; }
+        if lower.contains(w) {
+            score += 0.05;
+        }
     }
-    if content.len() > 100 { score += 0.05; }
+    if content.len() > 100 {
+        score += 0.05;
+    }
     score.min(1.0)
 }
 
@@ -138,12 +156,30 @@ fn extract_memories_from_text(text: &str, config: &ExtractionConfig) -> Vec<Pars
     let mut memories = Vec::new();
 
     let fact_patterns = [
-        (r"(?i)(?:user\s+)?prefers?\s+(\w[\w\s]*(?:over\s+\w[\w\s]*)?)", MemoryCategory::Preference),
-        (r"(?i)(?:user\s+)?(?:works?|is\s+(?:a\s+)?(?:senior|lead|principal|staff|junior)?\s*\w+)\s+(?:at|for|as|with)\s+([\w\s]+)", MemoryCategory::Fact),
-        (r"(?i)(?:user\s+)?(?:uses?|chose?|selected?|migrated?\s+to)\s+(\w[\w\s]*)", MemoryCategory::Decision),
-        (r"(?i)(?:the\s+)?(?:project|app|service|system|repo|codebase)\s+(?:is|uses|runs?|built\s+(?:with|on|in)|written\s+in)\s+([\w\s]+)", MemoryCategory::Entity),
-        (r"(?i)(?:current|main|primary|ongoing)\s+(?:goal|task|focus|priority|work|project)\s+(?:is|:)\s*(.+?)(?:\.|$)", MemoryCategory::Context),
-        (r"(?i)(?:key|important|notable|crucial|significant)\s+(?:insight|observation|finding|takeaway|lesson):\s*(.+?)(?:\.|$)", MemoryCategory::Insight),
+        (
+            r"(?i)(?:user\s+)?prefers?\s+(\w[\w\s]*(?:over\s+\w[\w\s]*)?)",
+            MemoryCategory::Preference,
+        ),
+        (
+            r"(?i)(?:user\s+)?(?:works?|is\s+(?:a\s+)?(?:senior|lead|principal|staff|junior)?\s*\w+)\s+(?:at|for|as|with)\s+([\w\s]+)",
+            MemoryCategory::Fact,
+        ),
+        (
+            r"(?i)(?:user\s+)?(?:uses?|chose?|selected?|migrated?\s+to)\s+(\w[\w\s]*)",
+            MemoryCategory::Decision,
+        ),
+        (
+            r"(?i)(?:the\s+)?(?:project|app|service|system|repo|codebase)\s+(?:is|uses|runs?|built\s+(?:with|on|in)|written\s+in)\s+([\w\s]+)",
+            MemoryCategory::Entity,
+        ),
+        (
+            r"(?i)(?:current|main|primary|ongoing)\s+(?:goal|task|focus|priority|work|project)\s+(?:is|:)\s*(.+?)(?:\.|$)",
+            MemoryCategory::Context,
+        ),
+        (
+            r"(?i)(?:key|important|notable|crucial|significant)\s+(?:insight|observation|finding|takeaway|lesson):\s*(.+?)(?:\.|$)",
+            MemoryCategory::Insight,
+        ),
     ];
 
     for (pattern, category) in &fact_patterns {
@@ -260,7 +296,9 @@ mod tests {
         let config = ExtractionConfig::default();
         let results = extract_memories_from_text(text, &config);
         assert!(!results.is_empty());
-        assert!(results.iter().any(|m| matches!(m.category, MemoryCategory::Preference)));
+        assert!(results
+            .iter()
+            .any(|m| matches!(m.category, MemoryCategory::Preference)));
     }
 
     #[test]

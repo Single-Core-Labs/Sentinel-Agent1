@@ -56,14 +56,13 @@ fn cache_target_index(messages: &[serde_json::Value]) -> Option<usize> {
 fn has_cacheable_text(content: Option<&Value>) -> bool {
     match content {
         Some(Value::String(s)) => !s.is_empty(),
-        Some(Value::Array(blocks)) => {
-            blocks.iter().any(|block| {
-                block.get("type").and_then(|t| t.as_str()) == Some("text")
-                    && block.get("text")
-                        .and_then(|t| t.as_str())
-                        .is_some_and(|t| !t.is_empty())
-            })
-        }
+        Some(Value::Array(blocks)) => blocks.iter().any(|block| {
+            block.get("type").and_then(|t| t.as_str()) == Some("text")
+                && block
+                    .get("text")
+                    .and_then(|t| t.as_str())
+                    .is_some_and(|t| !t.is_empty())
+        }),
         _ => false,
     }
 }
@@ -154,9 +153,7 @@ mod tests {
 
     #[test]
     fn test_cache_added_to_last_tool() {
-        let msgs = vec![
-            json!({"role": "system", "content": "System prompt"}),
-        ];
+        let msgs = vec![json!({"role": "system", "content": "System prompt"})];
         let tools = vec![
             json!({"name": "read", "description": "Read a file", "input_schema": {"type": "object", "properties": {}}}),
             json!({"name": "write", "description": "Write a file", "input_schema": {"type": "object", "properties": {}}}),
@@ -169,9 +166,7 @@ mod tests {
 
     #[test]
     fn test_no_cache_for_single_message() {
-        let msgs = vec![
-            json!({"role": "user", "content": "Hello"}),
-        ];
+        let msgs = vec![json!({"role": "user", "content": "Hello"})];
         let params = json!({"extra_body": {"cache_control": true}});
         let (cached, _) = with_prompt_caching(&msgs, None, &params);
         assert_eq!(cached, msgs);

@@ -1,9 +1,9 @@
+use lru::LruCache;
+use sha2::{Digest, Sha256};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use lru::LruCache;
-use sha2::{Sha256, Digest};
 use tokio::sync::RwLock;
 
 #[derive(Debug, Clone)]
@@ -29,18 +29,30 @@ fn tokenize(text: &str) -> Vec<String> {
         .collect()
 }
 
-fn bm25_score(query_tokens: &[String], doc_tokens: &[String], doc_freq: &HashMap<String, f64>, total_docs: f64, avg_dl: f64) -> f64 {
-    if query_tokens.is_empty() || doc_tokens.is_empty() { return 0.0; }
-    let k1 = 1.5; let b = 0.75;
+fn bm25_score(
+    query_tokens: &[String],
+    doc_tokens: &[String],
+    doc_freq: &HashMap<String, f64>,
+    total_docs: f64,
+    avg_dl: f64,
+) -> f64 {
+    if query_tokens.is_empty() || doc_tokens.is_empty() {
+        return 0.0;
+    }
+    let k1 = 1.5;
+    let b = 0.75;
     let dl = doc_tokens.len() as f64;
     let mut score = 0.0;
     let mut tf = HashMap::new();
-    for t in doc_tokens { *tf.entry(t.clone()).or_insert(0u64) += 1; }
+    for t in doc_tokens {
+        *tf.entry(t.clone()).or_insert(0u64) += 1;
+    }
     for qt in query_tokens {
         let df = doc_freq.get(qt).copied().unwrap_or(1.0);
         let idf = ((total_docs - df + 0.5) / (df + 0.5) + 1.0).ln();
         let term_freq = *tf.get(qt).unwrap_or(&0) as f64;
-        score += idf * (term_freq * (k1 + 1.0)) / (term_freq + k1 * (1.0 - b + b * dl / avg_dl.max(1.0)));
+        score += idf * (term_freq * (k1 + 1.0))
+            / (term_freq + k1 * (1.0 - b + b * dl / avg_dl.max(1.0)));
     }
     score
 }
@@ -51,8 +63,16 @@ pub fn compute_hash(data: &str) -> String {
     format!("ccr:{}", hex::encode(hash.finalize()))
 }
 
-pub fn generate_retrieval_marker(key: &str, content_type: &str, original_len: usize, compressed_len: usize) -> String {
-    let saved = if original_len > 0 { (original_len - compressed_len) * 100 / original_len } else { 0 };
+pub fn generate_retrieval_marker(
+    key: &str,
+    content_type: &str,
+    original_len: usize,
+    compressed_len: usize,
+) -> String {
+    let saved = (original_len - compressed_len)
+        .checked_mul(100)
+        .and_then(|n| n.checked_div(original_len))
+        .unwrap_or(0);
     format!(
         "\n[headroom: hash={}; type={}; saved={}%; retrieve via headroom_retrieve(hash=\"{}\")]",
         key, content_type, saved, key
@@ -98,7 +118,9 @@ pub struct CcrStore {
 impl CcrStore {
     pub fn new(max_entries: usize) -> Self {
         Self {
-            cache: Arc::new(RwLock::new(LruCache::new(NonZeroUsize::new(max_entries.max(1)).unwrap_or(NonZeroUsize::new(1000).unwrap())))),
+            cache: Arc::new(RwLock::new(LruCache::new(
+                NonZeroUsize::new(max_entries.max(1)).unwrap_or(NonZeroUsize::new(1000).unwrap()),
+            ))),
             default_ttl: Duration::from_secs(3600),
             retrieval_log: Arc::new(RwLock::new(VecDeque::with_capacity(1000))),
             max_retrieval_log: 1000,
@@ -107,7 +129,9 @@ impl CcrStore {
 
     pub fn with_ttl(max_entries: usize, ttl: Duration) -> Self {
         Self {
-            cache: Arc::new(RwLock::new(LruCache::new(NonZeroUsize::new(max_entries.max(1)).unwrap_or(NonZeroUsize::new(1000).unwrap())))),
+            cache: Arc::new(RwLock::new(LruCache::new(
+                NonZeroUsize::new(max_entries.max(1)).unwrap_or(NonZeroUsize::new(1000).unwrap()),
+            ))),
             default_ttl: ttl,
             retrieval_log: Arc::new(RwLock::new(VecDeque::with_capacity(1000))),
             max_retrieval_log: 1000,
@@ -129,7 +153,13 @@ impl CcrStore {
         key
     }
 
-    pub async fn store_with_key(&self, key: &str, original: String, content_type: &str, preview: String) {
+    pub async fn store_with_key(
+        &self,
+        key: &str,
+        original: String,
+        content_type: &str,
+        preview: String,
+    ) {
         let entry = CcrEntry {
             original,
             content_type: content_type.to_string(),
@@ -142,7 +172,13 @@ impl CcrStore {
         cache.put(key.to_string(), entry);
     }
 
-    pub async fn store_with_ttl(&self, original: String, content_type: &str, preview: String, ttl: Duration) -> String {
+    pub async fn store_with_ttl(
+        &self,
+        original: String,
+        content_type: &str,
+        preview: String,
+        ttl: Duration,
+    ) -> String {
         let key = compute_hash(&original);
         let entry = CcrEntry {
             original,
@@ -198,21 +234,33 @@ impl CcrStore {
         }
         let total_docs = lines.len() as f64;
         let tokenized_docs: Vec<Vec<String>> = lines.iter().map(|l| tokenize(l)).collect();
-        let avg_dl = tokenized_docs.iter().map(|t| t.len() as f64).sum::<f64>() / total_docs.max(1.0);
+        let avg_dl =
+            tokenized_docs.iter().map(|t| t.len() as f64).sum::<f64>() / total_docs.max(1.0);
         let mut doc_freq: HashMap<String, f64> = HashMap::new();
         for toks in &tokenized_docs {
             let unique: HashSet<&String> = toks.iter().collect();
-            for t in unique { *doc_freq.entry(t.clone()).or_insert(0.0) += 1.0; }
+            for t in unique {
+                *doc_freq.entry(t.clone()).or_insert(0.0) += 1.0;
+            }
         }
-        let mut scored: Vec<(f64, usize, &str)> = lines.iter().enumerate()
+        let mut scored: Vec<(f64, usize, &str)> = lines
+            .iter()
+            .enumerate()
             .map(|(i, l)| {
-                let score = bm25_score(&query_tokens, &tokenized_docs[i], &doc_freq, total_docs, avg_dl);
+                let score = bm25_score(
+                    &query_tokens,
+                    &tokenized_docs[i],
+                    &doc_freq,
+                    total_docs,
+                    avg_dl,
+                );
                 (score, i, *l)
             })
             .collect();
         scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
         let top_k = scored.len().min(20);
-        let result: String = scored[..top_k].iter()
+        let result: String = scored[..top_k]
+            .iter()
             .map(|(_, _, l)| *l)
             .collect::<Vec<_>>()
             .join("\n");
@@ -221,16 +269,14 @@ impl CcrStore {
 
     pub async fn contains(&self, key: &str) -> bool {
         let mut cache = self.cache.write().await;
-        match cache.get(key) {
-            Some(entry) if !entry.is_expired() => true,
-            _ => false,
-        }
+        cache.get(key).is_some_and(|entry| !entry.is_expired())
     }
 
     pub async fn remove_expired(&self) -> usize {
         let mut cache = self.cache.write().await;
         let before = cache.len();
-        let expired_keys: Vec<String> = cache.iter()
+        let expired_keys: Vec<String> = cache
+            .iter()
             .filter(|(_, entry)| entry.is_expired())
             .map(|(k, _)| k.clone())
             .collect();
@@ -290,7 +336,7 @@ impl CcrStore {
             *freq.entry(p.hash.clone()).or_insert(0) += 1;
         }
         let mut sorted: Vec<_> = freq.into_iter().collect();
-        sorted.sort_by(|a, b| b.1.cmp(&a.1));
+        sorted.sort_by_key(|(_, count)| std::cmp::Reverse(*count));
         sorted.truncate(top_n);
         sorted
     }
@@ -309,7 +355,9 @@ mod tests {
     #[tokio::test]
     async fn test_ccr_store_roundtrip() {
         let store = CcrStore::new(100);
-        let key = store.store("hello world".into(), "text", "compressed".into()).await;
+        let key = store
+            .store("hello world".into(), "text", "compressed".into())
+            .await;
         assert!(key.starts_with("ccr:"));
         assert_eq!(store.retrieve(&key).await, Some("hello world".into()));
     }
@@ -340,7 +388,9 @@ mod tests {
     #[tokio::test]
     async fn test_ccr_store_with_key() {
         let store = CcrStore::new(100);
-        store.store_with_key("my_key", "original data".into(), "text", "prev".into()).await;
+        store
+            .store_with_key("my_key", "original data".into(), "text", "prev".into())
+            .await;
         assert_eq!(store.retrieve("my_key").await, Some("original data".into()));
     }
 
@@ -419,7 +469,9 @@ mod tests {
     #[tokio::test]
     async fn test_retrieval_log() {
         let store = CcrStore::new(100);
-        store.log_retrieval("hash1".into(), Some("query1".into()), true).await;
+        store
+            .log_retrieval("hash1".into(), Some("query1".into()), true)
+            .await;
         store.log_retrieval("hash2".into(), None, false).await;
         let recent = store.recent_retrievals(10).await;
         assert_eq!(recent.len(), 2);
@@ -441,8 +493,12 @@ mod tests {
     #[tokio::test]
     async fn test_all_keys() {
         let store = CcrStore::new(100);
-        store.store_with_key("k1", "d1".into(), "t", "p".into()).await;
-        store.store_with_key("k2", "d2".into(), "t", "p".into()).await;
+        store
+            .store_with_key("k1", "d1".into(), "t", "p".into())
+            .await;
+        store
+            .store_with_key("k2", "d2".into(), "t", "p".into())
+            .await;
         let keys = store.all_keys().await;
         assert!(keys.contains(&"k1".to_string()));
         assert!(keys.contains(&"k2".to_string()));
@@ -451,14 +507,23 @@ mod tests {
     #[tokio::test]
     async fn test_store_with_ttl() {
         let store = CcrStore::new(100);
-        let key = store.store_with_ttl("data".into(), "text", "preview".into(), Duration::from_secs(9999)).await;
+        let key = store
+            .store_with_ttl(
+                "data".into(),
+                "text",
+                "preview".into(),
+                Duration::from_secs(9999),
+            )
+            .await;
         assert!(store.contains(&key).await);
     }
 
     #[tokio::test]
     async fn test_retrieval_count_in_search() {
         let store = CcrStore::new(100);
-        let key = store.store("line a\nline b".into(), "text", "preview".into()).await;
+        let key = store
+            .store("line a\nline b".into(), "text", "preview".into())
+            .await;
         store.search(&key, "a").await;
         let stats = store.retrieval_stats().await;
         assert_eq!(stats.get(&key).unwrap().0, 1);

@@ -1,7 +1,7 @@
+use axum::http::Method;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use axum::http::Method;
-use tower_http::cors::{CorsLayer, Any};
+use tower_http::cors::{Any, CorsLayer};
 use tracing::info;
 
 use crate::compression::ProxyCompressor;
@@ -33,18 +33,25 @@ pub async fn run_proxy(config: ProxyConfig) -> anyhow::Result<()> {
 
     let addr: SocketAddr = format!("{}:{}", config.host, config.port).parse()?;
 
+    info!("Headroom proxy listening on http://{}", addr);
     info!(
-        "Headroom proxy listening on http://{}",
-        addr
+        "Optimization: {}",
+        if config.optimize {
+            "enabled"
+        } else {
+            "disabled"
+        }
     );
-    info!("Optimization: {}", if config.optimize { "enabled" } else { "disabled" });
     info!("OpenAI target: {}", config.openai_api_url);
     info!("Anthropic target: {}", config.anthropic_api_url);
     if let Some(ref budget) = config.budget {
         info!("Daily budget: ${}", budget);
     }
     if config.llmlingua {
-        info!("LLMLingua: enabled (device={}, rate={})", config.llmlingua_device, config.llmlingua_rate);
+        info!(
+            "LLMLingua: enabled (device={}, rate={})",
+            config.llmlingua_device, config.llmlingua_rate
+        );
     }
 
     let listener = tokio::net::TcpListener::bind(addr).await?;

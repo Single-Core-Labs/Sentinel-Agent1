@@ -45,10 +45,7 @@ pub fn should_compact(current_tokens: usize, target_token_budget: usize) -> bool
 ///
 /// This is the synchronous, summariser‑free variant; use
 /// [`compact_thread_with_summarizer`] when an LLM summary is available.
-pub fn compact_thread(
-    thread: &mut AgentThread,
-    target_token_budget: usize,
-) -> CompactionResult {
+pub fn compact_thread(thread: &mut AgentThread, target_token_budget: usize) -> CompactionResult {
     compact_thread_with_summarizer(thread, target_token_budget, |_| None)
 }
 
@@ -145,8 +142,10 @@ mod tests {
     use super::*;
 
     fn thread_with_messages(sizes: &[(usize, usize)]) -> AgentThread {
-        let mut thread = AgentThread::default();
-        thread.system_prompt = Some("You are sentinel.".to_string());
+        let mut thread = AgentThread {
+            system_prompt: Some("You are sentinel.".to_string()),
+            ..AgentThread::default()
+        };
         for (i, (tokens, turns)) in sizes.iter().enumerate() {
             for _ in 0..*turns {
                 thread.push_message("user", format!("message {}", i), *tokens);
@@ -177,7 +176,11 @@ mod tests {
         assert_eq!(thread.history.len(), 3); // 2 newest + 1 summary
         assert_eq!(thread.history[0].role, "system");
         assert!(thread.history[0].content.contains("omitted"));
-        assert!(thread.history.iter().skip(1).all(|m| m.content == "reply 2" || m.content == "message 2"));
+        assert!(thread
+            .history
+            .iter()
+            .skip(1)
+            .all(|m| m.content == "reply 2" || m.content == "message 2"));
     }
 
     #[test]
@@ -201,8 +204,10 @@ mod tests {
 
     #[test]
     fn budget_smaller_than_system_prompt_fails() {
-        let mut thread = AgentThread::default();
-        thread.system_prompt = Some("a very long system prompt".repeat(100));
+        let mut thread = AgentThread {
+            system_prompt: Some("a very long system prompt".repeat(100)),
+            ..AgentThread::default()
+        };
         let result = compact_thread(&mut thread, 5);
         assert!(!result.succeeded);
     }

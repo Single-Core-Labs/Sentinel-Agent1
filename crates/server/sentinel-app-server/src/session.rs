@@ -1,13 +1,13 @@
+use sentinel_analytics::{AnalyticsEvent, AnalyticsPipeline, EventKind};
+use sentinel_app_server_protocol::api::ServerEvent;
+use sentinel_config::SentinelConfig;
+use sentinel_core::{Agent, AgentOutput, AgentThread};
+use sentinel_provider::ModelProvider;
+use sentinel_tools::ToolRegistry;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use uuid::Uuid;
 use tokio_stream::StreamExt;
-use sentinel_core::{Agent, AgentThread, AgentOutput};
-use sentinel_tools::ToolRegistry;
-use sentinel_provider::ModelProvider;
-use sentinel_config::SentinelConfig;
-use sentinel_app_server_protocol::api::ServerEvent;
-use sentinel_analytics::{AnalyticsPipeline, AnalyticsEvent, EventKind};
+use uuid::Uuid;
 
 pub struct AppSession {
     pub id: String,
@@ -33,7 +33,10 @@ impl AppSession {
         );
         let (evt_tx, _) = tokio::sync::broadcast::channel(256);
 
-        analytics.emit(AnalyticsEvent::new(EventKind::SessionCreated, Some(id.clone())));
+        analytics.emit(AnalyticsEvent::new(
+            EventKind::SessionCreated,
+            Some(id.clone()),
+        ));
 
         Self {
             id,
@@ -52,8 +55,7 @@ impl AppSession {
         compressor: Arc<dyn sentinel_core::ContentCompressor>,
     ) -> Self {
         let id = Uuid::new_v4().to_string();
-        let agent = Agent::new(provider, tools, config.clone())
-            .with_compressor(compressor);
+        let agent = Agent::new(provider, tools, config.clone()).with_compressor(compressor);
         let thread = AgentThread::new(
             config.agent.max_turns,
             config.agent.max_iterations,
@@ -61,7 +63,10 @@ impl AppSession {
         );
         let (evt_tx, _) = tokio::sync::broadcast::channel(256);
 
-        analytics.emit(AnalyticsEvent::new(EventKind::SessionCreated, Some(id.clone())));
+        analytics.emit(AnalyticsEvent::new(
+            EventKind::SessionCreated,
+            Some(id.clone()),
+        ));
 
         Self {
             id,
@@ -88,7 +93,10 @@ impl AppSession {
         };
         let (evt_tx, _) = tokio::sync::broadcast::channel(256);
 
-        analytics.emit(AnalyticsEvent::new(EventKind::SessionCreated, Some(id.clone())));
+        analytics.emit(AnalyticsEvent::new(
+            EventKind::SessionCreated,
+            Some(id.clone()),
+        ));
 
         Self {
             id,
@@ -100,7 +108,10 @@ impl AppSession {
 
     pub async fn chat(&self, message: &str) -> Result<String, String> {
         let mut thread = self.thread.lock().await;
-        let result = self.agent.run(&mut thread, message).await
+        let result = self
+            .agent
+            .run(&mut thread, message)
+            .await
             .map_err(|e| e.to_string())?;
         match result {
             AgentOutput::Success { text } => Ok(text),
@@ -129,7 +140,9 @@ impl AppSession {
                     let _ = event_tx.send(Ok(chunk.clone())).await;
                     for choice in &chunk.choices {
                         if let Some(ref text) = choice.delta.content {
-                            let _ = self.events.send(ServerEvent::Thinking { text: text.clone() });
+                            let _ = self
+                                .events
+                                .send(ServerEvent::Thinking { text: text.clone() });
                         }
                     }
                 }

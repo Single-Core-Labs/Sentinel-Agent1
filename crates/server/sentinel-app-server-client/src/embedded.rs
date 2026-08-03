@@ -1,8 +1,8 @@
-use std::sync::Arc;
-use serde_json::Value;
-use sentinel_app_server_protocol::rpc::{JsonRpcRequest, Id};
-use sentinel_app_server::RequestHandler;
 use crate::client::ClientError;
+use sentinel_app_server::RequestHandler;
+use sentinel_app_server_protocol::rpc::{Id, JsonRpcRequest};
+use serde_json::Value;
+use std::sync::Arc;
 
 pub struct EmbeddedClient {
     handler: Arc<RequestHandler>,

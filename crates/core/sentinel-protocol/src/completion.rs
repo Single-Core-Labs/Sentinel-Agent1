@@ -1,7 +1,7 @@
-use serde::{Deserialize, Serialize};
-use crate::message::{Message, ContentBlock};
-use crate::tool::ToolDef;
 use crate::error::ProtocolError;
+use crate::message::{ContentBlock, Message};
+use crate::tool::ToolDef;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompletionRequest {
@@ -115,7 +115,9 @@ impl TryFrom<StreamChunk> for ContentBlock {
     fn try_from(chunk: StreamChunk) -> Result<Self, Self::Error> {
         if let Some(choice) = chunk.choices.first() {
             if let Some(content) = &choice.delta.content {
-                return Ok(ContentBlock::Text { text: content.clone() });
+                return Ok(ContentBlock::Text {
+                    text: content.clone(),
+                });
             }
             if let Some(tool_calls) = &choice.delta.tool_calls {
                 if let Some(tc) = tool_calls.first() {

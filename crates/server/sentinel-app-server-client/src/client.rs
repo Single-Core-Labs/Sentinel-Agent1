@@ -1,8 +1,8 @@
+use futures_util::SinkExt;
+use sentinel_app_server_protocol::api;
+use sentinel_app_server_protocol::rpc::{Id, JsonRpcRequest, JsonRpcResponse};
 use serde_json::Value;
 use tokio::sync::oneshot;
-use futures_util::SinkExt;
-use sentinel_app_server_protocol::rpc::{JsonRpcRequest, JsonRpcResponse, Id};
-use sentinel_app_server_protocol::api;
 
 pub enum AppServerConnection {
     Embedded(crate::embedded::EmbeddedClient),
@@ -25,15 +25,15 @@ impl AppServerConnection {
     pub async fn chat(&self, session_id: &str, message: &str) -> Result<String, ClientError> {
         let params = serde_json::json!({ "session_id": session_id, "message": message });
         let result = self.call(api::methods::CHAT, Some(params)).await?;
-        result["response"].as_str()
+        result["response"]
+            .as_str()
             .map(String::from)
             .ok_or_else(|| ClientError::ResponseError("Missing response field".into()))
     }
 
     pub async fn diagnostics(&self) -> Result<api::DiagnosticsResult, ClientError> {
         let result = self.call(api::methods::DIAGNOSTICS, None).await?;
-        serde_json::from_value(result)
-            .map_err(|e| ClientError::ResponseError(e.to_string()))
+        serde_json::from_value(result).map_err(|e| ClientError::ResponseError(e.to_string()))
     }
 }
 
@@ -53,14 +53,17 @@ impl RemoteClient {
 
         let addr = addr.to_string();
         tokio::spawn(async move {
-            use tokio_tungstenite::connect_async;
             use futures_util::StreamExt;
+            use tokio_tungstenite::connect_async;
 
             let url = format!("ws://{}/ws", addr);
             match connect_async(&url).await {
                 Ok((ws_stream, _)) => {
                     let (mut write, mut read) = ws_stream.split();
-                    let mut pending: std::collections::HashMap<u64, oneshot::Sender<Result<Value, ClientError>>> = std::collections::HashMap::new();
+                    let mut pending: std::collections::HashMap<
+                        u64,
+                        oneshot::Sender<Result<Value, ClientError>>,
+                    > = std::collections::HashMap::new();
                     let mut next_id: u64 = 1;
 
                     loop {
@@ -112,12 +115,15 @@ impl RemoteClient {
 
     pub async fn call(&self, method: &str, params: Option<Value>) -> Result<Value, ClientError> {
         let (resp_tx, resp_rx) = oneshot::channel();
-        self.tx.send(RemoteRequest {
-            method: method.to_string(),
-            params,
-            response: resp_tx,
-        }).map_err(|_| ClientError::ConnectionError("Server disconnected".into()))?;
-        resp_rx.await
+        self.tx
+            .send(RemoteRequest {
+                method: method.to_string(),
+                params,
+                response: resp_tx,
+            })
+            .map_err(|_| ClientError::ConnectionError("Server disconnected".into()))?;
+        resp_rx
+            .await
             .map_err(|_| ClientError::ConnectionError("Response channel closed".into()))?
     }
 }

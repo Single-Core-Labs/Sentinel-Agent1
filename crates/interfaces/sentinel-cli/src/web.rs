@@ -1,6 +1,6 @@
-use std::net::SocketAddr;
 use colored::*;
 use sentinel_app_server::AppServer;
+use std::net::SocketAddr;
 
 pub async fn run(args: &[String]) -> anyhow::Result<()> {
     let default_port = 9090;
@@ -16,11 +16,17 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         match args[i].as_str() {
             "--port" | "-p" => {
                 i += 1;
-                port = args.get(i).and_then(|s| s.parse().ok()).unwrap_or(default_port);
+                port = args
+                    .get(i)
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(default_port);
             }
             "--host" | "--addr" => {
                 i += 1;
-                host = args.get(i).cloned().unwrap_or_else(|| default_host.to_string());
+                host = args
+                    .get(i)
+                    .cloned()
+                    .unwrap_or_else(|| default_host.to_string());
             }
             "--no-open" => {
                 open_browser = false;
@@ -38,11 +44,19 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
             }
             // #61 – unknown flags are an error, not silently ignored
             other if other.starts_with('-') => {
-                eprintln!("{} Unknown flag: '{}'. Run 'sentinel web --help' for usage.", "Error:".red().bold(), other);
+                eprintln!(
+                    "{} Unknown flag: '{}'. Run 'sentinel web --help' for usage.",
+                    "Error:".red().bold(),
+                    other
+                );
                 std::process::exit(1);
             }
             _ => {
-                eprintln!("{} Unexpected argument: '{}'. Run 'sentinel web --help' for usage.", "Error:".red().bold(), args[i]);
+                eprintln!(
+                    "{} Unexpected argument: '{}'. Run 'sentinel web --help' for usage.",
+                    "Error:".red().bold(),
+                    args[i]
+                );
                 std::process::exit(1);
             }
         }
@@ -61,7 +75,11 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     let config = match sentinel_config::SentinelConfig::load() {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("{} Warning: config error: {}; using defaults", "W".yellow(), e);
+            eprintln!(
+                "{} Warning: config error: {}; using defaults",
+                "W".yellow(),
+                e
+            );
             sentinel_config::SentinelConfig::default()
         }
     };

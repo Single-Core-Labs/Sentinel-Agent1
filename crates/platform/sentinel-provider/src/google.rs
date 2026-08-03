@@ -1,12 +1,12 @@
+use crate::error::ProviderError;
+use crate::provider::ModelProvider;
 use async_trait::async_trait;
 use futures::StreamExt;
 use sentinel_protocol::{
-    CompletionRequest, CompletionResponse, StreamChunk, StreamChoice, Delta, Message,
-    ContentBlock, Choice, Usage, Role,
+    Choice, CompletionRequest, CompletionResponse, ContentBlock, Delta, Message, Role,
+    StreamChoice, StreamChunk, Usage,
 };
 use sentinel_provider_info::ProviderInfo;
-use crate::error::ProviderError;
-use crate::provider::ModelProvider;
 
 #[derive(Debug)]
 pub struct GoogleProvider {
@@ -16,8 +16,11 @@ pub struct GoogleProvider {
 
 impl GoogleProvider {
     pub fn new(info: ProviderInfo) -> Result<Self, ProviderError> {
-        let api_key = info.resolve_api_key()
-            .ok_or_else(|| ProviderError::MissingApiKey { provider: info.id.clone() })?;
+        let api_key = info
+            .resolve_api_key()
+            .ok_or_else(|| ProviderError::MissingApiKey {
+                provider: info.id.clone(),
+            })?;
 
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert(
@@ -80,7 +83,12 @@ impl GoogleProvider {
                 }
                 Role::Tool => {
                     for block in &msg.content {
-                        if let ContentBlock::ToolResult { tool_call_id, content, .. } = block {
+                        if let ContentBlock::ToolResult {
+                            tool_call_id,
+                            content,
+                            ..
+                        } = block
+                        {
                             contents.push(serde_json::json!({
                                 "role": "function",
                                 "parts": [{
@@ -155,7 +163,9 @@ impl GoogleProvider {
                 ContentBlock::Text { text } => {
                     parts.push(serde_json::json!({"text": text}));
                 }
-                ContentBlock::ToolCall { name, arguments, .. } => {
+                ContentBlock::ToolCall {
+                    name, arguments, ..
+                } => {
                     parts.push(serde_json::json!({
                         "functionCall": {
                             "name": name,
@@ -170,7 +180,8 @@ impl GoogleProvider {
     }
 
     fn parse_response(&self, data: serde_json::Value) -> Result<CompletionResponse, ProviderError> {
-        let model = data.get("modelVersion")
+        let model = data
+            .get("modelVersion")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
@@ -179,28 +190,36 @@ impl GoogleProvider {
         if let Some(candidates) = data["candidates"].as_array() {
             for (i, candidate) in candidates.iter().enumerate() {
                 let index = candidate["index"].as_u64().unwrap_or(i as u64) as u32;
-                let finish_reason = candidate["finishReason"].as_str().map(|r| match r {
-                    "STOP" => "stop",
-                    "MAX_TOKENS" => "length",
-                    "SAFETY" => "content_filter",
-                    "RECITATION" => "content_filter",
-                    "FUNCTION_CALL" => "tool_calls",
-                    other => other,
-                }.to_string());
+                let finish_reason = candidate["finishReason"].as_str().map(|r| {
+                    match r {
+                        "STOP" => "stop",
+                        "MAX_TOKENS" => "length",
+                        "SAFETY" => "content_filter",
+                        "RECITATION" => "content_filter",
+                        "FUNCTION_CALL" => "tool_calls",
+                        other => other,
+                    }
+                    .to_string()
+                });
 
                 let mut content = Vec::new();
                 if let Some(parts) = candidate["content"]["parts"].as_array() {
                     for part in parts {
                         if let Some(text) = part["text"].as_str() {
                             if !text.is_empty() {
-                                content.push(ContentBlock::Text { text: text.to_string() });
+                                content.push(ContentBlock::Text {
+                                    text: text.to_string(),
+                                });
                             }
                         }
                         if let Some(fc) = part.get("functionCall") {
                             content.push(ContentBlock::ToolCall {
                                 id: format!("gc_{}", fc["name"].as_str().unwrap_or("unknown")),
                                 name: fc["name"].as_str().unwrap_or("").to_string(),
-                                arguments: fc.get("args").cloned().unwrap_or(serde_json::Value::Null),
+                                arguments: fc
+                                    .get("args")
+                                    .cloned()
+                                    .unwrap_or(serde_json::Value::Null),
                             });
                         }
                     }
@@ -229,7 +248,8 @@ impl GoogleProvider {
     }
 
     fn parse_stream_chunk(chunk: &serde_json::Value) -> StreamChunk {
-        let model = chunk.get("modelVersion")
+        let model = chunk
+            .get("modelVersion")
             .and_then(|v| v.as_str())
             .unwrap_or("")
             .to_string();
@@ -239,15 +259,19 @@ impl GoogleProvider {
 
         if let Some(candidates) = chunk["candidates"].as_array() {
             if let Some(candidate) = candidates.first() {
-                finish_reason = candidate["finishReason"].as_str().map(|r| match r {
-                    "STOP" => "stop",
-                    "MAX_TOKENS" => "length",
-                    "FUNCTION_CALL" => "tool_calls",
-                    other => other,
-                }.to_string());
+                finish_reason = candidate["finishReason"].as_str().map(|r| {
+                    match r {
+                        "STOP" => "stop",
+                        "MAX_TOKENS" => "length",
+                        "FUNCTION_CALL" => "tool_calls",
+                        other => other,
+                    }
+                    .to_string()
+                });
 
                 if let Some(parts) = candidate["content"]["parts"].as_array() {
-                    let texts: Vec<&str> = parts.iter()
+                    let texts: Vec<&str> = parts
+                        .iter()
                         .filter_map(|p| p["text"].as_str())
                         .filter(|t| !t.is_empty())
                         .collect();
@@ -282,11 +306,13 @@ impl ModelProvider for GoogleProvider {
 
     async fn complete(&self, req: &CompletionRequest) -> Result<CompletionResponse, ProviderError> {
         let body = self.build_body(req);
-        let model = self.model_name(&req);
+        let model = self.model_name(req);
         let base = self.info.base_url.trim_end_matches('/');
         let url = format!("{}/models/{}:generateContent", base, model);
 
-        let resp = self.client.post(&url)
+        let resp = self
+            .client
+            .post(&url)
             .json(&body)
             .send()
             .await
@@ -298,8 +324,7 @@ impl ModelProvider for GoogleProvider {
             return Err(self.classify_error(status.as_u16(), &body_text));
         }
 
-        let data: serde_json::Value = resp.json().await
-            .map_err(ProviderError::Reqwest)?;
+        let data: serde_json::Value = resp.json().await.map_err(ProviderError::Reqwest)?;
 
         self.parse_response(data)
     }
@@ -307,13 +332,18 @@ impl ModelProvider for GoogleProvider {
     async fn complete_stream(
         &self,
         req: &CompletionRequest,
-    ) -> Result<Box<dyn tokio_stream::Stream<Item = Result<StreamChunk, ProviderError>> + Send + Unpin>, ProviderError> {
+    ) -> Result<
+        Box<dyn tokio_stream::Stream<Item = Result<StreamChunk, ProviderError>> + Send + Unpin>,
+        ProviderError,
+    > {
         let body = self.build_body(req);
-        let model = self.model_name(&req);
+        let model = self.model_name(req);
         let base = self.info.base_url.trim_end_matches('/');
         let url = format!("{}/models/{}:streamGenerateContent?alt=sse", base, model);
 
-        let resp = self.client.post(&url)
+        let resp = self
+            .client
+            .post(&url)
             .json(&body)
             .send()
             .await
@@ -338,7 +368,10 @@ impl ModelProvider for GoogleProvider {
             while let Some(chunk_result) = byte_stream.next().await {
                 let bytes = match chunk_result {
                     Ok(b) => b,
-                    Err(e) => { let _ = tx.unbounded_send(Err(e)); return; }
+                    Err(e) => {
+                        let _ = tx.unbounded_send(Err(e));
+                        return;
+                    }
                 };
                 buffer.extend_from_slice(&bytes);
 
@@ -355,10 +388,15 @@ impl ModelProvider for GoogleProvider {
                             match serde_json::from_str::<serde_json::Value>(data) {
                                 Ok(json) => {
                                     let chunk = GoogleProvider::parse_stream_chunk(&json);
-                                    if tx.unbounded_send(Ok(chunk)).is_err() { return; }
+                                    if tx.unbounded_send(Ok(chunk)).is_err() {
+                                        return;
+                                    }
                                 }
                                 Err(e) => {
-                                    if tx.unbounded_send(Err(ProviderError::JsonError(e))).is_err() { return; }
+                                    if tx.unbounded_send(Err(ProviderError::JsonError(e))).is_err()
+                                    {
+                                        return;
+                                    }
                                 }
                             }
                         }
@@ -379,8 +417,9 @@ impl GoogleProvider {
 
         match status {
             400 => ProviderError::InvalidRequest(
-                parsed.and_then(|e| e["message"].as_str().map(String::from))
-                    .unwrap_or_else(|| body.to_string())
+                parsed
+                    .and_then(|e| e["message"].as_str().map(String::from))
+                    .unwrap_or_else(|| body.to_string()),
             ),
             401 | 403 => ProviderError::Unauthorized {
                 detail: parsed
@@ -389,9 +428,7 @@ impl GoogleProvider {
             },
             404 => ProviderError::NotFound(body.to_string()),
             429 => ProviderError::RateLimited {
-                retry_after: parsed
-                    .and_then(|e| e["retryAfter"].as_u64())
-                    .unwrap_or(30),
+                retry_after: parsed.and_then(|e| e["retryAfter"].as_u64()).unwrap_or(30),
             },
             500..=599 => ProviderError::ServerError { status },
             _ => ProviderError::ApiError {
@@ -432,8 +469,7 @@ mod tests {
     #[test]
     fn test_build_body_basic() {
         let provider = test_provider();
-        let req = CompletionRequest::new("gemini-2.5-flash")
-            .with_message(Message::user("hello"));
+        let req = CompletionRequest::new("gemini-2.5-flash").with_message(Message::user("hello"));
         let body = provider.build_body(&req);
         assert_eq!(body["contents"][0]["parts"][0]["text"], "hello");
         assert!(body.get("systemInstruction").is_none());
@@ -446,7 +482,10 @@ mod tests {
             .with_system("You are helpful.")
             .with_message(Message::user("hello"));
         let body = provider.build_body(&req);
-        assert_eq!(body["systemInstruction"]["parts"][0]["text"], "You are helpful.");
+        assert_eq!(
+            body["systemInstruction"]["parts"][0]["text"],
+            "You are helpful."
+        );
     }
 
     #[test]
@@ -489,7 +528,9 @@ mod tests {
         assert_eq!(resp.choices.len(), 1);
         let tc = &resp.choices[0].message.content[0];
         match tc {
-            ContentBlock::ToolCall { name, arguments, .. } => {
+            ContentBlock::ToolCall {
+                name, arguments, ..
+            } => {
                 assert_eq!(name, "read");
                 assert_eq!(arguments["path"], "file.txt");
             }
@@ -510,7 +551,8 @@ mod tests {
     #[test]
     fn test_classify_error_handling() {
         let provider = test_provider();
-        let err = provider.classify_error(429, r#"{"error":{"message":"Rate limit","retryAfter":30}}"#);
+        let err =
+            provider.classify_error(429, r#"{"error":{"message":"Rate limit","retryAfter":30}}"#);
         assert!(matches!(err, ProviderError::RateLimited { .. }));
         let err = provider.classify_error(401, r#"{"error":{"message":"Unauthorized"}}"#);
         assert!(matches!(err, ProviderError::Unauthorized { .. }));

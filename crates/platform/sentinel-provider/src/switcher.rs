@@ -1,6 +1,6 @@
-use sentinel_protocol::CompletionRequest;
 use crate::error::ProviderError;
 use crate::provider::ModelProvider;
+use sentinel_protocol::CompletionRequest;
 
 pub enum Effort {
     Cheap,
@@ -22,7 +22,8 @@ impl Effort {
         let len = input.len();
         let has_code = input.contains("```") || input.contains("fn ") || input.contains("def ");
         let has_multiple_questions = input.chars().filter(|&c| c == '?').count() > 2;
-        let has_tool_request = input.contains("run ") || input.contains("execute ") || input.contains("search ");
+        let has_tool_request =
+            input.contains("run ") || input.contains("execute ") || input.contains("search ");
 
         let score = match (len, has_code, has_multiple_questions, has_tool_request) {
             (l, _, _, _) if l > 2000 => 10,
@@ -34,9 +35,13 @@ impl Effort {
             _ => 1,
         };
 
-        if score >= 6 { Self::Powerful }
-        else if score >= 4 { Self::Balanced }
-        else { Self::Cheap }
+        if score >= 6 {
+            Self::Powerful
+        } else if score >= 4 {
+            Self::Balanced
+        } else {
+            Self::Cheap
+        }
     }
 }
 
@@ -88,7 +93,14 @@ impl ModelSwitcher {
     pub async fn complete_stream_with_selection(
         &self,
         req: &CompletionRequest,
-    ) -> Result<Box<dyn tokio_stream::Stream<Item = Result<sentinel_protocol::StreamChunk, ProviderError>> + Send + Unpin>, ProviderError> {
+    ) -> Result<
+        Box<
+            dyn tokio_stream::Stream<Item = Result<sentinel_protocol::StreamChunk, ProviderError>>
+                + Send
+                + Unpin,
+        >,
+        ProviderError,
+    > {
         self.current_provider().complete_stream(req).await
     }
 
@@ -125,11 +137,14 @@ impl ModelSwitcher {
 impl std::fmt::Debug for ModelSwitcher {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ModelSwitcher")
-            .field("current_effort", &match self.current_effort {
-                Effort::Cheap => "cheap",
-                Effort::Balanced => "balanced",
-                Effort::Powerful => "powerful",
-            })
+            .field(
+                "current_effort",
+                &match self.current_effort {
+                    Effort::Cheap => "cheap",
+                    Effort::Balanced => "balanced",
+                    Effort::Powerful => "powerful",
+                },
+            )
             .finish()
     }
 }
@@ -140,10 +155,22 @@ mod tests {
 
     #[test]
     fn test_effort_from_reasoning_effort() {
-        assert!(matches!(Effort::from_reasoning_effort(Some("low")), Effort::Cheap));
-        assert!(matches!(Effort::from_reasoning_effort(Some("medium")), Effort::Balanced));
-        assert!(matches!(Effort::from_reasoning_effort(Some("high")), Effort::Powerful));
-        assert!(matches!(Effort::from_reasoning_effort(None), Effort::Balanced));
+        assert!(matches!(
+            Effort::from_reasoning_effort(Some("low")),
+            Effort::Cheap
+        ));
+        assert!(matches!(
+            Effort::from_reasoning_effort(Some("medium")),
+            Effort::Balanced
+        ));
+        assert!(matches!(
+            Effort::from_reasoning_effort(Some("high")),
+            Effort::Powerful
+        ));
+        assert!(matches!(
+            Effort::from_reasoning_effort(None),
+            Effort::Balanced
+        ));
     }
 
     #[test]
@@ -155,12 +182,18 @@ mod tests {
     #[test]
     fn test_effort_from_task_complexity_code() {
         let input = "Write a function that sorts an array:\n```\nfn sort(arr: &mut [i32]) {\n    arr.sort();\n}\n```";
-        assert!(matches!(Effort::from_task_complexity(input), Effort::Powerful));
+        assert!(matches!(
+            Effort::from_task_complexity(input),
+            Effort::Powerful
+        ));
     }
 
     #[test]
     fn test_effort_from_task_complexity_long() {
         let input = "a".repeat(2500);
-        assert!(matches!(Effort::from_task_complexity(&input), Effort::Powerful));
+        assert!(matches!(
+            Effort::from_task_complexity(&input),
+            Effort::Powerful
+        ));
     }
 }

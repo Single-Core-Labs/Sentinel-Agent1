@@ -1,3 +1,5 @@
+use crate::chatwidget::{PlanItem, ToolCallInfo};
+use crate::theme::ThemeColors;
 /// display.rs — Claude Code / Gemini CLI-style rendering helpers.
 ///
 /// Visual rules:
@@ -15,8 +17,6 @@ use ratatui::{
     widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap},
     Frame,
 };
-use crate::theme::ThemeColors;
-use crate::chatwidget::{PlanItem, ToolCallInfo};
 
 // ── Wordmark ─────────────────────────────────────────────────────────────────
 pub const WORDMARK_LINES: &[&str] = &[
@@ -69,7 +69,10 @@ pub fn assistant_lines<'a>(text: &'a str, c: &'a ThemeColors) -> Vec<Line<'a>> {
 pub fn thinking_indicator<'a>(text: &'a str) -> Vec<Line<'a>> {
     vec![Line::from(vec![
         Span::styled("⠿ ", Style::default().fg(Color::Rgb(100, 100, 100))),
-        Span::styled(text.to_string(), Style::default().fg(Color::Rgb(130, 130, 130)).italic()),
+        Span::styled(
+            text.to_string(),
+            Style::default().fg(Color::Rgb(130, 130, 130)).italic(),
+        ),
     ])]
 }
 
@@ -80,12 +83,16 @@ pub fn thinking_indicator<'a>(text: &'a str) -> Vec<Line<'a>> {
 ///   │   → 42 lines read
 ///
 /// Collapsed by default; press `x` to expand full output.
-pub fn render_tool_call_card<'a>(tc: &'a ToolCallInfo, c: &'a ThemeColors, spinner: &'a str) -> Vec<Line<'a>> {
+pub fn render_tool_call_card<'a>(
+    tc: &'a ToolCallInfo,
+    c: &'a ThemeColors,
+    spinner: &'a str,
+) -> Vec<Line<'a>> {
     let (icon, icon_color) = match tc.status.as_str() {
-        "running"   => (spinner, c.warning),
-        "completed" => ("✔",    c.success),
-        "error"     => ("✘",    c.error),
-        _           => ("○",    c.muted),
+        "running" => (spinner, c.warning),
+        "completed" => ("✔", c.success),
+        "error" => ("✘", c.error),
+        _ => ("○", c.muted),
     };
 
     let mut lines = vec![
@@ -96,7 +103,11 @@ pub fn render_tool_call_card<'a>(tc: &'a ToolCallInfo, c: &'a ThemeColors, spinn
             Span::styled(tc.name.clone(), Style::default().fg(c.tool_call_fg).bold()),
             Span::raw("  "),
             Span::styled(
-                if tc.args.len() > 80 { format!("{}…", &tc.args[..80]) } else { tc.args.clone() },
+                if tc.args.len() > 80 {
+                    format!("{}…", &tc.args[..80])
+                } else {
+                    tc.args.clone()
+                },
                 Style::default().fg(c.muted),
             ),
         ]),
@@ -107,15 +118,19 @@ pub fn render_tool_call_card<'a>(tc: &'a ToolCallInfo, c: &'a ThemeColors, spinn
         let output_lines: Vec<&str> = tc.output.lines().collect();
         let preview = 4;
         let collapsed = !tc.expanded && output_lines.len() > preview;
-        let show = if collapsed { &output_lines[..preview] } else { output_lines.as_slice() };
+        let show = if collapsed {
+            &output_lines[..preview]
+        } else {
+            output_lines.as_slice()
+        };
 
         for line in show {
             let (color, prefix) = if line.starts_with('+') {
                 (c.success, "│   ")
             } else if line.starts_with('-') {
-                (c.error,   "│   ")
+                (c.error, "│   ")
             } else {
-                (c.muted,   "│   ")
+                (c.muted, "│   ")
             };
             lines.push(Line::from(vec![
                 Span::styled(prefix, Style::default().fg(c.dim_border)),
@@ -127,7 +142,10 @@ pub fn render_tool_call_card<'a>(tc: &'a ToolCallInfo, c: &'a ThemeColors, spinn
             lines.push(Line::from(vec![
                 Span::styled("│   ", Style::default().fg(c.dim_border)),
                 Span::styled(
-                    format!("… {} more  (press x to expand)", output_lines.len() - preview),
+                    format!(
+                        "… {} more  (press x to expand)",
+                        output_lines.len() - preview
+                    ),
                     Style::default().fg(c.muted).italic(),
                 ),
             ]));
@@ -139,14 +157,21 @@ pub fn render_tool_call_card<'a>(tc: &'a ToolCallInfo, c: &'a ThemeColors, spinn
 
 // ── Plan view ────────────────────────────────────────────────────────────────
 pub fn render_plan_view<'a>(items: &'a [PlanItem], c: &'a ThemeColors) -> Vec<Line<'a>> {
-    let mut lines = vec![Line::from(vec![
-        Span::styled("◈ Plan", Style::default().fg(c.plan_fg).bold()),
-    ])];
+    let mut lines = vec![Line::from(vec![Span::styled(
+        "◈ Plan",
+        Style::default().fg(c.plan_fg).bold(),
+    )])];
     for (i, item) in items.iter().enumerate() {
         let (icon, icon_c, style) = match item.status.as_str() {
-            "completed"   => ("✔ ", c.success, Style::default().fg(c.muted).add_modifier(Modifier::CROSSED_OUT)),
-            "in_progress" => ("▸ ", c.accent,  Style::default().fg(c.accent)),
-            _             => ("  ", c.muted,   Style::default().fg(c.foreground)),
+            "completed" => (
+                "✔ ",
+                c.success,
+                Style::default()
+                    .fg(c.muted)
+                    .add_modifier(Modifier::CROSSED_OUT),
+            ),
+            "in_progress" => ("▸ ", c.accent, Style::default().fg(c.accent)),
+            _ => ("  ", c.muted, Style::default().fg(c.foreground)),
         };
         lines.push(Line::from(vec![
             Span::styled(format!("  {}. ", i + 1), Style::default().fg(c.muted)),
@@ -166,10 +191,21 @@ pub fn render_plan_view<'a>(items: &'a [PlanItem], c: &'a ThemeColors) -> Vec<Li
 // ── Approval prompt ───────────────────────────────────────────────────────────
 /// Inline approval card — no modal, same style as Claude Code's tool approval.
 pub fn render_approval_prompt<'a>(
-    tool: &'a str, args: &'a str, selected_yes: bool, c: &'a ThemeColors,
+    tool: &'a str,
+    args: &'a str,
+    selected_yes: bool,
+    c: &'a ThemeColors,
 ) -> Vec<Line<'a>> {
-    let yes_style = if selected_yes  { Style::default().fg(c.success).bold() } else { Style::default().fg(c.muted) };
-    let no_style  = if !selected_yes { Style::default().fg(c.error).bold()   } else { Style::default().fg(c.muted) };
+    let yes_style = if selected_yes {
+        Style::default().fg(c.success).bold()
+    } else {
+        Style::default().fg(c.muted)
+    };
+    let no_style = if !selected_yes {
+        Style::default().fg(c.error).bold()
+    } else {
+        Style::default().fg(c.muted)
+    };
 
     vec![
         Line::from(""),
@@ -178,15 +214,32 @@ pub fn render_approval_prompt<'a>(
             Span::styled("Allow  ", Style::default().fg(c.foreground)),
             Span::styled(tool, Style::default().fg(c.tool_call_fg).bold()),
             if !args.is_empty() {
-                Span::styled(format!("  {}", &args[..args.len().min(60)]), Style::default().fg(c.muted))
+                Span::styled(
+                    format!("  {}", &args[..args.len().min(60)]),
+                    Style::default().fg(c.muted),
+                )
             } else {
                 Span::raw("")
             },
         ]),
         Line::from(vec![
             Span::raw("   "),
-            Span::styled(if selected_yes  { "▸ [Y] Yes " } else { "  [Y] Yes " }, yes_style),
-            Span::styled(if !selected_yes { "▸ [N] No  " } else { "  [N] No  " }, no_style),
+            Span::styled(
+                if selected_yes {
+                    "▸ [Y] Yes "
+                } else {
+                    "  [Y] Yes "
+                },
+                yes_style,
+            ),
+            Span::styled(
+                if !selected_yes {
+                    "▸ [N] No  "
+                } else {
+                    "  [N] No  "
+                },
+                no_style,
+            ),
             Span::styled("  ← → to switch", Style::default().fg(c.muted)),
         ]),
         Line::from(""),
@@ -262,28 +315,35 @@ pub fn status_bar_text(
 // ── Help overlay ──────────────────────────────────────────────────────────────
 pub fn help_lines() -> Vec<Line<'static>> {
     let rows: &[(&str, &str, &str)] = &[
-        ("/help",    "",         "Show this help"),
-        ("/new",     "",         "Start a fresh session"),
-        ("/model",   "[id]",     "Switch model"),
-        ("/theme",   "<name>",   "sentinel | dark | high-contrast | cyber"),
-        ("/yolo",    "",         "Toggle auto-approve"),
-        ("/undo",    "",         "Undo last turn"),
-        ("/compact", "",         "Compact context window"),
-        ("/status",  "",         "Model, turn count, session"),
-        ("/quit",    "",         "Exit"),
-        ("",         "",         ""),
-        ("i / Enter","",         "Enter edit mode"),
-        ("Esc",      "",         "Exit edit mode / close overlay"),
-        ("k / ↑",    "",         "Scroll up"),
-        ("j / ↓",    "",         "Scroll down"),
-        ("x",        "",         "Toggle tool output expand"),
-        ("Ctrl+Q",   "",         "Quit"),
+        ("/help", "", "Show this help"),
+        ("/new", "", "Start a fresh session"),
+        ("/model", "[id]", "Switch model"),
+        (
+            "/theme",
+            "<name>",
+            "sentinel | dark | high-contrast | cyber",
+        ),
+        ("/yolo", "", "Toggle auto-approve"),
+        ("/undo", "", "Undo last turn"),
+        ("/compact", "", "Compact context window"),
+        ("/status", "", "Model, turn count, session"),
+        ("/quit", "", "Exit"),
+        ("", "", ""),
+        ("i / Enter", "", "Enter edit mode"),
+        ("Esc", "", "Exit edit mode / close overlay"),
+        ("k / ↑", "", "Scroll up"),
+        ("j / ↓", "", "Scroll down"),
+        ("x", "", "Toggle tool output expand"),
+        ("Ctrl+Q", "", "Quit"),
     ];
     let cmd_w = rows.iter().map(|(c, _, _)| c.len()).max().unwrap_or(8) + 2;
     let arg_w = rows.iter().map(|(_, a, _)| a.len()).max().unwrap_or(4) + 2;
 
     let mut lines = vec![
-        Line::from(Span::styled("  Commands", Style::default().fg(Color::Rgb(74, 222, 128)).bold())),
+        Line::from(Span::styled(
+            "  Commands",
+            Style::default().fg(Color::Rgb(74, 222, 128)).bold(),
+        )),
         Line::from(""),
     ];
     for (cmd, args, desc) in rows {
@@ -300,7 +360,10 @@ pub fn help_lines() -> Vec<Line<'static>> {
                 format!("{:width$}", args, width = arg_w),
                 Style::default().fg(Color::Rgb(100, 100, 100)),
             ),
-            Span::styled(desc.to_string(), Style::default().fg(Color::Rgb(200, 200, 200))),
+            Span::styled(
+                desc.to_string(),
+                Style::default().fg(Color::Rgb(200, 200, 200)),
+            ),
         ]));
     }
     lines
@@ -318,7 +381,9 @@ pub fn render_panel<'a>(f: &mut Frame, area: Rect, title: &str, lines: Vec<Line<
         .border_style(Style::default().fg(fg))
         .title(format!(" {} ", title))
         .title_alignment(Alignment::Left);
-    let para = Paragraph::new(lines).block(block).wrap(Wrap { trim: false });
+    let para = Paragraph::new(lines)
+        .block(block)
+        .wrap(Wrap { trim: false });
     f.render_widget(Clear, area);
     f.render_widget(para, area);
 }
@@ -351,7 +416,10 @@ pub fn markdown_to_lines<'a>(md: &'a str, c: &'a ThemeColors) -> Vec<Line<'a>> {
                         Style::default().fg(Color::Rgb(100, 100, 120)),
                     )
                 } else {
-                    Span::styled("  ┌──────────────────", Style::default().fg(Color::Rgb(45, 45, 55)))
+                    Span::styled(
+                        "  ┌──────────────────",
+                        Style::default().fg(Color::Rgb(45, 45, 55)),
+                    )
                 };
                 out.push(Line::from(lang_span));
             }
@@ -362,7 +430,10 @@ pub fn markdown_to_lines<'a>(md: &'a str, c: &'a ThemeColors) -> Vec<Line<'a>> {
         if in_code {
             out.push(Line::from(vec![
                 Span::styled("  │ ", Style::default().fg(Color::Rgb(45, 45, 55))),
-                Span::styled(line.to_string(), Style::default().fg(Color::Rgb(250, 220, 140))),
+                Span::styled(
+                    line.to_string(),
+                    Style::default().fg(Color::Rgb(250, 220, 140)),
+                ),
             ]));
             continue;
         }
@@ -374,11 +445,20 @@ pub fn markdown_to_lines<'a>(md: &'a str, c: &'a ThemeColors) -> Vec<Line<'a>> {
 
         // Headings
         if let Some(rest) = trimmed.strip_prefix("### ") {
-            out.push(Line::from(Span::styled(rest.to_string(), Style::default().fg(c.info).bold())));
+            out.push(Line::from(Span::styled(
+                rest.to_string(),
+                Style::default().fg(c.info).bold(),
+            )));
         } else if let Some(rest) = trimmed.strip_prefix("## ") {
-            out.push(Line::from(Span::styled(rest.to_string(), Style::default().fg(c.accent_alt).bold())));
+            out.push(Line::from(Span::styled(
+                rest.to_string(),
+                Style::default().fg(c.accent_alt).bold(),
+            )));
         } else if let Some(rest) = trimmed.strip_prefix("# ") {
-            out.push(Line::from(Span::styled(rest.to_string(), Style::default().fg(c.accent).bold())));
+            out.push(Line::from(Span::styled(
+                rest.to_string(),
+                Style::default().fg(c.accent).bold(),
+            )));
         }
         // Bullets
         else if trimmed.starts_with("- ") || trimmed.starts_with("* ") {
@@ -388,13 +468,15 @@ pub fn markdown_to_lines<'a>(md: &'a str, c: &'a ThemeColors) -> Vec<Line<'a>> {
             out.push(Line::from(spans));
         }
         // Numbered list
-        else if trimmed.len() > 2 && trimmed.chars().next().map_or(false, |ch| ch.is_ascii_digit()) {
+        else if trimmed.len() > 2 && trimmed.chars().next().is_some_and(|ch| ch.is_ascii_digit())
+        {
             if let Some(dot) = trimmed.find(". ") {
                 let num = &trimmed[..dot + 1];
                 let content = &trimmed[dot + 2..];
-                let mut spans = vec![
-                    Span::styled(format!("  {} ", num), Style::default().fg(c.muted)),
-                ];
+                let mut spans = vec![Span::styled(
+                    format!("  {} ", num),
+                    Style::default().fg(c.muted),
+                )];
                 spans.extend(parse_inline(content, c.foreground));
                 out.push(Line::from(spans));
             } else {
@@ -425,7 +507,7 @@ pub fn markdown_to_lines<'a>(md: &'a str, c: &'a ThemeColors) -> Vec<Line<'a>> {
 
 fn parse_inline(text: &str, default_fg: Color) -> Vec<Span<'_>> {
     let mut spans = Vec::new();
-    let mut buf   = String::new();
+    let mut buf = String::new();
     let chars: Vec<char> = text.chars().collect();
     let mut i = 0;
 
@@ -459,9 +541,17 @@ fn parse_inline(text: &str, default_fg: Color) -> Vec<Span<'_>> {
             flush!();
             i += 1;
             let mut inner = String::new();
-            while i < chars.len() && chars[i] != '*' { inner.push(chars[i]); i += 1; }
-            spans.push(Span::styled(inner, Style::default().fg(default_fg).italic()));
-            if i < chars.len() { i += 1; }
+            while i < chars.len() && chars[i] != '*' {
+                inner.push(chars[i]);
+                i += 1;
+            }
+            spans.push(Span::styled(
+                inner,
+                Style::default().fg(default_fg).italic(),
+            ));
+            if i < chars.len() {
+                i += 1;
+            }
             continue;
         }
         // `inline code`
@@ -469,12 +559,19 @@ fn parse_inline(text: &str, default_fg: Color) -> Vec<Span<'_>> {
             flush!();
             i += 1;
             let mut inner = String::new();
-            while i < chars.len() && chars[i] != '`' { inner.push(chars[i]); i += 1; }
+            while i < chars.len() && chars[i] != '`' {
+                inner.push(chars[i]);
+                i += 1;
+            }
             spans.push(Span::styled(
                 format!(" {} ", inner),
-                Style::default().fg(Color::Rgb(250, 220, 140)).bg(Color::Rgb(35, 35, 45)),
+                Style::default()
+                    .fg(Color::Rgb(250, 220, 140))
+                    .bg(Color::Rgb(35, 35, 45)),
             ));
-            if i < chars.len() { i += 1; }
+            if i < chars.len() {
+                i += 1;
+            }
             continue;
         }
         buf.push(chars[i]);
@@ -485,7 +582,11 @@ fn parse_inline(text: &str, default_fg: Color) -> Vec<Span<'_>> {
 }
 
 // ── Boot screen helpers ───────────────────────────────────────────────────────
-pub fn boot_screen_lines<'a>(model: &'a str, _provider: &'a str, _tool_count: usize) -> Vec<Line<'a>> {
+pub fn boot_screen_lines<'a>(
+    model: &'a str,
+    _provider: &'a str,
+    _tool_count: usize,
+) -> Vec<Line<'a>> {
     vec![
         Line::from(""),
         Line::from(Span::styled(

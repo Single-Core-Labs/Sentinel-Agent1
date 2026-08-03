@@ -1,4 +1,4 @@
-use sha1::{Sha1, Digest};
+use sha1::{Digest, Sha1};
 
 /// A hunk from a unified diff, representing a contiguous set of changes.
 #[derive(Debug, Clone)]
@@ -84,11 +84,14 @@ fn parse_hunk_range(part: &str) -> (u32, u32) {
 /// and impact tracking.
 pub fn fingerprint_lines(lines: &[String]) -> Vec<String> {
     let mut hasher = Sha1::new();
-    lines.iter().map(|line| {
-        hasher = Sha1::new();
-        hasher.update(line.trim_end().as_bytes());
-        hex::encode(hasher.finalize_reset())
-    }).collect()
+    lines
+        .iter()
+        .map(|line| {
+            hasher = Sha1::new();
+            hasher.update(line.trim_end().as_bytes());
+            hex::encode(hasher.finalize_reset())
+        })
+        .collect()
 }
 
 /// Compute aggregate line statistics from a unified diff.

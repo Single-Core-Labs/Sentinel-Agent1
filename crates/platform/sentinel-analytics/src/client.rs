@@ -43,27 +43,21 @@ impl AnalyticsEventsClient {
         duration_ms: u64,
         success: bool,
     ) {
-        self.queue.enqueue(
-            AnalyticsFact::new(FactKind::SkillInvocation {
+        self.queue
+            .enqueue(AnalyticsFact::new(FactKind::SkillInvocation {
                 skill_id: skill_id.into(),
                 duration_ms,
                 success,
-            })
-        );
+            }));
     }
 
     /// Record a plugin usage.
-    pub fn record_plugin_usage(
-        &self,
-        plugin_id: impl Into<String>,
-        action: impl Into<String>,
-    ) {
-        self.queue.enqueue(
-            AnalyticsFact::new(FactKind::PluginUsage {
+    pub fn record_plugin_usage(&self, plugin_id: impl Into<String>, action: impl Into<String>) {
+        self.queue
+            .enqueue(AnalyticsFact::new(FactKind::PluginUsage {
                 plugin_id: plugin_id.into(),
                 action: action.into(),
-            })
-        );
+            }));
     }
 
     /// Record a code change from a diff.
@@ -73,13 +67,11 @@ impl AnalyticsEventsClient {
         added_lines: u32,
         deleted_lines: u32,
     ) {
-        self.queue.enqueue(
-            AnalyticsFact::new(FactKind::CodeChange {
-                file: file.into(),
-                added_lines,
-                deleted_lines,
-            })
-        );
+        self.queue.enqueue(AnalyticsFact::new(FactKind::CodeChange {
+            file: file.into(),
+            added_lines,
+            deleted_lines,
+        }));
     }
 
     /// Record a tool call.
@@ -90,22 +82,16 @@ impl AnalyticsEventsClient {
         duration_ms: u64,
         success: bool,
     ) {
-        self.queue.enqueue(
-            AnalyticsFact::new(FactKind::ToolCall {
-                tool_id: tool_id.into(),
-                tool_name: tool_name.into(),
-                duration_ms,
-                success,
-            })
-        );
+        self.queue.enqueue(AnalyticsFact::new(FactKind::ToolCall {
+            tool_id: tool_id.into(),
+            tool_name: tool_name.into(),
+            duration_ms,
+            success,
+        }));
     }
 
     /// Record the start of a new turn.
-    pub fn record_turn_started(
-        &self,
-        turn_id: impl Into<String>,
-        thread_id: impl Into<String>,
-    ) {
+    pub fn record_turn_started(&self, turn_id: impl Into<String>, thread_id: impl Into<String>) {
         let tid = turn_id.into();
         let thid = thread_id.into();
         self.queue.enqueue(
@@ -114,7 +100,7 @@ impl AnalyticsEventsClient {
                 thread_id: thid.clone(),
             })
             .with_turn(tid)
-            .with_thread(thid)
+            .with_thread(thid),
         );
     }
 
@@ -136,7 +122,7 @@ impl AnalyticsEventsClient {
                 duration_ms,
             })
             .with_turn(tid)
-            .with_thread(thid)
+            .with_thread(thid),
         );
     }
 
@@ -147,13 +133,12 @@ impl AnalyticsEventsClient {
         prompt_tokens: u32,
         max_tokens: u32,
     ) {
-        self.queue.enqueue(
-            AnalyticsFact::new(FactKind::ModelRequest {
+        self.queue
+            .enqueue(AnalyticsFact::new(FactKind::ModelRequest {
                 model: model.into(),
                 prompt_tokens,
                 max_tokens,
-            })
-        );
+            }));
     }
 
     /// Record a model response.
@@ -163,13 +148,12 @@ impl AnalyticsEventsClient {
         completion_tokens: u32,
         duration_ms: u64,
     ) {
-        self.queue.enqueue(
-            AnalyticsFact::new(FactKind::ModelResponse {
+        self.queue
+            .enqueue(AnalyticsFact::new(FactKind::ModelResponse {
                 model: model.into(),
                 completion_tokens,
                 duration_ms,
-            })
-        );
+            }));
     }
 
     /// Record a client request.
@@ -180,44 +164,33 @@ impl AnalyticsEventsClient {
         status: u16,
         duration_ms: u64,
     ) {
-        self.queue.enqueue(
-            AnalyticsFact::new(FactKind::ClientRequest {
+        self.queue
+            .enqueue(AnalyticsFact::new(FactKind::ClientRequest {
                 method: method.into(),
                 path: path.into(),
                 status,
                 duration_ms,
-            })
-        );
+            }));
     }
 
     /// Record a session event.
-    pub fn record_session_event(
-        &self,
-        session_id: impl Into<String>,
-        event: impl Into<String>,
-    ) {
+    pub fn record_session_event(&self, session_id: impl Into<String>, event: impl Into<String>) {
         let sid = session_id.into();
         self.queue.enqueue(
             AnalyticsFact::new(FactKind::SessionEvent {
                 session_id: sid.clone(),
                 event: event.into(),
             })
-            .with_session(sid)
+            .with_session(sid),
         );
     }
 
     /// Record an approval gate event.
-    pub fn record_approval(
-        &self,
-        action: impl Into<String>,
-        granted: bool,
-    ) {
-        self.queue.enqueue(
-            AnalyticsFact::new(FactKind::Approval {
-                action: action.into(),
-                granted,
-            })
-        );
+    pub fn record_approval(&self, action: impl Into<String>, granted: bool) {
+        self.queue.enqueue(AnalyticsFact::new(FactKind::Approval {
+            action: action.into(),
+            granted,
+        }));
     }
 
     /// Record a crash/panic event.
@@ -228,42 +201,29 @@ impl AnalyticsEventsClient {
         location: Option<String>,
         backtrace_snippet: impl Into<String>,
     ) {
-        self.queue.enqueue(
-            AnalyticsFact::new(FactKind::Crash {
-                crash_id: crash_id.into(),
-                message: message.into(),
-                location,
-                backtrace_snippet: backtrace_snippet.into(),
-            })
-        );
+        self.queue.enqueue(AnalyticsFact::new(FactKind::Crash {
+            crash_id: crash_id.into(),
+            message: message.into(),
+            location,
+            backtrace_snippet: backtrace_snippet.into(),
+        }));
     }
 
     /// Record an error.
-    pub fn record_error(
-        &self,
-        source: impl Into<String>,
-        message: impl Into<String>,
-    ) {
-        self.queue.enqueue(
-            AnalyticsFact::new(FactKind::Error {
-                source: source.into(),
-                message: message.into(),
-            })
-        );
+    pub fn record_error(&self, source: impl Into<String>, message: impl Into<String>) {
+        self.queue.enqueue(AnalyticsFact::new(FactKind::Error {
+            source: source.into(),
+            message: message.into(),
+        }));
     }
 
     /// Record a server notification.
-    pub fn record_server_notification(
-        &self,
-        event: impl Into<String>,
-        payload: serde_json::Value,
-    ) {
-        self.queue.enqueue(
-            AnalyticsFact::new(FactKind::ServerNotification {
+    pub fn record_server_notification(&self, event: impl Into<String>, payload: serde_json::Value) {
+        self.queue
+            .enqueue(AnalyticsFact::new(FactKind::ServerNotification {
                 event: event.into(),
                 payload,
-            })
-        );
+            }));
     }
 
     /// Record a sequence of events from a turn session.
@@ -283,7 +243,7 @@ impl AnalyticsEventsClient {
             })
             .with_turn(tid)
             .with_thread(thid)
-            .with_session(sid)
+            .with_session(sid),
         );
     }
 

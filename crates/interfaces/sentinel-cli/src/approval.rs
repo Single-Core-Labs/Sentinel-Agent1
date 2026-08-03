@@ -1,5 +1,5 @@
 use colored::*;
-use sentinel_core::{ApprovalGate, ApprovalDecision, ApprovalRequest};
+use sentinel_core::{ApprovalDecision, ApprovalGate, ApprovalRequest};
 
 pub struct CliApprovalGate;
 
@@ -14,7 +14,10 @@ impl CliApprovalGate {
         println!();
 
         loop {
-            print!(" {} ", "Approve? (Y)es/(n)o/(e)dit/(s)kip all:".yellow().bold());
+            print!(
+                " {} ",
+                "Approve? (Y)es/(n)o/(e)dit/(s)kip all:".yellow().bold()
+            );
             use std::io::Write;
             std::io::stdout().flush().ok();
 

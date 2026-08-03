@@ -1,15 +1,14 @@
+use crate::event_bridge::{TuiApprovalGate, TuiEventHandler};
 use anyhow::Result;
-use std::sync::Arc;
 use sentinel_ai_exec::ThreadEvent;
-use serde_json::json;
-use sentinel_app_server_client::{AppServerConnection, embedded::EmbeddedClient};
-use sentinel_app_server::RequestHandler;
-use sentinel_config::SentinelConfig;
 use sentinel_analytics::AnalyticsPipeline;
-use sentinel_tools::ToolRegistry;
+use sentinel_app_server::RequestHandler;
+use sentinel_app_server_client::{embedded::EmbeddedClient, AppServerConnection};
 use sentinel_app_server_protocol::api;
-use sentinel_core;
-use crate::event_bridge::{TuiEventHandler, TuiApprovalGate};
+use sentinel_config::SentinelConfig;
+use sentinel_tools::ToolRegistry;
+use serde_json::json;
+use std::sync::Arc;
 use tokio::sync::Mutex;
 
 pub struct AppServerSession {
@@ -27,7 +26,7 @@ impl AppServerSession {
         let config = Arc::new(match SentinelConfig::load() {
             Ok(c) => c,
             Err(e) => {
-                eprintln!("{} Warning: config error: {}; using defaults", "W", e);
+                eprintln!("W Warning: config error: {}; using defaults", e);
                 SentinelConfig::default()
             }
         });
@@ -35,7 +34,7 @@ impl AppServerSession {
         let tools = {
             let mut reg = ToolRegistry::new();
             let headroom_retrieve = sentinel_headroom::integration::HeadroomRetrieveTool::new(
-                Arc::new(sentinel_headroom::ccr::CcrStore::default())
+                Arc::new(sentinel_headroom::ccr::CcrStore::default()),
             );
             reg.register(Arc::new(headroom_retrieve));
             Arc::new(reg)
@@ -82,7 +81,10 @@ impl AppServerSession {
             Some(s) => s,
             None => {
                 let _ = event_tx
-                    .send(ThreadEvent::new("error", json!({ "message": "session not found" })))
+                    .send(ThreadEvent::new(
+                        "error",
+                        json!({ "message": "session not found" }),
+                    ))
                     .await;
                 return Ok(());
             }
@@ -96,11 +98,16 @@ impl AppServerSession {
         }
 
         let _ = event_tx
-            .send(ThreadEvent::new("processing", json!({ "message": "Thinking..." })))
+            .send(ThreadEvent::new(
+                "processing",
+                json!({ "message": "Thinking..." }),
+            ))
             .await;
 
         // Inject the TUI event handler so intermediate events are streamed
-        let tui_handler = Arc::new(TuiEventHandler { event_tx: event_tx.clone() });
+        let tui_handler = Arc::new(TuiEventHandler {
+            event_tx: event_tx.clone(),
+        });
         session.agent.set_event_handler(tui_handler);
 
         // Create the approval gate that will send approval_required events through event_tx
@@ -111,11 +118,16 @@ impl AppServerSession {
 
         // Run the full agent loop (plan → tool calls → observe → answer)
         let mut thread = session.thread.lock().await;
-        let result = session.agent.run_with_approval(&mut thread, prompt, &gate, &None).await;
+        let result = session
+            .agent
+            .run_with_approval(&mut thread, prompt, &gate, &None)
+            .await;
         drop(thread);
 
         // Restore the null handler so future calls start clean
-        session.agent.set_event_handler(Arc::new(sentinel_core::agent::NullEventHandler));
+        session
+            .agent
+            .set_event_handler(Arc::new(sentinel_core::agent::NullEventHandler));
 
         match result {
             Ok(sentinel_core::AgentOutput::Success { .. }) => {
@@ -128,7 +140,10 @@ impl AppServerSession {
             }
             Err(e) => {
                 let _ = event_tx
-                    .send(ThreadEvent::new("error", json!({ "message": e.to_string() })))
+                    .send(ThreadEvent::new(
+                        "error",
+                        json!({ "message": e.to_string() }),
+                    ))
                     .await;
             }
         }
@@ -186,8 +201,12 @@ impl AppServerSession {
     }
 
     pub async fn create_session(&self, model: Option<&str>) -> Result<String> {
-        let session_res = self.client
-            .call(api::methods::CREATE_SESSION, Some(json!({ "model": model })))
+        let session_res = self
+            .client
+            .call(
+                api::methods::CREATE_SESSION,
+                Some(json!({ "model": model })),
+            )
             .await
             .map_err(|e| anyhow::anyhow!("Failed to create session: {}", e))?;
         let sid = session_res["session_id"]
@@ -210,7 +229,10 @@ impl AppServerSession {
 
     pub async fn send_chat(&self, prompt: &str) -> Result<Vec<ThreadEvent>> {
         let sid = self.ensure_session(None).await?;
-        let response = self.client.chat(&sid, prompt).await
+        let response = self
+            .client
+            .chat(&sid, prompt)
+            .await
             .map_err(|e| anyhow::anyhow!("Chat error: {}", e))?;
 
         let completed = ThreadEvent::new("completed", json!({ "text": response }));
@@ -220,7 +242,8 @@ impl AppServerSession {
     pub async fn send_chat_stream(&self, prompt: &str) -> Result<Vec<ThreadEvent>> {
         let sid = self.ensure_session(None).await?;
         let params = json!({ "session_id": sid, "message": prompt });
-        let result = self.client
+        let result = self
+            .client
             .call(api::methods::CHAT_STREAM, Some(params))
             .await
             .map_err(|e| anyhow::anyhow!("Chat stream error: {}", e))?;
@@ -235,7 +258,7 @@ impl AppServerSession {
                     }
                 }
                 if let Some(reason) = chunk["choices"][0]["finish_reason"].as_str() {
-                    if reason != "null" && reason != "" {
+                    if reason != "null" && !reason.is_empty() {
                         events.push(ThreadEvent::new("completed", json!({ "text": reason })));
                     }
                 }

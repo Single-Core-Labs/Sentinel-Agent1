@@ -26,38 +26,36 @@ pub mod session;
 
 /// Convenience re-exports of all key types.
 pub mod prelude {
-    pub use sentinel_core::{
-        AgentOutput, AgentEvent, AgentThread, ThreadStatus,
-        ApprovalGate, AutoApprovalGate, ApprovalDecision, ApprovalRequest,
-        EventHandler, NullEventHandler,
-        BudgetGuard, BudgetReservation,
-        ContextManager, Conversation,
-        hooks::{HookRegistry, HookEvent, HookFn},
-        event_bus::{EventBus, BusEvent, PolicyEngine, PolicyDecision, AllowAllPolicy, SafePolicy},
-        pipeline::{PipelineAgent, PipelineConfig, PipelineStage},
-        sandbox::{Sandbox, LocalSandbox, NoSandbox},
-        cost::CostTracker,
-        memory_file::MemoryFileManager,
-        worktree::WorktreeManager,
-        diff_capture::DiffCapture,
-    };
-    pub use sentinel_provider::{
-        ModelProvider, ProviderKind, ModelRouter, ModelSwitcher,
-        fallback::{ModelAvailabilityService, RetryConfig, ErrorKind, ModelHealth},
-    };
-    pub use sentinel_tools::{Tool, ToolRegistry, ToolContext, ToolOutput, TruncatingTool};
-    pub use sentinel_config::SentinelConfig;
-    pub use sentinel_protocol::{
-        CompletionRequest, CompletionResponse, Message, ContentBlock, Role,
-        ToolDef, ToolResult, StreamChunk,
-    };
     pub use crate::agent::AgentBuilder;
     pub use crate::session::Session;
+    pub use sentinel_config::SentinelConfig;
+    pub use sentinel_core::{
+        cost::CostTracker,
+        diff_capture::DiffCapture,
+        event_bus::{AllowAllPolicy, BusEvent, EventBus, PolicyDecision, PolicyEngine, SafePolicy},
+        hooks::{HookEvent, HookFn, HookRegistry},
+        memory_file::MemoryFileManager,
+        pipeline::{PipelineAgent, PipelineConfig, PipelineStage},
+        sandbox::{LocalSandbox, NoSandbox, Sandbox},
+        worktree::WorktreeManager,
+        AgentEvent, AgentOutput, AgentThread, ApprovalDecision, ApprovalGate, ApprovalRequest,
+        AutoApprovalGate, BudgetGuard, BudgetReservation, ContextManager, Conversation,
+        EventHandler, NullEventHandler, ThreadStatus,
+    };
+    pub use sentinel_protocol::{
+        CompletionRequest, CompletionResponse, ContentBlock, Message, Role, StreamChunk, ToolDef,
+        ToolResult,
+    };
+    pub use sentinel_provider::{
+        fallback::{ErrorKind, ModelAvailabilityService, ModelHealth, RetryConfig},
+        ModelProvider, ModelRouter, ModelSwitcher, ProviderKind,
+    };
+    pub use sentinel_tools::{Tool, ToolContext, ToolOutput, ToolRegistry, TruncatingTool};
 }
 
+use sentinel_tools::{Tool, ToolContext, ToolOutput};
 use std::marker::PhantomData;
 use std::sync::Arc;
-use sentinel_tools::{Tool, ToolContext, ToolOutput};
 
 /// Tool helper: define a tool with a name, description, and action.
 pub fn tool<F, Fut>(name: &str, description: &str, action: F) -> Arc<dyn Tool>
@@ -78,8 +76,12 @@ where
         F: Fn(serde_json::Value, &ToolContext) -> Fut + Send + Sync + 'static,
         Fut: std::future::Future<Output = ToolOutput> + Send + 'static,
     {
-        fn name(&self) -> &str { &self.name }
-        fn description(&self) -> &str { &self.description }
+        fn name(&self) -> &str {
+            &self.name
+        }
+        fn description(&self) -> &str {
+            &self.description
+        }
         fn input_schema(&self) -> serde_json::Value {
             serde_json::json!({
                 "type": "object",

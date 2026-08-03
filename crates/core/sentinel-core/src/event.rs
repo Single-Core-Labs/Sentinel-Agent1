@@ -1,7 +1,7 @@
-use std::sync::Arc;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SessionEvent {
@@ -85,7 +85,10 @@ impl SessionEvent {
 pub trait EventStore: Send + Sync {
     async fn append(&self, event: SessionEvent);
     async fn read(&self, session_id: &str) -> Vec<SessionEvent>;
-    async fn stream(&self, session_id: &str) -> Box<dyn tokio_stream::Stream<Item = SessionEvent> + Send + Unpin>;
+    async fn stream(
+        &self,
+        session_id: &str,
+    ) -> Box<dyn tokio_stream::Stream<Item = SessionEvent> + Send + Unpin>;
 }
 
 #[derive(Debug)]
@@ -97,7 +100,10 @@ impl EventStore for NullEventStore {
     async fn read(&self, _session_id: &str) -> Vec<SessionEvent> {
         Vec::new()
     }
-    async fn stream(&self, _session_id: &str) -> Box<dyn tokio_stream::Stream<Item = SessionEvent> + Send + Unpin> {
+    async fn stream(
+        &self,
+        _session_id: &str,
+    ) -> Box<dyn tokio_stream::Stream<Item = SessionEvent> + Send + Unpin> {
         Box::new(tokio_stream::empty())
     }
 }
@@ -133,7 +139,10 @@ impl EventStore for VecEventStore {
         guard.clone()
     }
 
-    async fn stream(&self, _session_id: &str) -> Box<dyn tokio_stream::Stream<Item = SessionEvent> + Send + Unpin> {
+    async fn stream(
+        &self,
+        _session_id: &str,
+    ) -> Box<dyn tokio_stream::Stream<Item = SessionEvent> + Send + Unpin> {
         let events = {
             let guard = self.events.lock().unwrap();
             guard.clone()
@@ -178,7 +187,7 @@ impl SqliteEventStore {
                 payload TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_session_events_session_id
-                ON session_events(session_id);"
+                ON session_events(session_id);",
         )?;
         Ok(Arc::new(Self {
             conn: std::sync::Mutex::new(conn),
@@ -191,7 +200,8 @@ impl SqliteEventStore {
 impl EventStore for SqliteEventStore {
     async fn append(&self, event: SessionEvent) {
         let payload = serde_json::to_string(&event).unwrap_or_default();
-        let event_type = std::mem::discriminant(&event).variant_name()
+        let event_type = std::mem::discriminant(&event)
+            .variant_name()
             .unwrap_or("unknown");
         let session_id = event.session_id().to_string();
         let timestamp = event.timestamp().to_rfc3339();
@@ -204,19 +214,24 @@ impl EventStore for SqliteEventStore {
 
     async fn read(&self, session_id: &str) -> Vec<SessionEvent> {
         let conn = self.conn.lock().unwrap();
-        let mut stmt = conn.prepare(
-            "SELECT payload FROM session_events WHERE session_id = ?1 ORDER BY id"
-        ).unwrap();
-        let rows = stmt.query_map(rusqlite::params![session_id], |row| {
-            let payload: String = row.get(0)?;
-            Ok(payload)
-        }).unwrap();
+        let mut stmt = conn
+            .prepare("SELECT payload FROM session_events WHERE session_id = ?1 ORDER BY id")
+            .unwrap();
+        let rows = stmt
+            .query_map(rusqlite::params![session_id], |row| {
+                let payload: String = row.get(0)?;
+                Ok(payload)
+            })
+            .unwrap();
         rows.filter_map(|r| r.ok())
             .filter_map(|p| serde_json::from_str(&p).ok())
             .collect()
     }
 
-    async fn stream(&self, session_id: &str) -> Box<dyn tokio_stream::Stream<Item = SessionEvent> + Send + Unpin> {
+    async fn stream(
+        &self,
+        session_id: &str,
+    ) -> Box<dyn tokio_stream::Stream<Item = SessionEvent> + Send + Unpin> {
         let events = self.read(session_id).await;
         Box::new(tokio_stream::iter(events))
     }
@@ -230,11 +245,13 @@ mod tests {
     #[tokio::test]
     async fn test_null_store_noop() {
         let store = NullEventStore;
-        store.append(SessionEvent::SessionCreated {
-            session_id: "s1".into(),
-            timestamp: Utc::now(),
-            model: "gpt-4".into(),
-        }).await;
+        store
+            .append(SessionEvent::SessionCreated {
+                session_id: "s1".into(),
+                timestamp: Utc::now(),
+                model: "gpt-4".into(),
+            })
+            .await;
         let events = store.read("s1").await;
         assert!(events.is_empty());
     }
@@ -242,11 +259,13 @@ mod tests {
     #[tokio::test]
     async fn test_vec_store_append_read() {
         let store = VecEventStore::new();
-        store.append(SessionEvent::UserMessage {
-            session_id: "s1".into(),
-            timestamp: Utc::now(),
-            content: "hello".into(),
-        }).await;
+        store
+            .append(SessionEvent::UserMessage {
+                session_id: "s1".into(),
+                timestamp: Utc::now(),
+                content: "hello".into(),
+            })
+            .await;
         let events = store.read("s1").await;
         assert_eq!(events.len(), 1);
         match &events[0] {
@@ -258,17 +277,21 @@ mod tests {
     #[tokio::test]
     async fn test_vec_store_stream() {
         let store = VecEventStore::new();
-        store.append(SessionEvent::SessionCreated {
-            session_id: "s1".into(),
-            timestamp: Utc::now(),
-            model: "gpt-4".into(),
-        }).await;
-        store.append(SessionEvent::TurnEnd {
-            session_id: "s1".into(),
-            timestamp: Utc::now(),
-            turn: 1,
-            iteration: 1,
-        }).await;
+        store
+            .append(SessionEvent::SessionCreated {
+                session_id: "s1".into(),
+                timestamp: Utc::now(),
+                model: "gpt-4".into(),
+            })
+            .await;
+        store
+            .append(SessionEvent::TurnEnd {
+                session_id: "s1".into(),
+                timestamp: Utc::now(),
+                turn: 1,
+                iteration: 1,
+            })
+            .await;
         use tokio_stream::StreamExt;
         let mut stream = store.stream("s1").await;
         let first = stream.next().await;
@@ -292,11 +315,13 @@ mod tests {
     #[tokio::test]
     async fn test_create_event_store_default() {
         let store = create_event_store();
-        store.append(SessionEvent::SessionCreated {
-            session_id: "s1".into(),
-            timestamp: Utc::now(),
-            model: "gpt-4".into(),
-        }).await;
+        store
+            .append(SessionEvent::SessionCreated {
+                session_id: "s1".into(),
+                timestamp: Utc::now(),
+                model: "gpt-4".into(),
+            })
+            .await;
         let events = store.read("s1").await;
         // NullEventStore returns empty
         assert!(events.is_empty());

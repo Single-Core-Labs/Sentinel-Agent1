@@ -1,4 +1,4 @@
-use sentinel_tools::{ToolRegistry, ToolContext};
+use sentinel_tools::{ToolContext, ToolRegistry};
 
 #[tokio::test]
 async fn test_run_shell_command_sandboxed() {
@@ -14,7 +14,11 @@ async fn test_run_shell_command_sandboxed() {
     let result = registry.execute("run_shell_command", args, &ctx).await;
     assert!(!result.is_error, "sandboxed exec failed: {}", result.text);
     assert!(result.sandboxed, "expected sandboxed=true, got false");
-    assert!(result.text.contains("sandboxed_ok"), "unexpected output: {}", result.text);
+    assert!(
+        result.text.contains("sandboxed_ok"),
+        "unexpected output: {}",
+        result.text
+    );
 }
 
 #[tokio::test]
@@ -37,7 +41,11 @@ async fn test_read_write_roundtrip() {
     });
     let result = registry.execute("read", read_args, &ctx).await;
     assert!(!result.is_error, "read failed: {}", result.text);
-    assert!(result.text.contains("hello world"), "content mismatch: {}", result.text);
+    assert!(
+        result.text.contains("hello world"),
+        "content mismatch: {}",
+        result.text
+    );
 
     // Edit
     let edit_args = serde_json::json!({
@@ -53,7 +61,11 @@ async fn test_read_write_roundtrip() {
         "file_path": tmp.to_str().unwrap()
     });
     let result = registry.execute("read", verify_args, &ctx).await;
-    assert!(result.text.contains("hi there"), "edit not applied: {}", result.text);
+    assert!(
+        result.text.contains("hi there"),
+        "edit not applied: {}",
+        result.text
+    );
 
     // Cleanup
     let _ = std::fs::remove_file(&tmp);
@@ -63,7 +75,9 @@ async fn test_read_write_roundtrip() {
 async fn test_tool_not_found() {
     let registry = ToolRegistry::new();
     let ctx = ToolContext::new();
-    let result = registry.execute("nonexistent_tool", serde_json::json!({}), &ctx).await;
+    let result = registry
+        .execute("nonexistent_tool", serde_json::json!({}), &ctx)
+        .await;
     assert!(result.is_error);
     assert!(result.text.contains("not found"));
 }
@@ -76,7 +90,11 @@ async fn test_bash_echo() {
     let args = serde_json::json!({ "command": "echo hello" });
 
     let result = registry.execute("run_shell_command", args, &ctx).await;
-    assert!(result.text.contains("hello"), "run_shell_command echo failed: {}", result.text);
+    assert!(
+        result.text.contains("hello"),
+        "run_shell_command echo failed: {}",
+        result.text
+    );
     assert!(result.sandboxed, "run_shell_command must report sandboxed");
 }
 
@@ -98,8 +116,16 @@ async fn test_glob_pattern() {
     });
     let result = registry.execute("glob", glob_args, &ctx).await;
     assert!(!result.is_error, "glob failed: {}", result.text);
-    assert!(result.text.contains("a.txt"), "should find a.txt: {}", result.text);
-    assert!(!result.text.contains("b.rs"), "should not find b.rs: {}", result.text);
+    assert!(
+        result.text.contains("a.txt"),
+        "should find a.txt: {}",
+        result.text
+    );
+    assert!(
+        !result.text.contains("b.rs"),
+        "should not find b.rs: {}",
+        result.text
+    );
 
     // Cleanup
     let _ = std::fs::remove_dir_all(&tmp_dir);
@@ -134,9 +160,19 @@ async fn test_apply_patch_tool() {
     });
     let result = registry.execute("apply_patch", args, &ctx).await;
     assert!(!result.is_error, "apply_patch failed: {}", result.text);
-    assert!(result.text.contains("2 file(s)"), "expected 2 files: {}", result.text);
-    assert_eq!(std::fs::read_to_string(tmp_dir.join("a.txt")).unwrap(), "one\nTWO\n");
-    assert_eq!(std::fs::read_to_string(tmp_dir.join("b.txt")).unwrap(), "ALPHA\nbeta\n");
+    assert!(
+        result.text.contains("2 file(s)"),
+        "expected 2 files: {}",
+        result.text
+    );
+    assert_eq!(
+        std::fs::read_to_string(tmp_dir.join("a.txt")).unwrap(),
+        "one\nTWO\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(tmp_dir.join("b.txt")).unwrap(),
+        "ALPHA\nbeta\n"
+    );
 
     let _ = std::fs::remove_dir_all(&tmp_dir);
 }
@@ -161,7 +197,11 @@ async fn test_apply_patch_tool_rejects_traversal() {
     });
     let result = registry.execute("apply_patch", args, &ctx).await;
     assert!(result.is_error, "traversal should be rejected");
-    assert!(result.text.contains("escapes"), "unexpected message: {}", result.text);
+    assert!(
+        result.text.contains("escapes"),
+        "unexpected message: {}",
+        result.text
+    );
 
     let _ = std::fs::remove_dir_all(&tmp_dir);
 }
@@ -175,8 +215,16 @@ async fn test_tool_defs() {
     assert!(names.contains(&"write"), "write tool missing");
     assert!(names.contains(&"edit"), "edit tool missing");
     assert!(names.contains(&"apply_patch"), "apply_patch tool missing");
-    assert!(names.contains(&"run_shell_command"), "run_shell_command tool missing");
+    assert!(
+        names.contains(&"run_shell_command"),
+        "run_shell_command tool missing"
+    );
     assert!(names.contains(&"glob"), "glob tool missing");
     assert!(names.contains(&"grep"), "grep tool missing");
-    assert_eq!(defs.len(), 19, "expected 19 built-in tools, got {}", defs.len());
+    assert_eq!(
+        defs.len(),
+        19,
+        "expected 19 built-in tools, got {}",
+        defs.len()
+    );
 }

@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use crate::crypto::KeyPair;
+use serde::{Deserialize, Serialize};
 
 /// Agent Bill of Materials — a manifest of an agent's identity,
 /// capabilities, and dependencies. Sent during registration to

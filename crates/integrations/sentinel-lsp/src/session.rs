@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use tower_lsp::lsp_types::*;
 
-use std::sync::Arc;
 use sentinel_core::{Agent, AgentThread, AutoApprovalGate};
+use std::sync::Arc;
 
 /// Tracks open documents and provides agent-powered LSP features.
 pub struct LspSession {
@@ -49,7 +49,10 @@ impl LspSession {
         None
     }
 
-    pub fn get_completions(&self, _params: &TextDocumentPositionParams) -> Option<CompletionResponse> {
+    pub fn get_completions(
+        &self,
+        _params: &TextDocumentPositionParams,
+    ) -> Option<CompletionResponse> {
         // Future: provide agent-powered completions
         None
     }
@@ -77,18 +80,31 @@ impl LspSession {
                 ..Default::default()
             }),
         ];
-        Some(actions.into())
+        Some(actions)
     }
 
     pub async fn explain_selection(&self, args: &[serde_json::Value]) -> Option<String> {
         if let Some(ref agent) = self.agent {
-            let prompt = args.first().and_then(|v| v.as_str()).unwrap_or("Explain the selected code");
+            let prompt = args
+                .first()
+                .and_then(|v| v.as_str())
+                .unwrap_or("Explain the selected code");
             let mut thread = AgentThread::new(5, 10, true);
             let gate = AutoApprovalGate;
-            if let Ok(output) = agent.run_with_approval(&mut thread, &format!("Explain this code:\n{}", prompt), &gate, &None).await {
+            if let Ok(output) = agent
+                .run_with_approval(
+                    &mut thread,
+                    &format!("Explain this code:\n{}", prompt),
+                    &gate,
+                    &None,
+                )
+                .await
+            {
                 return match output {
                     sentinel_core::AgentOutput::Success { text } => Some(text),
-                    sentinel_core::AgentOutput::Error { message } => Some(format!("Error: {}", message)),
+                    sentinel_core::AgentOutput::Error { message } => {
+                        Some(format!("Error: {}", message))
+                    }
                 };
             }
         }
@@ -100,7 +116,18 @@ impl LspSession {
             let code = args.first().and_then(|v| v.as_str()).unwrap_or("");
             let mut thread = AgentThread::new(5, 10, true);
             let gate = AutoApprovalGate;
-            if let Ok(output) = agent.run_with_approval(&mut thread, &format!("Refactor the following code to make it cleaner and more efficient:\n{}", code), &gate, &None).await {
+            if let Ok(output) = agent
+                .run_with_approval(
+                    &mut thread,
+                    &format!(
+                        "Refactor the following code to make it cleaner and more efficient:\n{}",
+                        code
+                    ),
+                    &gate,
+                    &None,
+                )
+                .await
+            {
                 let text = match output {
                     sentinel_core::AgentOutput::Success { text } => text,
                     sentinel_core::AgentOutput::Error { message } => format!("Error: {}", message),
@@ -113,10 +140,16 @@ impl LspSession {
 
     pub async fn generate_code(&self, args: &[serde_json::Value]) -> Option<serde_json::Value> {
         if let Some(ref agent) = self.agent {
-            let spec = args.first().and_then(|v| v.as_str()).unwrap_or("Generate code");
+            let spec = args
+                .first()
+                .and_then(|v| v.as_str())
+                .unwrap_or("Generate code");
             let mut thread = AgentThread::new(5, 10, true);
             let gate = AutoApprovalGate;
-            if let Ok(output) = agent.run_with_approval(&mut thread, spec, &gate, &None).await {
+            if let Ok(output) = agent
+                .run_with_approval(&mut thread, spec, &gate, &None)
+                .await
+            {
                 let text = match output {
                     sentinel_core::AgentOutput::Success { text } => text,
                     sentinel_core::AgentOutput::Error { message } => format!("Error: {}", message),
@@ -160,7 +193,9 @@ mod tests {
     fn test_code_actions_available() {
         let session = LspSession::new();
         let params = CodeActionParams {
-            text_document: TextDocumentIdentifier { uri: Url::parse("file:///test.rs").unwrap() },
+            text_document: TextDocumentIdentifier {
+                uri: Url::parse("file:///test.rs").unwrap(),
+            },
             range: Range::new(Position::new(0, 0), Position::new(1, 0)),
             context: CodeActionContext {
                 diagnostics: vec![],

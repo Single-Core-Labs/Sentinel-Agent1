@@ -11,8 +11,17 @@ use super::types::*;
 pub trait MemoryStore: Send + Sync {
     async fn add(&self, memory: Memory) -> crate::memory::Result<Memory>;
     async fn get(&self, id: &str) -> crate::memory::Result<Option<Memory>>;
-    async fn search(&self, query: &str, filter: &MemoryFilter) -> crate::memory::Result<Vec<ScoredMemory>>;
-    async fn supersede(&self, old_id: &str, new_content: &str, reason: &str) -> crate::memory::Result<Memory>;
+    async fn search(
+        &self,
+        query: &str,
+        filter: &MemoryFilter,
+    ) -> crate::memory::Result<Vec<ScoredMemory>>;
+    async fn supersede(
+        &self,
+        old_id: &str,
+        new_content: &str,
+        reason: &str,
+    ) -> crate::memory::Result<Memory>;
     async fn get_history(&self, id: &str) -> crate::memory::Result<Vec<Memory>>;
     async fn delete(&self, id: &str) -> crate::memory::Result<bool>;
     async fn clear(&self, user_id: &str) -> crate::memory::Result<usize>;
@@ -50,7 +59,10 @@ impl SqliteMemoryStore {
     }
 
     fn init_tables(&self) -> crate::memory::Result<()> {
-        let conn = self.conn.try_lock().map_err(|e| crate::memory::MemoryError::LockError(e.to_string()))?;
+        let conn = self
+            .conn
+            .try_lock()
+            .map_err(|e| crate::memory::MemoryError::LockError(e.to_string()))?;
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS memories (
                 id TEXT PRIMARY KEY,
@@ -151,15 +163,21 @@ fn build_where_clause(filter: &MemoryFilter) -> (String, Vec<String>) {
     }
     if let Some(ref cats) = filter.categories {
         let cat_strs: Vec<String> = cats.iter().map(|c| c.as_str().to_string()).collect();
-        let placeholders: Vec<String> = cat_strs.iter().enumerate()
-            .map(|(i, _)| format!("?{}", param_values.len() + i + 1)).collect();
+        let placeholders: Vec<String> = cat_strs
+            .iter()
+            .enumerate()
+            .map(|(i, _)| format!("?{}", param_values.len() + i + 1))
+            .collect();
         conditions.push(format!("m.category IN ({})", placeholders.join(",")));
         param_values.extend(cat_strs);
     }
     if let Some(ref scopes) = filter.scopes {
         let scope_strs: Vec<String> = scopes.iter().map(|s| s.as_str().to_string()).collect();
-        let placeholders: Vec<String> = scope_strs.iter().enumerate()
-            .map(|(i, _)| format!("?{}", param_values.len() + i + 1)).collect();
+        let placeholders: Vec<String> = scope_strs
+            .iter()
+            .enumerate()
+            .map(|(i, _)| format!("?{}", param_values.len() + i + 1))
+            .collect();
         conditions.push(format!("m.scope IN ({})", placeholders.join(",")));
         param_values.extend(scope_strs);
     }
@@ -215,7 +233,7 @@ impl MemoryStore for SqliteMemoryStore {
         let result = {
             let conn = self.conn.lock().await;
             let mut stmt = conn.prepare("SELECT * FROM memories WHERE id = ?1")?;
-            stmt.query_row(params![id], |row| row_to_memory(row)).ok()
+            stmt.query_row(params![id], row_to_memory).ok()
         };
         if let Some(ref m) = result {
             let mut cache = self.cache.lock().await;
@@ -224,12 +242,16 @@ impl MemoryStore for SqliteMemoryStore {
         Ok(result)
     }
 
-    async fn search(&self, query: &str, filter: &MemoryFilter) -> crate::memory::Result<Vec<ScoredMemory>> {
+    async fn search(
+        &self,
+        query: &str,
+        filter: &MemoryFilter,
+    ) -> crate::memory::Result<Vec<ScoredMemory>> {
         if query.trim().is_empty() {
             return self.search_by_filter(filter).await;
         }
 
-        let limit = filter.limit.max(1).min(200);
+        let limit = filter.limit.clamp(1, 200);
 
         // Build WHERE conditions inline with ?2+ numbering (?1 is FTS MATCH)
         let mut conditions: Vec<String> = Vec::new();
@@ -252,15 +274,21 @@ impl MemoryStore for SqliteMemoryStore {
         }
         if let Some(ref cats) = filter.categories {
             let cat_strs: Vec<String> = cats.iter().map(|c| c.as_str().to_string()).collect();
-            let placeholders: Vec<String> = cat_strs.iter().enumerate()
-                .map(|(i, _)| format!("?{}", where_params.len() + i + 2)).collect();
+            let placeholders: Vec<String> = cat_strs
+                .iter()
+                .enumerate()
+                .map(|(i, _)| format!("?{}", where_params.len() + i + 2))
+                .collect();
             conditions.push(format!("m.category IN ({})", placeholders.join(",")));
             where_params.extend(cat_strs);
         }
         if let Some(ref scopes) = filter.scopes {
             let scope_strs: Vec<String> = scopes.iter().map(|s| s.as_str().to_string()).collect();
-            let placeholders: Vec<String> = scope_strs.iter().enumerate()
-                .map(|(i, _)| format!("?{}", where_params.len() + i + 2)).collect();
+            let placeholders: Vec<String> = scope_strs
+                .iter()
+                .enumerate()
+                .map(|(i, _)| format!("?{}", where_params.len() + i + 2))
+                .collect();
             conditions.push(format!("m.scope IN ({})", placeholders.join(",")));
             where_params.extend(scope_strs);
         }
@@ -286,7 +314,8 @@ impl MemoryStore for SqliteMemoryStore {
                 and_clause, limit_param_idx
             );
 
-            let fts_query = query.split_whitespace()
+            let fts_query = query
+                .split_whitespace()
                 .map(|w| format!("\"{}\"", w.replace('"', "")))
                 .collect::<Vec<_>>()
                 .join(" OR ");
@@ -298,15 +327,15 @@ impl MemoryStore for SqliteMemoryStore {
             all_params.extend(where_params);
             all_params.push(limit.to_string());
 
-            let param_refs: Vec<&dyn rusqlite::types::ToSql> =
-                all_params.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
+            let param_refs: Vec<&dyn rusqlite::types::ToSql> = all_params
+                .iter()
+                .map(|s| s as &dyn rusqlite::types::ToSql)
+                .collect();
 
-            let rows = stmt.query_map(param_refs.as_slice(), |row| row_to_memory(row))?;
+            let rows = stmt.query_map(param_refs.as_slice(), row_to_memory)?;
             let mut results = Vec::new();
-            for row in rows {
-                if let Ok(m) = row {
-                    results.push(m);
-                }
+            for m in rows.flatten() {
+                results.push(m);
             }
             results
         };
@@ -315,21 +344,39 @@ impl MemoryStore for SqliteMemoryStore {
         let mut embed_cache = self.embed_cache.lock().await;
         let query_vec = embed_cache.get_or_compute(query);
 
-        let mut scored: Vec<ScoredMemory> = memories.into_iter().map(|m| {
-            let mem_vec = embed_cache.get_or_compute(&m.content);
-            let relevance = combined_score(query, &m.content, Some(&query_vec), Some(&mem_vec));
-            let recency = recency_factor(m.updated_at, 86400.0 * 7.0);
-            let score = relevance * 0.6 + m.importance * 0.3 + recency * 0.1;
-            ScoredMemory { memory: m, score, relevance }
-        }).collect();
+        let mut scored: Vec<ScoredMemory> = memories
+            .into_iter()
+            .map(|m| {
+                let mem_vec = embed_cache.get_or_compute(&m.content);
+                let relevance = combined_score(query, &m.content, Some(&query_vec), Some(&mem_vec));
+                let recency = recency_factor(m.updated_at, 86400.0 * 7.0);
+                let score = relevance * 0.6 + m.importance * 0.3 + recency * 0.1;
+                ScoredMemory {
+                    memory: m,
+                    score,
+                    relevance,
+                }
+            })
+            .collect();
 
-        scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        scored.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         scored.truncate(limit);
         Ok(scored)
     }
 
-    async fn supersede(&self, old_id: &str, new_content: &str, reason: &str) -> crate::memory::Result<Memory> {
-        let old = self.get(old_id).await?
+    async fn supersede(
+        &self,
+        old_id: &str,
+        new_content: &str,
+        reason: &str,
+    ) -> crate::memory::Result<Memory> {
+        let old = self
+            .get(old_id)
+            .await?
             .ok_or_else(|| crate::memory::MemoryError::NotFound(old_id.to_string()))?;
 
         let now = now_seconds();
@@ -409,17 +456,20 @@ impl MemoryStore for SqliteMemoryStore {
             let conn = self.conn.lock().await;
 
             let total: usize = conn.query_row(
-                "SELECT COUNT(*) FROM memories WHERE user_id = ?1", params![user_id],
+                "SELECT COUNT(*) FROM memories WHERE user_id = ?1",
+                params![user_id],
                 |r| r.get(0),
             )?;
 
             let active: usize = conn.query_row(
-                "SELECT COUNT(*) FROM memories WHERE user_id = ?1 AND superseded_by IS NULL", params![user_id],
+                "SELECT COUNT(*) FROM memories WHERE user_id = ?1 AND superseded_by IS NULL",
+                params![user_id],
                 |r| r.get(0),
             )?;
 
             let superseded: usize = conn.query_row(
-                "SELECT COUNT(*) FROM memories WHERE user_id = ?1 AND superseded_by IS NOT NULL", params![user_id],
+                "SELECT COUNT(*) FROM memories WHERE user_id = ?1 AND superseded_by IS NOT NULL",
+                params![user_id],
                 |r| r.get(0),
             )?;
 
@@ -432,10 +482,8 @@ impl MemoryStore for SqliteMemoryStore {
                 let cnt: usize = r.get(1)?;
                 Ok((cat, cnt))
             })?;
-            for row in cat_rows {
-                if let Ok((cat_str, cnt)) = row {
-                    by_category.push((MemoryCategory::from_str(&cat_str), cnt));
-                }
+            for (cat_str, cnt) in cat_rows.flatten() {
+                by_category.push((MemoryCategory::from_str(&cat_str), cnt));
             }
 
             let mut by_scope = Vec::new();
@@ -447,16 +495,14 @@ impl MemoryStore for SqliteMemoryStore {
                 let cnt: usize = r.get(1)?;
                 Ok((scope, cnt))
             })?;
-            for row in scope_rows {
-                if let Ok((scope_str, cnt)) = row {
-                    let scope = match scope_str.as_str() {
-                        "session" => MemoryScope::Session,
-                        "agent" => MemoryScope::Agent,
-                        "turn" => MemoryScope::Turn,
-                        _ => MemoryScope::User,
-                    };
-                    by_scope.push((scope, cnt));
-                }
+            for (scope_str, cnt) in scope_rows.flatten() {
+                let scope = match scope_str.as_str() {
+                    "session" => MemoryScope::Session,
+                    "agent" => MemoryScope::Agent,
+                    "turn" => MemoryScope::Turn,
+                    _ => MemoryScope::User,
+                };
+                by_scope.push((scope, cnt));
             }
 
             let mut by_source = Vec::new();
@@ -468,22 +514,27 @@ impl MemoryStore for SqliteMemoryStore {
                 let cnt: usize = r.get(1)?;
                 Ok((src, cnt))
             })?;
-            for row in src_rows {
-                if let Ok((src_str, cnt)) = row {
-                    let src = match src_str.as_str() {
-                        "inline" => MemorySource::InlineExtraction,
-                        "tool" => MemorySource::ToolCall,
-                        "compaction" => MemorySource::Compaction,
-                        _ => MemorySource::Manual,
-                    };
-                    by_source.push((src, cnt));
-                }
+            for (src_str, cnt) in src_rows.flatten() {
+                let src = match src_str.as_str() {
+                    "inline" => MemorySource::InlineExtraction,
+                    "tool" => MemorySource::ToolCall,
+                    "compaction" => MemorySource::Compaction,
+                    _ => MemorySource::Manual,
+                };
+                by_source.push((src, cnt));
             }
 
             (total, active, superseded, by_category, by_scope, by_source)
         };
 
-        Ok(MemoryStats { total, active, superseded, by_category, by_scope, by_source })
+        Ok(MemoryStats {
+            total,
+            active,
+            superseded,
+            by_category,
+            by_scope,
+            by_source,
+        })
     }
 
     async fn count(&self, user_id: &str) -> crate::memory::Result<usize> {
@@ -500,15 +551,18 @@ impl MemoryStore for SqliteMemoryStore {
 }
 
 impl SqliteMemoryStore {
-    async fn search_by_filter(&self, filter: &MemoryFilter) -> crate::memory::Result<Vec<ScoredMemory>> {
+    async fn search_by_filter(
+        &self,
+        filter: &MemoryFilter,
+    ) -> crate::memory::Result<Vec<ScoredMemory>> {
         let (where_clause, _) = build_where_clause(filter);
-        let limit = filter.limit.max(1).min(200);
+        let limit = filter.limit.clamp(1, 200);
         let offset = filter.offset;
 
         let memories: Vec<Memory> = {
             let conn = self.conn.lock().await;
             let sql = if where_clause.is_empty() {
-                format!("SELECT * FROM memories m ORDER BY m.importance DESC, m.created_at DESC LIMIT ?1 OFFSET ?2")
+                "SELECT * FROM memories m ORDER BY m.importance DESC, m.created_at DESC LIMIT ?1 OFFSET ?2".to_string()
             } else {
                 format!(
                     "SELECT * FROM memories m {} ORDER BY m.importance DESC, m.created_at DESC LIMIT ?1 OFFSET ?2",
@@ -520,25 +574,37 @@ impl SqliteMemoryStore {
             let all_params: Vec<String> = std::iter::once(limit.to_string())
                 .chain(std::iter::once(offset.to_string()))
                 .collect();
-            let param_refs: Vec<&dyn rusqlite::types::ToSql> = all_params.iter().map(|s| s as &dyn rusqlite::types::ToSql).collect();
+            let param_refs: Vec<&dyn rusqlite::types::ToSql> = all_params
+                .iter()
+                .map(|s| s as &dyn rusqlite::types::ToSql)
+                .collect();
 
-            let rows = stmt.query_map(param_refs.as_slice(), |row| row_to_memory(row))?;
+            let rows = stmt.query_map(param_refs.as_slice(), row_to_memory)?;
             let mut results = Vec::new();
-            for row in rows {
-                if let Ok(m) = row {
-                    results.push(m);
-                }
+            for m in rows.flatten() {
+                results.push(m);
             }
             results
         };
 
-        let mut scored: Vec<ScoredMemory> = memories.into_iter().map(|m| {
-            let relevance = 0.5;
-            let score = m.importance * 0.7 + recency_factor(m.updated_at, 86400.0 * 7.0) * 0.3;
-            ScoredMemory { memory: m, score, relevance }
-        }).collect();
+        let mut scored: Vec<ScoredMemory> = memories
+            .into_iter()
+            .map(|m| {
+                let relevance = 0.5;
+                let score = m.importance * 0.7 + recency_factor(m.updated_at, 86400.0 * 7.0) * 0.3;
+                ScoredMemory {
+                    memory: m,
+                    score,
+                    relevance,
+                }
+            })
+            .collect();
 
-        scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        scored.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         Ok(scored)
     }
 }
@@ -548,6 +614,12 @@ impl SqliteMemoryStore {
 pub struct InMemoryStore {
     memories: Mutex<Vec<Memory>>,
     embed_cache: Mutex<EmbeddingCache>,
+}
+
+impl Default for InMemoryStore {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl InMemoryStore {
@@ -572,17 +644,43 @@ impl MemoryStore for InMemoryStore {
         Ok(mems.iter().find(|m| m.id == id).cloned())
     }
 
-    async fn search(&self, query: &str, filter: &MemoryFilter) -> crate::memory::Result<Vec<ScoredMemory>> {
+    async fn search(
+        &self,
+        query: &str,
+        filter: &MemoryFilter,
+    ) -> crate::memory::Result<Vec<ScoredMemory>> {
         let filtered = {
             let mems = self.memories.lock().await;
             mems.iter()
                 .filter(|m| {
-                    if let Some(ref uid) = filter.user_id { if m.user_id != *uid { return false; } }
-                    if let Some(ref sid) = filter.session_id { if m.session_id.as_deref() != Some(sid) { return false; } }
-                    if !filter.include_superseded && m.superseded_by.is_some() { return false; }
-                    if let Some(ref cats) = filter.categories { if !cats.contains(&m.category) { return false; } }
-                    if let Some(ref scopes) = filter.scopes { if !scopes.contains(&m.scope) { return false; } }
-                    if let Some(min_imp) = filter.min_importance { if m.importance < min_imp { return false; } }
+                    if let Some(ref uid) = filter.user_id {
+                        if m.user_id != *uid {
+                            return false;
+                        }
+                    }
+                    if let Some(ref sid) = filter.session_id {
+                        if m.session_id.as_deref() != Some(sid) {
+                            return false;
+                        }
+                    }
+                    if !filter.include_superseded && m.superseded_by.is_some() {
+                        return false;
+                    }
+                    if let Some(ref cats) = filter.categories {
+                        if !cats.contains(&m.category) {
+                            return false;
+                        }
+                    }
+                    if let Some(ref scopes) = filter.scopes {
+                        if !scopes.contains(&m.scope) {
+                            return false;
+                        }
+                    }
+                    if let Some(min_imp) = filter.min_importance {
+                        if m.importance < min_imp {
+                            return false;
+                        }
+                    }
                     true
                 })
                 .cloned()
@@ -592,23 +690,41 @@ impl MemoryStore for InMemoryStore {
         let mut embed_cache = self.embed_cache.lock().await;
         let query_vec = embed_cache.get_or_compute(query);
 
-        let mut scored: Vec<ScoredMemory> = filtered.into_iter().map(|m| {
-            let mem_vec = embed_cache.get_or_compute(&m.content);
-            let relevance = combined_score(query, &m.content, Some(&query_vec), Some(&mem_vec));
-            let recency = recency_factor(m.updated_at, 86400.0 * 7.0);
-            let score = relevance * 0.6 + m.importance * 0.3 + recency * 0.1;
-            ScoredMemory { memory: m, score, relevance }
-        }).collect();
+        let mut scored: Vec<ScoredMemory> = filtered
+            .into_iter()
+            .map(|m| {
+                let mem_vec = embed_cache.get_or_compute(&m.content);
+                let relevance = combined_score(query, &m.content, Some(&query_vec), Some(&mem_vec));
+                let recency = recency_factor(m.updated_at, 86400.0 * 7.0);
+                let score = relevance * 0.6 + m.importance * 0.3 + recency * 0.1;
+                ScoredMemory {
+                    memory: m,
+                    score,
+                    relevance,
+                }
+            })
+            .collect();
 
-        scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
-        scored.truncate(filter.limit.max(1).min(200));
+        scored.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        scored.truncate(filter.limit.clamp(1, 200));
         Ok(scored)
     }
 
-    async fn supersede(&self, old_id: &str, new_content: &str, reason: &str) -> crate::memory::Result<Memory> {
+    async fn supersede(
+        &self,
+        old_id: &str,
+        new_content: &str,
+        reason: &str,
+    ) -> crate::memory::Result<Memory> {
         let new = {
             let mut mems = self.memories.lock().await;
-            let old = mems.iter_mut().find(|m| m.id == old_id)
+            let old = mems
+                .iter_mut()
+                .find(|m| m.id == old_id)
                 .ok_or_else(|| crate::memory::MemoryError::NotFound(old_id.to_string()))?;
             old.superseded_by = Some(generate_memory_id());
             old.updated_at = now_seconds();
@@ -665,24 +781,36 @@ impl MemoryStore for InMemoryStore {
             let mems = self.memories.lock().await;
             let user_mems: Vec<&Memory> = mems.iter().filter(|m| m.user_id == user_id).collect();
             let total = user_mems.len();
-            let active = user_mems.iter().filter(|m| m.superseded_by.is_none()).count();
+            let active = user_mems
+                .iter()
+                .filter(|m| m.superseded_by.is_none())
+                .count();
 
-            let mut cat_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+            let mut cat_counts: std::collections::HashMap<String, usize> =
+                std::collections::HashMap::new();
             for m in &user_mems {
                 if m.superseded_by.is_none() {
-                    *cat_counts.entry(m.category.as_str().to_string()).or_default() += 1;
+                    *cat_counts
+                        .entry(m.category.as_str().to_string())
+                        .or_default() += 1;
                 }
             }
-            let by_category: Vec<(MemoryCategory, usize)> = cat_counts.into_iter()
-                .map(|(k, v)| (MemoryCategory::from_str(&k), v)).collect();
+            let by_category: Vec<(MemoryCategory, usize)> = cat_counts
+                .into_iter()
+                .map(|(k, v)| (MemoryCategory::from_str(&k), v))
+                .collect();
 
-            let mut scope_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+            let mut scope_counts: std::collections::HashMap<String, usize> =
+                std::collections::HashMap::new();
             for m in &user_mems {
                 if m.superseded_by.is_none() {
-                    *scope_counts.entry(m.scope.as_str().to_string()).or_default() += 1;
+                    *scope_counts
+                        .entry(m.scope.as_str().to_string())
+                        .or_default() += 1;
                 }
             }
-            let by_scope: Vec<(MemoryScope, usize)> = scope_counts.into_iter()
+            let by_scope: Vec<(MemoryScope, usize)> = scope_counts
+                .into_iter()
                 .map(|(k, v)| {
                     let scope = match k.as_str() {
                         "session" => MemoryScope::Session,
@@ -691,15 +819,18 @@ impl MemoryStore for InMemoryStore {
                         _ => MemoryScope::User,
                     };
                     (scope, v)
-                }).collect();
+                })
+                .collect();
 
-            let mut src_counts: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+            let mut src_counts: std::collections::HashMap<String, usize> =
+                std::collections::HashMap::new();
             for m in &user_mems {
                 if m.superseded_by.is_none() {
                     *src_counts.entry(m.source.as_str().to_string()).or_default() += 1;
                 }
             }
-            let by_source: Vec<(MemorySource, usize)> = src_counts.into_iter()
+            let by_source: Vec<(MemorySource, usize)> = src_counts
+                .into_iter()
                 .map(|(k, v)| {
                     let src = match k.as_str() {
                         "inline" => MemorySource::InlineExtraction,
@@ -708,17 +839,35 @@ impl MemoryStore for InMemoryStore {
                         _ => MemorySource::Manual,
                     };
                     (src, v)
-                }).collect();
+                })
+                .collect();
 
-            (total, active, total - active, by_category, by_scope, by_source)
+            (
+                total,
+                active,
+                total - active,
+                by_category,
+                by_scope,
+                by_source,
+            )
         };
 
-        Ok(MemoryStats { total, active, superseded: total - active, by_category, by_scope, by_source })
+        Ok(MemoryStats {
+            total,
+            active,
+            superseded: total - active,
+            by_category,
+            by_scope,
+            by_source,
+        })
     }
 
     async fn count(&self, user_id: &str) -> crate::memory::Result<usize> {
         let mems = self.memories.lock().await;
-        Ok(mems.iter().filter(|m| m.user_id == user_id && m.superseded_by.is_none()).count())
+        Ok(mems
+            .iter()
+            .filter(|m| m.user_id == user_id && m.superseded_by.is_none())
+            .count())
     }
 }
 
@@ -761,9 +910,26 @@ mod tests {
     #[tokio::test]
     async fn test_search_finds_relevant() {
         let store = InMemoryStore::new();
-        store.add(test_memory("alice", "Prefers Python for backend", MemoryCategory::Preference)).await.unwrap();
-        store.add(test_memory("alice", "Works at fintech startup", MemoryCategory::Fact)).await.unwrap();
-        let results = store.search("python", &MemoryFilter::for_user("alice")).await.unwrap();
+        store
+            .add(test_memory(
+                "alice",
+                "Prefers Python for backend",
+                MemoryCategory::Preference,
+            ))
+            .await
+            .unwrap();
+        store
+            .add(test_memory(
+                "alice",
+                "Works at fintech startup",
+                MemoryCategory::Fact,
+            ))
+            .await
+            .unwrap();
+        let results = store
+            .search("python", &MemoryFilter::for_user("alice"))
+            .await
+            .unwrap();
         assert!(!results.is_empty());
         assert!(results[0].memory.content.contains("Python"));
     }
@@ -771,8 +937,14 @@ mod tests {
     #[tokio::test]
     async fn test_supersede_chain() {
         let store = InMemoryStore::new();
-        let m1 = store.add(test_memory("bob", "Works at Google", MemoryCategory::Fact)).await.unwrap();
-        let m2 = store.supersede(&m1.id, "Works at Anthropic", "job change").await.unwrap();
+        let m1 = store
+            .add(test_memory("bob", "Works at Google", MemoryCategory::Fact))
+            .await
+            .unwrap();
+        let m2 = store
+            .supersede(&m1.id, "Works at Anthropic", "job change")
+            .await
+            .unwrap();
         let history = store.get_history(&m2.id).await.unwrap();
         assert_eq!(history.len(), 2);
         assert_eq!(history[0].content, "Works at Google");
@@ -782,17 +954,32 @@ mod tests {
     #[tokio::test]
     async fn test_superseded_excluded_by_default() {
         let store = InMemoryStore::new();
-        let m1 = store.add(test_memory("bob", "Old fact", MemoryCategory::Fact)).await.unwrap();
-        store.supersede(&m1.id, "New fact", "updated").await.unwrap();
-        let results = store.search("fact", &MemoryFilter::for_user("bob")).await.unwrap();
+        let m1 = store
+            .add(test_memory("bob", "Old fact", MemoryCategory::Fact))
+            .await
+            .unwrap();
+        store
+            .supersede(&m1.id, "New fact", "updated")
+            .await
+            .unwrap();
+        let results = store
+            .search("fact", &MemoryFilter::for_user("bob"))
+            .await
+            .unwrap();
         assert!(results.iter().all(|r| r.memory.superseded_by.is_none()));
     }
 
     #[tokio::test]
     async fn test_clear_user() {
         let store = InMemoryStore::new();
-        store.add(test_memory("alice", "A", MemoryCategory::Fact)).await.unwrap();
-        store.add(test_memory("bob", "B", MemoryCategory::Fact)).await.unwrap();
+        store
+            .add(test_memory("alice", "A", MemoryCategory::Fact))
+            .await
+            .unwrap();
+        store
+            .add(test_memory("bob", "B", MemoryCategory::Fact))
+            .await
+            .unwrap();
         let cleared = store.clear("alice").await.unwrap();
         assert_eq!(cleared, 1);
         assert_eq!(store.count("alice").await.unwrap(), 0);
@@ -802,8 +989,14 @@ mod tests {
     #[tokio::test]
     async fn test_stats() {
         let store = InMemoryStore::new();
-        store.add(test_memory("alice", "Likes Go", MemoryCategory::Preference)).await.unwrap();
-        store.add(test_memory("alice", "Works at Co", MemoryCategory::Fact)).await.unwrap();
+        store
+            .add(test_memory("alice", "Likes Go", MemoryCategory::Preference))
+            .await
+            .unwrap();
+        store
+            .add(test_memory("alice", "Works at Co", MemoryCategory::Fact))
+            .await
+            .unwrap();
         let stats = store.stats("alice").await.unwrap();
         assert_eq!(stats.total, 2);
         assert_eq!(stats.active, 2);
@@ -821,17 +1014,40 @@ mod tests {
     #[tokio::test]
     async fn test_sqlite_search_fts() {
         let store = SqliteMemoryStore::in_memory().unwrap();
-        store.add(test_memory("alice", "Prefers Python for data science", MemoryCategory::Preference)).await.unwrap();
-        store.add(test_memory("alice", "Works at a startup", MemoryCategory::Fact)).await.unwrap();
-        let results = store.search("python data", &MemoryFilter::for_user("alice")).await.unwrap();
+        store
+            .add(test_memory(
+                "alice",
+                "Prefers Python for data science",
+                MemoryCategory::Preference,
+            ))
+            .await
+            .unwrap();
+        store
+            .add(test_memory(
+                "alice",
+                "Works at a startup",
+                MemoryCategory::Fact,
+            ))
+            .await
+            .unwrap();
+        let results = store
+            .search("python data", &MemoryFilter::for_user("alice"))
+            .await
+            .unwrap();
         assert!(!results.is_empty(), "should find python preference");
     }
 
     #[tokio::test]
     async fn test_sqlite_supersede() {
         let store = SqliteMemoryStore::in_memory().unwrap();
-        let m1 = store.add(test_memory("bob", "Works at Google", MemoryCategory::Fact)).await.unwrap();
-        let m2 = store.supersede(&m1.id, "Works at Anthropic", "changed jobs").await.unwrap();
+        let m1 = store
+            .add(test_memory("bob", "Works at Google", MemoryCategory::Fact))
+            .await
+            .unwrap();
+        let m2 = store
+            .supersede(&m1.id, "Works at Anthropic", "changed jobs")
+            .await
+            .unwrap();
         let history = store.get_history(&m2.id).await.unwrap();
         assert_eq!(history.len(), 2);
     }
@@ -839,8 +1055,14 @@ mod tests {
     #[tokio::test]
     async fn test_sqlite_stats() {
         let store = SqliteMemoryStore::in_memory().unwrap();
-        store.add(test_memory("alice", "Likes Go", MemoryCategory::Preference)).await.unwrap();
-        store.add(test_memory("alice", "Works at Co", MemoryCategory::Fact)).await.unwrap();
+        store
+            .add(test_memory("alice", "Likes Go", MemoryCategory::Preference))
+            .await
+            .unwrap();
+        store
+            .add(test_memory("alice", "Works at Co", MemoryCategory::Fact))
+            .await
+            .unwrap();
         let stats = store.stats("alice").await.unwrap();
         assert_eq!(stats.total, 2);
     }

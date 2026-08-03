@@ -1,6 +1,6 @@
-use std::sync::OnceLock;
-use regex::Regex;
 use crate::config::CacheAlignmentConfig;
+use regex::Regex;
+use std::sync::OnceLock;
 
 static DATE_RE: OnceLock<Regex> = OnceLock::new();
 fn date_re() -> &'static Regex {
@@ -18,37 +18,36 @@ fn time_re() -> &'static Regex {
 
 static FILEPATH_RE: OnceLock<Regex> = OnceLock::new();
 fn filepath_re() -> &'static Regex {
-    FILEPATH_RE.get_or_init(|| Regex::new(
-        r#"(?i)\b(/\w[\w/.\-]+\.[a-z0-9]+|[a-zA-Z]:\\[\w.\-\\]+\.[a-z0-9]+)"#
-    ).unwrap())
+    FILEPATH_RE.get_or_init(|| {
+        Regex::new(r#"(?i)\b(/\w[\w/.\-]+\.[a-z0-9]+|[a-zA-Z]:\\[\w.\-\\]+\.[a-z0-9]+)"#).unwrap()
+    })
 }
 
 static UUID_RE: OnceLock<Regex> = OnceLock::new();
 fn uuid_re() -> &'static Regex {
-    UUID_RE.get_or_init(|| Regex::new(
-        r"\b([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b"
-    ).unwrap())
+    UUID_RE.get_or_init(|| {
+        Regex::new(r"\b([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\b").unwrap()
+    })
 }
 
 static VERSION_RE: OnceLock<Regex> = OnceLock::new();
 fn version_re() -> &'static Regex {
-    VERSION_RE.get_or_init(|| Regex::new(
-        r"\b(\d+\.\d+\.\d+(?:-[a-z0-9]+(?:\.[a-z0-9]+)?)?)\b"
-    ).unwrap())
+    VERSION_RE
+        .get_or_init(|| Regex::new(r"\b(\d+\.\d+\.\d+(?:-[a-z0-9]+(?:\.[a-z0-9]+)?)?)\b").unwrap())
 }
 
 static USER_CONTEXT_RE: OnceLock<Regex> = OnceLock::new();
 fn user_context_re() -> &'static Regex {
-    USER_CONTEXT_RE.get_or_init(|| Regex::new(
-        r"(?i)(?:user|name|username|author|login):\s*(\S+)"
-    ).unwrap())
+    USER_CONTEXT_RE
+        .get_or_init(|| Regex::new(r"(?i)(?:user|name|username|author|login):\s*(\S+)").unwrap())
 }
 
 static TEMP_DIR_RE: OnceLock<Regex> = OnceLock::new();
 fn temp_dir_re() -> &'static Regex {
-    TEMP_DIR_RE.get_or_init(|| Regex::new(
-        r"(?i)\b(/tmp/|[a-z]:\\temp\\|/var/folders/|/private/tmp/|%temp%|%tmp%)"
-    ).unwrap())
+    TEMP_DIR_RE.get_or_init(|| {
+        Regex::new(r"(?i)\b(/tmp/|[a-z]:\\temp\\|/var/folders/|/private/tmp/|%temp%|%tmp%)")
+            .unwrap()
+    })
 }
 
 static BLANK_LINE_RE: OnceLock<Regex> = OnceLock::new();
@@ -70,9 +69,13 @@ pub struct DynamicContext {
 
 impl DynamicContext {
     pub fn is_empty(&self) -> bool {
-        self.dates.is_empty() && self.times.is_empty() && self.file_paths.is_empty()
-            && self.uuids.is_empty() && self.versions.is_empty()
-            && self.user_context.is_empty() && self.temp_dirs.is_empty()
+        self.dates.is_empty()
+            && self.times.is_empty()
+            && self.file_paths.is_empty()
+            && self.uuids.is_empty()
+            && self.versions.is_empty()
+            && self.user_context.is_empty()
+            && self.temp_dirs.is_empty()
             && self.custom_matches.is_empty()
     }
 
@@ -118,17 +121,20 @@ impl DynamicContext {
                 _ => None,
             };
             if let Some(pv) = pv {
-                let cv = format!("{:?}", match k.as_str() {
-                    "dates" => &self.dates,
-                    "times" => &self.times,
-                    "file_paths" => &self.file_paths,
-                    "uuids" => &self.uuids,
-                    "versions" => &self.versions,
-                    "user_context" => &self.user_context,
-                    "temp_dirs" => &self.temp_dirs,
-                    "custom" => &self.custom_matches,
-                    _ => unreachable!(),
-                });
+                let cv = format!(
+                    "{:?}",
+                    match k.as_str() {
+                        "dates" => &self.dates,
+                        "times" => &self.times,
+                        "file_paths" => &self.file_paths,
+                        "uuids" => &self.uuids,
+                        "versions" => &self.versions,
+                        "user_context" => &self.user_context,
+                        "temp_dirs" => &self.temp_dirs,
+                        "custom" => &self.custom_matches,
+                        _ => unreachable!(),
+                    }
+                );
                 if pv != cv {
                     removed.push((k.clone(), pv));
                 }
@@ -136,19 +142,39 @@ impl DynamicContext {
         }
 
         let has_changes = !changed.is_empty();
-        DynamicDelta { changed, removed, has_changes }
+        DynamicDelta {
+            changed,
+            removed,
+            has_changes,
+        }
     }
 
     fn flatten(&self) -> Vec<(String, String)> {
         let mut items: Vec<(String, String)> = Vec::new();
-        for d in &self.dates { items.push(("date".into(), d.clone())); }
-        for t in &self.times { items.push(("time".into(), t.clone())); }
-        for p in &self.file_paths { items.push(("path".into(), p.clone())); }
-        for u in &self.uuids { items.push(("uuid".into(), u.clone())); }
-        for v in &self.versions { items.push(("version".into(), v.clone())); }
-        for u in &self.user_context { items.push(("user".into(), u.clone())); }
-        for t in &self.temp_dirs { items.push(("temp".into(), t.clone())); }
-        for c in &self.custom_matches { items.push(("custom".into(), c.clone())); }
+        for d in &self.dates {
+            items.push(("date".into(), d.clone()));
+        }
+        for t in &self.times {
+            items.push(("time".into(), t.clone()));
+        }
+        for p in &self.file_paths {
+            items.push(("path".into(), p.clone()));
+        }
+        for u in &self.uuids {
+            items.push(("uuid".into(), u.clone()));
+        }
+        for v in &self.versions {
+            items.push(("version".into(), v.clone()));
+        }
+        for u in &self.user_context {
+            items.push(("user".into(), u.clone()));
+        }
+        for t in &self.temp_dirs {
+            items.push(("temp".into(), t.clone()));
+        }
+        for c in &self.custom_matches {
+            items.push(("custom".into(), c.clone()));
+        }
         items
     }
 }
@@ -175,13 +201,22 @@ pub struct CacheAligner {
 
 impl CacheAligner {
     pub fn new(config: CacheAlignmentConfig) -> Self {
-        let compiled_custom = config.custom_patterns.iter()
+        let compiled_custom = config
+            .custom_patterns
+            .iter()
             .filter_map(|p| Regex::new(p).ok())
             .collect();
-        let compiled_date_patterns = config.date_patterns.iter()
+        let compiled_date_patterns = config
+            .date_patterns
+            .iter()
             .filter_map(|p| Regex::new(p).ok())
             .collect();
-        Self { config, previous_context: None, compiled_custom, compiled_date_patterns }
+        Self {
+            config,
+            previous_context: None,
+            compiled_custom,
+            compiled_date_patterns,
+        }
     }
 
     pub fn with_previous(previous: DynamicContext) -> Self {
@@ -328,7 +363,11 @@ impl CacheAligner {
             result = result.split_whitespace().collect::<Vec<_>>().join(" ");
         }
 
-        let dynamic_suffix = build_dynamic_suffix(&ctx, self.previous_context.as_ref(), self.config.delta_tracking);
+        let dynamic_suffix = build_dynamic_suffix(
+            &ctx,
+            self.previous_context.as_ref(),
+            self.config.delta_tracking,
+        );
 
         self.previous_context = Some(ctx.clone());
 
@@ -360,7 +399,9 @@ fn build_dynamic_suffix(
                 return "[Context: no change]".into();
             }
             let mut out = "[Context changed: ".to_string();
-            let parts: Vec<String> = delta.changed.iter()
+            let parts: Vec<String> = delta
+                .changed
+                .iter()
                 .map(|(key, val)| format!("{} → {}", key, val))
                 .collect();
             out.push_str(&parts.join(", "));
@@ -374,9 +415,7 @@ fn build_dynamic_suffix(
     }
 
     let items = ctx.flatten();
-    let parts: Vec<String> = items.iter()
-        .map(|(k, v)| format!("{}: {}", k, v))
-        .collect();
+    let parts: Vec<String> = items.iter().map(|(k, v)| format!("{}: {}", k, v)).collect();
     format!("[Context: {}]", parts.join("; "))
 }
 
@@ -387,19 +426,32 @@ mod tests {
     #[test]
     fn test_extracts_dates() {
         let mut aligner = CacheAligner::new(CacheAlignmentConfig {
-            extract_uuids: false, ..Default::default()
+            extract_uuids: false,
+            ..Default::default()
         });
         let result = aligner.align("Today is 2026-07-22 and yesterday was 2026-07-21");
         assert!(!result.context.dates.is_empty(), "should find dates");
         assert!(result.context.dates.contains(&"2026-07-22".to_string()));
-        assert!(result.static_prefix.contains("<DATE_1>"), "should replace date with placeholder: {:?}", result.static_prefix);
-        assert!(result.dynamic_suffix.starts_with("[Context:"), "suffix should use [Context: ...] format: {:?}", result.dynamic_suffix);
+        assert!(
+            result.static_prefix.contains("<DATE_1>"),
+            "should replace date with placeholder: {:?}",
+            result.static_prefix
+        );
+        assert!(
+            result.dynamic_suffix.starts_with("[Context:"),
+            "suffix should use [Context: ...] format: {:?}",
+            result.dynamic_suffix
+        );
     }
 
     #[test]
     fn test_extracts_uuids() {
         let mut aligner = CacheAligner::new(CacheAlignmentConfig {
-            extract_dates: false, extract_file_paths: false, extract_versions: false, extract_user_context: false, ..Default::default()
+            extract_dates: false,
+            extract_file_paths: false,
+            extract_versions: false,
+            extract_user_context: false,
+            ..Default::default()
         });
         let result = aligner.align("id: 550e8400-e29b-41d4-a716-446655440000");
         assert_eq!(result.context.uuids.len(), 1);
@@ -410,7 +462,11 @@ mod tests {
     fn test_extracts_paths() {
         let mut aligner = CacheAligner::new(CacheAlignmentConfig::default());
         let result = aligner.align("file at /home/user/src/main.rs");
-        assert!(!result.context.file_paths.is_empty(), "should find file paths: {:?}", result.context.file_paths);
+        assert!(
+            !result.context.file_paths.is_empty(),
+            "should find file paths: {:?}",
+            result.context.file_paths
+        );
     }
 
     #[test]
@@ -419,8 +475,15 @@ mod tests {
         let mut aligner = CacheAligner::new(CacheAlignmentConfig::default());
         let r1 = aligner.align(content);
         let r2 = aligner.align(content);
-        assert_eq!(r1.static_prefix, r2.static_prefix, "static prefix should be identical");
-        assert!(r2.dynamic_suffix.contains("[Context: no change]"), "should detect no change: {:?}", r2.dynamic_suffix);
+        assert_eq!(
+            r1.static_prefix, r2.static_prefix,
+            "static prefix should be identical"
+        );
+        assert!(
+            r2.dynamic_suffix.contains("[Context: no change]"),
+            "should detect no change: {:?}",
+            r2.dynamic_suffix
+        );
     }
 
     #[test]
@@ -428,7 +491,11 @@ mod tests {
         let mut aligner = CacheAligner::new(CacheAlignmentConfig::default());
         let _r1 = aligner.align("Today is 2026-07-22");
         let r2 = aligner.align("Today is 2026-07-23");
-        assert!(r2.dynamic_suffix.contains("Context changed"), "should detect change: {:?}", r2.dynamic_suffix);
+        assert!(
+            r2.dynamic_suffix.contains("Context changed"),
+            "should detect change: {:?}",
+            r2.dynamic_suffix
+        );
     }
 
     #[test]
@@ -436,62 +503,130 @@ mod tests {
         let original = "On 2026-07-22, user alice pushed version 2.4.1 to /repo/main.rs";
         let mut aligner = CacheAligner::new(CacheAlignmentConfig::default());
         let result = aligner.align(original);
-        assert!(result.static_prefix.contains("<DATE_1>"), "should replace date, got: {:?}", result.static_prefix);
-        assert!(result.static_prefix.contains("<VER_1>"), "should replace version, got: {:?}", result.static_prefix);
-        assert!(!result.dynamic_suffix.is_empty(), "should have dynamic suffix");
-        assert!(result.dynamic_suffix.starts_with("[Context:"), "suffix should use [Context: ...] format: {:?}", result.dynamic_suffix);
+        assert!(
+            result.static_prefix.contains("<DATE_1>"),
+            "should replace date, got: {:?}",
+            result.static_prefix
+        );
+        assert!(
+            result.static_prefix.contains("<VER_1>"),
+            "should replace version, got: {:?}",
+            result.static_prefix
+        );
+        assert!(
+            !result.dynamic_suffix.is_empty(),
+            "should have dynamic suffix"
+        );
+        assert!(
+            result.dynamic_suffix.starts_with("[Context:"),
+            "suffix should use [Context: ...] format: {:?}",
+            result.dynamic_suffix
+        );
     }
 
     #[test]
     fn test_dynamic_context_is_empty_on_plain_text() {
         let mut aligner = CacheAligner::new(CacheAlignmentConfig::default());
         let result = aligner.align("Hello, how are you?");
-        assert!(result.context.is_empty(), "no dynamic content should be empty");
+        assert!(
+            result.context.is_empty(),
+            "no dynamic content should be empty"
+        );
     }
 
     #[test]
     fn test_normalize_whitespace() {
-        let mut aligner = CacheAligner::new(CacheAlignmentConfig { normalize_whitespace: true, collapse_blank_lines: false, ..Default::default() });
+        let mut aligner = CacheAligner::new(CacheAlignmentConfig {
+            normalize_whitespace: true,
+            collapse_blank_lines: false,
+            ..Default::default()
+        });
         let result = aligner.align("hello    world\n\n\n  test");
-        assert!(result.static_prefix.contains("hello world"), "should normalize spaces: {:?}", result.static_prefix);
+        assert!(
+            result.static_prefix.contains("hello world"),
+            "should normalize spaces: {:?}",
+            result.static_prefix
+        );
     }
 
     #[test]
     fn test_collapse_blank_lines() {
-        let mut aligner = CacheAligner::new(CacheAlignmentConfig { normalize_whitespace: false, collapse_blank_lines: true, ..Default::default() });
+        let mut aligner = CacheAligner::new(CacheAlignmentConfig {
+            normalize_whitespace: false,
+            collapse_blank_lines: true,
+            ..Default::default()
+        });
         let result = aligner.align("a\n\n\n\n\nb");
-        assert!(!result.static_prefix.contains("\n\n\n\n"), "should collapse blanks: {:?}", result.static_prefix);
-        assert!(result.static_prefix.contains("a\n\nb"), "should keep one blank: {:?}", result.static_prefix);
+        assert!(
+            !result.static_prefix.contains("\n\n\n\n"),
+            "should collapse blanks: {:?}",
+            result.static_prefix
+        );
+        assert!(
+            result.static_prefix.contains("a\n\nb"),
+            "should keep one blank: {:?}",
+            result.static_prefix
+        );
     }
 
     #[test]
     fn test_custom_patterns() {
         let cfg = CacheAlignmentConfig {
             custom_patterns: vec![r"\bFOO\d+\b".to_string()],
-            extract_dates: false, extract_file_paths: false, extract_uuids: false,
-            extract_versions: false, extract_user_context: false,
-            normalize_whitespace: false, collapse_blank_lines: false,
+            extract_dates: false,
+            extract_file_paths: false,
+            extract_uuids: false,
+            extract_versions: false,
+            extract_user_context: false,
+            normalize_whitespace: false,
+            collapse_blank_lines: false,
             ..Default::default()
         };
         let mut aligner = CacheAligner::new(cfg);
         let result = aligner.align("test FOO123 bar");
-        assert!(!result.static_prefix.contains("FOO123"), "should strip custom match from prefix: {:?}", result.static_prefix);
-        assert!(result.dynamic_suffix.contains("custom: FOO123"), "suffix should have custom match: {:?}", result.dynamic_suffix);
+        assert!(
+            !result.static_prefix.contains("FOO123"),
+            "should strip custom match from prefix: {:?}",
+            result.static_prefix
+        );
+        assert!(
+            result.dynamic_suffix.contains("custom: FOO123"),
+            "suffix should have custom match: {:?}",
+            result.dynamic_suffix
+        );
     }
 
     #[test]
     fn test_date_patterns_strips_entire_phrase() {
         let cfg = CacheAlignmentConfig {
             date_patterns: vec![r"Current (Date|Time): [^\n]+".to_string()],
-            extract_dates: false, extract_file_paths: false, extract_uuids: false,
-            extract_versions: false, extract_user_context: false,
-            normalize_whitespace: false, collapse_blank_lines: false,
+            extract_dates: false,
+            extract_file_paths: false,
+            extract_uuids: false,
+            extract_versions: false,
+            extract_user_context: false,
+            normalize_whitespace: false,
+            collapse_blank_lines: false,
             ..Default::default()
         };
         let mut aligner = CacheAligner::new(cfg);
         let result = aligner.align("You are helpful. Current Date: 2025-04-06");
-        assert!(!result.static_prefix.contains("Current Date:"), "should strip entire matched phrase: {:?}", result.static_prefix);
-        assert!(!result.static_prefix.contains("2025-04-06"), "should not contain date: {:?}", result.static_prefix);
-        assert!(result.dynamic_suffix.contains("custom: Current Date: 2025-04-06"), "suffix should have the full phrase: {:?}", result.dynamic_suffix);
+        assert!(
+            !result.static_prefix.contains("Current Date:"),
+            "should strip entire matched phrase: {:?}",
+            result.static_prefix
+        );
+        assert!(
+            !result.static_prefix.contains("2025-04-06"),
+            "should not contain date: {:?}",
+            result.static_prefix
+        );
+        assert!(
+            result
+                .dynamic_suffix
+                .contains("custom: Current Date: 2025-04-06"),
+            "suffix should have the full phrase: {:?}",
+            result.dynamic_suffix
+        );
     }
 }

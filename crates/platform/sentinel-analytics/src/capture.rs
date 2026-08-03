@@ -1,17 +1,13 @@
-use std::path::PathBuf;
 use crate::events::TrackEventRequest;
+use std::path::PathBuf;
 
 /// Where processed analytics events are dispatched.
 #[derive(Debug, Clone)]
 pub enum AnalyticsDestination {
     /// Send events to a remote HTTP endpoint.
-    Http {
-        url: String,
-    },
+    Http { url: String },
     /// Write events as newline-delimited JSON to a local file.
-    CaptureFile {
-        path: PathBuf,
-    },
+    CaptureFile { path: PathBuf },
     /// Discard all events (no-op).
     Null,
 }
@@ -32,10 +28,11 @@ impl AnalyticsDestination {
 
 async fn dispatch_http(url: &str, events: &[TrackEventRequest]) -> Result<(), CaptureError> {
     let client = reqwest::Client::new();
-    let body = serde_json::to_value(events)
-        .map_err(|e| CaptureError::SerializeError(e.to_string()))?;
+    let body =
+        serde_json::to_value(events).map_err(|e| CaptureError::SerializeError(e.to_string()))?;
 
-    client.post(url)
+    client
+        .post(url)
         .json(&body)
         .timeout(std::time::Duration::from_secs(10))
         .send()
@@ -50,7 +47,8 @@ async fn dispatch_file(path: &PathBuf, events: &[TrackEventRequest]) -> Result<(
 
     // Ensure parent directory exists
     if let Some(parent) = path.parent() {
-        tokio::fs::create_dir_all(parent).await
+        tokio::fs::create_dir_all(parent)
+            .await
             .map_err(|e| CaptureError::IoError(e.to_string()))?;
     }
 
@@ -64,9 +62,11 @@ async fn dispatch_file(path: &PathBuf, events: &[TrackEventRequest]) -> Result<(
     for event in events {
         let line = serde_json::to_string(event)
             .map_err(|e| CaptureError::SerializeError(e.to_string()))?;
-        file.write_all(line.as_bytes()).await
+        file.write_all(line.as_bytes())
+            .await
             .map_err(|e| CaptureError::IoError(e.to_string()))?;
-        file.write_all(b"\n").await
+        file.write_all(b"\n")
+            .await
             .map_err(|e| CaptureError::IoError(e.to_string()))?;
     }
 

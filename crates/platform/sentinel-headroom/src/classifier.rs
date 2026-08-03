@@ -12,12 +12,17 @@ fn diff_re() -> &'static regex::Regex {
 
 static LOG_ERROR_RE: OnceLock<regex::Regex> = OnceLock::new();
 fn log_error_re() -> &'static regex::Regex {
-    LOG_ERROR_RE.get_or_init(|| regex::Regex::new(r"(?m)^\s*(ERROR|FATAL|TRACE|WARN|FAIL|Error|panic|CAUGHT|CRASH)").unwrap())
+    LOG_ERROR_RE.get_or_init(|| {
+        regex::Regex::new(r"(?m)^\s*(ERROR|FATAL|TRACE|WARN|FAIL|Error|panic|CAUGHT|CRASH)")
+            .unwrap()
+    })
 }
 
 static LOG_PASS_RE: OnceLock<regex::Regex> = OnceLock::new();
 fn log_pass_re() -> &'static regex::Regex {
-    LOG_PASS_RE.get_or_init(|| regex::Regex::new(r"(?m)^\s*(ok |FAILED|test result|running \d+|test .* ...)").unwrap())
+    LOG_PASS_RE.get_or_init(|| {
+        regex::Regex::new(r"(?m)^\s*(ok |FAILED|test result|running \d+|test .* ...)").unwrap()
+    })
 }
 
 static CODE_FN_RE: OnceLock<regex::Regex> = OnceLock::new();
@@ -27,7 +32,9 @@ fn code_fn_re() -> &'static regex::Regex {
 
 static SEARCH_RE: OnceLock<regex::Regex> = OnceLock::new();
 fn search_re() -> &'static regex::Regex {
-    SEARCH_RE.get_or_init(|| regex::Regex::new(r"(?m)^(.*:\d+:\d+:|── |→ |\d+\.\s+.*\s+\(score:|relevance:)").unwrap())
+    SEARCH_RE.get_or_init(|| {
+        regex::Regex::new(r"(?m)^(.*:\d+:\d+:|── |→ |\d+\.\s+.*\s+\(score:|relevance:)").unwrap()
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -61,7 +68,10 @@ impl ContentType {
 
 static HTML_RE: OnceLock<regex::Regex> = OnceLock::new();
 fn html_re() -> &'static regex::Regex {
-    HTML_RE.get_or_init(|| regex::Regex::new(r"(?i)^\s*(<!doctype|<html|<head|<body|<div|<span|<table|<form|<h[1-6])").unwrap())
+    HTML_RE.get_or_init(|| {
+        regex::Regex::new(r"(?i)^\s*(<!doctype|<html|<head|<body|<div|<span|<table|<form|<h[1-6])")
+            .unwrap()
+    })
 }
 
 pub fn classify(content: &str) -> ContentType {
@@ -100,7 +110,7 @@ pub fn classify(content: &str) -> ContentType {
         }
     }
 
-    if line_count >= 3 && line_count <= 2000 {
+    if (3..=2000).contains(&line_count) {
         let code_matches = code_fn_re().find_iter(first_2k).count();
         if code_matches >= 2 {
             return ContentType::SourceCode;
@@ -112,10 +122,10 @@ pub fn classify(content: &str) -> ContentType {
     }
 
     let lower = content[..content.len().min(512)].to_lowercase();
-    if lower.contains("filename") || lower.contains("language:") || lower.contains("```") {
-        if code_fn_re().find_iter(first_2k).count() >= 1 {
-            return ContentType::SourceCode;
-        }
+    if (lower.contains("filename") || lower.contains("language:") || lower.contains("```"))
+        && code_fn_re().find_iter(first_2k).count() >= 1
+    {
+        return ContentType::SourceCode;
     }
 
     ContentType::PlainText
@@ -172,7 +182,10 @@ mod tests {
 
     #[test]
     fn test_classify_plain_text() {
-        assert_eq!(classify("Hello world, this is just some regular text."), ContentType::PlainText);
+        assert_eq!(
+            classify("Hello world, this is just some regular text."),
+            ContentType::PlainText
+        );
     }
 
     #[test]

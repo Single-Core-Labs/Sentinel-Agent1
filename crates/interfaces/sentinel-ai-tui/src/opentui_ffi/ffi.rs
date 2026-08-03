@@ -27,10 +27,7 @@ extern "C" {
     pub fn setBackgroundColor(renderer_handle: NativeHandle, color: *const u16);
     pub fn setUseThread(renderer_handle: NativeHandle, use_thread: bool);
     pub fn setClearOnShutdown(renderer_handle: NativeHandle, clear: bool);
-    pub fn getRenderStats(
-        renderer_handle: NativeHandle,
-        out_ptr: *mut ExternalRenderStats,
-    );
+    pub fn getRenderStats(renderer_handle: NativeHandle, out_ptr: *mut ExternalRenderStats);
     pub fn getTerminalCapabilities(
         renderer_handle: NativeHandle,
         caps_ptr: *mut ExternalCapabilities,
@@ -38,11 +35,7 @@ extern "C" {
     pub fn suspendRenderer(renderer_handle: NativeHandle);
     pub fn resumeRenderer(renderer_handle: NativeHandle);
     pub fn clearTerminal(renderer_handle: NativeHandle);
-    pub fn setTerminalTitle(
-        renderer_handle: NativeHandle,
-        title_ptr: *const u8,
-        title_len: u32,
-    );
+    pub fn setTerminalTitle(renderer_handle: NativeHandle, title_ptr: *const u8, title_len: u32);
     pub fn updateStats(
         renderer_handle: NativeHandle,
         time: f64,
@@ -127,11 +120,7 @@ extern "C" {
     pub fn textBufferGetLength(tb_handle: NativeHandle) -> u32;
     pub fn textBufferAppend(tb_handle: NativeHandle, data_ptr: *const u8, data_len: u32);
     pub fn textBufferGetLineCount(tb_handle: NativeHandle) -> u32;
-    pub fn textBufferGetPlainText(
-        tb_handle: NativeHandle,
-        out_ptr: *mut u8,
-        max_len: u32,
-    ) -> u32;
+    pub fn textBufferGetPlainText(tb_handle: NativeHandle, out_ptr: *mut u8, max_len: u32) -> u32;
     pub fn textBufferClear(tb_handle: NativeHandle);
     pub fn textBufferReset(tb_handle: NativeHandle);
     pub fn textBufferSetDefaultFg(tb_handle: NativeHandle, fg: *const u16);
@@ -164,21 +153,10 @@ extern "C" {
     );
 
     // ── Cursor ──
-    pub fn setCursorPosition(
-        renderer_handle: NativeHandle,
-        x: i32,
-        y: i32,
-        visible: bool,
-    );
+    pub fn setCursorPosition(renderer_handle: NativeHandle, x: i32, y: i32, visible: bool);
     pub fn setCursorColor(renderer_handle: NativeHandle, color: *const u16);
-    pub fn setCursorStyleOptions(
-        renderer_handle: NativeHandle,
-        options: *const CursorStyleOptions,
-    );
-    pub fn getCursorState(
-        renderer_handle: NativeHandle,
-        out_ptr: *mut ExternalCursorState,
-    );
+    pub fn setCursorStyleOptions(renderer_handle: NativeHandle, options: *const CursorStyleOptions);
+    pub fn getCursorState(renderer_handle: NativeHandle, out_ptr: *mut ExternalCursorState);
 
     // ── Hit Grid ──
     pub fn addToHitGrid(
@@ -206,11 +184,7 @@ extern "C" {
     // ── Terminal Control ──
     pub fn enableMouse(renderer_handle: NativeHandle, enable_movement: bool);
     pub fn disableMouse(renderer_handle: NativeHandle);
-    pub fn setDebugOverlay(
-        renderer_handle: NativeHandle,
-        enabled: bool,
-        corner: u8,
-    );
+    pub fn setDebugOverlay(renderer_handle: NativeHandle, enabled: bool, corner: u8);
     pub fn enableKittyKeyboard(renderer_handle: NativeHandle, flags: u8);
     pub fn disableKittyKeyboard(renderer_handle: NativeHandle);
     pub fn triggerNotification(

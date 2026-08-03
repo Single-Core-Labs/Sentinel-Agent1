@@ -1,5 +1,5 @@
+use crate::graph::{AgentNode, SpawnEdgeStatus, ThreadSpawnEdge};
 use async_trait::async_trait;
-use crate::graph::{ThreadSpawnEdge, SpawnEdgeStatus, AgentNode};
 
 /// Storage-neutral interface for managing agent thread topology.
 ///

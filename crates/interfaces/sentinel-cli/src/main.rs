@@ -1,20 +1,20 @@
-mod approval;
-mod model_selector;
-mod display;
-mod handler;
-mod exec;
-mod auth;
-mod server;
-mod proxy;
-mod diagnostics;
 mod ai;
-mod local;
-mod web;
+mod approval;
+mod auth;
 mod completion;
-mod plugin_cmd;
+mod diagnostics;
+mod display;
+mod exec;
 mod gpu_optimize;
+mod handler;
+mod local;
+mod model_selector;
+mod plugin_cmd;
+mod proxy;
+mod server;
 mod telemetry;
 mod tui;
+mod web;
 
 use colored::*;
 

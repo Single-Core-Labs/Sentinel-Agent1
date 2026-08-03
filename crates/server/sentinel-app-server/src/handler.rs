@@ -1,19 +1,19 @@
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::collections::HashMap;
-use std::time::Instant;
-use serde_json::Value;
-use sentinel_app_server_protocol::rpc::{JsonRpcRequest, JsonRpcResponse, JsonRpcError};
-use sentinel_core::thread_store::ThreadStore;
+use sentinel_analytics::{AnalyticsEvent, AnalyticsPipeline, EventKind};
+use sentinel_app_server_protocol::api::{self, methods, ServerEvent, SessionSummary};
+use sentinel_app_server_protocol::rpc::{JsonRpcError, JsonRpcRequest, JsonRpcResponse};
+use sentinel_config::SentinelConfig;
+use sentinel_core::conversation::Item;
 #[cfg(feature = "sqlite")]
 use sentinel_core::thread_store::SqliteThreadStore;
-use sentinel_core::conversation::Item;
-use sentinel_app_server_protocol::api::{self, methods, ServerEvent, SessionSummary};
-use sentinel_config::SentinelConfig;
-use sentinel_tools::ToolRegistry;
+use sentinel_core::thread_store::ThreadStore;
 use sentinel_provider::{ModelProvider, ProviderKind};
 use sentinel_provider_info::ProviderInfo;
-use sentinel_analytics::{AnalyticsPipeline, AnalyticsEvent, EventKind};
+use sentinel_tools::ToolRegistry;
+use serde_json::Value;
+use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+use std::time::Instant;
 use tokio::sync::{mpsc, oneshot, Mutex, RwLock};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
@@ -49,7 +49,10 @@ impl RequestHandler {
         sessions.get(session_id).cloned()
     }
 
-    async fn get_or_load_session(&self, session_id: &str) -> Result<Arc<crate::session::AppSession>, JsonRpcError> {
+    async fn get_or_load_session(
+        &self,
+        session_id: &str,
+    ) -> Result<Arc<crate::session::AppSession>, JsonRpcError> {
         let mut sessions = self.sessions.lock().await;
         if let Some(session) = sessions.get(session_id) {
             return Ok(session.clone());
@@ -59,12 +62,16 @@ impl RequestHandler {
             match store.load_thread(session_id).await {
                 Ok(thread) => {
                     let model_id = self.config.agent.default_model.clone();
-                    let provider_info = self.find_provider_for_model(&model_id)
-                        .ok_or_else(|| JsonRpcError::internal_error(format!(
-                            "No provider info found for default model: {}", model_id
-                        )))?;
-                    let provider = ProviderKind::from_info(provider_info)
-                        .map_err(|e| JsonRpcError::internal_error(format!("Failed to create provider: {}", e)))?;
+                    let provider_info =
+                        self.find_provider_for_model(&model_id).ok_or_else(|| {
+                            JsonRpcError::internal_error(format!(
+                                "No provider info found for default model: {}",
+                                model_id
+                            ))
+                        })?;
+                    let provider = ProviderKind::from_info(provider_info).map_err(|e| {
+                        JsonRpcError::internal_error(format!("Failed to create provider: {}", e))
+                    })?;
                     let provider: Arc<dyn ModelProvider> = Arc::new(provider);
 
                     let session = Arc::new(crate::session::AppSession::new_with_thread(
@@ -81,11 +88,15 @@ impl RequestHandler {
                     Ok(session)
                 }
                 Err(e) => Err(JsonRpcError::invalid_params(format!(
-                    "Session not found or failed to load from database: {}", e
+                    "Session not found or failed to load from database: {}",
+                    e
                 ))),
             }
         } else {
-            Err(JsonRpcError::invalid_params(format!("Session not found: {}", session_id)))
+            Err(JsonRpcError::invalid_params(format!(
+                "Session not found: {}",
+                session_id
+            )))
         }
     }
 
@@ -201,7 +212,10 @@ impl RequestHandler {
             methods::GPU_PROFILE => self.handle_gpu_profile(req.params).await,
             methods::GPU_NCU => self.handle_gpu_ncu(req.params).await,
             methods::GPU_DISASM => self.handle_gpu_disasm(req.params).await,
-            _ => Err(JsonRpcError::method_not_found(format!("Unknown method: {}", req.method))),
+            _ => Err(JsonRpcError::method_not_found(format!(
+                "Unknown method: {}",
+                req.method
+            ))),
         };
 
         match result {
@@ -226,22 +240,26 @@ impl RequestHandler {
 
     async fn handle_create_session(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
         let p: api::CreateSessionParams = parse_params(params)?;
-        let model_id = p.model.unwrap_or_else(|| self.config.agent.default_model.clone());
+        let model_id = p
+            .model
+            .unwrap_or_else(|| self.config.agent.default_model.clone());
 
-        let provider_info = self.find_provider_for_model(&model_id)
-            .ok_or_else(|| {
-                JsonRpcError::invalid_params(format!(
-                    "No configured provider found for model '{}'. Available providers: {}",
-                    model_id,
-                    self.config.providers().iter()
-                        .flat_map(|p| p.models.iter().map(|m| m.id.as_str()))
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                ))
-            })?;
+        let provider_info = self.find_provider_for_model(&model_id).ok_or_else(|| {
+            JsonRpcError::invalid_params(format!(
+                "No configured provider found for model '{}'. Available providers: {}",
+                model_id,
+                self.config
+                    .providers()
+                    .iter()
+                    .flat_map(|p| p.models.iter().map(|m| m.id.as_str()))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ))
+        })?;
 
-        let provider = ProviderKind::from_info(provider_info)
-            .map_err(|e| JsonRpcError::internal_error(format!("Failed to create provider: {}", e)))?;
+        let provider = ProviderKind::from_info(provider_info).map_err(|e| {
+            JsonRpcError::internal_error(format!("Failed to create provider: {}", e))
+        })?;
         let provider: Arc<dyn ModelProvider> = Arc::new(provider);
 
         let session = match &self.headroom_compressor {
@@ -263,7 +281,10 @@ impl RequestHandler {
         };
 
         let session_id = session.id.clone();
-        self.sessions.lock().await.insert(session_id.clone(), session.clone());
+        self.sessions
+            .lock()
+            .await
+            .insert(session_id.clone(), session.clone());
 
         if let Some(ref store) = self.thread_store {
             let thread = session.thread.lock().await;
@@ -272,9 +293,10 @@ impl RequestHandler {
             }
         }
 
-        self.analytics.emit(
-            AnalyticsEvent::new(EventKind::SessionCreated, Some(session_id.clone()))
-        );
+        self.analytics.emit(AnalyticsEvent::new(
+            EventKind::SessionCreated,
+            Some(session_id.clone()),
+        ));
 
         Ok(serde_json::json!({
             "session_id": session_id,
@@ -296,9 +318,10 @@ impl RequestHandler {
             }
         }
 
-        self.analytics.emit(
-            AnalyticsEvent::new(EventKind::SessionEnded, Some(session_id.clone()))
-        );
+        self.analytics.emit(AnalyticsEvent::new(
+            EventKind::SessionEnded,
+            Some(session_id.clone()),
+        ));
 
         Ok(serde_json::json!({ "destroyed": true, "session_id": session_id }))
     }
@@ -326,10 +349,11 @@ impl RequestHandler {
         let p: api::ChatParams = parse_params(params)?;
         let session = self.get_or_load_session(&p.session_id).await?;
 
-        self.tokens_in.fetch_add(estimate_tokens(&p.message), Ordering::Relaxed);
+        self.tokens_in
+            .fetch_add(estimate_tokens(&p.message), Ordering::Relaxed);
         self.analytics.emit(
             AnalyticsEvent::new(EventKind::MessageSent, Some(p.session_id.clone()))
-                .with_metadata(serde_json::json!({ "len": p.message.len() }))
+                .with_metadata(serde_json::json!({ "len": p.message.len() })),
         );
 
         let chat_result = session.chat(&p.message).await;
@@ -343,10 +367,11 @@ impl RequestHandler {
 
         match chat_result {
             Ok(response) => {
-                self.tokens_out.fetch_add(estimate_tokens(&response), Ordering::Relaxed);
+                self.tokens_out
+                    .fetch_add(estimate_tokens(&response), Ordering::Relaxed);
                 self.analytics.emit(
                     AnalyticsEvent::new(EventKind::MessageReceived, Some(p.session_id))
-                        .with_metadata(serde_json::json!({ "len": response.len() }))
+                        .with_metadata(serde_json::json!({ "len": response.len() })),
                 );
                 Ok(serde_json::json!({ "response": response }))
             }
@@ -410,7 +435,7 @@ impl RequestHandler {
 
         self.analytics.emit(
             AnalyticsEvent::new(EventKind::ToolCalled, None)
-                .with_metadata(serde_json::json!({ "tool": p.tool_name }))
+                .with_metadata(serde_json::json!({ "tool": p.tool_name })),
         );
 
         Ok(serde_json::json!({
@@ -489,7 +514,10 @@ impl RequestHandler {
         }))
     }
 
-    async fn handle_command_exec_sandboxed(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
+    async fn handle_command_exec_sandboxed(
+        &self,
+        params: Option<Value>,
+    ) -> Result<Value, JsonRpcError> {
         let p: api::CommandExecParams = parse_params(params)?;
         if p.command.is_empty() {
             return Err(JsonRpcError::invalid_params("command is required"));
@@ -515,7 +543,9 @@ impl RequestHandler {
 
     fn config_with_overrides(&self) -> Result<Value, JsonRpcError> {
         let mut base = self.handle_config_get()?;
-        let overrides = self.config_overrides.try_read()
+        let overrides = self
+            .config_overrides
+            .try_read()
             .map_err(|_| JsonRpcError::internal_error("config overrides lock poisoned"))?;
         if let Some(obj) = base.as_object_mut() {
             for (k, v) in overrides.iter() {
@@ -526,9 +556,9 @@ impl RequestHandler {
     }
 
     async fn handle_config_set(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
-        let params = params
-            .ok_or_else(|| JsonRpcError::invalid_params("Missing params"))?;
-        let obj = params.as_object()
+        let params = params.ok_or_else(|| JsonRpcError::invalid_params("Missing params"))?;
+        let obj = params
+            .as_object()
             .ok_or_else(|| JsonRpcError::invalid_params("Params must be an object"))?;
 
         // Validate the supported keys before applying anything.
@@ -543,9 +573,7 @@ impl RequestHandler {
             }
             let ok = match key.as_str() {
                 "default_model" => value.is_string() && !value.as_str().unwrap_or("").is_empty(),
-                "max_turns" | "max_iterations" => {
-                    value.as_u64().is_some_and(|n| n > 0)
-                }
+                "max_turns" | "max_iterations" => value.as_u64().is_some_and(|n| n > 0),
                 "yolo_mode" => value.is_boolean(),
                 _ => false,
             };
@@ -597,7 +625,10 @@ impl RequestHandler {
         let p: api::AskUserParams = parse_params(params)?;
 
         let (tx, _rx) = oneshot::channel::<String>();
-        self.pending_dialogs.lock().await.insert(p.request_id.clone(), tx);
+        self.pending_dialogs
+            .lock()
+            .await
+            .insert(p.request_id.clone(), tx);
 
         if let Some(sid) = &session_id {
             if let Some(session) = self.get_session(sid).await {
@@ -619,7 +650,10 @@ impl RequestHandler {
         }))
     }
 
-    async fn handle_dialog_submit_response(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
+    async fn handle_dialog_submit_response(
+        &self,
+        params: Option<Value>,
+    ) -> Result<Value, JsonRpcError> {
         let p: api::SubmitResponseParams = parse_params(params)?;
         let mut pending = self.pending_dialogs.lock().await;
         match pending.remove(&p.request_id) {
@@ -646,7 +680,10 @@ impl RequestHandler {
     ) -> Result<String, JsonRpcError> {
         let request_id = uuid::Uuid::new_v4().to_string();
         let (tx, rx) = oneshot::channel::<String>();
-        self.pending_dialogs.lock().await.insert(request_id.clone(), tx);
+        self.pending_dialogs
+            .lock()
+            .await
+            .insert(request_id.clone(), tx);
 
         if let Some(sid) = session_id {
             if let Some(session) = self.get_session(sid).await {
@@ -708,13 +745,16 @@ impl RequestHandler {
             }
         }
 
-        summaries.sort_by(|a, b| b.last_active_at.cmp(&a.last_active_at));
+        summaries.sort_by_key(|b| std::cmp::Reverse(b.last_active_at));
         Ok(serde_json::json!({ "sessions": summaries }))
     }
 
     async fn handle_ide_context_sync(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
         let p: api::IdeContextParams = parse_params(params)?;
-        let key = p.active_file.clone().unwrap_or_else(|| "<none>".to_string());
+        let key = p
+            .active_file
+            .clone()
+            .unwrap_or_else(|| "<none>".to_string());
         let value = serde_json::to_value(&p).unwrap_or_default();
         self.ide_context.write().await.insert(key.clone(), value);
         Ok(serde_json::json!({
@@ -746,7 +786,8 @@ impl RequestHandler {
             }
         }
         *self.auth_token.write().await = Some(p.token.clone());
-        self.analytics.emit(AnalyticsEvent::new(EventKind::SessionCreated, None));
+        self.analytics
+            .emit(AnalyticsEvent::new(EventKind::SessionCreated, None));
         Ok(serde_json::json!({
             "authenticated": true,
             "agent_id": null,
@@ -802,8 +843,14 @@ impl RequestHandler {
         let name = run_gpu_cmd(&["--query-gpu=name", "--format=csv,noheader"]);
         let mem_total = run_gpu_cmd(&["--query-gpu=memory.total", "--format=csv,noheader,nounits"]);
         let mem_used = run_gpu_cmd(&["--query-gpu=memory.used", "--format=csv,noheader,nounits"]);
-        let util = run_gpu_cmd(&["--query-gpu=utilization.gpu", "--format=csv,noheader,nounits"]);
-        let temp = run_gpu_cmd(&["--query-gpu=temperature.gpu", "--format=csv,noheader,nounits"]);
+        let util = run_gpu_cmd(&[
+            "--query-gpu=utilization.gpu",
+            "--format=csv,noheader,nounits",
+        ]);
+        let temp = run_gpu_cmd(&[
+            "--query-gpu=temperature.gpu",
+            "--format=csv,noheader,nounits",
+        ]);
 
         let mem_total_mb = mem_total.and_then(|s| s.trim().parse::<f64>().ok());
         let mem_used_mb = mem_used.and_then(|s| s.trim().parse::<f64>().ok());
@@ -820,10 +867,13 @@ impl RequestHandler {
     /// Zero-token GPU kernel emulation for the OpenTUI frontend (/emulate).
     async fn handle_gpu_emulate(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
         let p: api::GpuEmulateParams = parse_params(params)?;
-        let source = std::fs::read_to_string(&p.file_path)
-            .map_err(|e| JsonRpcError::invalid_params(format!("cannot read '{}': {}", p.file_path, e)))?;
+        let source = std::fs::read_to_string(&p.file_path).map_err(|e| {
+            JsonRpcError::invalid_params(format!("cannot read '{}': {}", p.file_path, e))
+        })?;
         let fname = std::path::Path::new(&p.file_path)
-            .file_name().and_then(|n| n.to_str()).unwrap_or(&p.file_path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(&p.file_path)
             .to_string();
 
         let language = sentinel_gpu_profiler::langs::detect_language(&fname, &source);
@@ -832,21 +882,36 @@ impl RequestHandler {
             // Normalise to lower case for simple matching.
             let n = name.trim().to_ascii_lowercase();
             match n.as_str() {
-                "sm_61" | "pascal" | "6.1" | "gtx 1080 ti" | "1080" => Some(sentinel_gpu_profiler::GpuArch::Pascal61),
+                "sm_61" | "pascal" | "6.1" | "gtx 1080 ti" | "1080" => {
+                    Some(sentinel_gpu_profiler::GpuArch::Pascal61)
+                }
                 "sm_70" | "volta" | "7.0" | "v100" => Some(sentinel_gpu_profiler::GpuArch::Volta70),
-                "sm_75" | "turing" | "7.5" | "rtx 2080 ti" | "2080" => Some(sentinel_gpu_profiler::GpuArch::Turing75),
-                "sm_80" | "ampere" | "8.0" | "a100" => Some(sentinel_gpu_profiler::GpuArch::Ampere80),
-                "sm_86" | "8.6" | "rtx 3090" | "3090" => Some(sentinel_gpu_profiler::GpuArch::Ampere86),
-                "sm_89" | "ada" | "ada lovelace" | "8.9" | "rtx 4090" | "4090" => Some(sentinel_gpu_profiler::GpuArch::Ada89),
-                "sm_90" | "hopper" | "9.0" | "h100" => Some(sentinel_gpu_profiler::GpuArch::Hopper90),
+                "sm_75" | "turing" | "7.5" | "rtx 2080 ti" | "2080" => {
+                    Some(sentinel_gpu_profiler::GpuArch::Turing75)
+                }
+                "sm_80" | "ampere" | "8.0" | "a100" => {
+                    Some(sentinel_gpu_profiler::GpuArch::Ampere80)
+                }
+                "sm_86" | "8.6" | "rtx 3090" | "3090" => {
+                    Some(sentinel_gpu_profiler::GpuArch::Ampere86)
+                }
+                "sm_89" | "ada" | "ada lovelace" | "8.9" | "rtx 4090" | "4090" => {
+                    Some(sentinel_gpu_profiler::GpuArch::Ada89)
+                }
+                "sm_90" | "hopper" | "9.0" | "h100" => {
+                    Some(sentinel_gpu_profiler::GpuArch::Hopper90)
+                }
                 "sm_92" | "9.2" | "h200" => Some(sentinel_gpu_profiler::GpuArch::Hopper92),
-                "sm_100" | "blackwell" | "10.0" | "rtx 5090" | "5090" => Some(sentinel_gpu_profiler::GpuArch::Blackwell100),
+                "sm_100" | "blackwell" | "10.0" | "rtx 5090" | "5090" => {
+                    Some(sentinel_gpu_profiler::GpuArch::Blackwell100)
+                }
                 "sm_102" | "10.2" | "b200" => Some(sentinel_gpu_profiler::GpuArch::Blackwell102),
                 _ => None,
             }
         } else {
             None
-        }.unwrap_or(sentinel_gpu_profiler::GpuArch::Ampere86);
+        }
+        .unwrap_or(sentinel_gpu_profiler::GpuArch::Ampere86);
         let arches = vec![arch];
         let req = sentinel_gpu_profiler::emulate::EmulateRequest {
             source,
@@ -867,10 +932,14 @@ impl RequestHandler {
             report.push_str(&out.report);
         }
         if let Some(sweep) = &out.sweep_result {
-            report.push_str("\n");
-            report.push_str(&sentinel_gpu_profiler::emulate::format_sweep_table(&sweep.entries));
+            report.push('\n');
+            report.push_str(&sentinel_gpu_profiler::emulate::format_sweep_table(
+                &sweep.entries,
+            ));
             if !sweep.entries.is_empty() {
-                report.push_str(&sentinel_gpu_profiler::emulate::format_sweep_recommendations(&sweep.entries));
+                report.push_str(
+                    &sentinel_gpu_profiler::emulate::format_sweep_recommendations(&sweep.entries),
+                );
             }
         }
         Ok(serde_json::json!({
@@ -882,10 +951,13 @@ impl RequestHandler {
     /// Zero-token static kernel analysis for the OpenTUI frontend (/profile).
     async fn handle_gpu_profile(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
         let p: api::GpuProfileParams = parse_params(params)?;
-        let source = std::fs::read_to_string(&p.file_path)
-            .map_err(|e| JsonRpcError::invalid_params(format!("cannot read '{}': {}", p.file_path, e)))?;
+        let source = std::fs::read_to_string(&p.file_path).map_err(|e| {
+            JsonRpcError::invalid_params(format!("cannot read '{}': {}", p.file_path, e))
+        })?;
         let fname = std::path::Path::new(&p.file_path)
-            .file_name().and_then(|n| n.to_str()).unwrap_or(&p.file_path)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or(&p.file_path)
             .to_string();
 
         let result = sentinel_gpu_profiler::langs::analyze(&fname, &source);
@@ -906,10 +978,7 @@ impl RequestHandler {
                 };
                 report.push_str(&format!(
                     "  L{} [{}] {} → {}\n",
-                    issue.line,
-                    sev,
-                    issue.message,
-                    issue.suggestion
+                    issue.line, sev, issue.message, issue.suggestion
                 ));
             }
         }
@@ -947,7 +1016,9 @@ impl RequestHandler {
             // ncu not found — return a graceful degraded result.
             let result = GpuNcuResult {
                 raw: String::new(),
-                bottleneck_summary: "ncu not found. Install NVIDIA Nsight Compute and ensure `ncu` is on PATH.".into(),
+                bottleneck_summary:
+                    "ncu not found. Install NVIDIA Nsight Compute and ensure `ncu` is on PATH."
+                        .into(),
                 metrics: vec![],
                 ncu_available: false,
             };
@@ -975,7 +1046,11 @@ impl RequestHandler {
         let raw_stderr = String::from_utf8_lossy(&out.stderr).to_string();
 
         // Combine stdout+stderr (ncu often writes diagnostics to stderr).
-        let raw_combined = if raw_stdout.is_empty() { raw_stderr.clone() } else { raw_stdout.clone() };
+        let raw_combined = if raw_stdout.is_empty() {
+            raw_stderr.clone()
+        } else {
+            raw_stdout.clone()
+        };
         // Truncate to 64 KB to avoid flooding the WebSocket.
         let raw_truncated: String = raw_combined.chars().take(65_536).collect();
 
@@ -1007,8 +1082,9 @@ impl RequestHandler {
 
         // If the file is already .ptx source, just read it.
         if ext == "ptx" && (mode == "ptx" || mode.is_empty()) {
-            let content = std::fs::read_to_string(path)
-                .map_err(|e| JsonRpcError::invalid_params(format!("cannot read '{}': {}", p.file_path, e)))?;
+            let content = std::fs::read_to_string(path).map_err(|e| {
+                JsonRpcError::invalid_params(format!("cannot read '{}': {}", p.file_path, e))
+            })?;
             let result = GpuDisasmResult {
                 disasm: content,
                 source: "file".into(),
@@ -1033,7 +1109,10 @@ impl RequestHandler {
             let bin2 = bin.clone();
             let file_path2 = p.file_path.clone();
             let out = tokio::task::spawn_blocking(move || {
-                std::process::Command::new(&bin2).arg("--print-code").arg(&file_path2).output()
+                std::process::Command::new(&bin2)
+                    .arg("--print-code")
+                    .arg(&file_path2)
+                    .output()
             })
             .await
             .ok()
@@ -1055,10 +1134,17 @@ impl RequestHandler {
         // Try cuobjdump as fallback.
         let cuobjdump = which_tool("cuobjdump");
         if let Some(bin) = cuobjdump {
-            let flag = if mode == "sass" { "--dump-sass" } else { "--dump-ptx" };
+            let flag = if mode == "sass" {
+                "--dump-sass"
+            } else {
+                "--dump-ptx"
+            };
             let file_path2 = p.file_path.clone();
             let out = tokio::task::spawn_blocking(move || {
-                std::process::Command::new(&bin).arg(flag).arg(&file_path2).output()
+                std::process::Command::new(&bin)
+                    .arg(flag)
+                    .arg(&file_path2)
+                    .output()
             })
             .await
             .ok()
@@ -1081,9 +1167,11 @@ impl RequestHandler {
 
         // Neither tool available — generate a PTX sketch from source if it's a .cu file.
         if matches!(ext, "cu" | "cuh") {
-            let source = std::fs::read_to_string(path)
-                .unwrap_or_else(|_| String::new());
-            let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or(&p.file_path);
+            let source = std::fs::read_to_string(path).unwrap_or_else(|_| String::new());
+            let fname = path
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or(&p.file_path);
             let language = sentinel_gpu_profiler::langs::detect_language(fname, &source);
             let sketch = generate_ptx_sketch(&source, language.name());
             let result = GpuDisasmResult {
@@ -1107,7 +1195,11 @@ fn run_gpu_cmd(args: &[&str]) -> Option<String> {
         .ok()
         .filter(|o| o.status.success())?;
     let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    if s.is_empty() { None } else { Some(s) }
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
 }
 
 /// Approximate token estimate (chars / 4) for diagnostics counters.
@@ -1240,8 +1332,174 @@ fn diff_lines(original: &str, modified: &str) -> String {
 fn parse_params<T: serde::de::DeserializeOwned>(params: Option<Value>) -> Result<T, JsonRpcError> {
     params
         .ok_or_else(|| JsonRpcError::invalid_params("Missing params"))
-        .and_then(|v| serde_json::from_value(v)
-            .map_err(|e| JsonRpcError::invalid_params(e.to_string())))
+        .and_then(|v| {
+            serde_json::from_value(v).map_err(|e| JsonRpcError::invalid_params(e.to_string()))
+        })
+}
+
+/// Check if a binary is available on PATH, returning its resolved path.
+fn which_tool(name: &str) -> Option<String> {
+    let out = std::process::Command::new(if cfg!(target_os = "windows") {
+        "where"
+    } else {
+        "which"
+    })
+    .arg(name)
+    .output()
+    .ok()
+    .filter(|o| o.status.success())?;
+    let s = String::from_utf8_lossy(&out.stdout)
+        .trim()
+        .lines()
+        .next()?
+        .to_string();
+    if s.is_empty() {
+        None
+    } else {
+        Some(s)
+    }
+}
+
+/// Parse `ncu --csv` output into a flat list of metric name/value/unit triples.
+/// The CSV format is:  "ID","Process","Host","Kernel","Invocation","MetricName","MetricUnit","MetricValue"
+fn parse_ncu_csv(csv: &str) -> Vec<api::NcuMetric> {
+    let mut metrics = Vec::new();
+    let mut in_header = true;
+    // Column indices — discovered from header row.
+    let (mut col_name, mut col_unit, mut col_value) = (5usize, 6usize, 7usize);
+
+    for line in csv.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let cols: Vec<&str> = line.splitn(20, ',').map(|s| s.trim_matches('"')).collect();
+        if in_header {
+            in_header = false;
+            // Detect column positions robustly.
+            for (i, col) in cols.iter().enumerate() {
+                match col.to_ascii_lowercase().as_str() {
+                    "metric name" | "metricname" => col_name = i,
+                    "metric unit" | "metricunit" => col_unit = i,
+                    "metric value" | "metricvalue" => col_value = i,
+                    _ => {}
+                }
+            }
+            continue;
+        }
+        let name = cols.get(col_name).copied().unwrap_or("").to_string();
+        let unit = cols.get(col_unit).copied().unwrap_or("").to_string();
+        let value = cols.get(col_value).copied().unwrap_or("").to_string();
+        if !name.is_empty() && !value.is_empty() {
+            metrics.push(api::NcuMetric { name, value, unit });
+        }
+    }
+    metrics
+}
+
+/// Derive a human-readable bottleneck summary from parsed NCU metrics.
+fn derive_ncu_bottleneck(metrics: &[api::NcuMetric], stderr: &str) -> String {
+    if metrics.is_empty() {
+        if !stderr.is_empty() {
+            let first = stderr.lines().take(4).collect::<Vec<_>>().join(" ");
+            return format!("ncu ran but produced no metrics. stderr: {}", first.trim());
+        }
+        return "No metrics available — run ncu on a compiled binary, not source.".into();
+    }
+
+    let mut lines = Vec::new();
+
+    let find = |name: &str| -> Option<f64> {
+        metrics
+            .iter()
+            .find(|m| m.name.to_ascii_lowercase().contains(name))
+            .and_then(|m| m.value.replace(',', ".").parse::<f64>().ok())
+    };
+
+    // Speed-of-Light metrics (0–100 %).
+    if let Some(sol_compute) = find("sm_active_cycles_pm").or_else(|| find("smsp__cycles_active")) {
+        lines.push(format!("SM Active Cycles: {:.1}", sol_compute));
+    }
+    if let Some(sol_mem) = find("l1tex__t_sector_hit_rate").or_else(|| find("l2_read_hit_rate")) {
+        let label = if sol_mem < 40.0 {
+            " ⚠ low — memory bound"
+        } else {
+            ""
+        };
+        lines.push(format!("L1/L2 Hit Rate: {:.1}%{}", sol_mem, label));
+    }
+    if let Some(occ) = find("sm__warps_active").or_else(|| find("achieved_occupancy")) {
+        let label = if occ < 50.0 { " ⚠ low occupancy" } else { "" };
+        lines.push(format!("Achieved Occupancy: {:.1}%{}", occ, label));
+    }
+    if let Some(bw_util) = find("l2_global_load_bytes").or_else(|| find("dram_read_bytes")) {
+        lines.push(format!("DRAM Read: {:.1}", bw_util));
+    }
+
+    if lines.is_empty() {
+        lines.push(format!("{} metrics captured.", metrics.len()));
+        // Show first 5 key metrics as summary.
+        for m in metrics.iter().take(5) {
+            lines.push(format!("  {} = {} {}", m.name, m.value, m.unit));
+        }
+    }
+
+    lines.join("\n")
+}
+
+/// Generate a commented PTX-sketch from CUDA source (used when nvdisasm/cuobjdump
+/// are unavailable).  This is purely structural — it extracts function names and
+/// parameter types rather than emitting valid PTX instructions.
+fn generate_ptx_sketch(source: &str, lang: &str) -> String {
+    use std::fmt::Write;
+    let mut out = String::new();
+    let _ = writeln!(
+        out,
+        "// PTX sketch generated by Sentinel emulator (nvdisasm not found)"
+    );
+    let _ = writeln!(out, "// Language: {}", lang);
+    let _ = writeln!(out, "// ─────────────────────────────────────────────────");
+    let _ = writeln!(out, ".version 8.4");
+    let _ = writeln!(out, ".target sm_90a");
+    let _ = writeln!(out, ".address_size 64");
+    let _ = writeln!(out);
+
+    // Extract __global__ function signatures.
+    let mut found = false;
+    for (i, line) in source.lines().enumerate() {
+        if line.contains("__global__") || line.contains("def ") && lang == "Triton" {
+            found = true;
+            let _ = writeln!(out, "// source line {}", i + 1);
+            let _ = writeln!(
+                out,
+                ".visible .entry {}(",
+                line.trim().replace("__global__", "").trim()
+            );
+            let _ = writeln!(out, "    .param .u64 param0,");
+            let _ = writeln!(out, "    .param .u64 param1");
+            let _ = writeln!(out, ") {{");
+            let _ = writeln!(out, "    .reg .f32   %f<32>;");
+            let _ = writeln!(out, "    .reg .u32   %r<16>;");
+            let _ = writeln!(out, "    .reg .u64   %rd<8>;");
+            let _ = writeln!(out);
+            let _ = writeln!(out, "    ld.param.u64    %rd0, [param0];");
+            let _ = writeln!(out, "    cvta.to.global.u64 %rd1, %rd0;");
+            let _ = writeln!(out, "    mov.u32         %r0, %tid.x;");
+            let _ = writeln!(out, "    // ... (install nvdisasm for real PTX)");
+            let _ = writeln!(out, "    ret;");
+            let _ = writeln!(out, "}}");
+            let _ = writeln!(out);
+        }
+    }
+
+    if !found {
+        let _ = writeln!(out, "// No __global__ kernels detected.");
+        let _ = writeln!(
+            out,
+            "// Install CUDA Toolkit and run: nvdisasm --print-code <binary.cubin>"
+        );
+    }
+    out
 }
 
 #[cfg(test)]
@@ -1297,158 +1555,34 @@ mod tests {
         std::env::remove_var("ANTHROPIC_API_KEY");
 
         let cfg = Arc::new(SentinelConfig::default());
-        let handler = RequestHandler::new(cfg.clone(), Arc::new(AnalyticsPipeline::default()), Arc::new(ToolRegistry::new()));
+        let handler = RequestHandler::new(
+            cfg.clone(),
+            Arc::new(AnalyticsPipeline::default()),
+            Arc::new(ToolRegistry::new()),
+        );
 
         let result = handler.handle_config_get().expect("config get");
         let providers = result["providers"].as_array().expect("providers array");
 
-        let openai = providers.iter().find(|p| p["id"] == "openai").expect("openai provider");
+        let openai = providers
+            .iter()
+            .find(|p| p["id"] == "openai")
+            .expect("openai provider");
         assert_eq!(openai["api_key_set"], serde_json::json!(true));
 
-        let anthropic = providers.iter().find(|p| p["id"] == "anthropic").expect("anthropic provider");
+        let anthropic = providers
+            .iter()
+            .find(|p| p["id"] == "anthropic")
+            .expect("anthropic provider");
         assert_eq!(anthropic["api_key_set"], serde_json::json!(false));
 
         // Every provider entry exposes the flag.
         for p in providers {
-            assert!(p.get("api_key_set").is_some(), "provider {} missing api_key_set", p["id"]);
+            assert!(
+                p.get("api_key_set").is_some(),
+                "provider {} missing api_key_set",
+                p["id"]
+            );
         }
     }
-}
-
-/// Check if a binary is available on PATH, returning its resolved path.
-fn which_tool(name: &str) -> Option<String> {
-    let out = std::process::Command::new(if cfg!(target_os = "windows") { "where" } else { "which" })
-        .arg(name)
-        .output()
-        .ok()
-        .filter(|o| o.status.success())?;
-    let s = String::from_utf8_lossy(&out.stdout).trim().lines().next()?.to_string();
-    if s.is_empty() { None } else { Some(s) }
-}
-
-/// Parse `ncu --csv` output into a flat list of metric name/value/unit triples.
-/// The CSV format is:  "ID","Process","Host","Kernel","Invocation","MetricName","MetricUnit","MetricValue"
-fn parse_ncu_csv(csv: &str) -> Vec<api::NcuMetric> {
-    let mut metrics = Vec::new();
-    let mut in_header = true;
-    // Column indices — discovered from header row.
-    let (mut col_name, mut col_unit, mut col_value) = (5usize, 6usize, 7usize);
-
-    for line in csv.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') { continue; }
-        let cols: Vec<&str> = line.splitn(20, ',')
-            .map(|s| s.trim_matches('"'))
-            .collect();
-        if in_header {
-            in_header = false;
-            // Detect column positions robustly.
-            for (i, col) in cols.iter().enumerate() {
-                match col.to_ascii_lowercase().as_str() {
-                    "metric name" | "metricname" => col_name = i,
-                    "metric unit" | "metricunit" => col_unit = i,
-                    "metric value" | "metricvalue" => col_value = i,
-                    _ => {}
-                }
-            }
-            continue;
-        }
-        let name  = cols.get(col_name).copied().unwrap_or("").to_string();
-        let unit  = cols.get(col_unit).copied().unwrap_or("").to_string();
-        let value = cols.get(col_value).copied().unwrap_or("").to_string();
-        if !name.is_empty() && !value.is_empty() {
-            metrics.push(api::NcuMetric { name, value, unit });
-        }
-    }
-    metrics
-}
-
-/// Derive a human-readable bottleneck summary from parsed NCU metrics.
-fn derive_ncu_bottleneck(metrics: &[api::NcuMetric], stderr: &str) -> String {
-    if metrics.is_empty() {
-        if !stderr.is_empty() {
-            let first = stderr.lines().take(4).collect::<Vec<_>>().join(" ");
-            return format!("ncu ran but produced no metrics. stderr: {}", first.trim());
-        }
-        return "No metrics available — run ncu on a compiled binary, not source.".into();
-    }
-
-    let mut lines = Vec::new();
-
-    let find = |name: &str| -> Option<f64> {
-        metrics.iter()
-            .find(|m| m.name.to_ascii_lowercase().contains(name))
-            .and_then(|m| m.value.replace(',', ".").parse::<f64>().ok())
-    };
-
-    // Speed-of-Light metrics (0–100 %).
-    if let Some(sol_compute) = find("sm_active_cycles_pm").or_else(|| find("smsp__cycles_active")) {
-        lines.push(format!("SM Active Cycles: {:.1}", sol_compute));
-    }
-    if let Some(sol_mem) = find("l1tex__t_sector_hit_rate").or_else(|| find("l2_read_hit_rate")) {
-        let label = if sol_mem < 40.0 { " ⚠ low — memory bound" } else { "" };
-        lines.push(format!("L1/L2 Hit Rate: {:.1}%{}", sol_mem, label));
-    }
-    if let Some(occ) = find("sm__warps_active").or_else(|| find("achieved_occupancy")) {
-        let label = if occ < 50.0 { " ⚠ low occupancy" } else { "" };
-        lines.push(format!("Achieved Occupancy: {:.1}%{}", occ, label));
-    }
-    if let Some(bw_util) = find("l2_global_load_bytes").or_else(|| find("dram_read_bytes")) {
-        lines.push(format!("DRAM Read: {:.1}", bw_util));
-    }
-
-    if lines.is_empty() {
-        lines.push(format!("{} metrics captured.", metrics.len()));
-        // Show first 5 key metrics as summary.
-        for m in metrics.iter().take(5) {
-            lines.push(format!("  {} = {} {}", m.name, m.value, m.unit));
-        }
-    }
-
-    lines.join("\n")
-}
-
-/// Generate a commented PTX-sketch from CUDA source (used when nvdisasm/cuobjdump
-/// are unavailable).  This is purely structural — it extracts function names and
-/// parameter types rather than emitting valid PTX instructions.
-fn generate_ptx_sketch(source: &str, lang: &str) -> String {
-    use std::fmt::Write;
-    let mut out = String::new();
-    let _ = writeln!(out, "// PTX sketch generated by Sentinel emulator (nvdisasm not found)");
-    let _ = writeln!(out, "// Language: {}", lang);
-    let _ = writeln!(out, "// ─────────────────────────────────────────────────");
-    let _ = writeln!(out, ".version 8.4");
-    let _ = writeln!(out, ".target sm_90a");
-    let _ = writeln!(out, ".address_size 64");
-    let _ = writeln!(out);
-
-    // Extract __global__ function signatures.
-    let mut found = false;
-    for (i, line) in source.lines().enumerate() {
-        if line.contains("__global__") || line.contains("def ") && lang == "Triton" {
-            found = true;
-            let _ = writeln!(out, "// source line {}", i + 1);
-            let _ = writeln!(out, ".visible .entry {}(", line.trim().replace("__global__", "").trim());
-            let _ = writeln!(out, "    .param .u64 param0,");
-            let _ = writeln!(out, "    .param .u64 param1");
-            let _ = writeln!(out, ") {{");
-            let _ = writeln!(out, "    .reg .f32   %f<32>;");
-            let _ = writeln!(out, "    .reg .u32   %r<16>;");
-            let _ = writeln!(out, "    .reg .u64   %rd<8>;");
-            let _ = writeln!(out);
-            let _ = writeln!(out, "    ld.param.u64    %rd0, [param0];");
-            let _ = writeln!(out, "    cvta.to.global.u64 %rd1, %rd0;");
-            let _ = writeln!(out, "    mov.u32         %r0, %tid.x;");
-            let _ = writeln!(out, "    // ... (install nvdisasm for real PTX)");
-            let _ = writeln!(out, "    ret;");
-            let _ = writeln!(out, "}}");
-            let _ = writeln!(out);
-        }
-    }
-
-    if !found {
-        let _ = writeln!(out, "// No __global__ kernels detected.");
-        let _ = writeln!(out, "// Install CUDA Toolkit and run: nvdisasm --print-code <binary.cubin>");
-    }
-    out
 }

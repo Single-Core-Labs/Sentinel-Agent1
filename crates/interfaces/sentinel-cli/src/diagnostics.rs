@@ -8,8 +8,9 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
 
     let mut all_ok = true;
 
-    all_ok &= ck("Configuration file", || {
-        match sentinel_config::SentinelConfig::load() {
+    all_ok &= ck(
+        "Configuration file",
+        || match sentinel_config::SentinelConfig::load() {
             Ok(config) => {
                 println!("  Default model: {}", config.agent.default_model);
                 println!("  Providers:     {}", config.providers().len());
@@ -19,8 +20,8 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
                 Ok(())
             }
             Err(e) => Err(format!("Config load failed: {}", e)),
-        }
-    });
+        },
+    );
 
     all_ok &= ck("Environment variables", || {
         let vars = [
@@ -30,7 +31,11 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
             ("DEEPSEEK_API_KEY", "DeepSeek"),
         ];
         for (env_var, name) in &vars {
-            let status = if std::env::var(env_var).is_ok() { "set".green().to_string() } else { "not set".dimmed().to_string() };
+            let status = if std::env::var(env_var).is_ok() {
+                "set".green().to_string()
+            } else {
+                "not set".dimmed().to_string()
+            };
             println!("  {}: {}", name, status);
         }
         Ok(())
@@ -68,7 +73,8 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
                 Ok(())
             }
         }
-    }).await;
+    })
+    .await;
 
     println!();
     if all_ok {
@@ -83,8 +89,15 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
 fn ck(name: &str, f: impl FnOnce() -> Result<(), String>) -> bool {
     print!(" {} {}... ", "•".cyan(), name);
     match f() {
-        Ok(()) => { println!("{}", "✓".green()); true }
-        Err(e) => { println!("{}", "✗".red()); println!("   {}", e.red()); false }
+        Ok(()) => {
+            println!("{}", "✓".green());
+            true
+        }
+        Err(e) => {
+            println!("{}", "✗".red());
+            println!("   {}", e.red());
+            false
+        }
     }
 }
 
@@ -95,7 +108,14 @@ where
 {
     print!(" {} {}... ", "•".cyan(), name);
     match f().await {
-        Ok(()) => { println!("{}", "✓".green()); true }
-        Err(e) => { println!("{}", "✗".red()); println!("   {}", e.red()); false }
+        Ok(()) => {
+            println!("{}", "✓".green());
+            true
+        }
+        Err(e) => {
+            println!("{}", "✗".red());
+            println!("   {}", e.red());
+            false
+        }
     }
 }

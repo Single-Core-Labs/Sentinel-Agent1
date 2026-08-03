@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::warn;
 
-use crate::plugin::{Plugin, PluginId, PluginEvent, PluginAction, PluginHook};
+use crate::plugin::{Plugin, PluginAction, PluginEvent, PluginHook, PluginId};
 
 /// Registry of loaded plugins and their hooks.
 pub struct PluginRegistry {
@@ -95,7 +95,7 @@ impl Default for PluginRegistry {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::plugin::{PluginManifest, PluginId};
+    use crate::plugin::{PluginId, PluginManifest};
     use async_trait::async_trait;
 
     use std::sync::OnceLock;
@@ -135,7 +135,9 @@ mod tests {
     #[tokio::test]
     async fn test_dispatch_no_hooks() {
         let registry = PluginRegistry::new();
-        let event = PluginEvent::SessionCreated { session_id: "test".into() };
+        let event = PluginEvent::SessionCreated {
+            session_id: "test".into(),
+        };
         let action = registry.dispatch(&event).await;
         assert!(matches!(action, PluginAction::Continue));
     }
@@ -147,7 +149,10 @@ mod tests {
         registry.register(plugin).await.unwrap();
         assert_eq!(registry.plugin_count().await, 1);
 
-        registry.unregister(&PluginId::new("test-plugin")).await.unwrap();
+        registry
+            .unregister(&PluginId::new("test-plugin"))
+            .await
+            .unwrap();
         assert_eq!(registry.plugin_count().await, 0);
     }
 }

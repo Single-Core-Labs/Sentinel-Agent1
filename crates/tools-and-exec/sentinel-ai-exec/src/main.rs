@@ -1,7 +1,6 @@
 use anyhow::Result;
-use sentinel_ai_exec::Cli;
 use clap::Parser;
-
+use sentinel_ai_exec::Cli;
 
 #[tokio::main]
 async fn main() -> Result<()> {

@@ -1,11 +1,11 @@
+use crate::transport::McpTransportConfig;
+use sentinel_protocol::ToolDef;
 use serde_json::Value;
+use std::sync::Arc;
+use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout};
 use tokio::sync::Mutex;
-use std::sync::Arc;
-use std::time::Duration;
-use crate::transport::McpTransportConfig;
-use sentinel_protocol::ToolDef;
 
 const DEFAULT_RETRY_DELAY_MS: u64 = 1000;
 const MAX_RETRIES: u32 = 3;
@@ -38,10 +38,12 @@ struct McpProcess {
 impl McpClient {
     pub fn new(id: impl Into<String>, transport: McpTransportConfig) -> Self {
         let http_client = if matches!(&transport, McpTransportConfig::Http { .. }) {
-            Some(reqwest::Client::builder()
-                .timeout(Duration::from_secs(60))
-                .build()
-                .expect("valid reqwest client"))
+            Some(
+                reqwest::Client::builder()
+                    .timeout(Duration::from_secs(60))
+                    .build()
+                    .expect("valid reqwest client"),
+            )
         } else {
             None
         };
@@ -61,7 +63,9 @@ impl McpClient {
         self
     }
 
-    pub fn id(&self) -> &str { &self.id }
+    pub fn id(&self) -> &str {
+        &self.id
+    }
 
     async fn ensure_connected(&self) -> Result<&Arc<Mutex<Option<McpProcess>>>, McpError> {
         let mut guard = self.process.lock().await;
@@ -80,12 +84,17 @@ impl McpClient {
                         }
                     }
 
-                    let mut child = cmd.spawn()
+                    let mut child = cmd
+                        .spawn()
                         .map_err(|e| McpError::SpawnError(format!("{}: {}", command, e)))?;
 
-                    let stdin = child.stdin.take()
+                    let stdin = child
+                        .stdin
+                        .take()
                         .ok_or(McpError::SpawnError("stdin not available".into()))?;
-                    let stdout = child.stdout.take()
+                    let stdout = child
+                        .stdout
+                        .take()
                         .ok_or(McpError::SpawnError("stdout not available".into()))?;
 
                     *guard = Some(McpProcess {
@@ -106,8 +115,12 @@ impl McpClient {
     async fn send_request(&self, method: &str, params: Value) -> Result<Value, McpError> {
         match &self.transport {
             McpTransportConfig::Stdio { .. } => self.send_stdio(method, params).await,
-            McpTransportConfig::Http { url, headers } => self.send_http(method, params, url, headers.as_ref()).await,
-            McpTransportConfig::WebSocket { .. } => Err(McpError::NotImplemented("WebSocket transport")),
+            McpTransportConfig::Http { url, headers } => {
+                self.send_http(method, params, url, headers.as_ref()).await
+            }
+            McpTransportConfig::WebSocket { .. } => {
+                Err(McpError::NotImplemented("WebSocket transport"))
+            }
         }
     }
 
@@ -126,19 +139,26 @@ impl McpClient {
             "params": params,
         });
 
-        let mut request_bytes = serde_json::to_vec(&request)
-            .map_err(|e| McpError::WriteError(e.to_string()))?;
+        let mut request_bytes =
+            serde_json::to_vec(&request).map_err(|e| McpError::WriteError(e.to_string()))?;
         request_bytes.push(b'\n');
 
-        proc.stdin.write_all(&request_bytes).await
+        proc.stdin
+            .write_all(&request_bytes)
+            .await
             .map_err(|e| McpError::WriteError(e.to_string()))?;
-        proc.stdin.flush().await
+        proc.stdin
+            .flush()
+            .await
             .map_err(|e| McpError::WriteError(e.to_string()))?;
 
         let mut response_line = String::new();
         loop {
             response_line.clear();
-            let n = proc.stdout.read_line(&mut response_line).await
+            let n = proc
+                .stdout
+                .read_line(&mut response_line)
+                .await
                 .map_err(|e| McpError::ReadError(e.to_string()))?;
             if n == 0 {
                 return Err(McpError::NotConnected);
@@ -162,8 +182,7 @@ impl McpClient {
         url: &str,
         headers: Option<&std::collections::HashMap<String, String>>,
     ) -> Result<Value, McpError> {
-        let client = self.http_client.as_ref()
-            .ok_or(McpError::NotConnected)?;
+        let client = self.http_client.as_ref().ok_or(McpError::NotConnected)?;
 
         let request = serde_json::json!({
             "jsonrpc": "2.0",
@@ -184,7 +203,9 @@ impl McpClient {
             }
         }
 
-        let response = req.send().await
+        let response = req
+            .send()
+            .await
             .map_err(|e| McpError::WriteError(format!("HTTP request failed: {}", e)))?;
 
         let status = response.status();
@@ -193,7 +214,9 @@ impl McpClient {
             return Err(McpError::RemoteError(format!("HTTP {}: {}", status, text)));
         }
 
-        let body: Value = response.json().await
+        let body: Value = response
+            .json()
+            .await
             .map_err(|e| McpError::ParseError(format!("Failed to parse HTTP response: {}", e)))?;
 
         if let Some(error) = body["error"].as_object() {
@@ -204,16 +227,28 @@ impl McpClient {
         Ok(body["result"].clone())
     }
 
-    pub async fn send_request_with_retry(&self, method: &str, params: Value) -> Result<Value, McpError> {
+    pub async fn send_request_with_retry(
+        &self,
+        method: &str,
+        params: Value,
+    ) -> Result<Value, McpError> {
         let mut last_err = None;
         for attempt in 0..=self.max_retries {
             match self.send_request(method, params.clone()).await {
                 Ok(result) => return Ok(result),
                 Err(e) => {
-                    tracing::warn!("MCP request failed (attempt {}/{}): {}", attempt + 1, self.max_retries + 1, e);
+                    tracing::warn!(
+                        "MCP request failed (attempt {}/{}): {}",
+                        attempt + 1,
+                        self.max_retries + 1,
+                        e
+                    );
                     last_err = Some(e);
                     if attempt < self.max_retries {
-                        tokio::time::sleep(Duration::from_millis(self.retry_delay_ms * (1 << attempt))).await;
+                        tokio::time::sleep(Duration::from_millis(
+                            self.retry_delay_ms * (1 << attempt),
+                        ))
+                        .await;
                     }
                 }
             }
@@ -222,25 +257,36 @@ impl McpClient {
     }
 
     pub async fn list_tools(&self) -> Result<Vec<ToolDef>, McpError> {
-        let result = self.send_request_with_retry("tools/list", serde_json::json!({})).await?;
+        let result = self
+            .send_request_with_retry("tools/list", serde_json::json!({}))
+            .await?;
 
-        let tools = result["tools"].as_array()
+        let tools = result["tools"]
+            .as_array()
             .ok_or(McpError::ParseError("No tools array in response".into()))?;
 
-        tools.iter().map(|t| {
-            Ok(ToolDef {
-                name: t["name"].as_str().unwrap_or("unknown").to_string(),
-                description: t["description"].as_str().unwrap_or("").to_string(),
-                input_schema: t["inputSchema"].clone(),
+        tools
+            .iter()
+            .map(|t| {
+                Ok(ToolDef {
+                    name: t["name"].as_str().unwrap_or("unknown").to_string(),
+                    description: t["description"].as_str().unwrap_or("").to_string(),
+                    input_schema: t["inputSchema"].clone(),
+                })
             })
-        }).collect()
+            .collect()
     }
 
     pub async fn call_tool(&self, name: &str, args: Value) -> Result<String, McpError> {
-        let result = self.send_request_with_retry("tools/call", serde_json::json!({
-            "name": name,
-            "arguments": args,
-        })).await?;
+        let result = self
+            .send_request_with_retry(
+                "tools/call",
+                serde_json::json!({
+                    "name": name,
+                    "arguments": args,
+                }),
+            )
+            .await?;
 
         let content_array = result["content"].as_array();
         let content_str = match content_array {
@@ -276,7 +322,10 @@ fn convert_mcp_content_to_string(content_array: &[Value]) -> String {
                 }
             }
             "image" => {
-                let mime_type = item.get("mimeType").and_then(Value::as_str).unwrap_or("image/png");
+                let mime_type = item
+                    .get("mimeType")
+                    .and_then(Value::as_str)
+                    .unwrap_or("image/png");
                 let data = item.get("data").and_then(Value::as_str).unwrap_or("");
                 if !out.is_empty() {
                     out.push_str("\n\n");
@@ -286,7 +335,7 @@ fn convert_mcp_content_to_string(content_array: &[Value]) -> String {
                         "[Image: {} (base64, {} bytes, data:image/{};base64,{}...)]",
                         mime_type,
                         data.len(),
-                        mime_type.split('/').last().unwrap_or("png"),
+                        mime_type.split('/').next_back().unwrap_or("png"),
                         &data[..50]
                     ));
                 } else {
@@ -298,12 +347,26 @@ fn convert_mcp_content_to_string(content_array: &[Value]) -> String {
                     out.push_str("\n\n");
                 }
                 if let Some(resource) = item.get("resource") {
-                    let uri = resource.get("uri").and_then(Value::as_str).unwrap_or("unknown-uri");
-                    let mime_type = resource.get("mimeType").and_then(Value::as_str).unwrap_or("application/octet-stream");
+                    let uri = resource
+                        .get("uri")
+                        .and_then(Value::as_str)
+                        .unwrap_or("unknown-uri");
+                    let mime_type = resource
+                        .get("mimeType")
+                        .and_then(Value::as_str)
+                        .unwrap_or("application/octet-stream");
                     if let Some(text) = resource.get("text").and_then(Value::as_str) {
-                        out.push_str(&format!("[Embedded Resource: {} ({})]\n{}", uri, mime_type, text));
+                        out.push_str(&format!(
+                            "[Embedded Resource: {} ({})]\n{}",
+                            uri, mime_type, text
+                        ));
                     } else if let Some(blob) = resource.get("blob").and_then(Value::as_str) {
-                        out.push_str(&format!("[Embedded Resource: {} ({}) (binary blob, {} bytes)]", uri, mime_type, blob.len()));
+                        out.push_str(&format!(
+                            "[Embedded Resource: {} ({}) (binary blob, {} bytes)]",
+                            uri,
+                            mime_type,
+                            blob.len()
+                        ));
                     } else {
                         out.push_str(&format!("[Embedded Resource: {} ({})]", uri, mime_type));
                     }

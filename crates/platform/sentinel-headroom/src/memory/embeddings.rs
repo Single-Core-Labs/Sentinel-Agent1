@@ -22,7 +22,8 @@ pub fn text_to_vector(text: &str) -> Vec<f64> {
 }
 
 fn extract_ngrams(text: &str) -> Vec<String> {
-    let cleaned: String = text.chars()
+    let cleaned: String = text
+        .chars()
         .filter(|c| c.is_alphanumeric() || c.is_whitespace())
         .collect::<String>()
         .to_lowercase();
@@ -76,11 +77,19 @@ pub fn keyword_overlap(query: &str, text: &str) -> f64 {
         return 0.0;
     }
     let text_lower = text.to_lowercase();
-    let matching = query_tokens.iter().filter(|t| text_lower.contains(*t)).count();
+    let matching = query_tokens
+        .iter()
+        .filter(|t| text_lower.contains(*t))
+        .count();
     matching as f64 / query_tokens.len() as f64
 }
 
-pub fn combined_score(query: &str, text: &str, query_vec: Option<&Vec<f64>>, text_vec: Option<&Vec<f64>>) -> f64 {
+pub fn combined_score(
+    query: &str,
+    text: &str,
+    query_vec: Option<&Vec<f64>>,
+    text_vec: Option<&Vec<f64>>,
+) -> f64 {
     let semantic = match (query_vec, text_vec) {
         (Some(qv), Some(tv)) => cosine_similarity(qv, tv),
         _ => {
@@ -100,7 +109,10 @@ pub struct EmbeddingCache {
 
 impl EmbeddingCache {
     pub fn new(max_entries: usize) -> Self {
-        Self { cache: HashMap::new(), max_entries }
+        Self {
+            cache: HashMap::new(),
+            max_entries,
+        }
     }
 
     pub fn get_or_compute(&mut self, text: &str) -> Vec<f64> {
@@ -148,7 +160,11 @@ mod tests {
         let v1 = text_to_vector("I like Python programming");
         let v2 = text_to_vector("The weather is nice today");
         let sim = cosine_similarity(&v1, &v2);
-        assert!(sim < 0.5, "unrelated texts should have low similarity: {}", sim);
+        assert!(
+            sim < 0.5,
+            "unrelated texts should have low similarity: {}",
+            sim
+        );
     }
 
     #[test]

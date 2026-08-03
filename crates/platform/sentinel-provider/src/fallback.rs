@@ -60,7 +60,9 @@ impl ModelAvailabilityService {
 
     /// Check if a model is currently available.
     pub fn is_available(&self, name: &str) -> bool {
-        self.models.read().unwrap_or_else(|e| e.into_inner())
+        self.models
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
             .get(name)
             .map(|h| h.is_available())
             .unwrap_or(true)
@@ -68,7 +70,9 @@ impl ModelAvailabilityService {
 
     /// Get health for a model.
     pub fn health(&self, name: &str) -> ModelHealth {
-        self.models.read().unwrap_or_else(|e| e.into_inner())
+        self.models
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
             .get(name)
             .cloned()
             .unwrap_or(ModelHealth::Healthy)
@@ -86,16 +90,22 @@ impl ModelAvailabilityService {
         if let Ok(mut w) = self.models.write() {
             match kind {
                 ErrorKind::Terminal | ErrorKind::NotFound => {
-                    w.insert(name.to_string(), ModelHealth::Unavailable {
-                        reason: format!("{:?}", kind),
-                        until: Instant::now() + Duration::from_secs(300),
-                    });
+                    w.insert(
+                        name.to_string(),
+                        ModelHealth::Unavailable {
+                            reason: format!("{:?}", kind),
+                            until: Instant::now() + Duration::from_secs(300),
+                        },
+                    );
                 }
                 ErrorKind::RateLimited | ErrorKind::Transient => {
-                    w.insert(name.to_string(), ModelHealth::Unavailable {
-                        reason: format!("{:?}", kind),
-                        until: Instant::now() + self.retry_cooldown,
-                    });
+                    w.insert(
+                        name.to_string(),
+                        ModelHealth::Unavailable {
+                            reason: format!("{:?}", kind),
+                            until: Instant::now() + self.retry_cooldown,
+                        },
+                    );
                 }
                 ErrorKind::Unknown => {
                     w.insert(name.to_string(), ModelHealth::Degraded);

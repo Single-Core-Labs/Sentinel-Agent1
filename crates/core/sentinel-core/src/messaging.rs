@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SlackConfig {
@@ -19,7 +19,11 @@ impl Default for SlackConfig {
             channel: String::new(),
             username: None,
             icon_emoji: None,
-            auto_event_types: vec!["approval_required".into(), "error".into(), "turn_complete".into()],
+            auto_event_types: vec![
+                "approval_required".into(),
+                "error".into(),
+                "turn_complete".into(),
+            ],
         }
     }
 }
@@ -82,7 +86,10 @@ pub struct NotificationResult {
 }
 
 pub trait NotificationProvider: Send + Sync {
-    fn send<'a>(&'a self, request: &'a NotificationRequest) -> std::pin::Pin<Box<dyn std::future::Future<Output = NotificationResult> + Send + 'a>>;
+    fn send<'a>(
+        &'a self,
+        request: &'a NotificationRequest,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = NotificationResult> + Send + 'a>>;
 }
 
 pub struct SlackProvider {
@@ -127,7 +134,8 @@ impl SlackProvider {
             return content.to_string();
         }
         let mut text = content.to_string();
-        text = text.replace("&", "&amp;")
+        text = text
+            .replace("&", "&amp;")
             .replace("<", "&lt;")
             .replace(">", "&gt;");
 
@@ -149,7 +157,10 @@ impl SlackProvider {
 }
 
 impl NotificationProvider for SlackProvider {
-    fn send<'a>(&'a self, request: &'a NotificationRequest) -> std::pin::Pin<Box<dyn std::future::Future<Output = NotificationResult> + Send + 'a>> {
+    fn send<'a>(
+        &'a self,
+        request: &'a NotificationRequest,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = NotificationResult> + Send + 'a>> {
         Box::pin(async move {
             if !self.config.enabled {
                 return NotificationResult {
@@ -177,7 +188,8 @@ impl NotificationProvider for SlackProvider {
                 "unfurl_media": false,
             });
 
-            let response = match self.client
+            let response = match self
+                .client
                 .post("https://slack.com/api/chat.postMessage")
                 .header("Authorization", format!("Bearer {}", self.config.bot_token))
                 .header("Content-Type", "application/json; charset=utf-8")
@@ -233,7 +245,8 @@ impl NotificationProvider for SlackProvider {
                     error: None,
                 }
             } else {
-                let error = data.get("error")
+                let error = data
+                    .get("error")
                     .and_then(|v| v.as_str())
                     .unwrap_or("unknown_error");
                 NotificationResult {
@@ -274,7 +287,13 @@ impl NotificationGateway {
         }
     }
 
-    pub async fn send_event(&self, _event_type: &str, title: &str, message: &str, severity: &str) -> NotificationResult {
+    pub async fn send_event(
+        &self,
+        _event_type: &str,
+        title: &str,
+        message: &str,
+        severity: &str,
+    ) -> NotificationResult {
         let req = NotificationRequest::new("slack.default", message)
             .with_title(title)
             .with_severity(severity);
@@ -332,7 +351,9 @@ mod tests {
     #[tokio::test]
     async fn test_gateway_disabled_returns_error() {
         let gateway = NotificationGateway::new();
-        let result = gateway.send(&NotificationRequest::new("slack.default", "test")).await;
+        let result = gateway
+            .send(&NotificationRequest::new("slack.default", "test"))
+            .await;
         assert!(!result.ok);
         assert!(result.error.is_some());
     }

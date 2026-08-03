@@ -1,5 +1,5 @@
-use sentinel_ai_tui::{ChatWidget, DisplayEvent};
 use sentinel_ai_exec::ThreadEvent;
+use sentinel_ai_tui::{ChatWidget, DisplayEvent};
 use serde_json::json;
 
 #[test]

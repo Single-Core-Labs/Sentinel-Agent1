@@ -1,10 +1,10 @@
-use async_trait::async_trait;
-use sentinel_protocol::{
-    CompletionRequest, CompletionResponse, StreamChunk, Message, ContentBlock, Choice, Usage,
-};
-use sentinel_provider_info::ProviderInfo;
 use crate::error::ProviderError;
 use crate::provider::ModelProvider;
+use async_trait::async_trait;
+use sentinel_protocol::{
+    Choice, CompletionRequest, CompletionResponse, ContentBlock, Message, StreamChunk, Usage,
+};
+use sentinel_provider_info::ProviderInfo;
 
 pub struct LocalProvider {
     info: ProviderInfo,
@@ -13,7 +13,12 @@ pub struct LocalProvider {
 }
 
 impl LocalProvider {
-    pub fn new(info: ProviderInfo, local_name: String, base_url: String, api_key: String) -> Result<Self, ProviderError> {
+    pub fn new(
+        info: ProviderInfo,
+        local_name: String,
+        base_url: String,
+        api_key: String,
+    ) -> Result<Self, ProviderError> {
         let base_url = Self::normalize_base_url(base_url);
         let mut info = info;
         info.base_url = base_url;
@@ -28,14 +33,20 @@ impl LocalProvider {
                 );
                 h.insert(
                     reqwest::header::AUTHORIZATION,
-                    format!("Bearer {}", api_key).parse().expect("valid header value"),
+                    format!("Bearer {}", api_key)
+                        .parse()
+                        .expect("valid header value"),
                 );
                 h
             })
             .build()
             .map_err(ProviderError::Reqwest)?;
 
-        Ok(Self { info, client, local_name })
+        Ok(Self {
+            info,
+            client,
+            local_name,
+        })
     }
 
     fn normalize_base_url(url: String) -> String {
@@ -66,14 +77,17 @@ impl LocalProvider {
             body["stop"] = serde_json::json!(stop);
         }
         if let Some(tools) = &req.tools {
-            body["tools"] = serde_json::json!(tools.iter().map(|t| serde_json::json!({
-                "type": "function",
-                "function": {
-                    "name": t.name,
-                    "description": t.description,
-                    "parameters": t.input_schema,
-                }
-            })).collect::<Vec<_>>());
+            body["tools"] = serde_json::json!(tools
+                .iter()
+                .map(|t| serde_json::json!({
+                    "type": "function",
+                    "function": {
+                        "name": t.name,
+                        "description": t.description,
+                        "parameters": t.input_schema,
+                    }
+                }))
+                .collect::<Vec<_>>());
         }
         body["stream"] = serde_json::json!(false);
         body
@@ -87,8 +101,14 @@ impl LocalProvider {
             sentinel_protocol::Role::Tool => "tool",
         };
 
-        let has_tool_calls = msg.content.iter().any(|b| matches!(b, ContentBlock::ToolCall { .. }));
-        let has_tool_results = msg.content.iter().any(|b| matches!(b, ContentBlock::ToolResult { .. }));
+        let has_tool_calls = msg
+            .content
+            .iter()
+            .any(|b| matches!(b, ContentBlock::ToolCall { .. }));
+        let has_tool_results = msg
+            .content
+            .iter()
+            .any(|b| matches!(b, ContentBlock::ToolResult { .. }));
 
         if has_tool_calls {
             let mut json = serde_json::json!({
@@ -112,16 +132,27 @@ impl LocalProvider {
             }
             json
         } else if has_tool_results {
-            let blocks: Vec<_> = msg.content.iter().filter_map(|b| {
-                if let ContentBlock::ToolResult { tool_call_id, content, is_error } = b {
-                    Some(serde_json::json!({
-                        "role": "tool",
-                        "tool_call_id": tool_call_id,
-                        "content": content,
-                        "is_error": is_error.unwrap_or(false),
-                    }))
-                } else { None }
-            }).collect();
+            let blocks: Vec<_> = msg
+                .content
+                .iter()
+                .filter_map(|b| {
+                    if let ContentBlock::ToolResult {
+                        tool_call_id,
+                        content,
+                        is_error,
+                    } = b
+                    {
+                        Some(serde_json::json!({
+                            "role": "tool",
+                            "tool_call_id": tool_call_id,
+                            "content": content,
+                            "is_error": is_error.unwrap_or(false),
+                        }))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
             serde_json::json!(blocks[0])
         } else {
             let content = msg.extract_text();
@@ -150,7 +181,9 @@ impl LocalProvider {
 
                         if let Some(text) = msg["content"].as_str() {
                             if !text.is_empty() {
-                                content.push(ContentBlock::Text { text: text.to_string() });
+                                content.push(ContentBlock::Text {
+                                    text: text.to_string(),
+                                });
                             }
                         }
 
@@ -185,7 +218,12 @@ impl LocalProvider {
             total_tokens: u["total_tokens"].as_u64().unwrap_or(0) as u32,
         });
 
-        Ok(CompletionResponse { id, model, choices, usage })
+        Ok(CompletionResponse {
+            id,
+            model,
+            choices,
+            usage,
+        })
     }
 }
 
@@ -199,7 +237,9 @@ impl ModelProvider for LocalProvider {
         let body = self.build_body(req);
         let url = format!("{}/chat/completions", self.info.base_url);
 
-        let resp = self.client.post(&url)
+        let resp = self
+            .client
+            .post(&url)
             .json(&body)
             .send()
             .await
@@ -214,8 +254,7 @@ impl ModelProvider for LocalProvider {
             });
         }
 
-        let data: serde_json::Value = resp.json().await
-            .map_err(ProviderError::Reqwest)?;
+        let data: serde_json::Value = resp.json().await.map_err(ProviderError::Reqwest)?;
 
         self.parse_response(data)
     }
@@ -223,12 +262,17 @@ impl ModelProvider for LocalProvider {
     async fn complete_stream(
         &self,
         req: &CompletionRequest,
-    ) -> Result<Box<dyn tokio_stream::Stream<Item = Result<StreamChunk, ProviderError>> + Send + Unpin>, ProviderError> {
+    ) -> Result<
+        Box<dyn tokio_stream::Stream<Item = Result<StreamChunk, ProviderError>> + Send + Unpin>,
+        ProviderError,
+    > {
         let mut body = self.build_body(req);
         body["stream"] = serde_json::json!(true);
         let url = format!("{}/chat/completions", self.info.base_url);
 
-        let resp = self.client.post(&url)
+        let resp = self
+            .client
+            .post(&url)
             .json(&body)
             .send()
             .await
@@ -258,7 +302,10 @@ impl ModelProvider for LocalProvider {
             while let Some(chunk_result) = byte_stream.next().await {
                 let bytes = match chunk_result {
                     Ok(b) => b,
-                    Err(e) => { let _ = tx.unbounded_send(Err(e)); return; }
+                    Err(e) => {
+                        let _ = tx.unbounded_send(Err(e));
+                        return;
+                    }
                 };
                 buffer.extend_from_slice(&bytes);
                 while let Some(pos) = buffer.windows(2).position(|w| w == b"\n\n") {
@@ -272,8 +319,17 @@ impl ModelProvider for LocalProvider {
                         }
                         if let Some(data) = line.strip_prefix("data: ") {
                             match serde_json::from_str::<StreamChunk>(data) {
-                                Ok(chunk) => { if tx.unbounded_send(Ok(chunk)).is_err() { return; } }
-                                Err(e) => { if tx.unbounded_send(Err(ProviderError::JsonError(e))).is_err() { return; } }
+                                Ok(chunk) => {
+                                    if tx.unbounded_send(Ok(chunk)).is_err() {
+                                        return;
+                                    }
+                                }
+                                Err(e) => {
+                                    if tx.unbounded_send(Err(ProviderError::JsonError(e))).is_err()
+                                    {
+                                        return;
+                                    }
+                                }
                             }
                         }
                     }

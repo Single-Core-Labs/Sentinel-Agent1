@@ -1,17 +1,27 @@
 use colored::*;
-use sentinel_core::{EventHandler, AgentEvent};
+use sentinel_core::{AgentEvent, EventHandler};
 
 pub struct CliEventHandler;
 
 fn activity_log_path() -> Option<String> {
-    std::env::var("SENTINEL_ACTIVITY_LOG").ok().filter(|p| !p.is_empty())
+    std::env::var("SENTINEL_ACTIVITY_LOG")
+        .ok()
+        .filter(|p| !p.is_empty())
 }
 
 fn append_activity(record: &serde_json::Value) {
     if let Some(path) = activity_log_path() {
-        if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)
+        {
             use std::io::Write;
-            let _ = writeln!(file, "{}", serde_json::to_string(record).unwrap_or_default());
+            let _ = writeln!(
+                file,
+                "{}",
+                serde_json::to_string(record).unwrap_or_default()
+            );
         }
     }
 }
@@ -47,7 +57,12 @@ impl EventHandler for CliEventHandler {
                 }
                 println!("{}", " └──".yellow().bold());
             }
-            AgentEvent::ToolResult { name, output, is_error, sandboxed } => {
+            AgentEvent::ToolResult {
+                name,
+                output,
+                is_error,
+                sandboxed,
+            } => {
                 append_activity(&serde_json::json!({
                     "type": "tool_result",
                     "tool": name,
@@ -61,9 +76,21 @@ impl EventHandler for CliEventHandler {
                 let trimmed = preview.trim();
                 if !trimmed.is_empty() || is_error {
                     if is_error {
-                        println!(" {} {}:{}{}", icon.red(), name.red().bold(), trimmed.dimmed(), suffix.dimmed());
+                        println!(
+                            " {} {}:{}{}",
+                            icon.red(),
+                            name.red().bold(),
+                            trimmed.dimmed(),
+                            suffix.dimmed()
+                        );
                     } else {
-                        println!(" {} {}:{}{}", icon.green(), name.green().bold(), trimmed.dimmed(), suffix.dimmed());
+                        println!(
+                            " {} {}:{}{}",
+                            icon.green(),
+                            name.green().bold(),
+                            trimmed.dimmed(),
+                            suffix.dimmed()
+                        );
                     }
                 }
             }
@@ -125,7 +152,11 @@ fn render_line(line: &str, _width: usize) {
     }
 
     // Horizontal rule
-    if trimmed.chars().all(|c| c == '-' || c == '=' || c == '_' || c == '─') && trimmed.len() >= 3 {
+    if trimmed
+        .chars()
+        .all(|c| c == '-' || c == '=' || c == '_' || c == '─')
+        && trimmed.len() >= 3
+    {
         let rule = "─".repeat(terminal_width().saturating_sub(1) as usize);
         println!("{}", rule.dimmed());
         return;
@@ -204,7 +235,9 @@ fn render_inline(text: &str) -> String {
                 code.push(bytes[i] as char);
                 i += 1;
             }
-            if i < s.len() { i += 1; } // skip closing `
+            if i < s.len() {
+                i += 1;
+            } // skip closing `
             result.push_str(&code.cyan().to_string());
             continue;
         }
@@ -217,7 +250,9 @@ fn render_inline(text: &str) -> String {
                 bold.push(bytes[i] as char);
                 i += 1;
             }
-            if i + 1 < s.len() { i += 2; }
+            if i + 1 < s.len() {
+                i += 2;
+            }
             result.push_str(&bold.bold().to_string());
             continue;
         }
@@ -230,7 +265,9 @@ fn render_inline(text: &str) -> String {
                 italic.push(bytes[i] as char);
                 i += 1;
             }
-            if i < s.len() { i += 1; }
+            if i < s.len() {
+                i += 1;
+            }
             result.push_str(&italic.italic().to_string());
             continue;
         }
@@ -243,7 +280,9 @@ fn render_inline(text: &str) -> String {
 }
 
 fn render_code_block(lang: &str, lines: &[String], width: usize) {
-    if lines.is_empty() { return; }
+    if lines.is_empty() {
+        return;
+    }
 
     let lang_display = if lang.is_empty() { "code" } else { lang };
     println!("{}", format!(" ╔═ {} ", lang_display).dimmed());
@@ -262,8 +301,8 @@ fn highlight_line(line: &str, lang: &str) -> colored::ColoredString {
 
     // Comments
     let comment_prefixes = match lang {
-        "rust" | "rs" | "c" | "cpp" | "h" | "hpp" | "js" | "ts" | "jsx" | "tsx" |
-        "java" | "kt" | "kotlin" | "go" | "swift" => Some("//"),
+        "rust" | "rs" | "c" | "cpp" | "h" | "hpp" | "js" | "ts" | "jsx" | "tsx" | "java" | "kt"
+        | "kotlin" | "go" | "swift" => Some("//"),
         "python" | "py" | "rb" | "ruby" | "sh" | "bash" | "zsh" | "pl" | "pm" => Some("#"),
         "lua" | "sql" => Some("--"),
         _ => None,
@@ -297,7 +336,9 @@ fn highlight_line(line: &str, lang: &str) -> colored::ColoredString {
 // ---- Utilities ----
 
 fn terminal_width() -> u16 {
-    terminal_size::terminal_size().map(|(w, _)| w.0).unwrap_or(100)
+    terminal_size::terminal_size()
+        .map(|(w, _)| w.0)
+        .unwrap_or(100)
 }
 
 fn truncate(s: &str, max: usize) -> String {

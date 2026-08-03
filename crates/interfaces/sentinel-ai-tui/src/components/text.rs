@@ -86,8 +86,7 @@ impl Widget for Text {
 
     fn height(&self, available_width: u16) -> u16 {
         if self.wrapped && available_width > 0 {
-            let lines =
-                (self.content.len() as f64 / available_width as f64).ceil() as u16;
+            let lines = (self.content.len() as f64 / available_width as f64).ceil() as u16;
             lines.max(1)
         } else {
             1

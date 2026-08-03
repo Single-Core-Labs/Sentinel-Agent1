@@ -17,15 +17,22 @@ impl KeyPair {
         rand::rngs::OsRng.fill_bytes(&mut bytes);
         let signing_key = SigningKey::from_bytes(&bytes);
         let verifying_key = signing_key.verifying_key();
-        Self { signing_key, verifying_key }
+        Self {
+            signing_key,
+            verifying_key,
+        }
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, CryptoError> {
-        let bytes: [u8; 32] = bytes.try_into()
+        let bytes: [u8; 32] = bytes
+            .try_into()
             .map_err(|_| CryptoError::InvalidKeyLength)?;
         let signing_key = SigningKey::from_bytes(&bytes);
         let verifying_key = signing_key.verifying_key();
-        Ok(Self { signing_key, verifying_key })
+        Ok(Self {
+            signing_key,
+            verifying_key,
+        })
     }
 
     pub fn sign(&self, message: &[u8]) -> Vec<u8> {
@@ -33,10 +40,12 @@ impl KeyPair {
     }
 
     pub fn verify(&self, message: &[u8], signature: &[u8]) -> Result<(), CryptoError> {
-        let sig_bytes: [u8; 64] = signature.try_into()
+        let sig_bytes: [u8; 64] = signature
+            .try_into()
             .map_err(|_| CryptoError::InvalidSignature)?;
         let signature = Signature::from_bytes(&sig_bytes);
-        self.verifying_key.verify_strict(message, &signature)
+        self.verifying_key
+            .verify_strict(message, &signature)
             .map_err(|_| CryptoError::SignatureMismatch)
     }
 

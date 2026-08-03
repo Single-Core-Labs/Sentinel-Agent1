@@ -1,6 +1,6 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Item {
@@ -47,7 +47,11 @@ impl Item {
         }
     }
 
-    pub fn tool_call(tool_call_id: impl Into<String>, name: impl Into<String>, arguments: serde_json::Value) -> Self {
+    pub fn tool_call(
+        tool_call_id: impl Into<String>,
+        name: impl Into<String>,
+        arguments: serde_json::Value,
+    ) -> Self {
         Self::AssistantToolCall {
             id: Uuid::new_v4().to_string(),
             tool_call_id: tool_call_id.into(),
@@ -57,7 +61,11 @@ impl Item {
         }
     }
 
-    pub fn tool_result(tool_call_id: impl Into<String>, content: impl Into<String>, is_error: bool) -> Self {
+    pub fn tool_result(
+        tool_call_id: impl Into<String>,
+        content: impl Into<String>,
+        is_error: bool,
+    ) -> Self {
         Self::ToolResult {
             id: Uuid::new_v4().to_string(),
             tool_call_id: tool_call_id.into(),
@@ -90,7 +98,10 @@ impl Item {
     }
 
     pub fn is_assistant(&self) -> bool {
-        matches!(self, Self::AssistantText { .. } | Self::AssistantToolCall { .. })
+        matches!(
+            self,
+            Self::AssistantText { .. } | Self::AssistantToolCall { .. }
+        )
     }
 
     pub fn is_tool_result(&self) -> bool {
@@ -125,11 +136,17 @@ impl Turn {
     }
 
     pub fn assistant_texts(&self) -> Vec<&Item> {
-        self.items.iter().filter(|i| matches!(i, Item::AssistantText { .. })).collect()
+        self.items
+            .iter()
+            .filter(|i| matches!(i, Item::AssistantText { .. }))
+            .collect()
     }
 
     pub fn tool_calls(&self) -> Vec<&Item> {
-        self.items.iter().filter(|i| matches!(i, Item::AssistantToolCall { .. })).collect()
+        self.items
+            .iter()
+            .filter(|i| matches!(i, Item::AssistantToolCall { .. }))
+            .collect()
     }
 
     pub fn tool_results(&self) -> Vec<&Item> {
@@ -137,7 +154,8 @@ impl Turn {
     }
 
     pub fn extract_text(&self) -> String {
-        self.items.iter()
+        self.items
+            .iter()
             .filter_map(|i| match i {
                 Item::AssistantText { text, .. } => Some(text.as_str()),
                 _ => None,
@@ -212,13 +230,23 @@ impl Conversation {
         Some(turn)
     }
 
-    pub fn add_tool_call(&mut self, tool_call_id: impl Into<String>, name: impl Into<String>, arguments: serde_json::Value) -> Option<&mut Turn> {
+    pub fn add_tool_call(
+        &mut self,
+        tool_call_id: impl Into<String>,
+        name: impl Into<String>,
+        arguments: serde_json::Value,
+    ) -> Option<&mut Turn> {
         let turn = self.current_turn_mut()?;
         turn.add_item(Item::tool_call(tool_call_id, name, arguments));
         Some(turn)
     }
 
-    pub fn add_tool_result(&mut self, tool_call_id: impl Into<String>, content: impl Into<String>, is_error: bool) -> Option<&mut Turn> {
+    pub fn add_tool_result(
+        &mut self,
+        tool_call_id: impl Into<String>,
+        content: impl Into<String>,
+        is_error: bool,
+    ) -> Option<&mut Turn> {
         let turn = self.current_turn_mut()?;
         turn.add_item(Item::tool_result(tool_call_id, content, is_error));
         Some(turn)
@@ -268,7 +296,9 @@ impl Conversation {
 
     pub fn fork_at_turn(&self, turn_number: u32) -> Self {
         let now = Utc::now();
-        let fork_turns: Vec<Turn> = self.turns.iter()
+        let fork_turns: Vec<Turn> = self
+            .turns
+            .iter()
             .take(turn_number as usize)
             .cloned()
             .collect();

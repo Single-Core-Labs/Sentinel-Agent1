@@ -1,8 +1,8 @@
-use std::collections::HashMap;
-use async_trait::async_trait;
-use sentinel_protocol::{CompletionRequest, CompletionResponse, Choice};
 use crate::error::ProviderError;
-use crate::route::{Protocol, Endpoint, Auth, Route, FramingProvider};
+use crate::route::{Auth, Endpoint, FramingProvider, Protocol, Route};
+use async_trait::async_trait;
+use sentinel_protocol::{Choice, CompletionRequest, CompletionResponse};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone)]
 pub struct OpenAIChatProtocol;
@@ -99,7 +99,11 @@ impl OpenAIChatProtocol {
                 sentinel_protocol::ContentBlock::Text { text } => {
                     text_parts.push(text.as_str());
                 }
-                sentinel_protocol::ContentBlock::ToolCall { id, name, arguments } => {
+                sentinel_protocol::ContentBlock::ToolCall {
+                    id,
+                    name,
+                    arguments,
+                } => {
                     tool_calls.push(serde_json::json!({
                         "id": id,
                         "type": "function",
@@ -109,7 +113,11 @@ impl OpenAIChatProtocol {
                         }
                     }));
                 }
-                sentinel_protocol::ContentBlock::ToolResult { tool_call_id: tci, content, .. } => {
+                sentinel_protocol::ContentBlock::ToolResult {
+                    tool_call_id: tci,
+                    content,
+                    ..
+                } => {
                     tool_call_id = Some(tci.as_str());
                     text_parts.push(content.as_str());
                 }
@@ -138,19 +146,26 @@ impl Protocol for OpenAIChatProtocol {
     type State = OpenAIState;
 
     fn build_body(&self, req: &CompletionRequest) -> Result<Self::Body, ProviderError> {
-        let messages: Vec<serde_json::Value> = req.messages.iter()
+        let messages: Vec<serde_json::Value> = req
+            .messages
+            .iter()
             .map(|m| self.serialize_message(m))
             .collect();
 
         let tools = req.tools.as_ref().map(|tools| {
-            tools.iter().map(|t| serde_json::json!({
-                "type": "function",
-                "function": {
-                    "name": t.name,
-                    "description": t.description,
-                    "parameters": t.input_schema,
-                }
-            })).collect::<Vec<_>>()
+            tools
+                .iter()
+                .map(|t| {
+                    serde_json::json!({
+                        "type": "function",
+                        "function": {
+                            "name": t.name,
+                            "description": t.description,
+                            "parameters": t.input_schema,
+                        }
+                    })
+                })
+                .collect::<Vec<_>>()
         });
 
         Ok(OpenAIBody {
@@ -174,8 +189,8 @@ impl Protocol for OpenAIChatProtocol {
             return Ok(None);
         }
         let text = String::from_utf8_lossy(&frame);
-        let json: OpenAIStreamChunk = serde_json::from_str(&text)
-            .map_err(ProviderError::JsonError)?;
+        let json: OpenAIStreamChunk =
+            serde_json::from_str(&text).map_err(ProviderError::JsonError)?;
         Ok(Some(json))
     }
 
@@ -188,10 +203,16 @@ impl Protocol for OpenAIChatProtocol {
                 for tc in tcs {
                     let entry = state.tool_calls.entry(tc.index).or_insert_with(|| {
                         let id = tc.id.clone().unwrap_or_default();
-                        let name = tc.function.as_ref()
+                        let name = tc
+                            .function
+                            .as_ref()
                             .and_then(|f| f.name.clone())
                             .unwrap_or_default();
-                        OpenAIToolCallAcc { id, name, arguments: String::new() }
+                        OpenAIToolCallAcc {
+                            id,
+                            name,
+                            arguments: String::new(),
+                        }
                     });
                     if let Some(id) = &tc.id {
                         entry.id = id.clone();
@@ -230,11 +251,13 @@ impl Protocol for OpenAIChatProtocol {
     fn finalize(&self, state: Self::State) -> CompletionResponse {
         let mut content = Vec::new();
         if !state.content.is_empty() {
-            content.push(sentinel_protocol::ContentBlock::Text { text: state.content });
+            content.push(sentinel_protocol::ContentBlock::Text {
+                text: state.content,
+            });
         }
         for tc in state.tool_calls.values() {
-            let args: serde_json::Value = serde_json::from_str(&tc.arguments)
-                .unwrap_or(serde_json::Value::Null);
+            let args: serde_json::Value =
+                serde_json::from_str(&tc.arguments).unwrap_or(serde_json::Value::Null);
             content.push(sentinel_protocol::ContentBlock::ToolCall {
                 id: tc.id.clone(),
                 name: tc.name.clone(),
@@ -267,14 +290,25 @@ impl OpenAIChatProtocol {
         Route::new(Self, endpoint, auth, framing)
     }
 
-    pub fn route_with(endpoint: Endpoint, auth: Auth, framing: Box<dyn FramingProvider>) -> Route<Self> {
+    pub fn route_with(
+        endpoint: Endpoint,
+        auth: Auth,
+        framing: Box<dyn FramingProvider>,
+    ) -> Route<Self> {
         Route::new(Self, endpoint, auth, framing)
     }
 
     pub fn route_compatible(base_url: &str, api_key: &str) -> Route<Self> {
         let endpoint = Endpoint::openai_compatible(base_url);
-        let auth = Auth::Bearer { token: api_key.to_string() };
-        Route::new(Self, endpoint, auth, Box::new(crate::route::framing::NullFraming))
+        let auth = Auth::Bearer {
+            token: api_key.to_string(),
+        };
+        Route::new(
+            Self,
+            endpoint,
+            auth,
+            Box::new(crate::route::framing::NullFraming),
+        )
     }
 }
 
@@ -286,8 +320,7 @@ mod tests {
     #[test]
     fn test_build_body_basic() {
         let proto = OpenAIChatProtocol;
-        let req = CompletionRequest::new("gpt-4")
-            .with_message(Message::user("hello"));
+        let req = CompletionRequest::new("gpt-4").with_message(Message::user("hello"));
         let body = proto.build_body(&req).unwrap();
         assert_eq!(body.model, "gpt-4");
         assert_eq!(body.messages.len(), 1);
@@ -296,8 +329,7 @@ mod tests {
     #[test]
     fn test_serialize_deserialize_roundtrip() {
         let proto = OpenAIChatProtocol;
-        let req = CompletionRequest::new("gpt-4")
-            .with_message(Message::user("hello"));
+        let req = CompletionRequest::new("gpt-4").with_message(Message::user("hello"));
         let body = proto.build_body(&req).unwrap();
         let bytes = proto.serialize_body(&body).unwrap();
         let parsed: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
@@ -346,6 +378,9 @@ mod tests {
         let resp = proto.finalize(state);
         assert_eq!(resp.id, "resp1");
         assert_eq!(resp.choices.len(), 1);
-        assert!(resp.choices[0].message.extract_text().contains("Hello world"));
+        assert!(resp.choices[0]
+            .message
+            .extract_text()
+            .contains("Hello world"));
     }
 }

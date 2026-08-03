@@ -3,7 +3,7 @@ use serde::Deserialize;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::plugin::{Plugin, PluginAction, PluginEvent, PluginHook, PluginManifest, PluginId};
+use crate::plugin::{Plugin, PluginAction, PluginEvent, PluginHook, PluginId, PluginManifest};
 
 /// On-disk manifest (`sentinel-plugin.toml`) for a packaged plugin.
 #[derive(Debug, Clone, Deserialize)]
@@ -171,7 +171,11 @@ impl Plugin for ScriptPlugin {
     }
 
     fn hooks(&self) -> Vec<Box<dyn PluginHook>> {
-        self.hooks.lock().unwrap_or_else(|e| e.into_inner()).drain(..).collect()
+        self.hooks
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .drain(..)
+            .collect()
     }
 }
 
@@ -213,7 +217,10 @@ pub fn load_plugin_dir(dir: &Path) -> Result<Arc<dyn Plugin>, String> {
         homepage: file.homepage,
     };
 
-    Ok(Arc::new(ScriptPlugin { manifest, hooks: std::sync::Mutex::new(hooks) }))
+    Ok(Arc::new(ScriptPlugin {
+        manifest,
+        hooks: std::sync::Mutex::new(hooks),
+    }))
 }
 
 /// Discover all plugins inside a plugins directory (one subdir per plugin).
@@ -292,25 +299,26 @@ mod tests {
 
         // A hook for another event type must not fire.
         let other = hook
-            .handle(&PluginEvent::SessionCreated { session_id: "s".into() })
+            .handle(&PluginEvent::SessionCreated {
+                session_id: "s".into(),
+            })
             .await;
         assert!(matches!(other, PluginAction::Continue));
     }
 
     #[tokio::test]
     async fn load_plugins_dir_skips_non_plugin_dirs() {
-        let base = std::env::temp_dir().join(format!("sentinel-plugins-root-{}", std::process::id()));
+        let base =
+            std::env::temp_dir().join(format!("sentinel-plugins-root-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);
         std::fs::create_dir_all(base.join("not-a-plugin")).unwrap();
-        std::fs::write(
-            base.join("not-a-plugin/readme.txt"),
-            "no manifest here",
-        ).unwrap();
+        std::fs::write(base.join("not-a-plugin/readme.txt"), "no manifest here").unwrap();
         std::fs::create_dir_all(base.join("real")).unwrap();
         std::fs::write(
             base.join("real/sentinel-plugin.toml"),
             "id = \"real\"\nname = \"Real\"\nversion = \"1.0.0\"\ndescription = \"d\"\n",
-        ).unwrap();
+        )
+        .unwrap();
 
         let plugins = load_plugins_dir(&base);
         let _ = std::fs::remove_dir_all(&base);

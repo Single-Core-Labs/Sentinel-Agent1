@@ -120,7 +120,8 @@ pub fn parse_agents_md(content: &str) -> AgentsMd {
 
 /// Load and parse the `AGENTS.md` file at `path`.
 pub fn load_agents_md(path: &Path) -> Result<AgentsMd, AgentsMdError> {
-    let content = fs::read_to_string(path).map_err(|e| AgentsMdError::Io(path.display().to_string(), e))?;
+    let content =
+        fs::read_to_string(path).map_err(|e| AgentsMdError::Io(path.display().to_string(), e))?;
     let mut parsed = parse_agents_md(&content);
     parsed.path = path.to_path_buf();
     parsed.scope = path
@@ -174,7 +175,8 @@ pub fn discover_agents_md(root: &Path) -> Result<Vec<AgentsMd>, AgentsMdError> {
 
     found.sort_by_key(|md| md.scope.matches('/').count());
     Ok(found)
-}/// Load the full hierarchy under `root` and flatten it into scoped rules.
+}
+/// Load the full hierarchy under `root` and flatten it into scoped rules.
 ///
 /// Rules are ordered root‑first; consumers resolving a path should prefer
 /// the **last** rule whose scope is a prefix of the target path.
@@ -235,10 +237,7 @@ fn list_item_of(line: &str) -> Option<&str> {
     }
     // Numbered items: `1. text`
     if let Some((num, text)) = trimmed.split_once(". ") {
-        if !num.is_empty()
-            && num.chars().all(|c| c.is_ascii_digit())
-            && !text.trim().is_empty()
-        {
+        if !num.is_empty() && num.chars().all(|c| c.is_ascii_digit()) && !text.trim().is_empty() {
             return Some(text.trim());
         }
     }
@@ -280,7 +279,10 @@ mod tests {
         assert!(md.sections[1].items[0].contains("cargo test"));
         assert_eq!(md.sections[2].heading, "Security");
         // Sub-bullet preserved as an item.
-        assert!(md.sections[2].items.iter().any(|i| i.contains("Never log API keys")));
+        assert!(md.sections[2]
+            .items
+            .iter()
+            .any(|i| i.contains("Never log API keys")));
     }
 
     #[test]
@@ -310,7 +312,11 @@ mod tests {
         fs::create_dir_all(root.join("packages/desktop-app")).unwrap();
         fs::write(root.join("AGENTS.md"), "## Root\n\n- root rule\n").unwrap();
         fs::write(root.join("crates/AGENTS.md"), "## Crates\n\n- crate rule\n").unwrap();
-        fs::write(root.join("packages/desktop-app/AGENTS.md"), "## UI\n\n- ui rule\n").unwrap();
+        fs::write(
+            root.join("packages/desktop-app/AGENTS.md"),
+            "## UI\n\n- ui rule\n",
+        )
+        .unwrap();
 
         let rules = load_rules(&root).expect("load hierarchy");
         assert_eq!(rules.len(), 3);

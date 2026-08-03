@@ -36,15 +36,20 @@ fn detect_divergent_sync(lines: &[&str], issues: &mut Vec<KernelIssue>) {
 
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
-        if trimmed.starts_with("if") && trimmed.contains("__syncthreads") || trimmed.starts_with("if") {
-            if trimmed.ends_with('{') || trimmed.contains('{') {
-                in_if = true;
-                depth = 1;
-            }
+        if (trimmed.starts_with("if") && trimmed.contains("__syncthreads")
+            || trimmed.starts_with("if"))
+            && (trimmed.ends_with('{') || trimmed.contains('{'))
+        {
+            in_if = true;
+            depth = 1;
         }
         if in_if {
-            if trimmed.contains('{') { depth += 1; }
-            if trimmed.contains('}') { depth -= 1; }
+            if trimmed.contains('{') {
+                depth += 1;
+            }
+            if trimmed.contains('}') {
+                depth -= 1;
+            }
             if trimmed.contains("__syncthreads()") {
                 issues.push(KernelIssue {
                     line: i + 1,
@@ -53,23 +58,25 @@ fn detect_divergent_sync(lines: &[&str], issues: &mut Vec<KernelIssue>) {
                     suggestion: "Move __syncthreads() outside the if/else block. All threads in a block must execute __syncthreads() to avoid deadlock.".into(),
                 });
             }
-            if depth <= 0 { in_if = false; }
+            if depth <= 0 {
+                in_if = false;
+            }
         }
     }
 }
 
 fn detect_shared_mem_oversubscription(lines: &[&str], issues: &mut Vec<KernelIssue>) {
+    // Match: __shared__ float arr[N] or __shared__ int arr[M]
+    let re = Regex::new(r"__shared__\s+\w+\s+\w+\[(\d+)\]").unwrap();
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
-        if !trimmed.contains("__shared__") { continue; }
+        if !trimmed.contains("__shared__") {
+            continue;
+        }
 
-        // Match: __shared__ float arr[N] or __shared__ int arr[M]
-        let re = Regex::new(r"__shared__\s+\w+\s+\w+\[(\d+)\]").unwrap();
         if let Some(caps) = re.captures(trimmed) {
             if let Ok(size) = caps[1].parse::<usize>() {
-                let element_size = if trimmed.contains("double") { 8 }
-                    else if trimmed.contains("float") || trimmed.contains("int") { 4 }
-                    else { 4 };
+                let element_size = if trimmed.contains("double") { 8 } else { 4 };
                 let bytes = size * element_size;
 
                 if bytes > 48 * 1024 {
@@ -106,7 +113,9 @@ fn detect_small_block_size(lines: &[&str], issues: &mut Vec<KernelIssue>) {
             let block_x = if let Some(dc) = dim_re.captures(block_str) {
                 dc[1].parse::<u32>().unwrap_or(256)
             } else {
-                block_str.split(',').next()
+                block_str
+                    .split(',')
+                    .next()
                     .and_then(|s| s.trim().parse::<u32>().ok())
                     .unwrap_or(256)
             };
@@ -123,7 +132,9 @@ fn detect_small_block_size(lines: &[&str], issues: &mut Vec<KernelIssue>) {
             let grid_x = if let Some(dc) = dim_re.captures(grid_str) {
                 dc[1].parse::<u32>().unwrap_or(1)
             } else {
-                grid_str.split(',').next()
+                grid_str
+                    .split(',')
+                    .next()
                     .and_then(|s| s.trim().parse::<u32>().ok())
                     .unwrap_or(1)
             };
@@ -144,20 +155,31 @@ fn detect_atomic_in_loop(lines: &[&str], issues: &mut Vec<KernelIssue>) {
     let mut in_loop = false;
     let mut depth = 0;
 
-    let atomic_ops = ["atomicAdd", "atomicSub", "atomicExch", "atomicMin", "atomicMax",
-                      "atomicAnd", "atomicOr", "atomicXor", "atomicCAS"];
+    let atomic_ops = [
+        "atomicAdd",
+        "atomicSub",
+        "atomicExch",
+        "atomicMin",
+        "atomicMax",
+        "atomicAnd",
+        "atomicOr",
+        "atomicXor",
+        "atomicCAS",
+    ];
 
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
-        if trimmed.starts_with("for") || trimmed.starts_with("while") {
-            if trimmed.contains('{') {
-                in_loop = true;
-                depth = 1;
-            }
+        if (trimmed.starts_with("for") || trimmed.starts_with("while")) && trimmed.contains('{') {
+            in_loop = true;
+            depth = 1;
         }
         if in_loop {
-            if trimmed.contains('{') { depth += 1; }
-            if trimmed.contains('}') { depth -= 1; }
+            if trimmed.contains('{') {
+                depth += 1;
+            }
+            if trimmed.contains('}') {
+                depth -= 1;
+            }
 
             for &op in &atomic_ops {
                 if trimmed.contains(op) {
@@ -170,7 +192,9 @@ fn detect_atomic_in_loop(lines: &[&str], issues: &mut Vec<KernelIssue>) {
                 }
             }
 
-            if depth <= 0 { in_loop = false; }
+            if depth <= 0 {
+                in_loop = false;
+            }
         }
     }
 }
@@ -179,7 +203,9 @@ fn detect_host_device_copy(lines: &[&str], issues: &mut Vec<KernelIssue>) {
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
         if trimmed.contains("cudaMemcpy") {
-            let in_kernel = lines[..=i].iter().any(|l| l.trim().contains("__global__") || l.trim().contains("__device__"));
+            let in_kernel = lines[..=i]
+                .iter()
+                .any(|l| l.trim().contains("__global__") || l.trim().contains("__device__"));
 
             if in_kernel {
                 issues.push(KernelIssue {
@@ -194,38 +220,44 @@ fn detect_host_device_copy(lines: &[&str], issues: &mut Vec<KernelIssue>) {
 }
 
 fn detect_uncoalesced_access(lines: &[&str], issues: &mut Vec<KernelIssue>) {
+    // Pattern: arr[threadIdx.x][blockIdx.x]  — tiled access (coalesced)
+    // Pattern: arr[blockIdx.x][threadIdx.x]  — strided access (non-coalesced)
+    let re = Regex::new(r"(\w+)\[(\w+)\]\[(\w+)\]").unwrap();
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
-        if trimmed.starts_with("//") || trimmed.starts_with("/*") { continue; }
+        if trimmed.starts_with("//") || trimmed.starts_with("/*") {
+            continue;
+        }
 
-        // Pattern: arr[threadIdx.x][blockIdx.x]  — tiled access (coalesced)
-        // Pattern: arr[blockIdx.x][threadIdx.x]  — strided access (non-coalesced)
-        let re = Regex::new(r"(\w+)\[(\w+)\]\[(\w+)\]").unwrap();
         if let Some(caps) = re.captures(trimmed) {
             let first = &caps[2];
             let second = &caps[3];
 
-            if first.starts_with("blockIdx") && (second.starts_with("threadIdx") || second.starts_with("laneId")) {
-                if !trimmed.contains("//") && !trimmed.starts_with("//") {
-                    issues.push(KernelIssue {
+            if first.starts_with("blockIdx")
+                && (second.starts_with("threadIdx") || second.starts_with("laneId"))
+                && !trimmed.contains("//")
+                && !trimmed.starts_with("//")
+            {
+                issues.push(KernelIssue {
                         line: i + 1,
                         severity: Severity::Warn,
                         message: "Potentially uncoalesced global memory access pattern".into(),
                         suggestion: "Use [threadIdx.x][blockIdx.x] instead of [blockIdx.x][threadIdx.x] for coalesced access. Transpose or use shared memory to reorder.".into(),
                     });
-                }
             }
         }
     }
 }
 
 fn detect_bank_conflicts(lines: &[&str], issues: &mut Vec<KernelIssue>) {
+    // Detect shared memory arrays accessed with strided indices
+    let re = Regex::new(r"shared_?\w*\[(\w+)\s*\+\s*(\w+)\]").unwrap();
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
-        if !trimmed.contains("__shared__") { continue; }
+        if !trimmed.contains("__shared__") {
+            continue;
+        }
 
-        // Detect shared memory arrays accessed with strided indices
-        let re = Regex::new(r"shared_?\w*\[(\w+)\s*\+\s*(\w+)\]").unwrap();
         for caps in re.captures_iter(trimmed) {
             let base = &caps[1];
             let idx = &caps[2];
@@ -263,14 +295,18 @@ __global__ void test() {
     fn test_shared_mem_oversubscription() {
         let src = "__shared__ float big[131072];";
         let issues = analyze_cuda_source(src);
-        assert!(issues.iter().any(|i| i.message.contains("oversubscription")));
+        assert!(issues
+            .iter()
+            .any(|i| i.message.contains("oversubscription")));
     }
 
     #[test]
     fn test_small_block() {
         let src = "kernel<<<1, 16>>>();";
         let issues = analyze_cuda_source(src);
-        assert!(issues.iter().any(|i| i.message.contains("Small block size")));
+        assert!(issues
+            .iter()
+            .any(|i| i.message.contains("Small block size")));
     }
 
     #[test]
@@ -280,13 +316,17 @@ for (int i = 0; i < N; i++) {
     atomicAdd(&result, data[i]);
 }"#;
         let issues = analyze_cuda_source(src);
-        assert!(issues.iter().any(|i| i.message.contains("atomicAdd inside loop")));
+        assert!(issues
+            .iter()
+            .any(|i| i.message.contains("atomicAdd inside loop")));
     }
 
     #[test]
     fn test_host_device_copy() {
         let src = "__global__ void test() { cudaMemcpy(dst, src, size, cudaMemcpyDeviceToHost); }";
         let issues = analyze_cuda_source(src);
-        assert!(issues.iter().any(|i| i.message.contains("cudaMemcpy called from device")));
+        assert!(issues
+            .iter()
+            .any(|i| i.message.contains("cudaMemcpy called from device")));
     }
 }

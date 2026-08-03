@@ -3,7 +3,12 @@ use std::path::PathBuf;
 
 /// Top‑level CLI configuration for `sentinel-ai-exec`.
 #[derive(Debug, Parser)]
-#[command(name = "sentinel-ai-exec", author, version, about = "CLI front‑end for a Sentinel AI‑style agent")]
+#[command(
+    name = "sentinel-ai-exec",
+    author,
+    version,
+    about = "CLI front‑end for a Sentinel AI‑style agent"
+)]
 pub struct Cli {
     /// Fail if the configuration file cannot be loaded.
     #[arg(long)]

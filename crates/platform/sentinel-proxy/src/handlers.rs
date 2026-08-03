@@ -1,12 +1,12 @@
-use std::sync::Arc;
 use axum::{
     extract::State,
-    http::{HeaderMap, StatusCode, Method},
+    http::{HeaderMap, Method, StatusCode},
     response::{IntoResponse, Json, Response},
     routing::{get, post},
     Router,
 };
 use serde_json::{json, Value};
+use std::sync::Arc;
 use tracing::error;
 
 use crate::compression::ProxyCompressor;
@@ -110,15 +110,21 @@ fn check_budget(config: &ProxyConfig, tokens_after: u64) -> Option<Response> {
     if let Some(budget_usd) = config.budget {
         let estimated_cost = tokens_after as f64 * 0.00001;
         if estimated_cost > budget_usd {
-            error!("Budget exceeded: ${:.4} > ${:.2}", estimated_cost, budget_usd);
-            return Some((
-                StatusCode::TOO_MANY_REQUESTS,
-                Json(json!({
-                    "error": "Budget exceeded",
-                    "estimated_cost": estimated_cost,
-                    "budget": budget_usd,
-                })),
-            ).into_response());
+            error!(
+                "Budget exceeded: ${:.4} > ${:.2}",
+                estimated_cost, budget_usd
+            );
+            return Some(
+                (
+                    StatusCode::TOO_MANY_REQUESTS,
+                    Json(json!({
+                        "error": "Budget exceeded",
+                        "estimated_cost": estimated_cost,
+                        "budget": budget_usd,
+                    })),
+                )
+                    .into_response(),
+            );
         }
     }
     None
@@ -163,7 +169,9 @@ async fn proxy_and_inject_meta(
             });
 
             let (parts, body) = response.into_parts();
-            let body_bytes = axum::body::to_bytes(body, 1024 * 1024).await.unwrap_or_default();
+            let body_bytes = axum::body::to_bytes(body, 1024 * 1024)
+                .await
+                .unwrap_or_default();
             if let Ok(mut resp_json) = serde_json::from_slice::<Value>(&body_bytes) {
                 resp_json["proxy_metadata"] = proxy_meta;
                 let new_body = serde_json::to_vec(&resp_json).unwrap_or(body_bytes.to_vec());
@@ -210,7 +218,7 @@ async fn openai_chat_handler(
         let tokens: u64 = messages
             .iter()
             .filter_map(|m| m["content"].as_str())
-            .map(|c| ProxyCompressor::estimate_tokens(c))
+            .map(ProxyCompressor::estimate_tokens)
             .sum();
         (messages, tokens, tokens)
     };
@@ -223,7 +231,15 @@ async fn openai_chat_handler(
     altered_body["messages"] = Value::Array(compressed_msgs);
 
     let target_url = format!("{}/v1/chat/completions", state.config.openai_api_url);
-    proxy_and_inject_meta(&state, &headers, &target_url, altered_body, tokens_before, tokens_after).await
+    proxy_and_inject_meta(
+        &state,
+        &headers,
+        &target_url,
+        altered_body,
+        tokens_before,
+        tokens_after,
+    )
+    .await
 }
 
 async fn anthropic_messages_handler(
@@ -261,7 +277,7 @@ async fn anthropic_messages_handler(
         let tokens: u64 = all_msgs
             .iter()
             .filter_map(|m| m["content"].as_str())
-            .map(|c| ProxyCompressor::estimate_tokens(c))
+            .map(ProxyCompressor::estimate_tokens)
             .sum();
         (all_msgs, tokens, tokens)
     };
@@ -289,7 +305,15 @@ async fn anthropic_messages_handler(
     altered_body["messages"] = Value::Array(compressed_messages_only);
 
     let target_url = format!("{}/v1/messages", state.config.anthropic_api_url);
-    proxy_and_inject_meta(&state, &headers, &target_url, altered_body, tokens_before, tokens_after).await
+    proxy_and_inject_meta(
+        &state,
+        &headers,
+        &target_url,
+        altered_body,
+        tokens_before,
+        tokens_after,
+    )
+    .await
 }
 
 async fn compress_handler(
@@ -318,7 +342,7 @@ async fn compress_handler(
         let tokens: u64 = messages
             .iter()
             .filter_map(|m| m["content"].as_str())
-            .map(|c| ProxyCompressor::estimate_tokens(c))
+            .map(ProxyCompressor::estimate_tokens)
             .sum();
         (messages, tokens, tokens)
     };

@@ -1,19 +1,19 @@
-pub mod types;
+pub mod config;
 pub mod embeddings;
-pub mod store;
 pub mod extractor;
 pub mod injector;
+pub mod store;
 pub mod tool;
-pub mod config;
+pub mod types;
 
 use std::sync::Arc;
 use thiserror::Error;
 
-pub use types::*;
-pub use store::*;
+pub use config::MemoryConfig;
 pub use extractor::*;
 pub use injector::*;
-pub use config::MemoryConfig;
+pub use store::*;
+pub use types::*;
 
 #[derive(Error, Debug)]
 pub enum MemoryError {
@@ -41,12 +41,24 @@ pub struct PersistentMemory {
 impl PersistentMemory {
     pub fn new(store: Arc<dyn MemoryStore>, config: MemoryConfig) -> Self {
         let injector = Arc::new(MemoryInjector::new(store.clone()));
-        Self { store, injector, config }
+        Self {
+            store,
+            injector,
+            config,
+        }
     }
 
-    pub fn with_config(store: Arc<dyn MemoryStore>, injector_config: InjectionConfig, config: MemoryConfig) -> Self {
+    pub fn with_config(
+        store: Arc<dyn MemoryStore>,
+        injector_config: InjectionConfig,
+        config: MemoryConfig,
+    ) -> Self {
         let injector = Arc::new(MemoryInjector::with_config(store.clone(), injector_config));
-        Self { store, injector, config }
+        Self {
+            store,
+            injector,
+            config,
+        }
     }
 
     pub fn store(&self) -> &Arc<dyn MemoryStore> {
@@ -61,9 +73,16 @@ impl PersistentMemory {
         &self.config
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn add_memory(
-        &self, content: &str, category: MemoryCategory, importance: f64,
-        user_id: &str, scope: MemoryScope, source: MemorySource, source_turn: u32,
+        &self,
+        content: &str,
+        category: MemoryCategory,
+        importance: f64,
+        user_id: &str,
+        scope: MemoryScope,
+        source: MemorySource,
+        source_turn: u32,
     ) -> Result<Memory> {
         let now = now_seconds();
         let memory = Memory {
@@ -97,7 +116,13 @@ impl PersistentMemory {
         self.store.supersede(old_id, new_content, reason).await
     }
 
-    pub async fn process_response(&self, response: &str, user_id: &str, session_id: Option<&str>, turn: u32) -> (String, Vec<Memory>) {
+    pub async fn process_response(
+        &self,
+        response: &str,
+        user_id: &str,
+        session_id: Option<&str>,
+        turn: u32,
+    ) -> (String, Vec<Memory>) {
         if !self.config.inline_extraction {
             return (response.to_string(), Vec::new());
         }
@@ -141,22 +166,38 @@ impl PersistentMemory {
     }
 
     pub async fn extract_from_dropped(
-        &self, dropped: &[crate::config::Message],
-        user_id: &str, session_id: Option<&str>, turn: u32,
+        &self,
+        dropped: &[crate::config::Message],
+        user_id: &str,
+        session_id: Option<&str>,
+        turn: u32,
     ) -> Result<Vec<Memory>> {
         if !self.config.compaction_extraction {
             return Ok(Vec::new());
         }
         extract_from_dropped_messages(
-            dropped, &self.store, user_id, session_id, turn, &self.config.extraction,
-        ).await
+            dropped,
+            &self.store,
+            user_id,
+            session_id,
+            turn,
+            &self.config.extraction,
+        )
+        .await
     }
 
-    pub async fn inject_memories(&self, system_prompt: &str, user_id: &str, session_id: Option<&str>) -> String {
+    pub async fn inject_memories(
+        &self,
+        system_prompt: &str,
+        user_id: &str,
+        session_id: Option<&str>,
+    ) -> String {
         if !self.config.inject_on_every_turn {
             return system_prompt.to_string();
         }
-        self.injector.inject_into_system_prompt(system_prompt, user_id, session_id).await
+        self.injector
+            .inject_into_system_prompt(system_prompt, user_id, session_id)
+            .await
     }
 
     pub async fn create_tools(&self) -> Vec<Arc<dyn sentinel_tools::Tool>> {

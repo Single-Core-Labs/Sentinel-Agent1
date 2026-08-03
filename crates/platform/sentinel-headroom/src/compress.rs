@@ -1,9 +1,9 @@
-use std::sync::Arc;
 use crate::cache_aligner::CacheAligner;
 use crate::cache_optimizer::CacheOptimizer;
 use crate::config::*;
 use crate::intelligent_context::IntelligentContext;
 use crate::orchestrator::ContentCompressor;
+use std::sync::Arc;
 
 pub struct Compressor {
     cache_aligner: CacheAligner,
@@ -19,7 +19,10 @@ impl Compressor {
         let content_router = Arc::new(ContentCompressor::from_config(&config));
         let memory = if config.memory.enabled {
             let store = Arc::new(Self::create_store(&config.memory));
-            Some(crate::memory::PersistentMemory::new(store, config.memory.clone()))
+            Some(crate::memory::PersistentMemory::new(
+                store,
+                config.memory.clone(),
+            ))
         } else {
             None
         };
@@ -37,7 +40,10 @@ impl Compressor {
         let content_router = Arc::new(ContentCompressor::with_ccr_and_config(ccr, &config));
         let memory = if config.memory.enabled {
             let store = Arc::new(Self::create_store(&config.memory));
-            Some(crate::memory::PersistentMemory::new(store, config.memory.clone()))
+            Some(crate::memory::PersistentMemory::new(
+                store,
+                config.memory.clone(),
+            ))
         } else {
             None
         };
@@ -51,7 +57,9 @@ impl Compressor {
         }
     }
 
-    fn create_store(mem_config: &crate::memory::MemoryConfig) -> crate::memory::store::SqliteMemoryStore {
+    fn create_store(
+        mem_config: &crate::memory::MemoryConfig,
+    ) -> crate::memory::store::SqliteMemoryStore {
         match &mem_config.db_path {
             Some(path) => crate::memory::store::SqliteMemoryStore::open(path)
                 .expect("Failed to open SQLite memory store"),
@@ -71,7 +79,10 @@ impl Compressor {
     pub async fn compress(&mut self, messages: Vec<Message>, model: &str) -> CompressionResult {
         let total_messages = messages.len();
         let total_input_chars: usize = messages.iter().map(|m| m.content.len()).sum();
-        let total_input_tokens = messages.iter().map(|m| crate::intelligent_context::estimate_tokens(&m.content)).sum();
+        let total_input_tokens = messages
+            .iter()
+            .map(|m| crate::intelligent_context::estimate_tokens(&m.content))
+            .sum();
 
         let mut transformed: Vec<Message> = Vec::with_capacity(total_messages);
         let mut total_cacheable_prefixes = 0usize;
@@ -104,7 +115,7 @@ impl Compressor {
                     });
                     transformed_roles.push(format!("{}:aligned", role_name));
                 }
-                MessageRole::Tool if self.config.content_routing.enabled_types.len() > 0 => {
+                MessageRole::Tool if !self.config.content_routing.enabled_types.is_empty() => {
                     let hint = if let Some(ref tool_name) = msg.name {
                         crate::integration::content_type_for_tool(tool_name)
                     } else {
@@ -112,7 +123,11 @@ impl Compressor {
                     };
                     let outcome = self.content_router.compress(&msg.content, hint).await;
                     match outcome {
-                        crate::orchestrator::CompressOutcome::Compressed { text, retrieval_key, .. } => {
+                        crate::orchestrator::CompressOutcome::Compressed {
+                            text,
+                            retrieval_key,
+                            ..
+                        } => {
                             total_content_compressed += 1;
                             if let Some(ref key) = retrieval_key {
                                 ccr_keys.push(key.clone());
@@ -142,7 +157,10 @@ impl Compressor {
         }
 
         let total_output_chars: usize = transformed.iter().map(|m| m.content.len()).sum();
-        let total_output_tokens: usize = transformed.iter().map(|m| crate::intelligent_context::estimate_tokens(&m.content)).sum();
+        let total_output_tokens: usize = transformed
+            .iter()
+            .map(|m| crate::intelligent_context::estimate_tokens(&m.content))
+            .sum();
 
         let cache_summary = if self.config.cache_optimizer.enabled {
             let opt = self.cache_optimizer.optimize(transformed.clone(), model);
@@ -166,7 +184,9 @@ impl Compressor {
                 let dropped_msgs: Vec<&Message> = {
                     let selected_indices: std::collections::HashSet<usize> =
                         scored.messages.iter().map(|sm| sm.index).collect();
-                    transformed.iter().enumerate()
+                    transformed
+                        .iter()
+                        .enumerate()
                         .filter(|(i, _)| !selected_indices.contains(i))
                         .map(|(_, m)| m)
                         .collect()
@@ -174,13 +194,11 @@ impl Compressor {
 
                 if !dropped_msgs.is_empty() {
                     if let Some(ref memory) = self.memory {
-                        let dropped: Vec<Message> = dropped_msgs.iter().map(|m| (*m).clone()).collect();
-                        let _ = memory.extract_from_dropped(
-                            &dropped,
-                            &self.config.memory.user_id,
-                            None,
-                            0,
-                        ).await;
+                        let dropped: Vec<Message> =
+                            dropped_msgs.iter().map(|m| (*m).clone()).collect();
+                        let _ = memory
+                            .extract_from_dropped(&dropped, &self.config.memory.user_id, None, 0)
+                            .await;
                     }
                 }
 
@@ -192,12 +210,15 @@ impl Compressor {
                         } else {
                             dm.content.clone()
                         };
-                        self.content_router.ccr().store_with_key(
-                            &dropped_key,
-                            dm.content.clone(),
-                            "dropped_message",
-                            preview,
-                        ).await;
+                        self.content_router
+                            .ccr()
+                            .store_with_key(
+                                &dropped_key,
+                                dm.content.clone(),
+                                "dropped_message",
+                                preview,
+                            )
+                            .await;
                         ccr_dropped_refs.push((dropped_key, dm.content.len()));
                     }
 
@@ -206,24 +227,32 @@ impl Compressor {
                         scored.dropped_count
                     );
 
-                    let mut result: Vec<Message> = scored.messages.iter().map(|sm| Message {
-                        role: sm.role.clone(),
-                        content: sm.content.clone(),
-                        tool_call_id: sm.tool_call_id.clone(),
-                        name: sm.name.clone(),
-                    }).collect();
+                    let mut result: Vec<Message> = scored
+                        .messages
+                        .iter()
+                        .map(|sm| Message {
+                            role: sm.role.clone(),
+                            content: sm.content.clone(),
+                            tool_call_id: sm.tool_call_id.clone(),
+                            name: sm.name.clone(),
+                        })
+                        .collect();
 
                     if let Some(last) = result.last_mut() {
                         last.content.push_str(&marker);
                     }
                     result
                 } else {
-                    scored.messages.iter().map(|sm| Message {
-                        role: sm.role.clone(),
-                        content: sm.content.clone(),
-                        tool_call_id: sm.tool_call_id.clone(),
-                        name: sm.name.clone(),
-                    }).collect()
+                    scored
+                        .messages
+                        .iter()
+                        .map(|sm| Message {
+                            role: sm.role.clone(),
+                            content: sm.content.clone(),
+                            tool_call_id: sm.tool_call_id.clone(),
+                            name: sm.name.clone(),
+                        })
+                        .collect()
                 }
             }
             _ => transformed,
@@ -231,11 +260,15 @@ impl Compressor {
 
         if let Some(ref memory) = self.memory {
             if self.config.memory.inject_on_every_turn {
-                let prompt = final_messages.iter().find(|m| matches!(m.role, MessageRole::System))
+                let prompt = final_messages
+                    .iter()
+                    .find(|m| matches!(m.role, MessageRole::System))
                     .map(|m| m.content.clone())
                     .unwrap_or_default();
                 if !prompt.is_empty() {
-                    let enriched = memory.inject_memories(&prompt, &self.config.memory.user_id, None).await;
+                    let enriched = memory
+                        .inject_memories(&prompt, &self.config.memory.user_id, None)
+                        .await;
                     if enriched != prompt {
                         for m in final_messages.iter_mut() {
                             if matches!(m.role, MessageRole::System) {
@@ -247,7 +280,10 @@ impl Compressor {
             }
         }
 
-        let _final_token_count: usize = final_messages.iter().map(|m| crate::intelligent_context::estimate_tokens(&m.content)).sum();
+        let _final_token_count: usize = final_messages
+            .iter()
+            .map(|m| crate::intelligent_context::estimate_tokens(&m.content))
+            .sum();
         let total_output_messages = final_messages.len();
 
         CompressionResult {
@@ -265,8 +301,14 @@ impl Compressor {
                 cache_summary,
                 ccr_keys,
                 roles: transformed_roles,
-                intelligent_dropped: intelligence_result.as_ref().map(|r| r.dropped_count).unwrap_or(0),
-                intelligent_budget: intelligence_result.as_ref().map(|r| r.budget_tokens).unwrap_or(0),
+                intelligent_dropped: intelligence_result
+                    .as_ref()
+                    .map(|r| r.dropped_count)
+                    .unwrap_or(0),
+                intelligent_budget: intelligence_result
+                    .as_ref()
+                    .map(|r| r.budget_tokens)
+                    .unwrap_or(0),
                 ccr_dropped_refs: ccr_dropped_refs.iter().map(|(k, _)| k.clone()).collect(),
             },
         }
@@ -345,7 +387,11 @@ mod tests {
         ];
         let result = compressor.compress(messages, "test-model").await;
         let sys = &result.messages[0];
-        assert!(sys.content.contains("[Context:"), "system prompt should have [Context: ...] suffix: {:?}", sys.content);
+        assert!(
+            sys.content.contains("[Context:"),
+            "system prompt should have [Context: ...] suffix: {:?}",
+            sys.content
+        );
     }
 
     #[tokio::test]
@@ -367,7 +413,10 @@ mod tests {
         let result = compressor.compress(messages, "test-model").await;
         let tool_result = &result.messages[1];
         if tool_result.content.len() < code.len() {
-            assert!(result.metadata.content_compressed_count >= 1, "should compress tool output");
+            assert!(
+                result.metadata.content_compressed_count >= 1,
+                "should compress tool output"
+            );
         }
     }
 
@@ -392,11 +441,17 @@ mod tests {
         let mut compressor = Compressor::new(config);
         let messages = vec![
             msg(MessageRole::User, "short"),
-            msg(MessageRole::User, "this is a much longer message that should be dropped"),
+            msg(
+                MessageRole::User,
+                "this is a much longer message that should be dropped",
+            ),
             msg(MessageRole::User, "tiny"),
         ];
         let result = compressor.compress(messages, "test-model").await;
-        assert!(result.metadata.intelligent_dropped > 0, "should drop messages when over budget");
+        assert!(
+            result.metadata.intelligent_dropped > 0,
+            "should drop messages when over budget"
+        );
         assert!(result.metadata.total_output_messages < result.metadata.total_input_messages);
     }
 
@@ -451,7 +506,11 @@ mod tests {
         let _r1 = compressor.compress(msgs1, "test-model").await;
         let msgs2 = vec![msg(MessageRole::System, "Today is 2026-07-22.")];
         let r2 = compressor.compress(msgs2, "test-model").await;
-        assert!(r2.messages[0].content.contains("[Context: no change]"), "second call should detect no change: {:?}", r2.messages[0].content);
+        assert!(
+            r2.messages[0].content.contains("[Context: no change]"),
+            "second call should detect no change: {:?}",
+            r2.messages[0].content
+        );
     }
 
     #[tokio::test]
@@ -479,9 +538,15 @@ mod tests {
             msg(MessageRole::User, "tiny"),
         ];
         let result = compressor.compress(messages, "test-model").await;
-        assert!(result.metadata.intelligent_dropped > 0, "should drop messages");
-        assert_eq!(result.metadata.ccr_dropped_refs.len(), result.metadata.intelligent_dropped.min(20),
-            "dropped refs count should match dropped messages up to 20");
+        assert!(
+            result.metadata.intelligent_dropped > 0,
+            "should drop messages"
+        );
+        assert_eq!(
+            result.metadata.ccr_dropped_refs.len(),
+            result.metadata.intelligent_dropped.min(20),
+            "dropped refs count should match dropped messages up to 20"
+        );
     }
 
     #[tokio::test]
@@ -492,13 +557,13 @@ mod tests {
         }
         let config = HeadroomConfig::default();
         let mut compressor = Compressor::new(config);
-        let messages = vec![
-            msg(MessageRole::System, "help"),
-            tool_msg("read", &code),
-        ];
+        let messages = vec![msg(MessageRole::System, "help"), tool_msg("read", &code)];
         let result = compressor.compress(messages, "test-model").await;
         let tool = &result.messages[1];
-        assert!(tool.content.contains("ccr:") || tool.content.contains("headroom"),
-            "compressed tool output should contain ccr reference: {}", tool.content);
+        assert!(
+            tool.content.contains("ccr:") || tool.content.contains("headroom"),
+            "compressed tool output should contain ccr reference: {}",
+            tool.content
+        );
     }
 }

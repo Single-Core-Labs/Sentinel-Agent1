@@ -1,5 +1,5 @@
-use crate::{emulate, GpuArch, GpuLanguage, LaunchConfig};
 use crate::emulate::EmulationResult;
+use crate::{emulate, GpuArch, GpuLanguage, LaunchConfig};
 
 #[derive(Debug, Clone)]
 pub struct BottleneckReport {
@@ -45,21 +45,36 @@ pub fn analyze_bottlenecks(result: &EmulationResult) -> BottleneckReport {
     let mut secondary = Vec::new();
 
     if result.memory.coalescing_efficiency < 0.5 {
-        details.push(format!("Poor coalescing ({:.0}%) — strided global memory access", result.memory.coalescing_efficiency * 100.0));
+        details.push(format!(
+            "Poor coalescing ({:.0}%) — strided global memory access",
+            result.memory.coalescing_efficiency * 100.0
+        ));
     }
     if result.memory.shared_bank_conflicts > 0 {
-        details.push(format!("{} shared memory bank conflicts", result.memory.shared_bank_conflicts));
+        details.push(format!(
+            "{} shared memory bank conflicts",
+            result.memory.shared_bank_conflicts
+        ));
     }
     if result.memory.register_spills > 0 {
-        details.push(format!("{} register spills — consider __launch_bounds__", result.memory.register_spills));
+        details.push(format!(
+            "{} register spills — consider __launch_bounds__",
+            result.memory.register_spills
+        ));
         secondary.push("Register pressure".into());
     }
     if result.occupancy.occupancy_pct < 50.0 {
-        details.push(format!("Low occupancy ({:.0}%) — blocked by {}", result.occupancy.occupancy_pct, result.occupancy.limiting_factor));
+        details.push(format!(
+            "Low occupancy ({:.0}%) — blocked by {}",
+            result.occupancy.occupancy_pct, result.occupancy.limiting_factor
+        ));
         secondary.push("Occupancy-limited".into());
     }
     if result.sm_util_pct < 50.0 {
-        details.push(format!("Low SM utilization ({:.0}%) — warps stalled on memory", result.sm_util_pct));
+        details.push(format!(
+            "Low SM utilization ({:.0}%) — warps stalled on memory",
+            result.sm_util_pct
+        ));
         secondary.push("Low SM utilization".into());
     }
 
@@ -86,7 +101,11 @@ pub fn analyze_bottlenecks(result: &EmulationResult) -> BottleneckReport {
         details.push("No major bottlenecks detected".into());
     }
 
-    BottleneckReport { primary, secondary, details }
+    BottleneckReport {
+        primary,
+        secondary,
+        details,
+    }
 }
 
 pub fn estimate_speedup(before: &EmulationResult, after: &EmulationResult) -> SpeedupResult {
@@ -101,7 +120,14 @@ pub fn estimate_speedup(before: &EmulationResult, after: &EmulationResult) -> Sp
     };
     let improvement_pct = (speedup_x - 1.0) * 100.0;
 
-    SpeedupResult { before_cycles, after_cycles, before_time_us, after_time_us, speedup_x, improvement_pct }
+    SpeedupResult {
+        before_cycles,
+        after_cycles,
+        before_time_us,
+        after_time_us,
+        speedup_x,
+        improvement_pct,
+    }
 }
 
 pub fn compute_diff(original: &str, optimized: &str) -> String {
@@ -132,7 +158,13 @@ pub fn compute_diff(original: &str, optimized: &str) -> String {
         }
     }
 
-    let summary = format!("{} changes: {} added, {} removed, {} total lines", removed + added, added, removed, max_len);
+    let summary = format!(
+        "{} changes: {} added, {} removed, {} total lines",
+        removed + added,
+        added,
+        removed,
+        max_len
+    );
     if diff.is_empty() {
         diff = "(no changes)".into();
     } else {
@@ -238,19 +270,40 @@ pub fn format_optimize_output(output: &OptimizeOutput) -> String {
     let _ = writeln!(out, "╠{}╣", "═".repeat(58));
 
     if let Some(ref speedup) = output.speedup_estimate {
-        let _color = if speedup.speedup_x >= 2.0 { "green" }
-            else if speedup.speedup_x >= 1.2 { "yellow" }
-            else { "red" };
+        let _color = if speedup.speedup_x >= 2.0 {
+            "green"
+        } else if speedup.speedup_x >= 1.2 {
+            "yellow"
+        } else {
+            "red"
+        };
 
         let _ = writeln!(out, "║  Before       After        Speedup  {:>28} ║", " ");
-        let _ = writeln!(out, "║  ─────────────────────────────────────────────────  ║");
-        let _ = writeln!(out, "║  {:>10} cy  {:>10} cy  {:>5.2}x ({:>+.0}%)    {:>8} ║",
-            speedup.before_cycles, speedup.after_cycles,
-            speedup.speedup_x, speedup.improvement_pct, " ");
-        let _ = writeln!(out, "║  {:>8.1} μs  {:>8.1} μs  {:>5.2}x                {:>8} ║",
-            speedup.before_time_us, speedup.after_time_us,
-            speedup.before_time_us / speedup.after_time_us.max(0.001), " ");
-        let _ = writeln!(out, "║                                                     ║");
+        let _ = writeln!(
+            out,
+            "║  ─────────────────────────────────────────────────  ║"
+        );
+        let _ = writeln!(
+            out,
+            "║  {:>10} cy  {:>10} cy  {:>5.2}x ({:>+.0}%)    {:>8} ║",
+            speedup.before_cycles,
+            speedup.after_cycles,
+            speedup.speedup_x,
+            speedup.improvement_pct,
+            " "
+        );
+        let _ = writeln!(
+            out,
+            "║  {:>8.1} μs  {:>8.1} μs  {:>5.2}x                {:>8} ║",
+            speedup.before_time_us,
+            speedup.after_time_us,
+            speedup.before_time_us / speedup.after_time_us.max(0.001),
+            " "
+        );
+        let _ = writeln!(
+            out,
+            "║                                                     ║"
+        );
     }
 
     let _ = writeln!(out, "║  Bottleneck: {}", output.bottleneck_report.primary);
@@ -258,25 +311,43 @@ pub fn format_optimize_output(output: &OptimizeOutput) -> String {
         let _ = writeln!(out, "║    → {}", d);
     }
 
-    let _ = writeln!(out, "║                                                     ║");
+    let _ = writeln!(
+        out,
+        "║                                                     ║"
+    );
     match (output.compiled_ok, output.correctness_passed) {
         (Some(true), Some(true)) => {
-            let _ = writeln!(out, "║  ✓ Compilation: PASSED    Correctness: PASSED      ║");
+            let _ = writeln!(
+                out,
+                "║  ✓ Compilation: PASSED    Correctness: PASSED      ║"
+            );
         }
         (Some(false), _) => {
             let _ = writeln!(out, "║  ✗ Compilation: FAILED    ║");
         }
         (Some(true), Some(false)) => {
-            let _ = writeln!(out, "║  ✓ Compilation: PASSED    ✗ Correctness: FAILED    ║");
+            let _ = writeln!(
+                out,
+                "║  ✓ Compilation: PASSED    ✗ Correctness: FAILED    ║"
+            );
         }
         _ => {
-            let _ = writeln!(out, "║  ~ Compilation: UNCHECKED  Correctness: UNVERIFIED ║");
+            let _ = writeln!(
+                out,
+                "║  ~ Compilation: UNCHECKED  Correctness: UNVERIFIED ║"
+            );
         }
     }
 
     if !output.llm_optimization_notes.is_empty() {
-        let _ = writeln!(out, "║                                                     ║");
-        let _ = writeln!(out, "║  Optimizations applied:                             ║");
+        let _ = writeln!(
+            out,
+            "║                                                     ║"
+        );
+        let _ = writeln!(
+            out,
+            "║  Optimizations applied:                             ║"
+        );
         for line in output.llm_optimization_notes.lines() {
             let _ = writeln!(out, "║    {}", line);
         }
@@ -286,17 +357,29 @@ pub fn format_optimize_output(output: &OptimizeOutput) -> String {
     out
 }
 
-pub fn format_provider_table(cloud: &[(&str, &[(&str, bool)])], local: &[(&str, &[(&str, bool)])]) -> String {
+pub fn format_provider_table(
+    cloud: &[(&str, &[(&str, bool)])],
+    local: &[(&str, &[(&str, bool)])],
+) -> String {
     use std::fmt::Write;
     let mut out = String::new();
 
     let _ = writeln!(out, "Cloud Providers");
     let _ = writeln!(out, "{}", "─".repeat(50));
     for (name, models) in cloud {
-        let status = if models.iter().any(|(_, c)| *c) { "✓ ready" } else { "✗ not configured" };
+        let status = if models.iter().any(|(_, c)| *c) {
+            "✓ ready"
+        } else {
+            "✗ not configured"
+        };
         let _ = writeln!(out, "  ├─ {:<12} {}", name, status);
         for (m, configured) in *models {
-            let _ = writeln!(out, "  │  └─ {:<20} {}", m, if *configured { "✓" } else { "" });
+            let _ = writeln!(
+                out,
+                "  │  └─ {:<20} {}",
+                m,
+                if *configured { "✓" } else { "" }
+            );
         }
     }
 
@@ -304,7 +387,11 @@ pub fn format_provider_table(cloud: &[(&str, &[(&str, bool)])], local: &[(&str, 
     let _ = writeln!(out, "Local / Private");
     let _ = writeln!(out, "{}", "─".repeat(50));
     for (name, models) in local {
-        let status = if models.iter().any(|(_, c)| *c) { "● running" } else { "○ stopped" };
+        let status = if models.iter().any(|(_, c)| *c) {
+            "● running"
+        } else {
+            "○ stopped"
+        };
         let _ = writeln!(out, "  ├─ {:<12} {}", name, status);
         for (m, _) in *models {
             let _ = writeln!(out, "  │  └─ {}", m);
@@ -321,7 +408,10 @@ mod tests {
     #[test]
     fn test_analyze_bottlenecks_from_emulate() {
         let source = "__global__ void k(float* a) { int i = blockIdx.x * blockDim.x + threadIdx.x; a[i] = a[i] * 2.0f; }";
-        let config = LaunchConfig { block_x: 256, ..Default::default() };
+        let config = LaunchConfig {
+            block_x: 256,
+            ..Default::default()
+        };
         let result = emulate::emulate(source, &config, &GpuArch::Ampere86);
         let report = analyze_bottlenecks(&result);
         assert!(!report.primary.is_empty());
@@ -330,7 +420,10 @@ mod tests {
     #[test]
     fn test_speedup_positive() {
         let source = "__global__ void k(float* a) { int i = threadIdx.x; a[i] *= 2.0f; }";
-        let config = LaunchConfig { block_x: 256, ..Default::default() };
+        let config = LaunchConfig {
+            block_x: 256,
+            ..Default::default()
+        };
         let result = emulate::emulate(source, &config, &GpuArch::Ampere86);
         let speedup = estimate_speedup(&result, &result);
         assert!((speedup.speedup_x - 1.0).abs() < 0.01);
@@ -339,12 +432,22 @@ mod tests {
     #[test]
     fn test_speedup_improvement() {
         let source = "__global__ void k(float* a) { int i = threadIdx.x; for(int j=0;j<10;j++) a[i*j] = a[i*j] * 2.0f; }";
-        let config_a = LaunchConfig { block_x: 32, ..Default::default() };
-        let config_b = LaunchConfig { block_x: 64, ..Default::default() };
+        let config_a = LaunchConfig {
+            block_x: 32,
+            ..Default::default()
+        };
+        let config_b = LaunchConfig {
+            block_x: 64,
+            ..Default::default()
+        };
         let a = emulate::emulate(source, &config_a, &GpuArch::Ampere86);
         let b = emulate::emulate(source, &config_b, &GpuArch::Ampere86);
         let speedup = estimate_speedup(&a, &b);
-        assert!(speedup.speedup_x > 0.0, "Speedup should be positive, got {}", speedup.speedup_x);
+        assert!(
+            speedup.speedup_x > 0.0,
+            "Speedup should be positive, got {}",
+            speedup.speedup_x
+        );
         assert!(!speedup.speedup_x.is_nan());
     }
 
@@ -367,8 +470,19 @@ mod tests {
     #[test]
     fn test_build_prompt_contains_gpu_context() {
         let source = "__global__ void k() {}";
-        let bottle = BottleneckReport { primary: "Test", secondary: vec![], details: vec!["Test detail".into()] };
-        let prompt = build_optimization_prompt(source, "k.cu", &GpuLanguage::Cuda, &GpuArch::Ampere86, &bottle, "RTX 3090 (sm_86)");
+        let bottle = BottleneckReport {
+            primary: "Test",
+            secondary: vec![],
+            details: vec!["Test detail".into()],
+        };
+        let prompt = build_optimization_prompt(
+            source,
+            "k.cu",
+            &GpuLanguage::Cuda,
+            &GpuArch::Ampere86,
+            &bottle,
+            "RTX 3090 (sm_86)",
+        );
         assert!(prompt.contains("RTX 3090"));
         assert!(prompt.contains("optimization expert"));
     }
@@ -401,8 +515,19 @@ mod tests {
 
     #[test]
     fn test_optimize_output_formatting() {
-        let report = BottleneckReport { primary: "Memory-bound", secondary: vec![], details: vec!["Test".into()] };
-        let speedup = SpeedupResult { before_cycles: 1000, after_cycles: 500, before_time_us: 100.0, after_time_us: 50.0, speedup_x: 2.0, improvement_pct: 100.0 };
+        let report = BottleneckReport {
+            primary: "Memory-bound",
+            secondary: vec![],
+            details: vec!["Test".into()],
+        };
+        let speedup = SpeedupResult {
+            before_cycles: 1000,
+            after_cycles: 500,
+            before_time_us: 100.0,
+            after_time_us: 50.0,
+            speedup_x: 2.0,
+            improvement_pct: 100.0,
+        };
         let out = OptimizeOutput {
             original_source: "orig".into(),
             optimized_source: "opt".into(),
@@ -421,8 +546,12 @@ mod tests {
 
     #[test]
     fn test_analyze_bottleneck_coalescing() {
-        let source = "__global__ void k(float* a) { int i = threadIdx.x; a[i * 32] = a[i] * 2.0f; }";
-        let config = LaunchConfig { block_x: 256, ..Default::default() };
+        let source =
+            "__global__ void k(float* a) { int i = threadIdx.x; a[i * 32] = a[i] * 2.0f; }";
+        let config = LaunchConfig {
+            block_x: 256,
+            ..Default::default()
+        };
         let result = emulate::emulate(source, &config, &GpuArch::Ampere86);
         let report = analyze_bottlenecks(&result);
         assert!(report.primary.contains("Memory") || report.primary.contains("Compute"));

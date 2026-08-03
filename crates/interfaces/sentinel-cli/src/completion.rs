@@ -1,12 +1,16 @@
-use std::sync::Arc;
 use colored::*;
+use std::sync::Arc;
 
 /// One-shot completion subcommand used by the eval harness (LLM-as-judge).
 pub async fn run(args: &[String]) -> anyhow::Result<()> {
     let config = Arc::new(match sentinel_config::SentinelConfig::load() {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("{} Warning: config error: {}; using defaults", "W".yellow(), e);
+            eprintln!(
+                "{} Warning: config error: {}; using defaults",
+                "W".yellow(),
+                e
+            );
             sentinel_config::SentinelConfig::default()
         }
     });
@@ -26,7 +30,11 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
                     return Ok(());
                 }
                 _ if arg.starts_with('-') => {
-                    eprintln!("{} Unknown flag: '{}'. Run 'sentinel completion --help' for usage.", "Error:".red().bold(), arg);
+                    eprintln!(
+                        "{} Unknown flag: '{}'. Run 'sentinel completion --help' for usage.",
+                        "Error:".red().bold(),
+                        arg
+                    );
                     std::process::exit(1);
                 }
                 _ => positionals.push(arg.clone()),
@@ -60,7 +68,11 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     let provider_info = match provider_info {
         Some(p) => p,
         None => {
-            eprintln!("{} No provider found for model '{}'", "Error:".red().bold(), model_id);
+            eprintln!(
+                "{} No provider found for model '{}'",
+                "Error:".red().bold(),
+                model_id
+            );
             std::process::exit(1);
         }
     };

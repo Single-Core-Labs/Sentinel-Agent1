@@ -1,6 +1,6 @@
-use std::path::PathBuf;
+use crate::executor::{ExecError, ExecOutput};
 use serde::{Deserialize, Serialize};
-use crate::executor::{ExecOutput, ExecError};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum JailMode {
@@ -30,37 +30,45 @@ impl OSJailSandbox {
         self
     }
 
-    pub async fn run(&self, command: &str, args: &[&str], env: Option<Vec<(String, String)>>) -> Result<ExecOutput, ExecError> {
+    pub async fn run(
+        &self,
+        command: &str,
+        args: &[&str],
+        env: Option<Vec<(String, String)>>,
+    ) -> Result<ExecOutput, ExecError> {
         let os = std::env::consts::OS;
         match self.mode {
             JailMode::Disabled => self.run_raw(command, args, env).await,
             JailMode::Bubblewrap => self.run_bubblewrap(command, args, env).await,
             JailMode::Seatbelt => self.run_seatbelt(command, args, env).await,
             JailMode::JobObject => self.run_job_object(command, args, env).await,
-            JailMode::Auto => {
-                match os {
-                    "linux" => {
-                        if which_exists("bwrap") {
-                            self.run_bubblewrap(command, args, env).await
-                        } else {
-                            self.run_raw(command, args, env).await
-                        }
+            JailMode::Auto => match os {
+                "linux" => {
+                    if which_exists("bwrap") {
+                        self.run_bubblewrap(command, args, env).await
+                    } else {
+                        self.run_raw(command, args, env).await
                     }
-                    "macos" => {
-                        if which_exists("sandbox-exec") {
-                            self.run_seatbelt(command, args, env).await
-                        } else {
-                            self.run_raw(command, args, env).await
-                        }
-                    }
-                    "windows" => self.run_job_object(command, args, env).await,
-                    _ => self.run_raw(command, args, env).await,
                 }
-            }
+                "macos" => {
+                    if which_exists("sandbox-exec") {
+                        self.run_seatbelt(command, args, env).await
+                    } else {
+                        self.run_raw(command, args, env).await
+                    }
+                }
+                "windows" => self.run_job_object(command, args, env).await,
+                _ => self.run_raw(command, args, env).await,
+            },
         }
     }
 
-    async fn run_raw(&self, command: &str, args: &[&str], env: Option<Vec<(String, String)>>) -> Result<ExecOutput, ExecError> {
+    async fn run_raw(
+        &self,
+        command: &str,
+        args: &[&str],
+        env: Option<Vec<(String, String)>>,
+    ) -> Result<ExecOutput, ExecError> {
         let mut cmd = tokio::process::Command::new(command);
         cmd.args(args);
         cmd.current_dir(&self.workdir);
@@ -78,17 +86,33 @@ impl OSJailSandbox {
         })
     }
 
-    async fn run_bubblewrap(&self, command: &str, args: &[&str], env: Option<Vec<(String, String)>>) -> Result<ExecOutput, ExecError> {
+    async fn run_bubblewrap(
+        &self,
+        command: &str,
+        args: &[&str],
+        env: Option<Vec<(String, String)>>,
+    ) -> Result<ExecOutput, ExecError> {
         let mut bwrap = tokio::process::Command::new("bwrap");
         let workdir_str = self.workdir.to_string_lossy();
-        bwrap.arg("--unshare-all")
-            .arg("--proc").arg("/proc")
-            .arg("--dev").arg("/dev")
-            .arg("--tmpfs").arg("/tmp")
-            .arg("--ro-bind").arg("/").arg("/")
-            .arg("--bind").arg(&*workdir_str).arg(&*workdir_str)
-            .arg("--chdir").arg(&*workdir_str)
-            .arg("--").arg(command).args(args);
+        bwrap
+            .arg("--unshare-all")
+            .arg("--proc")
+            .arg("/proc")
+            .arg("--dev")
+            .arg("/dev")
+            .arg("--tmpfs")
+            .arg("/tmp")
+            .arg("--ro-bind")
+            .arg("/")
+            .arg("/")
+            .arg("--bind")
+            .arg(&*workdir_str)
+            .arg(&*workdir_str)
+            .arg("--chdir")
+            .arg(&*workdir_str)
+            .arg("--")
+            .arg(command)
+            .args(args);
 
         if let Some(env_vars) = env {
             for (k, v) in env_vars {
@@ -104,11 +128,21 @@ impl OSJailSandbox {
         })
     }
 
-    async fn run_seatbelt(&self, command: &str, args: &[&str], env: Option<Vec<(String, String)>>) -> Result<ExecOutput, ExecError> {
+    async fn run_seatbelt(
+        &self,
+        command: &str,
+        args: &[&str],
+        env: Option<Vec<(String, String)>>,
+    ) -> Result<ExecOutput, ExecError> {
         let mut sbox = tokio::process::Command::new("sandbox-exec");
-        let profile = format!("(version 1)(allow default)(deny file-write* (regex #\"^(?!{})\"#))", self.workdir.to_string_lossy());
-        sbox.arg("-p").arg(profile)
-            .arg(command).args(args)
+        let profile = format!(
+            "(version 1)(allow default)(deny file-write* (regex #\"^(?!{})\"#))",
+            self.workdir.to_string_lossy()
+        );
+        sbox.arg("-p")
+            .arg(profile)
+            .arg(command)
+            .args(args)
             .current_dir(&self.workdir);
 
         if let Some(env_vars) = env {
@@ -126,7 +160,12 @@ impl OSJailSandbox {
     }
 
     #[cfg(windows)]
-    async fn run_job_object(&self, command: &str, args: &[&str], env: Option<Vec<(String, String)>>) -> Result<ExecOutput, ExecError> {
+    async fn run_job_object(
+        &self,
+        command: &str,
+        args: &[&str],
+        env: Option<Vec<(String, String)>>,
+    ) -> Result<ExecOutput, ExecError> {
         if env.is_some() {
             tracing::warn!("jail: custom env is not supported for the Job Object sandbox; falling back to raw exec");
             return self.run_raw(command, args, env).await;
@@ -139,7 +178,12 @@ impl OSJailSandbox {
     }
 
     #[cfg(not(windows))]
-    async fn run_job_object(&self, command: &str, args: &[&str], env: Option<Vec<(String, String)>>) -> Result<ExecOutput, ExecError> {
+    async fn run_job_object(
+        &self,
+        command: &str,
+        args: &[&str],
+        env: Option<Vec<(String, String)>>,
+    ) -> Result<ExecOutput, ExecError> {
         tracing::warn!("jail: Job Object sandbox is Windows-only; falling back to raw exec");
         self.run_raw(command, args, env).await
     }
@@ -153,20 +197,24 @@ mod win32 {
     use windows_sys::Win32::Security::SECURITY_ATTRIBUTES;
     use windows_sys::Win32::Storage::FileSystem::ReadFile;
     use windows_sys::Win32::System::JobObjects::{
-        AssignProcessToJobObject, CreateJobObjectW, SetInformationJobObject,
-        JobObjectExtendedLimitInformation, JOBOBJECT_BASIC_LIMIT_INFORMATION,
+        AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+        SetInformationJobObject, JOBOBJECT_BASIC_LIMIT_INFORMATION,
         JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
         JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     };
     use windows_sys::Win32::System::Pipes::{CreatePipe, PeekNamedPipe};
     use windows_sys::Win32::System::Threading::{
-        CreateProcessW, ResumeThread, WaitForSingleObject, CREATE_NO_WINDOW, CREATE_SUSPENDED,
-        GetExitCodeProcess, PROCESS_INFORMATION, STARTUPINFOW, STARTF_USESTDHANDLES,
+        CreateProcessW, GetExitCodeProcess, ResumeThread, WaitForSingleObject, CREATE_NO_WINDOW,
+        CREATE_SUSPENDED, PROCESS_INFORMATION, STARTF_USESTDHANDLES, STARTUPINFOW,
     };
 
     pub fn run_job_object_blocking(cmdline: &str, workdir: &Path) -> Result<ExecOutput, ExecError> {
         let cmdline_wide: Vec<u16> = cmdline.encode_utf16().chain(std::iter::once(0)).collect();
-        let workdir_wide: Vec<u16> = workdir.to_string_lossy().encode_utf16().chain(std::iter::once(0)).collect();
+        let workdir_wide: Vec<u16> = workdir
+            .to_string_lossy()
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
 
         unsafe {
             let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
@@ -195,10 +243,10 @@ mod win32 {
             sa.nLength = std::mem::size_of::<SECURITY_ATTRIBUTES>() as u32;
             sa.bInheritHandle = 1;
 
-            let mut out_read = 0isize as *mut std::ffi::c_void;
-            let mut out_write = 0isize as *mut std::ffi::c_void;
-            let mut err_read = 0isize as *mut std::ffi::c_void;
-            let mut err_write = 0isize as *mut std::ffi::c_void;
+            let mut out_read = std::ptr::null_mut::<std::ffi::c_void>();
+            let mut out_write = std::ptr::null_mut::<std::ffi::c_void>();
+            let mut err_read = std::ptr::null_mut::<std::ffi::c_void>();
+            let mut err_write = std::ptr::null_mut::<std::ffi::c_void>();
             if CreatePipe(&mut out_read, &mut out_write, &sa, 0) == 0
                 || CreatePipe(&mut err_read, &mut err_write, &sa, 0) == 0
             {
@@ -285,22 +333,50 @@ mod win32 {
         loop {
             let mut any = false;
             let mut avail: u32 = 0;
-            if PeekNamedPipe(out_read, std::ptr::null_mut(), 0, std::ptr::null_mut(), &mut avail, std::ptr::null_mut()) != 0
+            if PeekNamedPipe(
+                out_read,
+                std::ptr::null_mut(),
+                0,
+                std::ptr::null_mut(),
+                &mut avail,
+                std::ptr::null_mut(),
+            ) != 0
                 && avail > 0
             {
                 any = true;
                 let mut n: u32 = 0;
-                if ReadFile(out_read, buf.as_mut_ptr() as *mut _, avail, &mut n, std::ptr::null_mut()) != 0 {
+                if ReadFile(
+                    out_read,
+                    buf.as_mut_ptr() as *mut _,
+                    avail,
+                    &mut n,
+                    std::ptr::null_mut(),
+                ) != 0
+                {
                     stdout.extend_from_slice(&buf[..n as usize]);
                 }
             }
             let mut avail: u32 = 0;
-            if PeekNamedPipe(err_read, std::ptr::null_mut(), 0, std::ptr::null_mut(), &mut avail, std::ptr::null_mut()) != 0
+            if PeekNamedPipe(
+                err_read,
+                std::ptr::null_mut(),
+                0,
+                std::ptr::null_mut(),
+                &mut avail,
+                std::ptr::null_mut(),
+            ) != 0
                 && avail > 0
             {
                 any = true;
                 let mut n: u32 = 0;
-                if ReadFile(err_read, buf.as_mut_ptr() as *mut _, avail, &mut n, std::ptr::null_mut()) != 0 {
+                if ReadFile(
+                    err_read,
+                    buf.as_mut_ptr() as *mut _,
+                    avail,
+                    &mut n,
+                    std::ptr::null_mut(),
+                ) != 0
+                {
                     stderr.extend_from_slice(&buf[..n as usize]);
                 }
             }
@@ -314,11 +390,25 @@ mod win32 {
         }
         unsafe fn drain_until_empty(h: *mut std::ffi::c_void, out: &mut Vec<u8>, buf: &mut [u8]) {
             let mut avail: u32 = 0;
-            while PeekNamedPipe(h, std::ptr::null_mut(), 0, std::ptr::null_mut(), &mut avail, std::ptr::null_mut()) != 0
+            while PeekNamedPipe(
+                h,
+                std::ptr::null_mut(),
+                0,
+                std::ptr::null_mut(),
+                &mut avail,
+                std::ptr::null_mut(),
+            ) != 0
                 && avail > 0
             {
                 let mut n: u32 = 0;
-                if ReadFile(h, buf.as_mut_ptr() as *mut _, avail, &mut n, std::ptr::null_mut()) != 0 {
+                if ReadFile(
+                    h,
+                    buf.as_mut_ptr() as *mut _,
+                    avail,
+                    &mut n,
+                    std::ptr::null_mut(),
+                ) != 0
+                {
                     out.extend_from_slice(&buf[..n as usize]);
                 }
             }
@@ -393,9 +483,21 @@ mod tests {
     #[tokio::test]
     async fn test_jail_auto_exec() {
         let jail = OSJailSandbox::new(std::env::temp_dir());
-        let res = jail.run(if cfg!(target_os = "windows") { "cmd" } else { "echo" },
-                           if cfg!(target_os = "windows") { &["/C", "echo hello"] } else { &["hello"] },
-                           None).await;
+        let res = jail
+            .run(
+                if cfg!(target_os = "windows") {
+                    "cmd"
+                } else {
+                    "echo"
+                },
+                if cfg!(target_os = "windows") {
+                    &["/C", "echo hello"]
+                } else {
+                    &["hello"]
+                },
+                None,
+            )
+            .await;
         assert!(res.is_ok());
         let out = res.unwrap();
         assert!(out.stdout.contains("hello"));

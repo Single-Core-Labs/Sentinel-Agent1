@@ -12,7 +12,9 @@ pub fn write_env_key(key: &str, value: &str) -> Result<PathBuf, String> {
                 // Drop any previously-set value for this key (preserve blanks/comments).
                 let trimmed = line.trim();
                 let is_assignment = !trimmed.starts_with('#')
-                    && trimmed.split_once('=').is_some_and(|(k, _)| k.trim() == key);
+                    && trimmed
+                        .split_once('=')
+                        .is_some_and(|(k, _)| k.trim() == key);
                 if !is_assignment {
                     out.push(line.to_string());
                 }
@@ -33,14 +35,18 @@ pub fn load_env() -> usize {
     if !path.exists() {
         return 0;
     }
-    let Ok(contents) = std::fs::read_to_string(&path) else { return 0 };
+    let Ok(contents) = std::fs::read_to_string(&path) else {
+        return 0;
+    };
     let mut count = 0;
     for line in contents.lines() {
         let trimmed = line.trim();
         if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }
-        let Some((key, value)) = trimmed.split_once('=') else { continue };
+        let Some((key, value)) = trimmed.split_once('=') else {
+            continue;
+        };
         let key = key.trim();
         let value = value.trim();
         if key.is_empty() || value.is_empty() {
@@ -88,7 +94,10 @@ mod tests {
         let path = dir.join(".env");
 
         write_env_key("GOOGLE_API_KEY", "sk-first").expect("first write");
-        assert_eq!(fs::read_to_string(&path).unwrap(), "GOOGLE_API_KEY=sk-first\n");
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            "GOOGLE_API_KEY=sk-first\n"
+        );
 
         write_env_key("GOOGLE_API_KEY", "sk-second").expect("update");
         assert_eq!(
@@ -99,8 +108,14 @@ mod tests {
 
         write_env_key("ANTHROPIC_API_KEY", "sk-other").expect("append");
         let contents = fs::read_to_string(&path).unwrap();
-        assert!(contents.contains("GOOGLE_API_KEY=sk-second"), "keep unrelated value");
-        assert!(contents.contains("ANTHROPIC_API_KEY=sk-other"), "append new key");
+        assert!(
+            contents.contains("GOOGLE_API_KEY=sk-second"),
+            "keep unrelated value"
+        );
+        assert!(
+            contents.contains("ANTHROPIC_API_KEY=sk-other"),
+            "append new key"
+        );
 
         std::env::remove_var("SENTINEL_HOME");
         let _ = fs::remove_dir_all(&dir);
@@ -113,7 +128,11 @@ mod tests {
         std::env::set_var("SENTINEL_HOME", &dir);
         std::env::remove_var("SENTINEL_LOAD_TEST_KEY");
         let path = dir.join(".env");
-        fs::write(&path, "SENTINEL_LOAD_TEST_KEY=abc123\n# comment\nblank=  \n\n").unwrap();
+        fs::write(
+            &path,
+            "SENTINEL_LOAD_TEST_KEY=abc123\n# comment\nblank=  \n\n",
+        )
+        .unwrap();
 
         let count = load_env();
         assert_eq!(count, 1, "only the non-blank, non-comment key is set");

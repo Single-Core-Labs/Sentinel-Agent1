@@ -1,7 +1,7 @@
-use std::sync::Arc;
+use crate::tool::{Tool, ToolContext, ToolOutput};
 use async_trait::async_trait;
 use serde_json::json;
-use crate::tool::{Tool, ToolContext, ToolOutput};
+use std::sync::Arc;
 
 pub fn builtin_tools() -> Vec<Arc<dyn Tool>> {
     vec![
@@ -31,8 +31,12 @@ pub fn builtin_tools() -> Vec<Arc<dyn Tool>> {
 pub struct ReadTool;
 #[async_trait]
 impl Tool for ReadTool {
-    fn name(&self) -> &str { "read" }
-    fn description(&self) -> &str { "Read the contents of a file" }
+    fn name(&self) -> &str {
+        "read"
+    }
+    fn description(&self) -> &str {
+        "Read the contents of a file"
+    }
     fn input_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -47,7 +51,9 @@ impl Tool for ReadTool {
 
     async fn execute(&self, args: serde_json::Value, _ctx: &ToolContext) -> ToolOutput {
         let path = args["file_path"].as_str().unwrap_or("");
-        if path.is_empty() { return ToolOutput::err("file_path is required"); }
+        if path.is_empty() {
+            return ToolOutput::err("file_path is required");
+        }
         let offset = args["offset"].as_u64().map(|v| v as usize);
         let limit = args["limit"].as_u64().map(|v| v as usize);
 
@@ -77,9 +83,15 @@ impl Tool for ReadTool {
 pub struct WriteTool;
 #[async_trait]
 impl Tool for WriteTool {
-    fn name(&self) -> &str { "write" }
-    fn description(&self) -> &str { "Write content to a file, creating it if necessary" }
-    fn is_mutating(&self) -> bool { true }
+    fn name(&self) -> &str {
+        "write"
+    }
+    fn description(&self) -> &str {
+        "Write content to a file, creating it if necessary"
+    }
+    fn is_mutating(&self) -> bool {
+        true
+    }
     fn input_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -94,12 +106,18 @@ impl Tool for WriteTool {
     async fn execute(&self, args: serde_json::Value, _ctx: &ToolContext) -> ToolOutput {
         let path = args["file_path"].as_str().unwrap_or("");
         let content = args["content"].as_str().unwrap_or("");
-        if path.is_empty() { return ToolOutput::err("file_path is required"); }
+        if path.is_empty() {
+            return ToolOutput::err("file_path is required");
+        }
         let p = std::path::Path::new(path);
         if let Some(parent) = p.parent() {
             if !parent.exists() {
                 if let Err(e) = std::fs::create_dir_all(parent) {
-                    return ToolOutput::err(format!("Failed to create directory {}: {}", parent.display(), e));
+                    return ToolOutput::err(format!(
+                        "Failed to create directory {}: {}",
+                        parent.display(),
+                        e
+                    ));
                 }
             }
         }
@@ -114,9 +132,15 @@ impl Tool for WriteTool {
 pub struct EditTool;
 #[async_trait]
 impl Tool for EditTool {
-    fn name(&self) -> &str { "edit" }
-    fn description(&self) -> &str { "Replace text in a file using exact string match" }
-    fn is_mutating(&self) -> bool { true }
+    fn name(&self) -> &str {
+        "edit"
+    }
+    fn description(&self) -> &str {
+        "Replace text in a file using exact string match"
+    }
+    fn is_mutating(&self) -> bool {
+        true
+    }
     fn input_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -136,8 +160,12 @@ impl Tool for EditTool {
         let new = args["new_string"].as_str().unwrap_or("");
         let replace_all = args["replace_all"].as_bool().unwrap_or(false);
 
-        if path.is_empty() { return ToolOutput::err("file_path is required"); }
-        if old.is_empty() { return ToolOutput::err("old_string is required"); }
+        if path.is_empty() {
+            return ToolOutput::err("file_path is required");
+        }
+        if old.is_empty() {
+            return ToolOutput::err("old_string is required");
+        }
 
         let content = match std::fs::read_to_string(path) {
             Ok(c) => c,
@@ -172,14 +200,18 @@ impl Tool for EditTool {
 pub struct ApplyPatchTool;
 #[async_trait]
 impl Tool for ApplyPatchTool {
-    fn name(&self) -> &str { "apply_patch" }
+    fn name(&self) -> &str {
+        "apply_patch"
+    }
     fn description(&self) -> &str {
         "Apply a git-style unified diff to one or more files. Supports multi-file diffs, \
          new-file creation (--- /dev/null) and file deletion (+++ /dev/null). All paths \
          must resolve inside the workspace root. The whole diff is validated before any \
          file is written."
     }
-    fn is_mutating(&self) -> bool { true }
+    fn is_mutating(&self) -> bool {
+        true
+    }
     fn input_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -219,8 +251,12 @@ impl Tool for ApplyPatchTool {
 pub struct GlobTool;
 #[async_trait]
 impl Tool for GlobTool {
-    fn name(&self) -> &str { "glob" }
-    fn description(&self) -> &str { "Find files matching a glob pattern" }
+    fn name(&self) -> &str {
+        "glob"
+    }
+    fn description(&self) -> &str {
+        "Find files matching a glob pattern"
+    }
     fn input_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -234,7 +270,9 @@ impl Tool for GlobTool {
 
     async fn execute(&self, args: serde_json::Value, _ctx: &ToolContext) -> ToolOutput {
         let pattern = args["pattern"].as_str().unwrap_or("");
-        if pattern.is_empty() { return ToolOutput::err("pattern is required"); }
+        if pattern.is_empty() {
+            return ToolOutput::err("pattern is required");
+        }
         let base_dir = args["path"].as_str().map(|p| p.to_string());
         let full_pattern = match &base_dir {
             Some(dir) => format!("{}/{}", dir.trim_end_matches('/'), pattern),
@@ -242,8 +280,12 @@ impl Tool for GlobTool {
         };
         match glob::glob(&full_pattern) {
             Ok(entries) => {
-                let results: Vec<String> = entries.filter_map(|e| e.ok().map(|p| p.display().to_string())).collect();
-                ToolOutput::ok(serde_json::to_string_pretty(&results).unwrap_or_else(|_| "[]".to_string()))
+                let results: Vec<String> = entries
+                    .filter_map(|e| e.ok().map(|p| p.display().to_string()))
+                    .collect();
+                ToolOutput::ok(
+                    serde_json::to_string_pretty(&results).unwrap_or_else(|_| "[]".to_string()),
+                )
             }
             Err(e) => ToolOutput::err(format!("Glob error: {}", e)),
         }
@@ -254,8 +296,12 @@ impl Tool for GlobTool {
 pub struct GrepTool;
 #[async_trait]
 impl Tool for GrepTool {
-    fn name(&self) -> &str { "grep" }
-    fn description(&self) -> &str { "Search file contents using a regex pattern" }
+    fn name(&self) -> &str {
+        "grep"
+    }
+    fn description(&self) -> &str {
+        "Search file contents using a regex pattern"
+    }
     fn input_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -270,7 +316,9 @@ impl Tool for GrepTool {
 
     async fn execute(&self, args: serde_json::Value, _ctx: &ToolContext) -> ToolOutput {
         let pattern = args["pattern"].as_str().unwrap_or("");
-        if pattern.is_empty() { return ToolOutput::err("pattern is required"); }
+        if pattern.is_empty() {
+            return ToolOutput::err("pattern is required");
+        }
         let path = args["path"].as_str().unwrap_or(".");
         let include = args["include"].as_str();
 
@@ -303,7 +351,10 @@ fn walk_dir(dir: &str, include: Option<&str>) -> std::io::Result<Vec<String>> {
         if path.is_dir() {
             files.extend(walk_dir(&path.to_string_lossy(), include)?);
         } else if let Some(ext) = include {
-            if path.to_string_lossy().ends_with(ext.trim_start_matches('*')) {
+            if path
+                .to_string_lossy()
+                .ends_with(ext.trim_start_matches('*'))
+            {
                 files.push(path.to_string_lossy().to_string());
             }
         } else {
@@ -317,11 +368,15 @@ fn walk_dir(dir: &str, include: Option<&str>) -> std::io::Result<Vec<String>> {
 pub struct RunShellCommandTool;
 #[async_trait]
 impl Tool for RunShellCommandTool {
-    fn name(&self) -> &str { "run_shell_command" }
+    fn name(&self) -> &str {
+        "run_shell_command"
+    }
     fn description(&self) -> &str {
         "Execute a shell command inside an OS-level sandbox jail and capture output. On Windows commands run under a Job Object (kill-on-close, process limits); on Linux under bubblewrap when available."
     }
-    fn is_mutating(&self) -> bool { true }
+    fn is_mutating(&self) -> bool {
+        true
+    }
     fn input_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -341,13 +396,13 @@ impl Tool for RunShellCommandTool {
         }
 
         let timeout_ms = args["timeout"].as_u64().unwrap_or(120_000);
-        let workdir = args["workdir"].as_str()
+        let workdir = args["workdir"]
+            .as_str()
             .or(ctx.sandbox_dir.as_deref())
             .or(ctx.workspace_dir.as_deref())
             .unwrap_or(".");
 
-        let workdir = if !workdir.is_empty()
-            && !std::path::Path::new(workdir).is_dir() {
+        let workdir = if !workdir.is_empty() && !std::path::Path::new(workdir).is_dir() {
             std::env::current_dir()
                 .map(|d| d.to_string_lossy().into_owned())
                 .unwrap_or_else(|_| ".".to_string())
@@ -355,23 +410,26 @@ impl Tool for RunShellCommandTool {
             workdir.to_string()
         };
 
-        let jail = sentinel_exec::OSJailSandbox::new(&workdir).with_mode(sentinel_exec::JailMode::Auto);
+        let jail =
+            sentinel_exec::OSJailSandbox::new(&workdir).with_mode(sentinel_exec::JailMode::Auto);
 
         #[cfg(target_os = "windows")]
         let (shell, shell_arg) = ("cmd", "/C");
         #[cfg(not(target_os = "windows"))]
         let (shell, shell_arg) = ("sh", "-c");
 
-        let run = async {
-            jail.run(shell, &[shell_arg, command], None).await
-        };
+        let run = async { jail.run(shell, &[shell_arg, command], None).await };
 
         match tokio::time::timeout(std::time::Duration::from_millis(timeout_ms), run).await {
             Ok(Ok(output)) => {
                 let mut text = String::new();
-                if !output.stdout.is_empty() { text.push_str(&output.stdout); }
+                if !output.stdout.is_empty() {
+                    text.push_str(&output.stdout);
+                }
                 if !output.stderr.is_empty() {
-                    if !text.is_empty() { text.push('\n'); }
+                    if !text.is_empty() {
+                        text.push('\n');
+                    }
                     text.push_str(&output.stderr);
                 }
                 if output.success() {
@@ -381,7 +439,9 @@ impl Tool for RunShellCommandTool {
                 }
             }
             Ok(Err(e)) => ToolOutput::err_sandboxed(format!("Command failed: {}", e)),
-            Err(_) => ToolOutput::err_sandboxed(format!("Command timed out after {} ms", timeout_ms)),
+            Err(_) => {
+                ToolOutput::err_sandboxed(format!("Command timed out after {} ms", timeout_ms))
+            }
         }
     }
 }
@@ -390,8 +450,12 @@ impl Tool for RunShellCommandTool {
 pub struct WebSearchTool;
 #[async_trait]
 impl Tool for WebSearchTool {
-    fn name(&self) -> &str { "web_search" }
-    fn description(&self) -> &str { "Search the web for information" }
+    fn name(&self) -> &str {
+        "web_search"
+    }
+    fn description(&self) -> &str {
+        "Search the web for information"
+    }
     fn input_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -405,21 +469,24 @@ impl Tool for WebSearchTool {
 
     async fn execute(&self, args: serde_json::Value, _ctx: &ToolContext) -> ToolOutput {
         let query = args["query"].as_str().unwrap_or("");
-        if query.is_empty() { return ToolOutput::err("query is required"); }
+        if query.is_empty() {
+            return ToolOutput::err("query is required");
+        }
         let max_results = args["max_results"].as_u64().unwrap_or(5);
 
         // Simple web search via a public API (can be replaced with any search backend)
         let client = reqwest::Client::new();
-        let url = format!("https://en.wikipedia.org/w/api.php?action=opensearch&search={}&limit={}&format=json",
-            urlencoding(query), max_results);
+        let url = format!(
+            "https://en.wikipedia.org/w/api.php?action=opensearch&search={}&limit={}&format=json",
+            urlencoding(query),
+            max_results
+        );
 
         match client.get(&url).send().await {
-            Ok(resp) => {
-                match resp.text().await {
-                    Ok(body) => ToolOutput::ok(body),
-                    Err(e) => ToolOutput::err(format!("Search failed: {}", e)),
-                }
-            }
+            Ok(resp) => match resp.text().await {
+                Ok(body) => ToolOutput::ok(body),
+                Err(e) => ToolOutput::err(format!("Search failed: {}", e)),
+            },
             Err(e) => ToolOutput::err(format!("Search request failed: {}", e)),
         }
     }
@@ -429,9 +496,15 @@ impl Tool for WebSearchTool {
 pub struct GitStatusTool;
 #[async_trait]
 impl Tool for GitStatusTool {
-    fn name(&self) -> &str { "git_status" }
-    fn description(&self) -> &str { "Show the working tree status" }
-    fn is_mutating(&self) -> bool { false }
+    fn name(&self) -> &str {
+        "git_status"
+    }
+    fn description(&self) -> &str {
+        "Show the working tree status"
+    }
+    fn is_mutating(&self) -> bool {
+        false
+    }
     fn input_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -451,9 +524,15 @@ impl Tool for GitStatusTool {
 pub struct GitDiffTool;
 #[async_trait]
 impl Tool for GitDiffTool {
-    fn name(&self) -> &str { "git_diff" }
-    fn description(&self) -> &str { "Show changes in the working tree" }
-    fn is_mutating(&self) -> bool { false }
+    fn name(&self) -> &str {
+        "git_diff"
+    }
+    fn description(&self) -> &str {
+        "Show changes in the working tree"
+    }
+    fn is_mutating(&self) -> bool {
+        false
+    }
     fn input_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -479,9 +558,15 @@ impl Tool for GitDiffTool {
 pub struct GitCommitTool;
 #[async_trait]
 impl Tool for GitCommitTool {
-    fn name(&self) -> &str { "git_commit" }
-    fn description(&self) -> &str { "Create a git commit with staged changes" }
-    fn is_mutating(&self) -> bool { true }
+    fn name(&self) -> &str {
+        "git_commit"
+    }
+    fn description(&self) -> &str {
+        "Create a git commit with staged changes"
+    }
+    fn is_mutating(&self) -> bool {
+        true
+    }
     fn input_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -496,7 +581,9 @@ impl Tool for GitCommitTool {
     async fn execute(&self, args: serde_json::Value, _ctx: &ToolContext) -> ToolOutput {
         let path = args["path"].as_str().unwrap_or(".");
         let message = args["message"].as_str().unwrap_or("");
-        if message.is_empty() { return ToolOutput::err("commit message is required"); }
+        if message.is_empty() {
+            return ToolOutput::err("commit message is required");
+        }
         run_git(path, &["commit", "-m", message]).await
     }
 }
@@ -505,9 +592,15 @@ impl Tool for GitCommitTool {
 pub struct GitLogTool;
 #[async_trait]
 impl Tool for GitLogTool {
-    fn name(&self) -> &str { "git_log" }
-    fn description(&self) -> &str { "Show commit logs" }
-    fn is_mutating(&self) -> bool { false }
+    fn name(&self) -> &str {
+        "git_log"
+    }
+    fn description(&self) -> &str {
+        "Show commit logs"
+    }
+    fn is_mutating(&self) -> bool {
+        false
+    }
     fn input_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -536,9 +629,13 @@ async fn run_git(path: &str, args: &[&str]) -> ToolOutput {
             let stdout = String::from_utf8_lossy(&output.stdout);
             let stderr = String::from_utf8_lossy(&output.stderr);
             let mut text = String::new();
-            if !stdout.is_empty() { text.push_str(&stdout); }
+            if !stdout.is_empty() {
+                text.push_str(&stdout);
+            }
             if !stderr.is_empty() {
-                if !text.is_empty() { text.push('\n'); }
+                if !text.is_empty() {
+                    text.push('\n');
+                }
                 text.push_str(&stderr);
             }
             if output.status.success() {
@@ -555,8 +652,12 @@ async fn run_git(path: &str, args: &[&str]) -> ToolOutput {
 pub struct WebFetchTool;
 #[async_trait]
 impl Tool for WebFetchTool {
-    fn name(&self) -> &str { "web_fetch" }
-    fn description(&self) -> &str { "Fetch content from a URL and return it as text" }
+    fn name(&self) -> &str {
+        "web_fetch"
+    }
+    fn description(&self) -> &str {
+        "Fetch content from a URL and return it as text"
+    }
     fn input_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -570,7 +671,9 @@ impl Tool for WebFetchTool {
 
     async fn execute(&self, args: serde_json::Value, _ctx: &ToolContext) -> ToolOutput {
         let url = args["url"].as_str().unwrap_or("");
-        if url.is_empty() { return ToolOutput::err("url is required"); }
+        if url.is_empty() {
+            return ToolOutput::err("url is required");
+        }
 
         let client = reqwest::Client::builder()
             .user_agent("SentinelAI/1.0")
@@ -601,9 +704,15 @@ impl Tool for WebFetchTool {
 pub struct PlanTool;
 #[async_trait]
 impl Tool for PlanTool {
-    fn name(&self) -> &str { "plan" }
-    fn description(&self) -> &str { "Create a structured task plan for multi-step work" }
-    fn is_mutating(&self) -> bool { false }
+    fn name(&self) -> &str {
+        "plan"
+    }
+    fn description(&self) -> &str {
+        "Create a structured task plan for multi-step work"
+    }
+    fn is_mutating(&self) -> bool {
+        false
+    }
     fn input_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -647,9 +756,15 @@ impl Tool for PlanTool {
 pub struct GitHubTool;
 #[async_trait]
 impl Tool for GitHubTool {
-    fn name(&self) -> &str { "github" }
-    fn description(&self) -> &str { "Interact with GitHub API (issues, PRs, repos)" }
-    fn is_mutating(&self) -> bool { true }
+    fn name(&self) -> &str {
+        "github"
+    }
+    fn description(&self) -> &str {
+        "Interact with GitHub API (issues, PRs, repos)"
+    }
+    fn is_mutating(&self) -> bool {
+        true
+    }
     fn input_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -684,10 +799,12 @@ impl Tool for GitHubTool {
 
         match action {
             "get_repo" => {
-                match client.get(&api_base)
+                match client
+                    .get(&api_base)
                     .header("User-Agent", "SentinelAI")
                     .bearer_auth(&token)
-                    .send().await
+                    .send()
+                    .await
                 {
                     Ok(resp) => ToolOutput::ok(resp.text().await.unwrap_or_default()),
                     Err(e) => ToolOutput::err(format!("GitHub API error: {}", e)),
@@ -695,10 +812,12 @@ impl Tool for GitHubTool {
             }
             "list_issues" => {
                 let url = format!("{}/issues?state=open&per_page=10", api_base);
-                match client.get(&url)
+                match client
+                    .get(&url)
                     .header("User-Agent", "SentinelAI")
                     .bearer_auth(&token)
-                    .send().await
+                    .send()
+                    .await
                 {
                     Ok(resp) => ToolOutput::ok(resp.text().await.unwrap_or_default()),
                     Err(e) => ToolOutput::err(format!("GitHub API error: {}", e)),
@@ -707,13 +826,17 @@ impl Tool for GitHubTool {
             "create_issue" => {
                 let title = args["title"].as_str().unwrap_or("");
                 let body = args["body"].as_str().unwrap_or("");
-                if title.is_empty() { return ToolOutput::err("title is required for create_issue"); }
+                if title.is_empty() {
+                    return ToolOutput::err("title is required for create_issue");
+                }
                 let payload = json!({ "title": title, "body": body });
-                match client.post(format!("{}/issues", api_base))
+                match client
+                    .post(format!("{}/issues", api_base))
                     .header("User-Agent", "SentinelAI")
                     .bearer_auth(&token)
                     .json(&payload)
-                    .send().await
+                    .send()
+                    .await
                 {
                     Ok(resp) => ToolOutput::ok(resp.text().await.unwrap_or_default()),
                     Err(e) => ToolOutput::err(format!("GitHub API error: {}", e)),
@@ -724,14 +847,20 @@ impl Tool for GitHubTool {
                 let body = args["body"].as_str().unwrap_or("");
                 let head = args["head"].as_str().unwrap_or("");
                 let base = args["base"].as_str().unwrap_or("main");
-                if title.is_empty() { return ToolOutput::err("title is required for create_pr"); }
-                if head.is_empty() { return ToolOutput::err("head branch is required for create_pr"); }
+                if title.is_empty() {
+                    return ToolOutput::err("title is required for create_pr");
+                }
+                if head.is_empty() {
+                    return ToolOutput::err("head branch is required for create_pr");
+                }
                 let payload = json!({ "title": title, "body": body, "head": head, "base": base });
-                match client.post(format!("{}/pulls", api_base))
+                match client
+                    .post(format!("{}/pulls", api_base))
                     .header("User-Agent", "SentinelAI")
                     .bearer_auth(&token)
                     .json(&payload)
-                    .send().await
+                    .send()
+                    .await
                 {
                     Ok(resp) => ToolOutput::ok(resp.text().await.unwrap_or_default()),
                     Err(e) => ToolOutput::err(format!("GitHub API error: {}", e)),
@@ -743,18 +872,22 @@ impl Tool for GitHubTool {
 }
 
 fn urlencoding(s: &str) -> String {
-    s.chars().map(|c| match c {
-        'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' | '.' | '~' => c.to_string(),
-        ' ' => "%20".into(),
-        _ => format!("%{:02X}", c as u8),
-    }).collect()
+    s.chars()
+        .map(|c| match c {
+            'A'..='Z' | 'a'..='z' | '0'..='9' | '-' | '_' | '.' | '~' => c.to_string(),
+            ' ' => "%20".into(),
+            _ => format!("%{:02X}", c as u8),
+        })
+        .collect()
 }
 
 // ── Notify ─────────────────────────────────────────────────────
 pub struct NotifyTool;
 #[async_trait]
 impl Tool for NotifyTool {
-    fn name(&self) -> &str { "notify" }
+    fn name(&self) -> &str {
+        "notify"
+    }
     fn description(&self) -> &str {
         "Send a notification to configured messaging destinations (webhook, Slack)."
     }
@@ -773,11 +906,14 @@ impl Tool for NotifyTool {
 
     async fn execute(&self, args: serde_json::Value, _ctx: &ToolContext) -> ToolOutput {
         let message = args["message"].as_str().unwrap_or("");
-        if message.is_empty() { return ToolOutput::err("message is required"); }
+        if message.is_empty() {
+            return ToolOutput::err("message is required");
+        }
         let title = args["title"].as_str().unwrap_or("Notification");
         let severity = args["severity"].as_str().unwrap_or("info");
         let env_webhook = std::env::var("SENTINEL_NOTIFY_WEBHOOK").ok();
-        let webhook = args["webhook_url"].as_str()
+        let webhook = args["webhook_url"]
+            .as_str()
             .filter(|s| !s.is_empty())
             .map(|s| s.to_string())
             .or(env_webhook);
@@ -815,7 +951,9 @@ impl Tool for NotifyTool {
 pub struct ExploreDocsTool;
 #[async_trait]
 impl Tool for ExploreDocsTool {
-    fn name(&self) -> &str { "explore_docs" }
+    fn name(&self) -> &str {
+        "explore_docs"
+    }
     fn description(&self) -> &str {
         "Browse Sentinel AI documentation structure. Use this to discover available docs, then use fetch_docs to get full content."
     }
@@ -832,21 +970,30 @@ impl Tool for ExploreDocsTool {
     }
 
     async fn execute(&self, args: serde_json::Value, _ctx: &ToolContext) -> ToolOutput {
-        let endpoint = args["endpoint"].as_str().unwrap_or("").trim_start_matches('/');
-        if endpoint.is_empty() { return ToolOutput::err("endpoint is required"); }
+        let endpoint = args["endpoint"]
+            .as_str()
+            .unwrap_or("")
+            .trim_start_matches('/');
+        if endpoint.is_empty() {
+            return ToolOutput::err("endpoint is required");
+        }
         let query = args["query"].as_str().filter(|s| !s.is_empty());
         let max_results = args["max_results"].as_u64().unwrap_or(20).min(50);
 
         let client = reqwest::Client::builder()
             .user_agent("SentinelAI/1.0")
             .timeout(std::time::Duration::from_secs(30))
-            .build().unwrap();
+            .build()
+            .unwrap();
 
         if endpoint == "gradio" {
             let url = "https://gradio.app/llms.txt";
             return match client.get(url).send().await {
                 Ok(resp) => match resp.text().await {
-                    Ok(body) => ToolOutput::ok(format!("# Gradio Documentation\n\nSource: https://gradio.app/docs\n\n---\n\n{}", body)),
+                    Ok(body) => ToolOutput::ok(format!(
+                        "# Gradio Documentation\n\nSource: https://gradio.app/docs\n\n---\n\n{}",
+                        body
+                    )),
                     Err(e) => ToolOutput::err(format!("Failed to read Gradio docs: {}", e)),
                 },
                 Err(e) => ToolOutput::err(format!("Failed to fetch Gradio docs: {}", e)),
@@ -855,26 +1002,31 @@ impl Tool for ExploreDocsTool {
 
         let docs_url = format!("https://huggingface.co/docs/{}/en/index.md", endpoint);
         match client.get(&docs_url).send().await {
-            Ok(resp) if resp.status().is_success() => {
-                match resp.text().await {
-                    Ok(body) => {
-                        let lines: Vec<&str> = body.lines().collect();
-                        let shown: Vec<&str> = lines.iter().take(max_results as usize).copied().collect();
-                        let total = lines.len();
-                        let mut out = format!("Documentation for: {}\n\n", endpoint);
-                        if let Some(q) = query {
-                            out.push_str(&format!("Query: '{}' — showing up to {} results out of {} pages\n\n", q, max_results, total));
-                        } else {
-                            out.push_str(&format!("Found {} pages (showing first {})\n\n", total, max_results));
-                        }
-                        for (i, line) in shown.iter().enumerate() {
-                            out.push_str(&format!("{}. {}\n", i + 1, line));
-                        }
-                        ToolOutput::ok(out)
+            Ok(resp) if resp.status().is_success() => match resp.text().await {
+                Ok(body) => {
+                    let lines: Vec<&str> = body.lines().collect();
+                    let shown: Vec<&str> =
+                        lines.iter().take(max_results as usize).copied().collect();
+                    let total = lines.len();
+                    let mut out = format!("Documentation for: {}\n\n", endpoint);
+                    if let Some(q) = query {
+                        out.push_str(&format!(
+                            "Query: '{}' — showing up to {} results out of {} pages\n\n",
+                            q, max_results, total
+                        ));
+                    } else {
+                        out.push_str(&format!(
+                            "Found {} pages (showing first {})\n\n",
+                            total, max_results
+                        ));
                     }
-                    Err(e) => ToolOutput::err(format!("Failed to read docs: {}", e)),
+                    for (i, line) in shown.iter().enumerate() {
+                        out.push_str(&format!("{}. {}\n", i + 1, line));
+                    }
+                    ToolOutput::ok(out)
                 }
-            }
+                Err(e) => ToolOutput::err(format!("Failed to read docs: {}", e)),
+            },
             Ok(resp) => ToolOutput::err(format!("Docs endpoint returned {}", resp.status())),
             Err(e) => ToolOutput::err(format!("Failed to fetch docs: {}", e)),
         }
@@ -885,7 +1037,9 @@ impl Tool for ExploreDocsTool {
 pub struct FetchDocsTool;
 #[async_trait]
 impl Tool for FetchDocsTool {
-    fn name(&self) -> &str { "fetch_docs" }
+    fn name(&self) -> &str {
+        "fetch_docs"
+    }
     fn description(&self) -> &str {
         "Fetch full markdown content of a documentation page. Use after explore_docs to get complete page content."
     }
@@ -901,7 +1055,9 @@ impl Tool for FetchDocsTool {
 
     async fn execute(&self, args: serde_json::Value, _ctx: &ToolContext) -> ToolOutput {
         let mut url = args["url"].as_str().unwrap_or("").to_string();
-        if url.is_empty() { return ToolOutput::err("url is required"); }
+        if url.is_empty() {
+            return ToolOutput::err("url is required");
+        }
 
         if !url.ends_with(".md") {
             url.push_str(".md");
@@ -910,15 +1066,14 @@ impl Tool for FetchDocsTool {
         let client = reqwest::Client::builder()
             .user_agent("SentinelAI/1.0")
             .timeout(std::time::Duration::from_secs(30))
-            .build().unwrap();
+            .build()
+            .unwrap();
 
         match client.get(&url).send().await {
-            Ok(resp) if resp.status().is_success() => {
-                match resp.text().await {
-                    Ok(body) => ToolOutput::ok(format!("Documentation from: {}\n\n{}", url, body)),
-                    Err(e) => ToolOutput::err(format!("Failed to read response: {}", e)),
-                }
-            }
+            Ok(resp) if resp.status().is_success() => match resp.text().await {
+                Ok(body) => ToolOutput::ok(format!("Documentation from: {}\n\n{}", url, body)),
+                Err(e) => ToolOutput::err(format!("Failed to read response: {}", e)),
+            },
             Ok(resp) => ToolOutput::err(format!("HTTP {} fetching {}", resp.status(), url)),
             Err(e) => ToolOutput::err(format!("Request failed: {}", e)),
         }
@@ -929,7 +1084,9 @@ impl Tool for FetchDocsTool {
 pub struct FindApiTool;
 #[async_trait]
 impl Tool for FindApiTool {
-    fn name(&self) -> &str { "find_api" }
+    fn name(&self) -> &str {
+        "find_api"
+    }
     fn description(&self) -> &str {
         "Search Sentinel AI OpenAPI specification to find REST API endpoints. Returns curl examples with auth."
     }
@@ -954,7 +1111,8 @@ impl Tool for FindApiTool {
         let client = reqwest::Client::builder()
             .user_agent("SentinelAI/1.0")
             .timeout(std::time::Duration::from_secs(30))
-            .build().unwrap();
+            .build()
+            .unwrap();
 
         let spec_url = "https://huggingface.co/.well-known/openapi.json";
         match client.get(spec_url).send().await {
@@ -966,21 +1124,44 @@ impl Tool for FindApiTool {
                             for (path, path_item) in paths {
                                 if let Some(obj) = path_item.as_object() {
                                     for (method, op) in obj {
-                                        if !matches!(method.as_str(), "get" | "post" | "put" | "delete" | "patch") { continue; }
+                                        if !matches!(
+                                            method.as_str(),
+                                            "get" | "post" | "put" | "delete" | "patch"
+                                        ) {
+                                            continue;
+                                        }
                                         let summary = op["summary"].as_str().unwrap_or("");
                                         let desc = op["description"].as_str().unwrap_or("");
-                                        let tags_arr = op["tags"].as_array().map(|a| a.iter().filter_map(|t| t.as_str()).collect::<Vec<_>>().join(", ")).unwrap_or_default();
+                                        let tags_arr = op["tags"]
+                                            .as_array()
+                                            .map(|a| {
+                                                a.iter()
+                                                    .filter_map(|t| t.as_str())
+                                                    .collect::<Vec<_>>()
+                                                    .join(", ")
+                                            })
+                                            .unwrap_or_default();
 
                                         let mut matched = true;
                                         if let Some(q) = query {
                                             let ql = q.to_lowercase();
-                                            matched = summary.to_lowercase().contains(&ql) || desc.to_lowercase().contains(&ql);
+                                            matched = summary.to_lowercase().contains(&ql)
+                                                || desc.to_lowercase().contains(&ql);
                                         }
                                         if let Some(t) = tag {
-                                            matched = matched && tags_arr.to_lowercase().contains(&t.to_lowercase());
+                                            matched = matched
+                                                && tags_arr
+                                                    .to_lowercase()
+                                                    .contains(&t.to_lowercase());
                                         }
                                         if matched {
-                                            results.push(format!("{} {} — {}\n   Tags: {}", method.to_uppercase(), path, summary, tags_arr));
+                                            results.push(format!(
+                                                "{} {} — {}\n   Tags: {}",
+                                                method.to_uppercase(),
+                                                path,
+                                                summary,
+                                                tags_arr
+                                            ));
                                         }
                                     }
                                 }

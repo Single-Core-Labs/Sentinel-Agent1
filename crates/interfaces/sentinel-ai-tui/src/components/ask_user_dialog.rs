@@ -14,7 +14,12 @@ pub struct AskUserDialogWidget<'a> {
 }
 
 impl<'a> AskUserDialogWidget<'a> {
-    pub fn new(title: &'a str, options: &'a [String], selected_index: usize, custom_input: &'a str) -> Self {
+    pub fn new(
+        title: &'a str,
+        options: &'a [String],
+        selected_index: usize,
+        custom_input: &'a str,
+    ) -> Self {
         Self {
             title,
             options,
@@ -46,7 +51,10 @@ impl<'a> Widget for AskUserDialogWidget<'a> {
             .map(|(idx, opt)| {
                 let is_sel = idx == self.selected_index;
                 let style = if is_sel {
-                    Style::default().fg(Color::Black).bg(Color::Yellow).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(Color::White)
                 };
@@ -59,7 +67,11 @@ impl<'a> Widget for AskUserDialogWidget<'a> {
         list.render(chunks[0], buf);
 
         let custom_p = Paragraph::new(format!("Write-in Response: {}", self.custom_input))
-            .block(Block::default().title(" Custom Write-In (Optional) ").borders(Borders::ALL))
+            .block(
+                Block::default()
+                    .title(" Custom Write-In (Optional) ")
+                    .borders(Borders::ALL),
+            )
             .style(Style::default().fg(Color::Cyan));
         custom_p.render(chunks[1], buf);
     }

@@ -1,5 +1,5 @@
-use std::path::{Path, PathBuf};
 use colored::*;
+use std::path::{Path, PathBuf};
 
 fn plugins_dir() -> PathBuf {
     if let Ok(home) = std::env::var("SENTINEL_HOME") {
@@ -38,7 +38,11 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
             Ok(())
         }
         _ => {
-            eprintln!("{} Unknown plugin subcommand: '{}'", "Error:".red().bold(), sub);
+            eprintln!(
+                "{} Unknown plugin subcommand: '{}'",
+                "Error:".red().bold(),
+                sub
+            );
             std::process::exit(1);
         }
     }
@@ -48,13 +52,20 @@ async fn cmd_install(args: &[String]) -> anyhow::Result<()> {
     let src = match args.first() {
         Some(p) => PathBuf::from(p),
         None => {
-            eprintln!("{} Usage: sentinel plugin install <dir>", "Error:".red().bold());
+            eprintln!(
+                "{} Usage: sentinel plugin install <dir>",
+                "Error:".red().bold()
+            );
             std::process::exit(1);
         }
     };
 
     if !src.is_dir() {
-        eprintln!("{} Plugin source '{}' is not a directory", "Error:".red().bold(), src.display());
+        eprintln!(
+            "{} Plugin source '{}' is not a directory",
+            "Error:".red().bold(),
+            src.display()
+        );
         std::process::exit(1);
     }
 
@@ -63,18 +74,29 @@ async fn cmd_install(args: &[String]) -> anyhow::Result<()> {
 
     let dest = plugins_dir().join(&manifest.id);
     if dest.exists() {
-        eprintln!("{} Plugin '{}' is already installed — remove it first", "Error:".red().bold(), manifest.id);
+        eprintln!(
+            "{} Plugin '{}' is already installed — remove it first",
+            "Error:".red().bold(),
+            manifest.id
+        );
         std::process::exit(1);
     }
 
     copy_dir(&src, &dest)?;
 
-    println!(" {} Installed plugin {}", "✓".green().bold(), manifest.name.green().bold());
+    println!(
+        " {} Installed plugin {}",
+        "✓".green().bold(),
+        manifest.name.green().bold()
+    );
     println!("   id:      {}", manifest.id.yellow());
     println!("   version: {}", manifest.version.yellow());
     println!("   dir:     {}", dest.display().to_string().dimmed());
     println!();
-    println!(" {} It will be loaded automatically on the next 'sentinel ai' run.", "→".cyan().bold());
+    println!(
+        " {} It will be loaded automatically on the next 'sentinel ai' run.",
+        "→".cyan().bold()
+    );
     Ok(())
 }
 
@@ -83,7 +105,11 @@ async fn cmd_list() -> anyhow::Result<()> {
     let plugins = sentinel_plugin_system::load_plugins_dir(&dir);
 
     if plugins.is_empty() {
-        println!(" {} No plugins installed (dir: {}).", "●".cyan().bold(), dir.display().to_string().dimmed());
+        println!(
+            " {} No plugins installed (dir: {}).",
+            "●".cyan().bold(),
+            dir.display().to_string().dimmed()
+        );
         println!("   Run 'sentinel plugin install <dir>' to add one.");
         return Ok(());
     }
@@ -91,7 +117,12 @@ async fn cmd_list() -> anyhow::Result<()> {
     println!(" {} Installed plugins:", "●".cyan().bold());
     for p in &plugins {
         let m = p.manifest();
-        println!("  {} v{} — {}", m.name.green().bold(), m.version.yellow(), m.description.dimmed());
+        println!(
+            "  {} v{} — {}",
+            m.name.green().bold(),
+            m.version.yellow(),
+            m.description.dimmed()
+        );
         println!("    id: {}", m.id.to_string().dimmed());
     }
     Ok(())
@@ -101,7 +132,10 @@ async fn cmd_remove(args: &[String]) -> anyhow::Result<()> {
     let id = match args.first() {
         Some(p) => p.clone(),
         None => {
-            eprintln!("{} Usage: sentinel plugin remove <id>", "Error:".red().bold());
+            eprintln!(
+                "{} Usage: sentinel plugin remove <id>",
+                "Error:".red().bold()
+            );
             std::process::exit(1);
         }
     };

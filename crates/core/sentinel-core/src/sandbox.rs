@@ -1,6 +1,6 @@
+use async_trait::async_trait;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use async_trait::async_trait;
 
 #[async_trait]
 pub trait Sandbox: Send + Sync {
@@ -16,8 +16,12 @@ pub struct NoSandbox;
 
 #[async_trait]
 impl Sandbox for NoSandbox {
-    fn name(&self) -> &str { "none" }
-    fn root(&self) -> &Path { std::path::Path::new(".") }
+    fn name(&self) -> &str {
+        "none"
+    }
+    fn root(&self) -> &Path {
+        std::path::Path::new(".")
+    }
 
     async fn exec(&self, command: &str, workdir: &Path) -> Result<String, String> {
         run_shell_command(command, workdir).await
@@ -57,7 +61,10 @@ impl LocalSandbox {
         std::fs::create_dir_all(&dest)?;
         copy_dir_recursive(workspace, &dest)?;
 
-        Ok(Self { root, name: dir_name })
+        Ok(Self {
+            root,
+            name: dir_name,
+        })
     }
 
     pub fn root(&self) -> &Path {
@@ -76,8 +83,12 @@ impl LocalSandbox {
 
 #[async_trait]
 impl Sandbox for LocalSandbox {
-    fn name(&self) -> &str { &self.name }
-    fn root(&self) -> &Path { &self.root }
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn root(&self) -> &Path {
+        &self.root
+    }
 
     async fn exec(&self, command: &str, _workdir: &Path) -> Result<String, String> {
         let wd = self.root.join("work");
@@ -123,13 +134,21 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
 pub type SharedSandbox = Arc<dyn Sandbox>;
 
 async fn run_shell_command(command: &str, workdir: &Path) -> Result<String, String> {
-    let output = tokio::process::Command::new(if cfg!(target_os = "windows") { "cmd" } else { "sh" })
-        .arg(if cfg!(target_os = "windows") { "/C" } else { "-c" })
-        .arg(command)
-        .current_dir(workdir)
-        .output()
-        .await
-        .map_err(|e| format!("command failed: {}", e))?;
+    let output = tokio::process::Command::new(if cfg!(target_os = "windows") {
+        "cmd"
+    } else {
+        "sh"
+    })
+    .arg(if cfg!(target_os = "windows") {
+        "/C"
+    } else {
+        "-c"
+    })
+    .arg(command)
+    .current_dir(workdir)
+    .output()
+    .await
+    .map_err(|e| format!("command failed: {}", e))?;
 
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
@@ -137,7 +156,11 @@ async fn run_shell_command(command: &str, workdir: &Path) -> Result<String, Stri
     if output.status.success() {
         Ok(stdout)
     } else {
-        let combined = if stderr.is_empty() { stdout } else { format!("{}\n{}", stdout, stderr) };
+        let combined = if stderr.is_empty() {
+            stdout
+        } else {
+            format!("{}\n{}", stdout, stderr)
+        };
         Err(combined)
     }
 }

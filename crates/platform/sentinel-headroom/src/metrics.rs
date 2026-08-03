@@ -14,7 +14,13 @@ pub struct CompressionMetrics {
 }
 
 impl CompressionMetrics {
-    pub fn new(original: &str, compressed: &str, strategy: &'static str, content_type: &'static str, took_us: u64) -> Self {
+    pub fn new(
+        original: &str,
+        compressed: &str,
+        strategy: &'static str,
+        content_type: &'static str,
+        took_us: u64,
+    ) -> Self {
         let orig_tokens = estimate_tokens(original);
         let comp_tokens = estimate_tokens(compressed);
         let ratio = if orig_tokens > 0 {
@@ -47,7 +53,8 @@ pub fn estimate_tokens(text: &str) -> u64 {
     }
     let char_count = text.chars().count() as u64;
     let word_count = text.split_whitespace().count() as u64;
-    let ascii_ratio = text.bytes().filter(|&b| b.is_ascii()).count() as f64 / byte_len.max(1) as f64;
+    let ascii_ratio =
+        text.bytes().filter(|&b| b.is_ascii()).count() as f64 / byte_len.max(1) as f64;
     if ascii_ratio > 0.9 {
         (word_count as f64 * 1.3 + char_count as f64 * 0.05) as u64
     } else {

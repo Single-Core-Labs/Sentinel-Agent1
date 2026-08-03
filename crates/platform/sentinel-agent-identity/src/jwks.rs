@@ -1,6 +1,6 @@
-use serde::{Deserialize, Serialize};
-use jsonwebtoken::{decode, decode_header, DecodingKey, Validation, Algorithm};
 use crate::identity::AgentClaims;
+use jsonwebtoken::{decode, decode_header, Algorithm, DecodingKey, Validation};
+use serde::{Deserialize, Serialize};
 
 /// A JWKS key entry (minimal subset for JWT validation).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,18 +56,12 @@ pub fn decode_agent_identity_jwt(
 
 /// Decode and validate a JWT against a JWKS key set.
 /// Resolves the key by `kid` from the token header.
-pub fn decode_jwt_with_jwks(
-    token: &str,
-    jwks: &Jwks,
-) -> Result<AgentClaims, JwksError> {
-    let header = decode_header(token)
-        .map_err(|e| JwksError::DecodeError(e.to_string()))?;
+pub fn decode_jwt_with_jwks(token: &str, jwks: &Jwks) -> Result<AgentClaims, JwksError> {
+    let header = decode_header(token).map_err(|e| JwksError::DecodeError(e.to_string()))?;
 
-    let kid = header.kid
-        .ok_or(JwksError::MissingKid)?;
+    let kid = header.kid.ok_or(JwksError::MissingKid)?;
 
-    let jwk = jwks.key_by_kid(&kid)
-        .ok_or(JwksError::KeyNotFound(kid))?;
+    let jwk = jwks.key_by_kid(&kid).ok_or(JwksError::KeyNotFound(kid))?;
 
     let alg = header.alg;
     let key = key_from_jwk(jwk, alg)?;
@@ -84,22 +78,29 @@ pub fn decode_jwt_with_jwks(
 fn key_from_jwk(jwk: &JwkKey, alg: Algorithm) -> Result<DecodingKey, JwksError> {
     match alg {
         Algorithm::EdDSA => {
-            let der = jwk.x.as_ref()
+            let der = jwk
+                .x
+                .as_ref()
                 .and_then(|x| base64_url_decode(x))
                 .ok_or_else(|| JwksError::KeyFormatError("Missing Ed25519 public key".into()))?;
             Ok(DecodingKey::from_ed_der(&der))
         }
         Algorithm::RS256 | Algorithm::RS384 | Algorithm::RS512 => {
-            let n = jwk.n.as_ref()
+            let n = jwk
+                .n
+                .as_ref()
                 .and_then(|n| base64_url_decode(n))
                 .ok_or_else(|| JwksError::KeyFormatError("Missing RSA modulus".into()))?;
-            let e = jwk.e.as_ref()
+            let e = jwk
+                .e
+                .as_ref()
                 .and_then(|e| base64_url_decode(e))
                 .ok_or_else(|| JwksError::KeyFormatError("Missing RSA exponent".into()))?;
             Ok(DecodingKey::from_rsa_raw_components(&n, &e))
         }
         _ => Err(JwksError::KeyFormatError(format!(
-            "Unsupported algorithm: {:?}", alg
+            "Unsupported algorithm: {:?}",
+            alg
         ))),
     }
 }

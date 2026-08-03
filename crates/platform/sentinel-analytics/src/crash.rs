@@ -1,8 +1,8 @@
+use chrono::Utc;
+use serde::Serialize;
 use std::panic::{self, PanicHookInfo};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use chrono::Utc;
-use serde::Serialize;
 use uuid::Uuid;
 
 use crate::client::AnalyticsEventsClient;
@@ -54,7 +54,10 @@ pub fn is_hook_initialized() -> bool {
 /// This is idempotent — subsequent calls are no-ops. The hook captures
 /// the panic message, source location, and a backtrace, then records it
 /// as an analytics fact and persists the crash report to disk.
-pub fn install_crash_hook(client: Option<Arc<AnalyticsEventsClient>>, crash_dir: Option<std::path::PathBuf>) {
+pub fn install_crash_hook(
+    client: Option<Arc<AnalyticsEventsClient>>,
+    crash_dir: Option<std::path::PathBuf>,
+) {
     if CRASH_HOOK_INITIALIZED.swap(true, Ordering::Relaxed) {
         return;
     }
@@ -75,12 +78,7 @@ pub fn install_crash_hook(client: Option<Arc<AnalyticsEventsClient>>, crash_dir:
 
         let backtrace = std::backtrace::Backtrace::force_capture().to_string();
 
-        let report = CrashReport::new(
-            panic_message,
-            location,
-            backtrace,
-            None,
-        );
+        let report = CrashReport::new(panic_message, location, backtrace, None);
 
         // Save crash report to disk if a directory was provided
         if let Some(ref dir) = crash_dir {

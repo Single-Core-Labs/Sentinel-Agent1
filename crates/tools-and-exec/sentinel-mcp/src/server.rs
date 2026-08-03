@@ -1,7 +1,7 @@
-use std::sync::Arc;
-use serde_json::Value;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use sentinel_tools::{ToolContext, ToolRegistry};
+use serde_json::Value;
+use std::sync::Arc;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
 pub struct McpServer {
     registry: Arc<ToolRegistry>,
@@ -10,7 +10,10 @@ pub struct McpServer {
 
 impl McpServer {
     pub fn new(registry: Arc<ToolRegistry>) -> Self {
-        Self { registry, ctx: ToolContext::new() }
+        Self {
+            registry,
+            ctx: ToolContext::new(),
+        }
     }
 
     pub fn with_context(mut self, ctx: ToolContext) -> Self {
@@ -28,7 +31,9 @@ impl McpServer {
         let mut line = String::new();
         loop {
             line.clear();
-            let n = reader.read_line(&mut line).await
+            let n = reader
+                .read_line(&mut line)
+                .await
                 .map_err(|e| McpServerError::ReadError(e.to_string()))?;
 
             if n == 0 {
@@ -38,7 +43,12 @@ impl McpServer {
             let request: Value = match serde_json::from_str(&line) {
                 Ok(v) => v,
                 Err(e) => {
-                    let error_resp = serde_json::to_string(&make_error(None, -32700, format!("Parse error: {}", e))).unwrap_or_default();
+                    let error_resp = serde_json::to_string(&make_error(
+                        None,
+                        -32700,
+                        format!("Parse error: {}", e),
+                    ))
+                    .unwrap_or_default();
                     let _ = writer.write_all(error_resp.as_bytes()).await;
                     let _ = writer.write_all(b"\n").await;
                     let _ = writer.flush().await;
@@ -47,7 +57,8 @@ impl McpServer {
             };
 
             let id = request.get("id").cloned();
-            let method = request.get("method")
+            let method = request
+                .get("method")
                 .and_then(|m| m.as_str())
                 .unwrap_or("")
                 .to_string();
@@ -77,7 +88,8 @@ impl McpServer {
     async fn handle_request(&self, method: &str, params: &Value, id: Option<Value>) -> Value {
         match method {
             "initialize" => {
-                let protocol_version = params.get("protocolVersion")
+                let protocol_version = params
+                    .get("protocolVersion")
                     .and_then(|v| v.as_str())
                     .unwrap_or("2024-11-05");
                 serde_json::json!({
@@ -99,13 +111,16 @@ impl McpServer {
 
             "tools/list" => {
                 let tools = self.registry.list();
-                let tool_list: Vec<Value> = tools.into_iter().map(|t| {
-                    serde_json::json!({
-                        "name": t.name,
-                        "description": t.description,
-                        "inputSchema": t.input_schema,
+                let tool_list: Vec<Value> = tools
+                    .into_iter()
+                    .map(|t| {
+                        serde_json::json!({
+                            "name": t.name,
+                            "description": t.description,
+                            "inputSchema": t.input_schema,
+                        })
                     })
-                }).collect();
+                    .collect();
 
                 serde_json::json!({
                     "jsonrpc": "2.0",
@@ -115,9 +130,7 @@ impl McpServer {
             }
 
             "tools/call" => {
-                let name = params.get("name")
-                    .and_then(|n| n.as_str())
-                    .unwrap_or("");
+                let name = params.get("name").and_then(|n| n.as_str()).unwrap_or("");
                 let arguments = params.get("arguments").cloned().unwrap_or(Value::Null);
 
                 if name.is_empty() {
@@ -165,9 +178,7 @@ impl McpServer {
                 })
             }
 
-            "resources/read" => {
-                make_error(id, -32601, "Resource reading not supported")
-            }
+            "resources/read" => make_error(id, -32601, "Resource reading not supported"),
 
             "ping" => {
                 serde_json::json!({
@@ -185,9 +196,7 @@ impl McpServer {
                 })
             }
 
-            _ => {
-                make_error(id, -32601, format!("Method not found: {}", method))
-            }
+            _ => make_error(id, -32601, format!("Method not found: {}", method)),
         }
     }
 }
@@ -231,7 +240,9 @@ mod tests {
         let server = McpServer::new(registry);
 
         let params = serde_json::json!({"protocolVersion": "2024-11-05"});
-        let resp = server.handle_request("initialize", &params, Some(serde_json::json!(1))).await;
+        let resp = server
+            .handle_request("initialize", &params, Some(serde_json::json!(1)))
+            .await;
 
         assert_eq!(resp["result"]["protocolVersion"], "2024-11-05");
         assert!(resp["result"]["capabilities"]["tools"].is_object());
@@ -242,7 +253,9 @@ mod tests {
         let registry = Arc::new(ToolRegistry::new());
         let server = McpServer::new(registry);
 
-        let resp = server.handle_request("tools/list", &Value::Null, Some(serde_json::json!(1))).await;
+        let resp = server
+            .handle_request("tools/list", &Value::Null, Some(serde_json::json!(1)))
+            .await;
 
         let tools = resp["result"]["tools"].as_array().unwrap();
         assert!(!tools.is_empty());
@@ -254,7 +267,9 @@ mod tests {
         let registry = Arc::new(ToolRegistry::new());
         let server = McpServer::new(registry);
 
-        let resp = server.handle_request("unknown_method", &Value::Null, Some(serde_json::json!(1))).await;
+        let resp = server
+            .handle_request("unknown_method", &Value::Null, Some(serde_json::json!(1)))
+            .await;
 
         assert!(resp.get("error").is_some());
         assert_eq!(resp["error"]["code"], -32601);
@@ -265,7 +280,9 @@ mod tests {
         let registry = Arc::new(ToolRegistry::new());
         let server = McpServer::new(registry);
 
-        let resp = server.handle_request("ping", &Value::Null, Some(serde_json::json!(1))).await;
+        let resp = server
+            .handle_request("ping", &Value::Null, Some(serde_json::json!(1)))
+            .await;
 
         assert!(resp.get("result").is_some());
     }

@@ -8,11 +8,15 @@ pub struct ExecOutput {
 }
 
 impl ExecOutput {
-    pub fn success(&self) -> bool { self.exit_code == 0 }
+    pub fn success(&self) -> bool {
+        self.exit_code == 0
+    }
     pub fn text(&self) -> String {
         let mut t = self.stdout.clone();
         if !self.stderr.is_empty() {
-            if !t.is_empty() { t.push('\n'); }
+            if !t.is_empty() {
+                t.push('\n');
+            }
             t.push_str(&self.stderr);
         }
         t
@@ -21,7 +25,12 @@ impl ExecOutput {
 
 #[async_trait]
 pub trait Executor: Send + Sync {
-    async fn exec(&self, command: &str, args: &[&str], env: Option<Vec<(String, String)>>) -> Result<ExecOutput, ExecError>;
+    async fn exec(
+        &self,
+        command: &str,
+        args: &[&str],
+        env: Option<Vec<(String, String)>>,
+    ) -> Result<ExecOutput, ExecError>;
     async fn read_file(&self, path: &str) -> Result<String, ExecError>;
     async fn write_file(&self, path: &str, content: &str) -> Result<(), ExecError>;
     async fn exists(&self, path: &str) -> bool;

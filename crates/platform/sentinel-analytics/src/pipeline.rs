@@ -1,7 +1,7 @@
+use crate::event::AnalyticsEvent;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc;
-use crate::event::AnalyticsEvent;
 
 pub struct AnalyticsPipeline {
     sender: mpsc::UnboundedSender<AnalyticsEvent>,
@@ -40,9 +40,13 @@ impl AnalyticsPipeline {
         let _ = self.sender.send(event);
     }
 
-    async fn dispatch_loop(mut rx: mpsc::UnboundedReceiver<AnalyticsEvent>, config: Arc<AnalyticsConfig>) {
+    async fn dispatch_loop(
+        mut rx: mpsc::UnboundedReceiver<AnalyticsEvent>,
+        config: Arc<AnalyticsConfig>,
+    ) {
         let mut batch: Vec<AnalyticsEvent> = Vec::new();
-        let mut flush_interval = tokio::time::interval(Duration::from_secs(config.batch_interval_secs));
+        let mut flush_interval =
+            tokio::time::interval(Duration::from_secs(config.batch_interval_secs));
         flush_interval.tick().await;
 
         let http_client = reqwest::Client::builder()
@@ -80,7 +84,11 @@ impl AnalyticsPipeline {
         }
     }
 
-    async fn flush_batch(batch: &[AnalyticsEvent], config: &AnalyticsConfig, http_client: &Option<reqwest::Client>) {
+    async fn flush_batch(
+        batch: &[AnalyticsEvent],
+        config: &AnalyticsConfig,
+        http_client: &Option<reqwest::Client>,
+    ) {
         let endpoint = match &config.http_endpoint {
             Some(url) => url.clone(),
             None => return,
@@ -91,7 +99,9 @@ impl AnalyticsPipeline {
             None => return,
         };
 
-        let token = config.api_token_env.as_ref()
+        let token = config
+            .api_token_env
+            .as_ref()
             .and_then(|env_var| std::env::var(env_var).ok());
 
         let payload = serde_json::json!({

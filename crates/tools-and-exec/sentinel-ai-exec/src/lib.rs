@@ -18,15 +18,13 @@ pub use client::MockClient;
 pub use event_processor::{EventProcessor, HumanProcessor, JsonlProcessor};
 pub use exec_events::{ThreadEvent, ThreadItemDetails};
 
-
-
-use std::sync::Arc;
-use sentinel_config::SentinelConfig;
 use sentinel_analytics::AnalyticsPipeline;
-use sentinel_tools::ToolRegistry;
 use sentinel_app_server::RequestHandler;
-use sentinel_app_server_client::{AppServerConnection, embedded::EmbeddedClient};
+use sentinel_app_server_client::{embedded::EmbeddedClient, AppServerConnection};
 use sentinel_app_server_protocol::api;
+use sentinel_config::SentinelConfig;
+use sentinel_tools::ToolRegistry;
+use std::sync::Arc;
 
 /// Run the core application logic.
 ///
@@ -41,7 +39,7 @@ pub async fn run_main(cli: Cli) -> anyhow::Result<()> {
     let tools = {
         let mut reg = ToolRegistry::new();
         let headroom_retrieve = sentinel_headroom::integration::HeadroomRetrieveTool::new(
-            Arc::new(sentinel_headroom::ccr::CcrStore::default())
+            Arc::new(sentinel_headroom::ccr::CcrStore::default()),
         );
         reg.register(Arc::new(headroom_retrieve));
         Arc::new(reg)
@@ -60,7 +58,10 @@ pub async fn run_main(cli: Cli) -> anyhow::Result<()> {
     if let Some(cli::SubCommand::Mcp) = cli.subcommand {
         let registry = ToolRegistry::new();
         let server = sentinel_mcp::McpServer::new(Arc::new(registry));
-        return server.run_stdio().await.map_err(|e| anyhow::anyhow!("MCP error: {}", e));
+        return server
+            .run_stdio()
+            .await
+            .map_err(|e| anyhow::anyhow!("MCP error: {}", e));
     }
 
     // Resolve the session and prompt – either from STDIN or from subcommands.
@@ -69,11 +70,16 @@ pub async fn run_main(cli: Cli) -> anyhow::Result<()> {
             cli::SubCommand::Resume { session_id } => {
                 // Restore the persisted session: the server loads history from the
                 // thread store, so subsequent chat() calls continue the conversation.
-                let res = client.call(
-                    api::methods::GET_SESSION,
-                    Some(serde_json::json!({ "session_id": session_id })),
-                ).await?;
-                let status = res.get("status").and_then(|v| v.as_str()).unwrap_or("unknown");
+                let res = client
+                    .call(
+                        api::methods::GET_SESSION,
+                        Some(serde_json::json!({ "session_id": session_id })),
+                    )
+                    .await?;
+                let status = res
+                    .get("status")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
                 let turn = res.get("turn").and_then(|v| v.as_u64()).unwrap_or(0);
                 if !cli.json {
                     eprintln!(
@@ -86,10 +92,17 @@ pub async fn run_main(cli: Cli) -> anyhow::Result<()> {
             }
             cli::SubCommand::Review { path } => {
                 let session_res = client
-                    .call(api::methods::CREATE_SESSION, Some(serde_json::json!({ "model": null })))
+                    .call(
+                        api::methods::CREATE_SESSION,
+                        Some(serde_json::json!({ "model": null })),
+                    )
                     .await?;
-                let session_id = session_res["session_id"].as_str().unwrap_or_default().to_string();
-                let prompt = std::fs::read_to_string(&path).unwrap_or_else(|_| "<failed to read>".into());
+                let session_id = session_res["session_id"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .to_string();
+                let prompt =
+                    std::fs::read_to_string(&path).unwrap_or_else(|_| "<failed to read>".into());
                 (session_id, prompt)
             }
             cli::SubCommand::Mcp => unreachable!(), // handled above
@@ -97,9 +110,15 @@ pub async fn run_main(cli: Cli) -> anyhow::Result<()> {
     } else {
         // No subcommand – create a fresh session and read the prompt from stdin.
         let session_res = client
-            .call(api::methods::CREATE_SESSION, Some(serde_json::json!({ "model": null })))
+            .call(
+                api::methods::CREATE_SESSION,
+                Some(serde_json::json!({ "model": null })),
+            )
             .await?;
-        let session_id = session_res["session_id"].as_str().unwrap_or_default().to_string();
+        let session_id = session_res["session_id"]
+            .as_str()
+            .unwrap_or_default()
+            .to_string();
         let prompt = read_stdin()?;
         (session_id, prompt)
     };

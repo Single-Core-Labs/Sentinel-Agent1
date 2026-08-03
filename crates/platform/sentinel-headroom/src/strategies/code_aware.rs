@@ -1,10 +1,10 @@
-use std::sync::OnceLock;
-use async_trait::async_trait;
-use regex::Regex;
-use sha2::{Sha256, Digest};
+use super::{CompressionResult, CompressionStrategy};
 use crate::classifier::ContentType;
 use crate::metrics::CompressionMetrics;
-use super::{CompressionStrategy, CompressionResult};
+use async_trait::async_trait;
+use regex::Regex;
+use sha2::{Digest, Sha256};
+use std::sync::OnceLock;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DocstringMode {
@@ -62,7 +62,9 @@ fn fn_sig_re() -> &'static Regex {
 
 static IMPORT_RE: OnceLock<Regex> = OnceLock::new();
 fn import_re() -> &'static Regex {
-    IMPORT_RE.get_or_init(|| Regex::new(r"(?m)^\s*(use |import |from |require|#include|package |namespace )").unwrap())
+    IMPORT_RE.get_or_init(|| {
+        Regex::new(r"(?m)^\s*(use |import |from |require|#include|package |namespace )").unwrap()
+    })
 }
 
 static COMMENT_RE: OnceLock<Regex> = OnceLock::new();
@@ -79,7 +81,6 @@ static DECORATOR_RE: OnceLock<Regex> = OnceLock::new();
 fn decorator_re() -> &'static Regex {
     DECORATOR_RE.get_or_init(|| Regex::new(r"(?m)^\s*@").unwrap())
 }
-
 
 fn detect_language(source: &str, hint: Option<&str>) -> &'static str {
     if let Some(hint) = hint {
@@ -114,10 +115,9 @@ fn detect_language(source: &str, hint: Option<&str>) -> &'static str {
     if first_2k.contains("def ") {
         scores[0].1 += 5;
     }
-    if first_2k.contains("import ") && !first_2k.contains("import {") {
-        if first_2k.contains("from ") {
-            scores[0].1 += 3;
-        }
+    if first_2k.contains("import ") && !first_2k.contains("import {") && first_2k.contains("from ")
+    {
+        scores[0].1 += 3;
     }
     if first_2k.contains("fn ") {
         scores[3].1 += 5;
@@ -140,10 +140,16 @@ fn detect_language(source: &str, hint: Option<&str>) -> &'static str {
     if first_2k.contains("const ") && first_2k.contains("=>") && !first_2k.contains("fn ") {
         scores[1].1 += 3;
     }
-    if first_2k.contains("interface ") || first_2k.contains(": string") || first_2k.contains(": number") {
+    if first_2k.contains("interface ")
+        || first_2k.contains(": string")
+        || first_2k.contains(": number")
+    {
         scores[2].1 += 3;
     }
-    if first_2k.contains("public class") || first_2k.contains("public static") || first_2k.contains("void main") {
+    if first_2k.contains("public class")
+        || first_2k.contains("public static")
+        || first_2k.contains("void main")
+    {
         scores[5].1 += 5;
     }
     if first_2k.contains("#include") || first_2k.contains("template") {
@@ -152,7 +158,7 @@ fn detect_language(source: &str, hint: Option<&str>) -> &'static str {
     if first_2k.contains("std::") && !first_2k.contains("use ") {
         scores[6].1 += 3;
     }
-    scores.sort_by(|a, b| b.1.cmp(&a.1));
+    scores.sort_by_key(|(_, score)| std::cmp::Reverse(*score));
     if scores[0].1 > 0 {
         scores[0].0
     } else {
@@ -162,10 +168,10 @@ fn detect_language(source: &str, hint: Option<&str>) -> &'static str {
 
 #[cfg(feature = "code-aware")]
 mod tree_sitter_backend {
-    use std::sync::Mutex;
-    use once_cell::sync::Lazy;
-    use tree_sitter::{Parser, Language, Node};
     use super::CodeCompressorConfig;
+    use once_cell::sync::Lazy;
+    use std::sync::Mutex;
+    use tree_sitter::{Language, Node, Parser};
 
     static PARSER: Lazy<Mutex<Option<Parser>>> = Lazy::new(|| {
         let parser = Parser::new();
@@ -246,7 +252,10 @@ mod tree_sitter_backend {
                                 end_byte: child.end_byte(),
                             });
                         }
-                    } else if kind == "class_declaration" || kind == "class_definition" || kind == "impl_item" {
+                    } else if kind == "class_declaration"
+                        || kind == "class_definition"
+                        || kind == "impl_item"
+                    {
                         collect_body_ranges(child, lang, ranges);
                     }
                 }
@@ -347,7 +356,9 @@ mod tree_sitter_backend {
                             }
                             result_lines.push(line.to_string());
                             for ch in line.chars() {
-                                if ch == ':' { handler_depth += 1; }
+                                if ch == ':' {
+                                    handler_depth += 1;
+                                }
                             }
                             continue;
                         }
@@ -419,7 +430,9 @@ mod tree_sitter_backend {
                                     _ => {}
                                 }
                             }
-                            if handler_depth <= 0 { in_error_handler = false; }
+                            if handler_depth <= 0 {
+                                in_error_handler = false;
+                            }
                             continue;
                         }
                         if in_error_handler {
@@ -431,15 +444,17 @@ mod tree_sitter_backend {
                                     _ => {}
                                 }
                             }
-                            if handler_depth <= 0 { in_error_handler = false; }
+                            if handler_depth <= 0 {
+                                in_error_handler = false;
+                            }
                             continue;
                         }
                     }
                 }
             }
             if result_lines.len() >= config.max_body_lines {
-                let n_omitted = orig_line_count.saturating_sub(result_lines.len()
-                    + lines.iter().rev().take(1).count());
+                let n_omitted = orig_line_count
+                    .saturating_sub(result_lines.len() + lines.iter().rev().take(1).count());
                 if n_omitted > 0 {
                     result_lines.push(format!("    // ... {} lines omitted", n_omitted));
                 }
@@ -482,7 +497,14 @@ mod tree_sitter_backend {
             result_bytes.extend_from_slice(&source_bytes[pos..body.start_byte]);
             let body_text = &source[body.start_byte..body.end_byte];
             total_orig_chars += body_text.len();
-            let compressed = compress_body_text(body_text, body.start_byte, body.end_byte, source, config, lang);
+            let compressed = compress_body_text(
+                body_text,
+                body.start_byte,
+                body.end_byte,
+                source,
+                config,
+                lang,
+            );
             total_comp_chars += compressed.len();
             result_bytes.extend_from_slice(compressed.as_bytes());
             pos = body.end_byte;
@@ -505,7 +527,9 @@ mod tree_sitter_backend {
 
 #[cfg(not(feature = "code-aware"))]
 mod tree_sitter_backend {
-    pub fn is_available() -> bool { false }
+    pub fn is_available() -> bool {
+        false
+    }
     pub fn unload() {}
     pub fn compress_ast(
         _source: &str,
@@ -536,16 +560,20 @@ fn compress_fallback(source: &str, config: &CodeCompressorConfig) -> CodeAwareCo
             sig_count += if is_sig { 1 } else { 0 };
             if in_fn_body {
                 if skipped_body_lines > 0 {
-                    out_lines.push(format!("        // ... {} lines omitted", skipped_body_lines));
+                    out_lines.push(format!(
+                        "        // ... {} lines omitted",
+                        skipped_body_lines
+                    ));
                 }
                 in_fn_body = false;
                 skipped_body_lines = 0;
             }
             out_lines.push(line.to_string());
-            if is_sig && (trimmed.ends_with('{') || (trimmed.contains('{') && !trimmed.contains('}'))) {
-                in_fn_body = true;
-                brace_depth = 1;
-            } else if is_sig && trimmed.ends_with(':') {
+            if is_sig
+                && (trimmed.ends_with('{')
+                    || (trimmed.contains('{') && !trimmed.contains('}'))
+                    || trimmed.ends_with(':'))
+            {
                 in_fn_body = true;
                 brace_depth = 1;
             }
@@ -559,8 +587,12 @@ fn compress_fallback(source: &str, config: &CodeCompressorConfig) -> CodeAwareCo
 
         if comment_re().is_match(line) {
             let lower = line.to_lowercase();
-            if lower.contains("todo") || lower.contains("fixme") || lower.contains("hack")
-                || lower.contains("warning") || lower.contains("note") || lower.contains("safe")
+            if lower.contains("todo")
+                || lower.contains("fixme")
+                || lower.contains("hack")
+                || lower.contains("warning")
+                || lower.contains("note")
+                || lower.contains("safe")
                 || lower.contains("xxx")
             {
                 out_lines.push(line.to_string());
@@ -592,8 +624,12 @@ fn compress_fallback(source: &str, config: &CodeCompressorConfig) -> CodeAwareCo
                     skipped_body_lines = 0;
                 } else if (skipped_body_lines as usize) < config.max_body_lines {
                     let lower = line.to_lowercase();
-                    if lower.contains("error") || lower.contains("panic") || lower.contains("return")
-                        || lower.contains("throw") || lower.contains("fail") || trimmed.contains("//")
+                    if lower.contains("error")
+                        || lower.contains("panic")
+                        || lower.contains("return")
+                        || lower.contains("throw")
+                        || lower.contains("fail")
+                        || trimmed.contains("//")
                         || trimmed.starts_with('#')
                     {
                         out_lines.push(format!("  → {}", trimmed));
@@ -627,11 +663,21 @@ fn compress_fallback(source: &str, config: &CodeCompressorConfig) -> CodeAwareCo
     }
 
     if sig_count == 0 {
-        tracing::warn!("CodeAwareCompressor: no function signatures found in {} lines", line_count);
+        tracing::warn!(
+            "CodeAwareCompressor: no function signatures found in {} lines",
+            line_count
+        );
     }
 
     let compressed = out_lines.join("\n");
-    let ratio = crate::metrics::CompressionMetrics::new(source, &compressed, "code_aware", "source_code", 0).compression_ratio;
+    let ratio = crate::metrics::CompressionMetrics::new(
+        source,
+        &compressed,
+        "code_aware",
+        "source_code",
+        0,
+    )
+    .compression_ratio;
     CodeAwareCompressorResult {
         compressed,
         compression_ratio: ratio,
@@ -659,7 +705,10 @@ impl CodeAwareCompressor {
     }
 
     pub fn compress(&self, source: &str, language_hint: Option<&str>) -> CodeAwareCompressorResult {
-        let lang = detect_language(source, language_hint.or(self.config.language_hint.as_deref()));
+        let lang = detect_language(
+            source,
+            language_hint.or(self.config.language_hint.as_deref()),
+        );
         let token_count = estimate_tokens(source);
         if (token_count as usize) < self.config.min_tokens_for_compression {
             return CodeAwareCompressorResult {
@@ -714,7 +763,13 @@ impl CompressionStrategy for CodeAwareCompressor {
         }
 
         let took = (chrono::Utc::now() - start).num_microseconds().unwrap_or(0) as u64;
-        let metrics = CompressionMetrics::new(content, &result.compressed, "code_aware", "source_code", took);
+        let metrics = CompressionMetrics::new(
+            content,
+            &result.compressed,
+            "code_aware",
+            "source_code",
+            took,
+        );
         Some(CompressionResult {
             text: result.compressed,
             metrics,
@@ -730,7 +785,8 @@ fn estimate_tokens(text: &str) -> u64 {
     }
     let char_count = text.chars().count() as u64;
     let word_count = text.split_whitespace().count() as u64;
-    let ascii_ratio = text.bytes().filter(|&b| b.is_ascii()).count() as f64 / byte_len.max(1) as f64;
+    let ascii_ratio =
+        text.bytes().filter(|&b| b.is_ascii()).count() as f64 / byte_len.max(1) as f64;
     if ascii_ratio > 0.9 {
         (word_count as f64 * 1.3 + char_count as f64 * 0.05) as u64
     } else {
@@ -800,7 +856,12 @@ mod tests {
         let result = compressor.compress(&code, Some("rust"));
         assert!(result.compressed.contains("func_0"));
         assert!(result.compressed.contains("func_9"));
-        assert!(result.compressed.len() < code.len(), "compressed should be shorter: {} vs {}", result.compressed.len(), code.len());
+        assert!(
+            result.compressed.len() < code.len(),
+            "compressed should be shorter: {} vs {}",
+            result.compressed.len(),
+            code.len()
+        );
     }
 
     #[test]
@@ -823,14 +884,29 @@ mod tests {
     #[test]
     fn test_language_detection_python() {
         assert_eq!(detect_language("def foo():\n    pass\n", None), "python");
-        assert_eq!(detect_language("import os\nfrom pathlib import Path\n", None), "python");
+        assert_eq!(
+            detect_language("import os\nfrom pathlib import Path\n", None),
+            "python"
+        );
     }
 
     #[test]
     fn test_language_detection_rust() {
-        assert_eq!(detect_language("fn main() -> i32 {\n    0\n}\n", None), "rust");
-        assert_eq!(detect_language("fn process(items: Vec<i32>) {\n    for item in items {}\n}\n", None), "rust");
-        assert_eq!(detect_language("use std::collections::HashMap;\nfn sort() {}", None), "rust");
+        assert_eq!(
+            detect_language("fn main() -> i32 {\n    0\n}\n", None),
+            "rust"
+        );
+        assert_eq!(
+            detect_language(
+                "fn process(items: Vec<i32>) {\n    for item in items {}\n}\n",
+                None
+            ),
+            "rust"
+        );
+        assert_eq!(
+            detect_language("use std::collections::HashMap;\nfn sort() {}", None),
+            "rust"
+        );
     }
 
     #[test]

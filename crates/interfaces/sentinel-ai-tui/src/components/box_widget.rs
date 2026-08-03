@@ -5,9 +5,9 @@ use ratatui::{
     Frame,
 };
 
+use super::widget::{Widget, WidgetMut};
 use std::boxed::Box as BoxPtr;
 use std::cell::RefCell;
-use super::widget::{Widget, WidgetMut};
 
 /// A bordered container, analogous to OpenTUI's `Box`.
 /// Renders a titled frame and delegates children to their own render.
@@ -22,6 +22,12 @@ pub struct Box {
 enum ChildSlot {
     Fixed(BoxPtr<dyn Widget>),
     Flex(RefCell<BoxPtr<dyn WidgetMut>>, u16),
+}
+
+impl Default for Box {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Box {
@@ -55,7 +61,7 @@ impl Box {
         self
     }
 
-    pub fn add(mut self, child: impl Widget + 'static) -> Self {
+    pub fn push(mut self, child: impl Widget + 'static) -> Self {
         self.children.push(ChildSlot::Fixed(BoxPtr::new(child)));
         self
     }
@@ -75,9 +81,7 @@ impl Widget for Box {
             .border_style(Style::default().fg(self.border_color));
 
         if let Some(ref t) = self.title {
-            block = block
-                .title(t.as_str())
-                .title_alignment(Alignment::Center);
+            block = block.title(t.as_str()).title_alignment(Alignment::Center);
         }
 
         // Render the block frame first
@@ -119,11 +123,10 @@ impl Widget for Box {
                     height: w.height(inner.width).min(inner.height),
                 },
                 ChildSlot::Flex(_, flex) => {
-                    let h = if total_flex > 0 {
-                        (flex_available * *flex / total_flex).max(1)
-                    } else {
-                        1
-                    };
+                    let h = (flex_available * *flex)
+                        .checked_div(total_flex)
+                        .map(|v| v.max(1))
+                        .unwrap_or(1);
                     Rect {
                         x: inner.x,
                         y: y_offset,

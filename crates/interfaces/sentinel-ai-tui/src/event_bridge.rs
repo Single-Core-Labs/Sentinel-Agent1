@@ -1,7 +1,7 @@
-use tokio::sync::Mutex;
 use sentinel_ai_exec::ThreadEvent;
-use sentinel_core::agent::{EventHandler, AgentEvent, ApprovalGate, ApprovalDecision};
+use sentinel_core::agent::{AgentEvent, ApprovalDecision, ApprovalGate, EventHandler};
 use sentinel_core::thread::ApprovalRequest;
+use tokio::sync::Mutex;
 
 /// Forwards AgentEvent variants from the agent loop into the TUI event stream.
 pub struct TuiEventHandler {
@@ -15,33 +15,41 @@ impl EventHandler for TuiEventHandler {
             AgentEvent::Thinking { text } => {
                 ThreadEvent::new("thinking", serde_json::json!({ "text": text }))
             }
-            AgentEvent::ToolCall { name, args } => {
-                ThreadEvent::new("tool_call", serde_json::json!({
+            AgentEvent::ToolCall { name, args } => ThreadEvent::new(
+                "tool_call",
+                serde_json::json!({
                     "name": name,
                     "arguments": args,
                     "status": "running",
-                }))
-            }
-            AgentEvent::ToolResult { name, output, is_error, sandboxed } => {
-                ThreadEvent::new("tool_call", serde_json::json!({
+                }),
+            ),
+            AgentEvent::ToolResult {
+                name,
+                output,
+                is_error,
+                sandboxed,
+            } => ThreadEvent::new(
+                "tool_call",
+                serde_json::json!({
                     "name": name,
                     "output": output,
                     "status": if is_error { "error" } else { "completed" },
                     "sandboxed": sandboxed,
-                }))
-            }
+                }),
+            ),
             AgentEvent::Completed { text } => {
                 ThreadEvent::new("completed", serde_json::json!({ "text": text }))
             }
             AgentEvent::Error { message } => {
                 ThreadEvent::new("error", serde_json::json!({ "message": message }))
             }
-            AgentEvent::TurnEnd { turn, .. } => {
-                ThreadEvent::new("turn_complete", serde_json::json!({
+            AgentEvent::TurnEnd { turn, .. } => ThreadEvent::new(
+                "turn_complete",
+                serde_json::json!({
                     "summary": "turn complete",
                     "turn_count": turn,
-                }))
-            }
+                }),
+            ),
         };
         let _ = self.event_tx.send(thread_event).await;
     }
@@ -57,13 +65,16 @@ pub struct TuiApprovalGate {
 #[async_trait::async_trait]
 impl ApprovalGate for TuiApprovalGate {
     async fn request_approval(&self, req: &ApprovalRequest) -> ApprovalDecision {
-        let _ = self.event_tx.send(ThreadEvent::new(
-            "approval_required",
-            serde_json::json!({
-                "tool": req.tool_name,
-                "arguments": req.args,
-            }),
-        )).await;
+        let _ = self
+            .event_tx
+            .send(ThreadEvent::new(
+                "approval_required",
+                serde_json::json!({
+                    "tool": req.tool_name,
+                    "arguments": req.args,
+                }),
+            ))
+            .await;
 
         let mut rx = self.approval_rx.lock().await;
         match rx.recv().await {

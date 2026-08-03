@@ -1,10 +1,10 @@
-use std::sync::Arc;
-use tokio::task::JoinSet;
+use crate::agent::{Agent, AgentOutput, ApprovalGate};
+use crate::thread::AgentThread;
 use sentinel_config::SentinelConfig;
 use sentinel_provider::ModelProvider;
 use sentinel_tools::ToolRegistry;
-use crate::agent::{Agent, ApprovalGate, AgentOutput};
-use crate::thread::AgentThread;
+use std::sync::Arc;
+use tokio::task::JoinSet;
 
 /// A sub-task to be executed by a forked agent thread.
 pub struct SubTask {
@@ -43,12 +43,10 @@ pub async fn run_sub_agent_team(
         set.spawn(async move {
             let agent = Agent::new(provider, tools, config);
             let mut thread = forked;
-            let instruction = format!(
-                "[Sub-task: {}]\n{}",
-                task.description,
-                task.instruction,
-            );
-            let output = agent.run(&mut thread, &instruction).await
+            let instruction = format!("[Sub-task: {}]\n{}", task.description, task.instruction,);
+            let output = agent
+                .run(&mut thread, &instruction)
+                .await
                 .unwrap_or_else(|e| AgentOutput::error(e.to_string()));
 
             SubTaskResult {
@@ -91,12 +89,10 @@ pub async fn run_sub_agent_team_with_approval(
         set.spawn(async move {
             let agent = Agent::new(provider, tools, config);
             let mut thread = forked;
-            let instruction = format!(
-                "[Sub-task: {}]\n{}",
-                task.description,
-                task.instruction,
-            );
-            let output = agent.run_with_approval(&mut thread, &instruction, &*approval, &None).await
+            let instruction = format!("[Sub-task: {}]\n{}", task.description, task.instruction,);
+            let output = agent
+                .run_with_approval(&mut thread, &instruction, &*approval, &None)
+                .await
                 .unwrap_or_else(|e| AgentOutput::error(e.to_string()));
 
             SubTaskResult {
@@ -121,10 +117,10 @@ pub async fn run_sub_agent_team_with_approval(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::OnceLock;
-    use sentinel_protocol::{CompletionResponse, Message, Choice, Usage};
+    use sentinel_protocol::{Choice, CompletionResponse, Message, Usage};
     use sentinel_provider::ProviderError;
     use sentinel_provider_info::ProviderInfo;
+    use std::sync::OnceLock;
 
     fn mock_provider_info() -> &'static ProviderInfo {
         static INFO: OnceLock<ProviderInfo> = OnceLock::new();
@@ -147,7 +143,10 @@ mod tests {
             mock_provider_info()
         }
 
-        async fn complete(&self, _req: &sentinel_protocol::CompletionRequest) -> Result<CompletionResponse, ProviderError> {
+        async fn complete(
+            &self,
+            _req: &sentinel_protocol::CompletionRequest,
+        ) -> Result<CompletionResponse, ProviderError> {
             Ok(CompletionResponse {
                 id: "mock".into(),
                 model: "mock".into(),
@@ -156,12 +155,24 @@ mod tests {
                     message: Message::assistant("mock response"),
                     finish_reason: Some("stop".into()),
                 }],
-                usage: Some(Usage { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }),
+                usage: Some(Usage {
+                    prompt_tokens: 1,
+                    completion_tokens: 1,
+                    total_tokens: 2,
+                }),
             })
         }
 
-        async fn complete_stream(&self, _req: &sentinel_protocol::CompletionRequest) -> Result<
-            Box<dyn tokio_stream::Stream<Item = Result<sentinel_protocol::StreamChunk, ProviderError>> + Send + Unpin>,
+        async fn complete_stream(
+            &self,
+            _req: &sentinel_protocol::CompletionRequest,
+        ) -> Result<
+            Box<
+                dyn tokio_stream::Stream<
+                        Item = Result<sentinel_protocol::StreamChunk, ProviderError>,
+                    > + Send
+                    + Unpin,
+            >,
             ProviderError,
         > {
             Err(ProviderError::RequestError("unsupported".into()))
@@ -176,16 +187,28 @@ mod tests {
 
         let parent = AgentThread::new(10, 20, true);
         let tasks = vec![
-            SubTask { id: "task-1".into(), description: "Write code".into(), instruction: "Write a Rust function".into() },
-            SubTask { id: "task-2".into(), description: "Review code".into(), instruction: "Review the function".into() },
+            SubTask {
+                id: "task-1".into(),
+                description: "Write code".into(),
+                instruction: "Write a Rust function".into(),
+            },
+            SubTask {
+                id: "task-2".into(),
+                description: "Review code".into(),
+                instruction: "Review the function".into(),
+            },
         ];
 
         let results = run_sub_agent_team(&parent, tasks, provider, tools, config).await;
         assert_eq!(results.len(), 2, "should complete both sub-tasks");
 
         for result in &results {
-            assert!(matches!(&result.output, AgentOutput::Success { .. }),
-                "sub-task {} should succeed: {:?}", result.sub_task_id, result.output);
+            assert!(
+                matches!(&result.output, AgentOutput::Success { .. }),
+                "sub-task {} should succeed: {:?}",
+                result.sub_task_id,
+                result.output
+            );
             assert_eq!(
                 result.thread.parent_thread_id,
                 Some(parent.id.to_string()),

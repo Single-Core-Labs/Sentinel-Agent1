@@ -1,7 +1,7 @@
-use serde::Deserialize;
-use sentinel_provider_info::{ProviderInfo, default_providers};
-use sentinel_mcp::McpServerDef;
 use crate::error::ConfigError;
+use sentinel_mcp::McpServerDef;
+use sentinel_provider_info::{default_providers, ProviderInfo};
+use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct AgentSettings {
@@ -17,10 +17,16 @@ pub struct AgentSettings {
     pub verbose: bool,
 }
 
-fn default_model() -> String { "gpt-4o".into() }
-fn default_false() -> bool { false }
+fn default_model() -> String {
+    "gpt-4o".into()
+}
+fn default_false() -> bool {
+    false
+}
 
-fn default_thread_store() -> String { "memory".into() }
+fn default_thread_store() -> String {
+    "memory".into()
+}
 
 impl Default for AgentSettings {
     fn default() -> Self {
@@ -50,16 +56,12 @@ impl SentinelConfig {
     pub fn load() -> Result<Self, ConfigError> {
         let mut config = SentinelConfig::default();
 
-        let paths = [
-            "sentinel.toml",
-            "config.toml",
-            ".sentinel.toml",
-        ];
+        let paths = ["sentinel.toml", "config.toml", ".sentinel.toml"];
 
         for path in &paths {
             if let Ok(content) = std::fs::read_to_string(path) {
-                let file_config: SentinelConfig = toml::from_str(&content)
-                    .map_err(ConfigError::from)?;
+                let file_config: SentinelConfig =
+                    toml::from_str(&content).map_err(ConfigError::from)?;
                 config.merge(file_config);
                 break;
             }
@@ -69,20 +71,31 @@ impl SentinelConfig {
     }
 
     pub fn load_from(path: &str) -> Result<Self, ConfigError> {
-        let content = std::fs::read_to_string(path)
-            .map_err(|e| ConfigError::ReadError { path: path.into(), source: e })?;
-        toml::from_str(&content)
-            .map_err(ConfigError::from)
+        let content = std::fs::read_to_string(path).map_err(|e| ConfigError::ReadError {
+            path: path.into(),
+            source: e,
+        })?;
+        toml::from_str(&content).map_err(ConfigError::from)
     }
 
     fn merge(&mut self, other: SentinelConfig) {
-        if other.agent.max_turns > 0 { self.agent.max_turns = other.agent.max_turns; }
-        if other.agent.max_iterations > 0 { self.agent.max_iterations = other.agent.max_iterations; }
-        if other.agent.default_model != default_model() { self.agent.default_model = other.agent.default_model; }
+        if other.agent.max_turns > 0 {
+            self.agent.max_turns = other.agent.max_turns;
+        }
+        if other.agent.max_iterations > 0 {
+            self.agent.max_iterations = other.agent.max_iterations;
+        }
+        if other.agent.default_model != default_model() {
+            self.agent.default_model = other.agent.default_model;
+        }
         self.agent.yolo_mode = other.agent.yolo_mode;
         self.agent.verbose = other.agent.verbose;
-        if !other.providers.is_empty() { self.providers = other.providers; }
-        if !other.mcp_servers.is_empty() { self.mcp_servers = other.mcp_servers; }
+        if !other.providers.is_empty() {
+            self.providers = other.providers;
+        }
+        if !other.mcp_servers.is_empty() {
+            self.mcp_servers = other.mcp_servers;
+        }
         if other.thread_store != default_thread_store() {
             self.thread_store = other.thread_store;
         }
@@ -128,7 +141,9 @@ mod tests {
 
     #[test]
     fn parses_full_config_file() {
-        let path = temp_toml("full", r#"
+        let path = temp_toml(
+            "full",
+            r#"
 [agent]
 default_model = "qwen3:8b"
 max_turns = 9
@@ -149,7 +164,8 @@ supports_tools = true
 id = "fs"
 name = "Filesystem"
 transport = { type = "stdio", command = "npx", args = ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"] }
-"#);
+"#,
+        );
         let cfg = SentinelConfig::load_from(&path).unwrap();
         let _ = std::fs::remove_file(&path);
 
@@ -165,7 +181,9 @@ transport = { type = "stdio", command = "npx", args = ["-y", "@modelcontextproto
 
     #[test]
     fn missing_auth_key_parses_as_no_auth() {
-        let path = temp_toml("noauth", r#"
+        let path = temp_toml(
+            "noauth",
+            r#"
 [[providers]]
 id = "local"
 name = "Local"
@@ -174,7 +192,8 @@ base_url = "http://localhost:9999/v1"
 [[providers.models]]
 id = "m"
 name = "M"
-"#);
+"#,
+        );
         let cfg = SentinelConfig::load_from(&path).unwrap();
         let _ = std::fs::remove_file(&path);
 
@@ -190,7 +209,10 @@ name = "M"
 
         assert_eq!(cfg.agent.default_model, "x");
         assert!(!cfg.agent.verbose);
-        assert!(cfg.providers().is_empty(), "raw parse must not inject default providers");
+        assert!(
+            cfg.providers().is_empty(),
+            "raw parse must not inject default providers"
+        );
     }
 
     #[test]

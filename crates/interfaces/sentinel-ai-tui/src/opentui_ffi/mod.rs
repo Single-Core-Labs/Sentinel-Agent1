@@ -1,9 +1,9 @@
-pub mod types;
 pub mod ffi;
 pub mod renderer;
+pub mod types;
 
+pub use renderer::{OptimizedBuffer, Renderer, TextBuffer, TextBufferView};
 pub use types::*;
-pub use renderer::{Renderer, OptimizedBuffer, TextBuffer, TextBufferView};
 
 pub fn set_log_callback(callback: ffi::LogCallback) {
     unsafe { ffi::setLogCallback(Some(callback)) }

@@ -1,6 +1,6 @@
+use sentinel_protocol::ToolDef;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sentinel_protocol::ToolDef;
 
 pub trait IntoApiResponse {
     fn into_result(self) -> Value;
@@ -263,9 +263,18 @@ pub enum ServerEvent {
     #[serde(rename = "tool_call")]
     ToolCall { name: String, args: Value },
     #[serde(rename = "tool_result")]
-    ToolResult { name: String, output: String, is_error: bool },
+    ToolResult {
+        name: String,
+        output: String,
+        is_error: bool,
+    },
     #[serde(rename = "ask_user")]
-    AskUserDialog { request_id: String, prompt: String, options: Vec<String>, allow_custom: bool },
+    AskUserDialog {
+        request_id: String,
+        prompt: String,
+        options: Vec<String>,
+        allow_custom: bool,
+    },
     #[serde(rename = "completed")]
     Completed { text: String },
     #[serde(rename = "error")]
@@ -323,7 +332,9 @@ pub struct GpuDisasmParams {
     pub kernel_name: Option<String>,
 }
 
-fn default_ptx() -> String { "ptx".into() }
+fn default_ptx() -> String {
+    "ptx".into()
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GpuDisasmResult {

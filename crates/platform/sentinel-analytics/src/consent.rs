@@ -55,7 +55,7 @@ pub fn save_consent(opted_in: bool) -> Result<PathBuf, String> {
                 .map_err(|e| format!("Failed to create '{}': {}", parent.display(), e))?;
         }
     }
-std::fs::write(&path, if opted_in { "on\n" } else { "off\n" })
+    std::fs::write(&path, if opted_in { "on\n" } else { "off\n" })
         .map_err(|e| format!("Failed to write '{}': {}", path.display(), e))?;
     Ok(path)
 }

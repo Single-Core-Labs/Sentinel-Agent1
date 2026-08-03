@@ -1,25 +1,23 @@
-use std::sync::Arc;
-use std::sync::RwLock;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::fmt;
-use std::collections::BTreeMap;
-use futures::StreamExt;
-use tokio::task::JoinSet;
-use tokio_util::sync::CancellationToken;
-use sentinel_protocol::{
-    CompletionRequest, Message, ContentBlock, Role, ToolResult,
-};
-use sentinel_provider::{ModelProvider, ProviderError};
-use sentinel_tools::{ToolRegistry, ToolContext};
-use sentinel_config::SentinelConfig;
-use sentinel_plugin_system::{PluginRegistry, PluginEvent, PluginAction};
-use crate::thread::{AgentThread, ThreadStatus, ApprovalRequest};
-use crate::prompt::SystemPromptManager;
-use crate::event::{SharedEventStore, SessionEvent};
-use crate::uploader::{SessionUploader, SessionPayload, NullUploader, create_uploader};
 use crate::compression::{ContentCompressor, NullCompressor};
 use crate::diff_capture::DiffCapture;
-use crate::event_bus::{EventBus, PolicyEngine, PolicyDecision, BusEvent};
+use crate::event::{SessionEvent, SharedEventStore};
+use crate::event_bus::{BusEvent, EventBus, PolicyDecision, PolicyEngine};
+use crate::prompt::SystemPromptManager;
+use crate::thread::{AgentThread, ApprovalRequest, ThreadStatus};
+use crate::uploader::{create_uploader, NullUploader, SessionPayload, SessionUploader};
+use futures::StreamExt;
+use sentinel_config::SentinelConfig;
+use sentinel_plugin_system::{PluginAction, PluginEvent, PluginRegistry};
+use sentinel_protocol::{CompletionRequest, ContentBlock, Message, Role, ToolResult};
+use sentinel_provider::{ModelProvider, ProviderError};
+use sentinel_tools::{ToolContext, ToolRegistry};
+use std::collections::BTreeMap;
+use std::fmt;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Arc;
+use std::sync::RwLock;
+use tokio::task::JoinSet;
+use tokio_util::sync::CancellationToken;
 
 pub(crate) const TRUNCATION_HINT: &str = "\
 Your previous response was truncated because the output hit the token limit. \
@@ -36,7 +34,9 @@ Issues found: \
 Please correct the tool calls and retry. Do NOT repeat the same malformed calls.";
 
 /// Validate tool calls and return OK or describe the malformation.
-pub(crate) fn validate_tool_calls(tool_calls: &[(String, String, serde_json::Value)]) -> Result<(), Vec<String>> {
+pub(crate) fn validate_tool_calls(
+    tool_calls: &[(String, String, serde_json::Value)],
+) -> Result<(), Vec<String>> {
     let mut errors = Vec::new();
     for (i, (id, name, args)) in tool_calls.iter().enumerate() {
         if id.is_empty() {
@@ -46,10 +46,17 @@ pub(crate) fn validate_tool_calls(tool_calls: &[(String, String, serde_json::Val
             errors.push(format!("Tool call #{}: missing name", i));
         }
         if !args.is_object() && !args.is_null() {
-            errors.push(format!("Tool call #{} ('{}'): arguments must be a JSON object", i, name));
+            errors.push(format!(
+                "Tool call #{} ('{}'): arguments must be a JSON object",
+                i, name
+            ));
         }
     }
-    if errors.is_empty() { Ok(()) } else { Err(errors) }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
 }
 
 pub struct Agent {
@@ -76,7 +83,10 @@ impl std::fmt::Debug for Agent {
             .field("total_prompt_tokens", &self.total_prompt_tokens)
             .field("total_completion_tokens", &self.total_completion_tokens)
             .field("has_phase_callback", &self.phase_callback.is_some())
-            .field("has_compressor", &format_args!("{}", self.compressor.name()))
+            .field(
+                "has_compressor",
+                &format_args!("{}", self.compressor.name()),
+            )
             .finish_non_exhaustive()
     }
 }
@@ -88,7 +98,9 @@ impl Agent {
         config: Arc<SentinelConfig>,
     ) -> Self {
         Self {
-            provider, tools, config,
+            provider,
+            tools,
+            config,
             model: String::new(),
             events: RwLock::new(Arc::new(NullEventHandler)),
             event_store: crate::event::create_event_store(),
@@ -102,7 +114,10 @@ impl Agent {
         }
     }
 
-    pub fn with_phase_callback(mut self, cb: Arc<dyn Fn(crate::thread::Phase) + Send + Sync>) -> Self {
+    pub fn with_phase_callback(
+        mut self,
+        cb: Arc<dyn Fn(crate::thread::Phase) + Send + Sync>,
+    ) -> Self {
         self.phase_callback = Some(cb);
         self
     }
@@ -117,7 +132,11 @@ impl Agent {
     }
 
     fn effective_model(&self) -> &str {
-        if self.model.is_empty() { &self.config.agent.default_model } else { &self.model }
+        if self.model.is_empty() {
+            &self.config.agent.default_model
+        } else {
+            &self.model
+        }
     }
 
     /// Public accessor for the resolved model name (for use by CLI slash commands).
@@ -135,8 +154,12 @@ impl Agent {
         self.provider.complete_stream(req).await
     }
 
-    pub fn prompt_tokens(&self) -> u64 { self.total_prompt_tokens.load(Ordering::Relaxed) }
-    pub fn completion_tokens(&self) -> u64 { self.total_completion_tokens.load(Ordering::Relaxed) }
+    pub fn prompt_tokens(&self) -> u64 {
+        self.total_prompt_tokens.load(Ordering::Relaxed)
+    }
+    pub fn completion_tokens(&self) -> u64 {
+        self.total_completion_tokens.load(Ordering::Relaxed)
+    }
 
     pub fn with_event_handler(mut self, handler: Arc<dyn EventHandler>) -> Self {
         self.events = RwLock::new(handler);
@@ -187,7 +210,8 @@ impl Agent {
     }
 
     pub async fn run(&self, thread: &mut AgentThread, user_input: &str) -> AgentResult {
-        self.run_with_approval(thread, user_input, &AutoApprovalGate, &None).await
+        self.run_with_approval(thread, user_input, &AutoApprovalGate, &None)
+            .await
     }
 
     pub async fn run_with_approval(
@@ -197,10 +221,13 @@ impl Agent {
         approval: &dyn ApprovalGate,
         policy: &Option<Arc<dyn PolicyEngine>>,
     ) -> AgentResult {
-        let result = self.run_with_approval_inner(thread, user_input, approval, policy).await;
+        let result = self
+            .run_with_approval_inner(thread, user_input, approval, policy)
+            .await;
         self.dispatch_plugin_event(&PluginEvent::SessionEnded {
             session_id: thread.id.to_string(),
-        }).await;
+        })
+        .await;
         if result.is_ok() {
             self.upload_session(thread).await;
         }
@@ -219,19 +246,27 @@ impl Agent {
 
         self.dispatch_plugin_event(&PluginEvent::SessionCreated {
             session_id: sid.to_string(),
-        }).await;
+        })
+        .await;
 
-        self.event_store.append(SessionEvent::UserMessage {
-            session_id: sid.to_string(),
-            timestamp: now,
-            content: user_input.to_string(),
-        }).await;
+        self.event_store
+            .append(SessionEvent::UserMessage {
+                session_id: sid.to_string(),
+                timestamp: now,
+                content: user_input.to_string(),
+            })
+            .await;
 
         thread.status = ThreadStatus::Running;
         thread.add_message(Message::user(user_input));
         thread.conversation.add_user_message(user_input);
 
-        if !thread.context.messages().iter().any(|m| m.role == Role::System) {
+        if !thread
+            .context
+            .messages()
+            .iter()
+            .any(|m| m.role == Role::System)
+        {
             thread.add_message(Message::system(self.prompt_manager.render()));
         }
 
@@ -257,7 +292,8 @@ impl Agent {
             self.dispatch_plugin_event(&PluginEvent::BeforeModelRequest {
                 model: self.effective_model().to_string(),
                 prompt_tokens: 0,
-            }).await;
+            })
+            .await;
 
             let mut attempts = 0;
             let response = loop {
@@ -267,40 +303,62 @@ impl Agent {
                         attempts += 1;
                         let is_transient = matches!(
                             &e,
-                            ProviderError::Reqwest(_) | ProviderError::RateLimitExceeded { .. } | ProviderError::RateLimited { .. } | ProviderError::Timeout { .. } | ProviderError::ServiceUnavailable { .. }
+                            ProviderError::Reqwest(_)
+                                | ProviderError::RateLimitExceeded { .. }
+                                | ProviderError::RateLimited { .. }
+                                | ProviderError::Timeout { .. }
+                                | ProviderError::ServiceUnavailable { .. }
                         );
                         if attempts < 3 && is_transient {
-                            tokio::time::sleep(std::time::Duration::from_millis(500 * (1 << (attempts - 1)))).await;
+                            tokio::time::sleep(std::time::Duration::from_millis(
+                                500 * (1 << (attempts - 1)),
+                            ))
+                            .await;
                             continue;
                         }
-                        self.event_store.append(SessionEvent::Error {
-                            session_id: sid.to_string(),
-                            timestamp: chrono::Utc::now(),
-                            message: format!("LLM call failed after {} attempt(s): {}", attempts, e),
-                        }).await;
+                        self.event_store
+                            .append(SessionEvent::Error {
+                                session_id: sid.to_string(),
+                                timestamp: chrono::Utc::now(),
+                                message: format!(
+                                    "LLM call failed after {} attempt(s): {}",
+                                    attempts, e
+                                ),
+                            })
+                            .await;
                         return Ok(AgentOutput::error(format!("LLM call failed: {}", e)));
                     }
                 }
             };
 
-            let completion_tokens = response.usage.as_ref().map(|u| u.completion_tokens).unwrap_or(0);
+            let completion_tokens = response
+                .usage
+                .as_ref()
+                .map(|u| u.completion_tokens)
+                .unwrap_or(0);
             self.dispatch_plugin_event(&PluginEvent::AfterModelResponse {
                 model: self.config.agent.default_model.clone(),
                 completion_tokens,
-            }).await;
+            })
+            .await;
 
             if let Some(ref usage) = response.usage {
-                self.total_prompt_tokens.fetch_add(usage.prompt_tokens as u64, Ordering::Relaxed);
-                self.total_completion_tokens.fetch_add(usage.completion_tokens as u64, Ordering::Relaxed);
-                let cost = crate::cost::estimate_llm_cost(self.provider.name(), &crate::cost::Usage::new(
-                    usage.prompt_tokens, usage.completion_tokens,
-                ));
+                self.total_prompt_tokens
+                    .fetch_add(usage.prompt_tokens as u64, Ordering::Relaxed);
+                self.total_completion_tokens
+                    .fetch_add(usage.completion_tokens as u64, Ordering::Relaxed);
+                let cost = crate::cost::estimate_llm_cost(
+                    self.provider.name(),
+                    &crate::cost::Usage::new(usage.prompt_tokens, usage.completion_tokens),
+                );
                 thread.budget.record_spend(cost);
             }
 
             if thread.budget.exhausted {
                 thread.status = ThreadStatus::Completed;
-                return Ok(AgentOutput::success("[Budget exhausted — spend cap reached]"));
+                return Ok(AgentOutput::success(
+                    "[Budget exhausted — spend cap reached]",
+                ));
             }
 
             let choice = match response.choices.into_iter().next() {
@@ -312,37 +370,49 @@ impl Agent {
             let last_text = choice.message.extract_text();
             let finish_reason = choice.finish_reason.as_deref();
 
-            self.event_store.append(SessionEvent::AssistantText {
-                session_id: sid.to_string(),
-                timestamp: now,
-                text: last_text.clone(),
-            }).await;
+            self.event_store
+                .append(SessionEvent::AssistantText {
+                    session_id: sid.to_string(),
+                    timestamp: now,
+                    text: last_text.clone(),
+                })
+                .await;
 
             thread.add_message(choice.message.clone());
             thread.conversation.add_assistant_text(&last_text);
             let handler = self.events.read().unwrap().clone();
-            handler.handle_event(AgentEvent::Thinking { text: last_text.clone() }).await;
+            handler
+                .handle_event(AgentEvent::Thinking {
+                    text: last_text.clone(),
+                })
+                .await;
 
-            let tool_calls: Vec<_> = choice.message.content.iter()
+            let tool_calls: Vec<_> = choice
+                .message
+                .content
+                .iter()
                 .filter_map(|b| {
-                    if let ContentBlock::ToolCall { id, name, arguments } = b {
+                    if let ContentBlock::ToolCall {
+                        id,
+                        name,
+                        arguments,
+                    } = b
+                    {
                         Some((id.clone(), name.clone(), arguments.clone()))
-                    } else { None }
+                    } else {
+                        None
+                    }
                 })
                 .collect();
 
             // Malformed tool call recovery
             if !tool_calls.is_empty() {
                 if let Err(validation_errors) = validate_tool_calls(&tool_calls) {
-                    tracing::warn!(
-                        "Malformed tool calls detected: {:?}",
-                        validation_errors,
-                    );
+                    tracing::warn!("Malformed tool calls detected: {:?}", validation_errors,);
                     let error_detail = validation_errors.join("; ");
                     let hint = Message::user(format!(
                         "[SYSTEM: Malformed tool calls detected — {}]\n\n{}",
-                        error_detail,
-                        MALFORMED_TOOL_CALL_HINT,
+                        error_detail, MALFORMED_TOOL_CALL_HINT,
                     ));
                     thread.add_message(hint);
                     continue;
@@ -364,7 +434,11 @@ impl Agent {
             if tool_calls.is_empty() {
                 thread.status = ThreadStatus::Completed;
                 let handler = self.events.read().unwrap().clone();
-                handler.handle_event(AgentEvent::Completed { text: last_text.clone() }).await;
+                handler
+                    .handle_event(AgentEvent::Completed {
+                        text: last_text.clone(),
+                    })
+                    .await;
                 return Ok(AgentOutput::success(last_text));
             }
 
@@ -391,43 +465,51 @@ impl Agent {
                 &None,
                 policy,
                 &self.plugin_registry,
-            ).await;
+            )
+            .await;
 
             for result in &tool_results {
-                self.event_store.append(SessionEvent::ToolResult {
-                    session_id: sid.to_string(),
-                    timestamp: now,
-                    tool_call_id: result.tool_call_id.clone(),
-                    name: result.name.clone(),
-                    output: result.output.clone(),
-                    is_error: result.is_error,
-                }).await;
+                self.event_store
+                    .append(SessionEvent::ToolResult {
+                        session_id: sid.to_string(),
+                        timestamp: now,
+                        tool_call_id: result.tool_call_id.clone(),
+                        name: result.name.clone(),
+                        output: result.output.clone(),
+                        is_error: result.is_error,
+                    })
+                    .await;
 
-                thread.add_message(Message::new(Role::Tool, vec![
-                    ContentBlock::ToolResult {
+                thread.add_message(Message::new(
+                    Role::Tool,
+                    vec![ContentBlock::ToolResult {
                         tool_call_id: result.tool_call_id.clone(),
                         content: result.output.clone(),
                         is_error: Some(result.is_error),
-                    }
-                ]));
+                    }],
+                ));
             }
 
             if !thread.increment_turn() {
                 return Ok(AgentOutput::error("Max turns reached"));
             }
 
-            self.event_store.append(SessionEvent::TurnEnd {
-                session_id: sid.to_string(),
-                timestamp: now,
-                turn: thread.turn,
-                iteration: thread.iterations,
-            }).await;
+            self.event_store
+                .append(SessionEvent::TurnEnd {
+                    session_id: sid.to_string(),
+                    timestamp: now,
+                    turn: thread.turn,
+                    iteration: thread.iterations,
+                })
+                .await;
 
             let handler = self.events.read().unwrap().clone();
-            handler.handle_event(AgentEvent::TurnEnd {
-                turn: thread.turn,
-                iteration: thread.iterations,
-            }).await;
+            handler
+                .handle_event(AgentEvent::TurnEnd {
+                    turn: thread.turn,
+                    iteration: thread.iterations,
+                })
+                .await;
 
             if thread.is_doom_loop() {
                 return Ok(AgentOutput::error("Doom loop detected"));
@@ -445,13 +527,22 @@ impl Agent {
     }
 
     /// Generate a summary of the current conversation context using the LLM.
-    pub async fn summarize_context(&self, thread: &mut AgentThread) -> Result<String, ProviderError> {
-        let context_text: String = thread.context.messages().iter()
+    pub async fn summarize_context(
+        &self,
+        thread: &mut AgentThread,
+    ) -> Result<String, ProviderError> {
+        let context_text: String = thread
+            .context
+            .messages()
+            .iter()
             .map(|m| {
                 let role = format!("{:?}", m.role);
                 let text = m.extract_text();
-                if text.is_empty() { String::new() }
-                else { format!("<{}>\n{}\n</{}>", role, text, role) }
+                if text.is_empty() {
+                    String::new()
+                } else {
+                    format!("<{}>\n{}\n</{}>", role, text, role)
+                }
             })
             .collect::<Vec<_>>()
             .join("\n");
@@ -465,10 +556,14 @@ impl Agent {
 
         let req = CompletionRequest::new(self.effective_model())
             .with_message(Message::user(prompt))
-            .with_system("You are a conversation summarizer. Produce a concise 2-3 paragraph summary.");
+            .with_system(
+                "You are a conversation summarizer. Produce a concise 2-3 paragraph summary.",
+            );
 
         let response = self.provider.complete(&req).await?;
-        let summary = response.choices.first()
+        let summary = response
+            .choices
+            .first()
             .map(|c| c.message.extract_text())
             .unwrap_or_default();
 
@@ -485,7 +580,12 @@ impl Agent {
         thread.status = ThreadStatus::Running;
         thread.add_message(Message::user(user_input));
 
-        if !thread.context.messages().iter().any(|m| m.role == Role::System) {
+        if !thread
+            .context
+            .messages()
+            .iter()
+            .any(|m| m.role == Role::System)
+        {
             thread.add_message(Message::system(self.prompt_manager.render()));
         }
 
@@ -510,7 +610,12 @@ impl Agent {
     ) -> AgentResult {
         thread.status = ThreadStatus::Running;
         thread.add_message(Message::user(user_input));
-        if !thread.context.messages().iter().any(|m| m.role == Role::System) {
+        if !thread
+            .context
+            .messages()
+            .iter()
+            .any(|m| m.role == Role::System)
+        {
             thread.add_message(Message::system(self.prompt_manager.render()));
         }
 
@@ -526,7 +631,11 @@ impl Agent {
 
             let req = self.build_request(thread).await;
             let tool_defs = self.tools.tool_defs_for_model(true);
-            let req = if let Some(tools) = tool_defs { req.with_tools(tools) } else { req };
+            let req = if let Some(tools) = tool_defs {
+                req.with_tools(tools)
+            } else {
+                req
+            };
 
             // Stream the response
             let mut stream = match self.provider.complete_stream(&req).await {
@@ -547,9 +656,18 @@ impl Agent {
                             if let Some(tcs) = choice.delta.tool_calls {
                                 for tc in tcs {
                                     let id = tc.id.unwrap_or_default();
-                                    let name = tc.function.as_ref().and_then(|f| f.name.clone()).unwrap_or_default();
-                                    let args_str = tc.function.as_ref().and_then(|f| f.arguments.clone()).unwrap_or_default();
-                                    let args: serde_json::Value = serde_json::from_str(&args_str).unwrap_or(serde_json::Value::Null);
+                                    let name = tc
+                                        .function
+                                        .as_ref()
+                                        .and_then(|f| f.name.clone())
+                                        .unwrap_or_default();
+                                    let args_str = tc
+                                        .function
+                                        .as_ref()
+                                        .and_then(|f| f.arguments.clone())
+                                        .unwrap_or_default();
+                                    let args: serde_json::Value = serde_json::from_str(&args_str)
+                                        .unwrap_or(serde_json::Value::Null);
                                     tool_calls.push((id, name, args));
                                 }
                             }
@@ -567,7 +685,9 @@ impl Agent {
 
             let mut content = Vec::new();
             if !accumulated_text.is_empty() {
-                content.push(ContentBlock::Text { text: accumulated_text });
+                content.push(ContentBlock::Text {
+                    text: accumulated_text,
+                });
             }
             for (id, name, args) in &tool_calls {
                 content.push(ContentBlock::ToolCall {
@@ -580,7 +700,11 @@ impl Agent {
             let msg = Message::new(Role::Assistant, content);
             thread.add_message(msg);
             let handler = self.events.read().unwrap().clone();
-            handler.handle_event(AgentEvent::Thinking { text: last_text.clone() }).await;
+            handler
+                .handle_event(AgentEvent::Thinking {
+                    text: last_text.clone(),
+                })
+                .await;
 
             // Malformed tool call recovery
             if is_tool_call {
@@ -592,8 +716,7 @@ impl Agent {
                     let error_detail = validation_errors.join("; ");
                     let hint = Message::user(format!(
                         "[SYSTEM: Malformed tool calls detected — {}]\n\n{}",
-                        error_detail,
-                        MALFORMED_TOOL_CALL_HINT,
+                        error_detail, MALFORMED_TOOL_CALL_HINT,
                     ));
                     thread.add_message(hint);
                     continue;
@@ -605,7 +728,9 @@ impl Agent {
             if is_tool_call && last_text.trim().is_empty() {
                 // Streaming responses don't surface finish_reason reliably per-chunk,
                 // but empty text with tool calls on first chunk suggests truncation.
-                tracing::warn!("Streaming response had tool calls with empty text — possible truncation");
+                tracing::warn!(
+                    "Streaming response had tool calls with empty text — possible truncation"
+                );
                 let hint = Message::user(format!("[SYSTEM: {}]", TRUNCATION_HINT));
                 thread.add_message(hint);
                 continue;
@@ -614,7 +739,11 @@ impl Agent {
             if !is_tool_call {
                 thread.status = ThreadStatus::Completed;
                 let handler = self.events.read().unwrap().clone();
-                handler.handle_event(AgentEvent::Completed { text: last_text.clone() }).await;
+                handler
+                    .handle_event(AgentEvent::Completed {
+                        text: last_text.clone(),
+                    })
+                    .await;
                 return Ok(AgentOutput::success(last_text));
             }
 
@@ -642,26 +771,30 @@ impl Agent {
                 &None,
                 &None,
                 &self.plugin_registry,
-            ).await;
+            )
+            .await;
 
             for result in &tool_results {
-                thread.add_message(Message::new(Role::Tool, vec![
-                    ContentBlock::ToolResult {
+                thread.add_message(Message::new(
+                    Role::Tool,
+                    vec![ContentBlock::ToolResult {
                         tool_call_id: result.tool_call_id.clone(),
                         content: result.output.clone(),
                         is_error: Some(result.is_error),
-                    }
-                ]));
+                    }],
+                ));
             }
 
             if !thread.increment_turn() {
                 return Ok(AgentOutput::error("Max turns reached"));
             }
             let handler = self.events.read().unwrap().clone();
-            handler.handle_event(AgentEvent::TurnEnd {
-                turn: thread.turn,
-                iteration: thread.iterations,
-            }).await;
+            handler
+                .handle_event(AgentEvent::TurnEnd {
+                    turn: thread.turn,
+                    iteration: thread.iterations,
+                })
+                .await;
 
             if thread.is_doom_loop() {
                 return Ok(AgentOutput::error("Doom loop detected"));
@@ -702,7 +835,10 @@ impl Agent {
 
     async fn build_request(&self, thread: &AgentThread) -> CompletionRequest {
         let messages = thread.context.messages().to_vec();
-        let compressed = self.compressor.compress_conversation(&messages, self.effective_model()).await;
+        let compressed = self
+            .compressor
+            .compress_conversation(&messages, self.effective_model())
+            .await;
 
         let mut req = CompletionRequest::new(self.effective_model());
         for msg in compressed {
@@ -712,7 +848,12 @@ impl Agent {
     }
 }
 
-fn simulate_edit_content(path: &str, old_string: &str, new_string: &str, replace_all: bool) -> Result<String, String> {
+fn simulate_edit_content(
+    path: &str,
+    old_string: &str,
+    new_string: &str,
+    replace_all: bool,
+) -> Result<String, String> {
     let content = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
     if replace_all {
         Ok(content.replace(old_string, new_string))
@@ -728,6 +869,7 @@ fn simulate_edit_content(path: &str, old_string: &str, new_string: &str, replace
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn execute_tools_concurrent(
     tool_calls: &[(String, String, serde_json::Value)],
     tools: Arc<ToolRegistry>,
@@ -746,40 +888,53 @@ pub(crate) async fn execute_tools_concurrent(
     let mut set: JoinSet<(usize, ToolResult)> = JoinSet::new();
 
     for (i, (tool_call_id, name, args)) in tool_calls.iter().enumerate() {
-        thread.conversation.add_tool_call(tool_call_id, name, args.clone());
+        thread
+            .conversation
+            .add_tool_call(tool_call_id, name, args.clone());
         let evt_handler = events.read().unwrap().clone();
-        evt_handler.handle_event(AgentEvent::ToolCall {
-            name: name.clone(),
-            args: args.clone(),
-        }).await;
+        evt_handler
+            .handle_event(AgentEvent::ToolCall {
+                name: name.clone(),
+                args: args.clone(),
+            })
+            .await;
 
         if thread.budget.exhausted {
-            ordered_results.insert(i, ToolResult {
-                tool_call_id: tool_call_id.clone(),
-                name: name.clone(),
-                output: "Budget exhausted — tool execution skipped".into(),
-                is_error: true,
-            });
+            ordered_results.insert(
+                i,
+                ToolResult {
+                    tool_call_id: tool_call_id.clone(),
+                    name: name.clone(),
+                    output: "Budget exhausted — tool execution skipped".into(),
+                    is_error: true,
+                },
+            );
             continue;
         }
 
         // Plugin veto (before user approval)
-        if let PluginAction::Veto(reason) = plugins.dispatch(&PluginEvent::BeforeToolCall {
-            tool_name: name.clone(),
-            args: args.clone(),
-        }).await {
-            ordered_results.insert(i, ToolResult {
-                tool_call_id: tool_call_id.clone(),
-                name: name.clone(),
-                output: format!("Vetoed by plugin policy: {}", reason),
-                is_error: true,
-            });
+        if let PluginAction::Veto(reason) = plugins
+            .dispatch(&PluginEvent::BeforeToolCall {
+                tool_name: name.clone(),
+                args: args.clone(),
+            })
+            .await
+        {
+            ordered_results.insert(
+                i,
+                ToolResult {
+                    tool_call_id: tool_call_id.clone(),
+                    name: name.clone(),
+                    output: format!("Vetoed by plugin policy: {}", reason),
+                    is_error: true,
+                },
+            );
             continue;
         }
 
         // Policy check (before user approval)
         if let Some(ref policy) = policy {
-            let decision = policy.evaluate(&name, &args).await;
+            let decision = policy.evaluate(name, args).await;
             let correlation_id = format!("tool-{}-{}", i, tool_call_id);
             if let Some(ref bus) = event_bus {
                 bus.publish(BusEvent::PolicyCheck {
@@ -796,12 +951,15 @@ pub(crate) async fn execute_tools_concurrent(
                             decision: PolicyDecision::Deny(reason.clone()),
                         });
                     }
-                    ordered_results.insert(i, ToolResult {
-                        tool_call_id: tool_call_id.clone(),
-                        name: name.clone(),
-                        output: format!("Policy denied: {}", reason),
-                        is_error: true,
-                    });
+                    ordered_results.insert(
+                        i,
+                        ToolResult {
+                            tool_call_id: tool_call_id.clone(),
+                            name: name.clone(),
+                            output: format!("Policy denied: {}", reason),
+                            is_error: true,
+                        },
+                    );
                     continue;
                 }
                 PolicyDecision::PromptUser => {
@@ -818,20 +976,36 @@ pub(crate) async fn execute_tools_concurrent(
             if !path.is_empty() {
                 let original = DiffCapture::before_write(std::path::Path::new(path));
                 let proposed = if name == "edit" {
-                    simulate_edit_content(path, args["old_string"].as_str().unwrap_or(""), args["new_string"].as_str().unwrap_or(""), args["replace_all"].as_bool().unwrap_or(false)).ok()
+                    simulate_edit_content(
+                        path,
+                        args["old_string"].as_str().unwrap_or(""),
+                        args["new_string"].as_str().unwrap_or(""),
+                        args["replace_all"].as_bool().unwrap_or(false),
+                    )
+                    .ok()
                 } else {
                     Some(args["content"].as_str().unwrap_or("").to_string())
                 };
                 match (&original, proposed) {
-                    (Ok(orig), Some(prop)) => Some(DiffCapture::diff(std::path::Path::new(path), orig.as_deref(), &prop)),
+                    (Ok(orig), Some(prop)) => Some(DiffCapture::diff(
+                        std::path::Path::new(path),
+                        orig.as_deref(),
+                        &prop,
+                    )),
                     _ => None,
                 }
-            } else { None }
-        } else { None };
+            } else {
+                None
+            }
+        } else {
+            None
+        };
 
         let estimated = if name == "write" || name == "edit" {
             captured_diff.as_ref().map(|d| (d.len() as f64) * 0.001)
-        } else { None };
+        } else {
+            None
+        };
 
         if !thread.yolo_mode {
             thread.status = ThreadStatus::AwaitingApproval;
@@ -845,21 +1019,27 @@ pub(crate) async fn execute_tools_concurrent(
             match approval.request_approval(&approval_req).await {
                 ApprovalDecision::Approved => {}
                 ApprovalDecision::Rejected(reason) => {
-                    ordered_results.insert(i, ToolResult {
-                        tool_call_id: tool_call_id.clone(),
-                        name: name.clone(),
-                        output: format!("User rejected: {}", reason),
-                        is_error: true,
-                    });
+                    ordered_results.insert(
+                        i,
+                        ToolResult {
+                            tool_call_id: tool_call_id.clone(),
+                            name: name.clone(),
+                            output: format!("User rejected: {}", reason),
+                            is_error: true,
+                        },
+                    );
                     continue;
                 }
                 ApprovalDecision::Modify { .. } => {
-                    ordered_results.insert(i, ToolResult {
-                        tool_call_id: tool_call_id.clone(),
-                        name: name.clone(),
-                        output: "User modified the request".into(),
-                        is_error: true,
-                    });
+                    ordered_results.insert(
+                        i,
+                        ToolResult {
+                            tool_call_id: tool_call_id.clone(),
+                            name: name.clone(),
+                            output: "User modified the request".into(),
+                            is_error: true,
+                        },
+                    );
                     continue;
                 }
             }
@@ -921,7 +1101,9 @@ pub(crate) async fn execute_tools_concurrent(
 
     while let Some(res) = set.join_next().await {
         match res {
-            Ok((i, result)) => { ordered_results.insert(i, result); }
+            Ok((i, result)) => {
+                ordered_results.insert(i, result);
+            }
             Err(e) => {
                 tracing::warn!("Tool execution task failed: {}", e);
             }
@@ -942,7 +1124,9 @@ impl AgentOutput {
         Self::Success { text: text.into() }
     }
     pub fn error(message: impl Into<String>) -> Self {
-        Self::Error { message: message.into() }
+        Self::Error {
+            message: message.into(),
+        }
     }
     pub fn text_or_empty(&self) -> String {
         match self {
@@ -953,16 +1137,37 @@ impl AgentOutput {
 }
 
 pub type AgentResult = Result<AgentOutput, AgentError>;
-pub type AgentOutputStream = Box<dyn tokio_stream::Stream<Item = Result<sentinel_protocol::StreamChunk, ProviderError>> + Send + Unpin>;
+pub type AgentOutputStream = Box<
+    dyn tokio_stream::Stream<Item = Result<sentinel_protocol::StreamChunk, ProviderError>>
+        + Send
+        + Unpin,
+>;
 
 #[derive(Debug)]
 pub enum AgentEvent {
-    Thinking { text: String },
-    ToolCall { name: String, args: serde_json::Value },
-    ToolResult { name: String, output: String, is_error: bool, sandboxed: bool },
-    Completed { text: String },
-    Error { message: String },
-    TurnEnd { turn: u32, iteration: u32 },
+    Thinking {
+        text: String,
+    },
+    ToolCall {
+        name: String,
+        args: serde_json::Value,
+    },
+    ToolResult {
+        name: String,
+        output: String,
+        is_error: bool,
+        sandboxed: bool,
+    },
+    Completed {
+        text: String,
+    },
+    Error {
+        message: String,
+    },
+    TurnEnd {
+        turn: u32,
+        iteration: u32,
+    },
 }
 
 impl fmt::Display for AgentEvent {
@@ -971,7 +1176,11 @@ impl fmt::Display for AgentEvent {
             AgentEvent::Thinking { text } => write!(f, "→ {}", text),
             AgentEvent::ToolCall { name, .. } => write!(f, "⚡ {}", name),
             AgentEvent::ToolResult { name, is_error, .. } => {
-                if *is_error { write!(f, "✖ {}", name) } else { write!(f, "✔ {}", name) }
+                if *is_error {
+                    write!(f, "✖ {}", name)
+                } else {
+                    write!(f, "✔ {}", name)
+                }
             }
             AgentEvent::Completed { .. } => write!(f, "Done"),
             AgentEvent::Error { message } => write!(f, "Error: {}", message),
@@ -1003,7 +1212,10 @@ pub trait ApprovalGate: Send + Sync {
 pub enum ApprovalDecision {
     Approved,
     Rejected(String),
-    Modify { tool_name: String, args: serde_json::Value },
+    Modify {
+        tool_name: String,
+        args: serde_json::Value,
+    },
 }
 
 #[derive(Debug)]

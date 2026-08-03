@@ -1,7 +1,7 @@
-use std::collections::HashMap;
-use std::sync::Arc;
 use crate::ccr::CcrStore;
 use crate::orchestrator::ContentCompressor;
+use std::collections::HashMap;
+use std::sync::Arc;
 
 fn tokenize(text: &str) -> Vec<String> {
     text.split(|c: char| !c.is_alphanumeric() && c != '-' && c != '_')
@@ -11,7 +11,9 @@ fn tokenize(text: &str) -> Vec<String> {
 }
 
 fn query_relevance(query_tokens: &[String], target_tokens: &[String]) -> f64 {
-    if query_tokens.is_empty() || target_tokens.is_empty() { return 0.0; }
+    if query_tokens.is_empty() || target_tokens.is_empty() {
+        return 0.0;
+    }
     let q_set: std::collections::HashSet<&str> = query_tokens.iter().map(|s| s.as_str()).collect();
     let t_set: std::collections::HashSet<&str> = target_tokens.iter().map(|s| s.as_str()).collect();
     let intersection: usize = q_set.intersection(&t_set).count();
@@ -47,12 +49,20 @@ impl CcrContextTracker {
         }
     }
 
-    pub async fn find_relevant_cached(&self, query: &str, _compressor: &ContentCompressor) -> Vec<(String, String, f64)> {
+    pub async fn find_relevant_cached(
+        &self,
+        query: &str,
+        _compressor: &ContentCompressor,
+    ) -> Vec<(String, String, f64)> {
         let query_tokens = tokenize(query);
-        if query_tokens.is_empty() { return Vec::new(); }
+        if query_tokens.is_empty() {
+            return Vec::new();
+        }
 
         let keys = self.ccr.all_keys().await;
-        if keys.is_empty() { return Vec::new(); }
+        if keys.is_empty() {
+            return Vec::new();
+        }
 
         let mut matches: Vec<(String, String, f64)> = Vec::new();
         for key in &keys {
@@ -105,27 +115,39 @@ impl CcrContextTracker {
             }
         }
 
-        if lines.is_empty() { None }
-        else { Some(lines.join("\n")) }
+        if lines.is_empty() {
+            None
+        } else {
+            Some(lines.join("\n"))
+        }
     }
 
     pub async fn detect_query_change(&self, new_query: &str) -> Option<Vec<String>> {
         let state = self.tracker.read().await;
-        if state.recent_queries.is_empty() { return None; }
+        if state.recent_queries.is_empty() {
+            return None;
+        }
 
         let new_tokens = tokenize(new_query);
-        if new_tokens.is_empty() { return None; }
+        if new_tokens.is_empty() {
+            return None;
+        }
 
         let old_query = state.recent_queries.last()?;
         let old_tokens = tokenize(old_query);
         let overlap = query_relevance(&new_tokens, &old_tokens);
 
         if overlap < 0.3 {
-            let different: Vec<String> = new_tokens.iter()
+            let different: Vec<String> = new_tokens
+                .iter()
                 .filter(|t| !old_tokens.contains(t))
                 .cloned()
                 .collect();
-            if !different.is_empty() { Some(different) } else { None }
+            if !different.is_empty() {
+                Some(different)
+            } else {
+                None
+            }
         } else {
             None
         }
@@ -176,9 +198,12 @@ mod tests {
         let q = tokenize("authentication error handling");
         let t1 = tokenize("authentication timed out");
         let t2 = tokenize("completely unrelated topic");
-        assert!(query_relevance(&q, &t1) > query_relevance(&q, &t2),
+        assert!(
+            query_relevance(&q, &t1) > query_relevance(&q, &t2),
             "auth match ({}) should be > unrelated ({})",
-            query_relevance(&q, &t1), query_relevance(&q, &t2));
+            query_relevance(&q, &t1),
+            query_relevance(&q, &t2)
+        );
     }
 
     #[tokio::test]
@@ -199,8 +224,20 @@ mod tests {
     #[tokio::test]
     async fn test_find_relevant_returns_matches() {
         let (t, ccr) = tracker();
-        ccr.store_with_key("test_auth", "authentication error: token expired".into(), "text", "auth related compressed".into()).await;
-        ccr.store_with_key("test_other", "weather report: sunny".into(), "text", "weather info".into()).await;
+        ccr.store_with_key(
+            "test_auth",
+            "authentication error: token expired".into(),
+            "text",
+            "auth related compressed".into(),
+        )
+        .await;
+        ccr.store_with_key(
+            "test_other",
+            "weather report: sunny".into(),
+            "text",
+            "weather info".into(),
+        )
+        .await;
         let compressor = ContentCompressor::default();
         let results = t.find_relevant_cached("authentication", &compressor).await;
         assert!(!results.is_empty(), "should find auth matches");

@@ -1,17 +1,14 @@
-use std::sync::Arc;
-use sentinel_core::{
-    Agent,
-    AgentEvent,
-    EventHandler, NullEventHandler,
-    ContentCompressor, NullCompressor,
-    pipeline::{PipelineAgent, PipelineConfig, PipelineStage},
-    hooks::{HookRegistry, HookEvent, HookFn},
-    event_bus::EventBus,
-};
-use sentinel_provider::{ModelProvider, ProviderKind, ProviderError};
-use sentinel_provider_info::ProviderInfo;
-use sentinel_tools::{ToolRegistry, Tool};
 use sentinel_config::SentinelConfig;
+use sentinel_core::{
+    event_bus::EventBus,
+    hooks::{HookEvent, HookFn, HookRegistry},
+    pipeline::{PipelineAgent, PipelineConfig, PipelineStage},
+    Agent, AgentEvent, ContentCompressor, EventHandler, NullCompressor, NullEventHandler,
+};
+use sentinel_provider::{ModelProvider, ProviderError, ProviderKind};
+use sentinel_provider_info::ProviderInfo;
+use sentinel_tools::{Tool, ToolRegistry};
+use std::sync::Arc;
 
 /// Builder for constructing a PipelineAgent with declarative configuration.
 pub struct AgentBuilder {
@@ -96,15 +93,17 @@ impl AgentBuilder {
         }
         let tools = Arc::new(tool_registry);
 
-        let config = self.config.unwrap_or_else(|| {
-            Arc::new(SentinelConfig::default())
-        });
+        let config = self
+            .config
+            .unwrap_or_else(|| Arc::new(SentinelConfig::default()));
 
-        let compressor = self.compressor.unwrap_or_else(|| {
-            Arc::new(NullCompressor::new())
-        });
+        let compressor = self
+            .compressor
+            .unwrap_or_else(|| Arc::new(NullCompressor::new()));
 
-        let event_handler = self.event_handler.unwrap_or_else(|| Arc::new(NullEventHandler));
+        let event_handler = self
+            .event_handler
+            .unwrap_or_else(|| Arc::new(NullEventHandler));
 
         let mut agent = Agent::new(provider, tools, config)
             .with_event_handler(event_handler.clone())
@@ -113,7 +112,10 @@ impl AgentBuilder {
         // Wire hooks into event handler
         if !self.hooks.is_empty() {
             let hooks = self.hooks;
-            let handler = HookWiredEventHandler { inner: event_handler, hooks };
+            let handler = HookWiredEventHandler {
+                inner: event_handler,
+                hooks,
+            };
             agent = agent.with_event_handler(Arc::new(handler));
         }
 
@@ -141,7 +143,12 @@ impl EventHandler for HookWiredEventHandler {
                     args: args.clone(),
                 });
             }
-            AgentEvent::ToolResult { name, output, is_error, .. } => {
+            AgentEvent::ToolResult {
+                name,
+                output,
+                is_error,
+                ..
+            } => {
                 self.hooks.dispatch(&HookEvent::AfterToolCall {
                     name: name.clone(),
                     output: output.clone(),

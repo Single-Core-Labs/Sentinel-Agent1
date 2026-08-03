@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use sentinel_protocol::Message;
+use std::sync::Arc;
 
 /// Events that hooks can observe in the agent lifecycle.
 #[derive(Debug, Clone)]
@@ -109,7 +109,10 @@ mod tests {
             }));
         }
 
-        reg.dispatch(&HookEvent::AfterTurn { turn: 1, iteration: 1 });
+        reg.dispatch(&HookEvent::AfterTurn {
+            turn: 1,
+            iteration: 1,
+        });
         assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 3);
     }
 }

@@ -1,19 +1,19 @@
-pub mod json;
 pub mod code;
 pub mod code_aware;
+pub mod diff;
+pub mod html;
+pub mod image;
 pub mod image_aware;
+pub mod json;
 pub mod llmlingua;
 pub mod logs;
-pub mod text;
 pub mod search;
-pub mod diff;
-pub mod image;
-pub mod html;
 pub mod smart_crusher;
+pub mod text;
 
-use async_trait::async_trait;
 use crate::classifier::ContentType;
 use crate::metrics::CompressionMetrics;
+use async_trait::async_trait;
 
 #[async_trait]
 pub trait CompressionStrategy: Send + Sync {
@@ -28,6 +28,9 @@ pub struct CompressionResult {
     pub retrieval_key: Option<String>,
 }
 
-pub async fn compress_with_strategy(content: &str, strategy: &dyn CompressionStrategy) -> Option<CompressionResult> {
+pub async fn compress_with_strategy(
+    content: &str,
+    strategy: &dyn CompressionStrategy,
+) -> Option<CompressionResult> {
     strategy.compress(content).await
 }

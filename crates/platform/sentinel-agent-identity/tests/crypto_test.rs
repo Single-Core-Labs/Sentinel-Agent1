@@ -1,4 +1,4 @@
-use sentinel_agent_identity::crypto::{KeyPair, CryptoError, generate_agent_key_material};
+use sentinel_agent_identity::crypto::{generate_agent_key_material, CryptoError, KeyPair};
 
 #[test]
 fn test_keypair_generate_sign_verify_roundtrip() {
@@ -15,7 +15,10 @@ fn test_keypair_verify_wrong_message_fails() {
     let sig = keypair.sign(b"original message");
     let result = keypair.verify(b"wrong message", &sig);
     assert!(result.is_err());
-    assert!(matches!(result.unwrap_err(), CryptoError::SignatureMismatch));
+    assert!(matches!(
+        result.unwrap_err(),
+        CryptoError::SignatureMismatch
+    ));
 }
 
 #[test]
@@ -78,7 +81,16 @@ fn test_generate_agent_key_material_returns_valid_keypair() {
 
 #[test]
 fn test_crypto_error_display() {
-    assert_eq!(CryptoError::InvalidKeyLength.to_string(), "Invalid key length");
-    assert_eq!(CryptoError::InvalidSignature.to_string(), "Invalid signature format");
-    assert_eq!(CryptoError::SignatureMismatch.to_string(), "Signature verification failed");
+    assert_eq!(
+        CryptoError::InvalidKeyLength.to_string(),
+        "Invalid key length"
+    );
+    assert_eq!(
+        CryptoError::InvalidSignature.to_string(),
+        "Invalid signature format"
+    );
+    assert_eq!(
+        CryptoError::SignatureMismatch.to_string(),
+        "Signature verification failed"
+    );
 }

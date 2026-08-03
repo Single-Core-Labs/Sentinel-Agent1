@@ -1,8 +1,8 @@
+use crate::builtin;
+use crate::tool::{Tool, ToolContext, ToolOutput};
+use sentinel_protocol::ToolDef;
 use std::collections::HashMap;
 use std::sync::Arc;
-use sentinel_protocol::ToolDef;
-use crate::tool::{Tool, ToolContext, ToolOutput};
-use crate::builtin;
 
 pub struct ToolRegistry {
     tools: HashMap<String, Arc<dyn Tool>>,
@@ -18,7 +18,9 @@ impl std::fmt::Debug for ToolRegistry {
 
 impl ToolRegistry {
     pub fn new() -> Self {
-        let mut reg = Self { tools: HashMap::new() };
+        let mut reg = Self {
+            tools: HashMap::new(),
+        };
         for tool in builtin::builtin_tools() {
             reg.register(tool);
         }
@@ -37,7 +39,12 @@ impl ToolRegistry {
         self.tools.values().map(|t| t.to_tool_def()).collect()
     }
 
-    pub async fn execute(&self, name: &str, args: serde_json::Value, ctx: &ToolContext) -> ToolOutput {
+    pub async fn execute(
+        &self,
+        name: &str,
+        args: serde_json::Value,
+        ctx: &ToolContext,
+    ) -> ToolOutput {
         let output = match self.get(name) {
             Some(tool) => tool.execute(args.clone(), ctx).await,
             None => ToolOutput::err(format!("Tool not found: {}", name)),
@@ -54,7 +61,11 @@ impl ToolRegistry {
                     "content": output.text,
                     "sandboxed": output.sandboxed,
                 });
-                if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(&log_path) {
+                if let Ok(mut file) = std::fs::OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&log_path)
+                {
                     use std::io::Write;
                     let _ = writeln!(file, "{}", log_entry);
                 }
@@ -65,7 +76,9 @@ impl ToolRegistry {
     }
 
     pub fn tool_defs_for_model(&self, supports_tools: bool) -> Option<Vec<ToolDef>> {
-        if !supports_tools { return None; }
+        if !supports_tools {
+            return None;
+        }
         Some(self.list())
     }
 }

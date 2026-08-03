@@ -51,12 +51,7 @@ impl AnalyticsEventsQueue {
         let (tx, rx) = mpsc::unbounded_channel();
         let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
 
-        tokio::spawn(Self::process_loop(
-            rx,
-            destination,
-            config,
-            shutdown_rx,
-        ));
+        tokio::spawn(Self::process_loop(rx, destination, config, shutdown_rx));
 
         Self {
             sender: tx,

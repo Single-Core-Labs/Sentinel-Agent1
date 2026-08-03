@@ -11,10 +11,19 @@ pub enum LlmProvider {
 impl LlmProvider {
     pub fn from_model(model: &str) -> Self {
         let m = model.to_lowercase();
-        if m.contains("claude") || m.contains("anthropic") { LlmProvider::Anthropic }
-        else if m.contains("gpt") || m.contains("o1") || m.contains("o3") || m.contains("text-embedding") { LlmProvider::OpenAI }
-        else if m.contains("gemini") || m.contains("palm") || m.contains("google") { LlmProvider::Google }
-        else { LlmProvider::Unknown }
+        if m.contains("claude") || m.contains("anthropic") {
+            LlmProvider::Anthropic
+        } else if m.contains("gpt")
+            || m.contains("o1")
+            || m.contains("o3")
+            || m.contains("text-embedding")
+        {
+            LlmProvider::OpenAI
+        } else if m.contains("gemini") || m.contains("palm") || m.contains("google") {
+            LlmProvider::Google
+        } else {
+            LlmProvider::Unknown
+        }
     }
 
     pub fn cache_read_discount(&self) -> f64 {
@@ -93,7 +102,11 @@ impl CacheOptimizer {
         LlmProvider::from_model(model)
     }
 
-    pub fn optimize(&self, messages: Vec<crate::config::Message>, model: &str) -> OptimizedMessages {
+    pub fn optimize(
+        &self,
+        messages: Vec<crate::config::Message>,
+        model: &str,
+    ) -> OptimizedMessages {
         let provider = self.detect_provider(model);
         let min_cacheable = provider.min_cacheable_tokens();
         let total_tokens = estimate_tokens_all(&messages);
@@ -109,7 +122,8 @@ impl CacheOptimizer {
             LlmProvider::Unknown => Vec::new(),
         };
 
-        let stable_prefix_tokens: usize = messages.iter()
+        let stable_prefix_tokens: usize = messages
+            .iter()
             .take(1)
             .map(|m| estimate_tokens(&m.content))
             .sum();
@@ -117,12 +131,15 @@ impl CacheOptimizer {
         let optimized = self.insert_breakpoint_markers(messages, &breakpoints);
 
         let cacheable_tokens = if provider.needs_explicit_markers() {
-            breakpoints.iter()
+            breakpoints
+                .iter()
                 .take_while(|bp| bp.label == "system" || bp.label == "conversation_start")
                 .map(|bp| {
                     if bp.message_index < optimized.len() {
                         estimate_tokens(&optimized[bp.message_index].content)
-                    } else { 0 }
+                    } else {
+                        0
+                    }
                 })
                 .sum()
         } else if matches!(provider, LlmProvider::Google) && total_tokens >= min_cacheable {
@@ -134,7 +151,11 @@ impl CacheOptimizer {
         let discount = provider.cache_read_discount();
         let non_cacheable = total_tokens.saturating_sub(cacheable_tokens);
         let effective_cost = non_cacheable as f64 + cacheable_tokens as f64 * (1.0 - discount);
-        let estimated_cost_ratio = if total_tokens > 0 { effective_cost / total_tokens as f64 } else { 1.0 };
+        let estimated_cost_ratio = if total_tokens > 0 {
+            effective_cost / total_tokens as f64
+        } else {
+            1.0
+        };
 
         let result = OptimizedMessages {
             messages: optimized,
@@ -165,7 +186,11 @@ impl CacheOptimizer {
         OptimizedMessages { summary, ..result }
     }
 
-    fn compute_anthropic_breakpoints(&self, messages: &[crate::config::Message], total_tokens: usize) -> Vec<CacheBreakpoint> {
+    fn compute_anthropic_breakpoints(
+        &self,
+        messages: &[crate::config::Message],
+        total_tokens: usize,
+    ) -> Vec<CacheBreakpoint> {
         let mut points = Vec::new();
         let mut accumulated = 0usize;
         let min_cacheable = self.config.min_cacheable_tokens;
@@ -175,44 +200,73 @@ impl CacheOptimizer {
             accumulated += tokens;
 
             if i == 0 && matches!(msg.role, crate::config::MessageRole::System) {
-                points.push(CacheBreakpoint { message_index: i, label: "system" });
+                points.push(CacheBreakpoint {
+                    message_index: i,
+                    label: "system",
+                });
             } else if accumulated >= min_cacheable && accumulated < total_tokens / 2 {
                 if points.is_empty() || points.last().map(|p| p.message_index) != Some(i) {
-                    points.push(CacheBreakpoint { message_index: i, label: "conversation_start" });
+                    points.push(CacheBreakpoint {
+                        message_index: i,
+                        label: "conversation_start",
+                    });
                 }
                 break;
             }
         }
 
         if points.is_empty() && total_tokens >= min_cacheable {
-            points.push(CacheBreakpoint { message_index: 0, label: "content" });
+            points.push(CacheBreakpoint {
+                message_index: 0,
+                label: "content",
+            });
         }
 
         points
     }
 
-    fn compute_openai_breakpoints(&self, messages: &[crate::config::Message], total_tokens: usize) -> Vec<CacheBreakpoint> {
-        if total_tokens < 1024 { return Vec::new(); }
+    fn compute_openai_breakpoints(
+        &self,
+        messages: &[crate::config::Message],
+        total_tokens: usize,
+    ) -> Vec<CacheBreakpoint> {
+        if total_tokens < 1024 {
+            return Vec::new();
+        }
         let mut points = Vec::new();
         let mut acc = 0usize;
         for (i, msg) in messages.iter().enumerate() {
             acc += estimate_tokens(&msg.content);
             if acc >= 1024 {
-                points.push(CacheBreakpoint { message_index: i, label: "prefix" });
+                points.push(CacheBreakpoint {
+                    message_index: i,
+                    label: "prefix",
+                });
                 break;
             }
         }
         points
     }
 
-    fn compute_google_breakpoints(&self, _messages: &[crate::config::Message], total_tokens: usize) -> Vec<CacheBreakpoint> {
-        if total_tokens < 32768 { return Vec::new(); }
-        vec![
-            CacheBreakpoint { message_index: 0, label: "cached_content" }
-        ]
+    fn compute_google_breakpoints(
+        &self,
+        _messages: &[crate::config::Message],
+        total_tokens: usize,
+    ) -> Vec<CacheBreakpoint> {
+        if total_tokens < 32768 {
+            return Vec::new();
+        }
+        vec![CacheBreakpoint {
+            message_index: 0,
+            label: "cached_content",
+        }]
     }
 
-    fn insert_breakpoint_markers(&self, mut messages: Vec<crate::config::Message>, breakpoints: &[CacheBreakpoint]) -> Vec<crate::config::Message> {
+    fn insert_breakpoint_markers(
+        &self,
+        mut messages: Vec<crate::config::Message>,
+        breakpoints: &[CacheBreakpoint],
+    ) -> Vec<crate::config::Message> {
         for bp in breakpoints.iter().rev() {
             if bp.message_index < messages.len() {
                 let marker = match bp.label {
@@ -228,7 +282,11 @@ impl CacheOptimizer {
         messages
     }
 
-    pub fn format_cache_summary(&self, result: &OptimizedMessages, provider: &LlmProvider) -> String {
+    pub fn format_cache_summary(
+        &self,
+        result: &OptimizedMessages,
+        provider: &LlmProvider,
+    ) -> String {
         let discount = provider.cache_read_discount() * 100.0;
         let savings = (1.0 - result.estimated_cost_ratio) * 100.0;
         let write_premium = provider.cache_write_premium() * 100.0;
@@ -239,11 +297,18 @@ impl CacheOptimizer {
             discount,
             savings,
         );
-        out.push_str(&format!("‖   cacheable: {} tokens, total: {} tokens, breakpoints: {}\n",
-            result.cacheable_tokens, result.total_input_tokens, result.cache_breakpoints.len()));
+        out.push_str(&format!(
+            "‖   cacheable: {} tokens, total: {} tokens, breakpoints: {}\n",
+            result.cacheable_tokens,
+            result.total_input_tokens,
+            result.cache_breakpoints.len()
+        ));
         if provider.needs_explicit_markers() && !result.cache_breakpoints.is_empty() {
             out.push_str("‖   cache_control breakpoints inserted for Anthropic\n");
-            out.push_str(&format!("‖   cache TTL: {}s, write premium: {:.0}%\n", ttl, write_premium));
+            out.push_str(&format!(
+                "‖   cache TTL: {}s, write premium: {:.0}%\n",
+                ttl, write_premium
+            ));
         }
         if matches!(provider, LlmProvider::OpenAI) && result.cacheable_tokens >= 1024 {
             out.push_str("‖   prefix caching active (automatic, >= 1024 tokens)\n");
@@ -256,7 +321,9 @@ impl CacheOptimizer {
 }
 
 fn estimate_tokens(text: &str) -> usize {
-    if text.is_empty() { return 0; }
+    if text.is_empty() {
+        return 0;
+    }
     let chars = text.len();
     let words = text.split_whitespace().count();
     (chars / 4).max(words).min(chars)
@@ -276,53 +343,84 @@ mod tests {
     use crate::config::*;
 
     fn msg(role: MessageRole, content: &str) -> Message {
-        Message { role, content: content.into(), tool_call_id: None, name: None }
+        Message {
+            role,
+            content: content.into(),
+            tool_call_id: None,
+            name: None,
+        }
     }
 
     #[test]
     fn test_detect_anthropic() {
-        assert_eq!(LlmProvider::from_model("claude-sonnet-4-20250514"), LlmProvider::Anthropic);
+        assert_eq!(
+            LlmProvider::from_model("claude-sonnet-4-20250514"),
+            LlmProvider::Anthropic
+        );
         assert_eq!(LlmProvider::from_model("gpt-4o"), LlmProvider::OpenAI);
-        assert_eq!(LlmProvider::from_model("gemini-2.0-pro"), LlmProvider::Google);
+        assert_eq!(
+            LlmProvider::from_model("gemini-2.0-pro"),
+            LlmProvider::Google
+        );
     }
 
     #[test]
     fn test_anthropic_breakpoints() {
-        let config = CacheOptimizerConfig { min_cacheable_tokens: 1, ..Default::default() };
+        let config = CacheOptimizerConfig {
+            min_cacheable_tokens: 1,
+            ..Default::default()
+        };
         let opt = CacheOptimizer::new(config);
         let messages = vec![
             msg(MessageRole::System, "You are a helpful assistant."),
             msg(MessageRole::User, "Hello!"),
         ];
         let result = opt.optimize(messages, "claude-sonnet-4-20250514");
-        assert!(!result.cache_breakpoints.is_empty(), "should have anthropic breakpoints");
-        assert!(result.messages[0].content.contains("cache_control"),
-            "system message should have cache_control marker");
+        assert!(
+            !result.cache_breakpoints.is_empty(),
+            "should have anthropic breakpoints"
+        );
+        assert!(
+            result.messages[0].content.contains("cache_control"),
+            "system message should have cache_control marker"
+        );
     }
 
     #[test]
     fn test_openai_prefix() {
-        let config = CacheOptimizerConfig { min_cacheable_tokens: 1, ..Default::default() };
+        let config = CacheOptimizerConfig {
+            min_cacheable_tokens: 1,
+            ..Default::default()
+        };
         let opt = CacheOptimizer::new(config);
         let messages = vec![
-            msg(MessageRole::System, "You are helpful. ".repeat(600).as_str()),
+            msg(
+                MessageRole::System,
+                "You are helpful. ".repeat(600).as_str(),
+            ),
             msg(MessageRole::User, "Hi."),
         ];
         let result = opt.optimize(messages, "gpt-4o");
-        assert!(result.cacheable_tokens > 0, "openai should have cacheable tokens");
+        assert!(
+            result.cacheable_tokens > 0,
+            "openai should have cacheable tokens"
+        );
     }
 
     #[test]
     fn test_google_cached_content() {
-        let config = CacheOptimizerConfig { min_cacheable_tokens: 1, ..Default::default() };
+        let config = CacheOptimizerConfig {
+            min_cacheable_tokens: 1,
+            ..Default::default()
+        };
         let opt = CacheOptimizer::new(config);
         let big = "hello world ".repeat(14000);
-        let messages = vec![
-            msg(MessageRole::System, &big),
-            msg(MessageRole::User, "Hi"),
-        ];
+        let messages = vec![msg(MessageRole::System, &big), msg(MessageRole::User, "Hi")];
         let result = opt.optimize(messages, "gemini-2.0-pro");
-        assert!(!result.cache_breakpoints.is_empty(), "google should have breakpoints for large content");
+        assert!(
+            !result.cache_breakpoints.is_empty(),
+            "google should have breakpoints for large content"
+        );
     }
 
     #[test]
@@ -386,18 +484,28 @@ mod tests {
 
     #[test]
     fn test_cost_ratio_calculation() {
-        let config = CacheOptimizerConfig { min_cacheable_tokens: 1, ..Default::default() };
+        let config = CacheOptimizerConfig {
+            min_cacheable_tokens: 1,
+            ..Default::default()
+        };
         let opt = CacheOptimizer::new(config);
         let big = "test data ".repeat(500);
         let messages = vec![msg(MessageRole::System, &big)];
         let result = opt.optimize(messages, "claude-sonnet-4-20250514");
-        assert!(result.estimated_cost_ratio < 1.0, "cache should reduce effective cost: {}", result.estimated_cost_ratio);
+        assert!(
+            result.estimated_cost_ratio < 1.0,
+            "cache should reduce effective cost: {}",
+            result.estimated_cost_ratio
+        );
         assert!(result.estimated_cost_ratio > 0.0);
     }
 
     #[test]
     fn test_multiple_breakpoints_not_duplicated() {
-        let config = CacheOptimizerConfig { min_cacheable_tokens: 1, ..Default::default() };
+        let config = CacheOptimizerConfig {
+            min_cacheable_tokens: 1,
+            ..Default::default()
+        };
         let opt = CacheOptimizer::new(config);
         let messages = vec![
             msg(MessageRole::System, "sys"),
@@ -405,10 +513,16 @@ mod tests {
             msg(MessageRole::User, &"b".repeat(2000)),
         ];
         let result = opt.optimize(messages, "claude-sonnet-4-20250514");
-        let marker_count = result.messages.iter()
+        let marker_count = result
+            .messages
+            .iter()
             .filter(|m| m.content.contains("cache_control"))
             .count();
-        assert!(marker_count <= 2, "should not have excessive breakpoints: {}", marker_count);
+        assert!(
+            marker_count <= 2,
+            "should not have excessive breakpoints: {}",
+            marker_count
+        );
     }
 
     #[test]
@@ -417,15 +531,23 @@ mod tests {
         let messages = vec![msg(MessageRole::User, "hi")];
         let result = opt.optimize(messages, "unknown");
         let summary = opt.format_cache_summary(&result, &LlmProvider::Unknown);
-        assert!(summary.contains("0%"), "unknown provider should have 0% discount");
+        assert!(
+            summary.contains("0%"),
+            "unknown provider should have 0% discount"
+        );
     }
 
     #[test]
     fn test_anthropic_cache_control_marker_format() {
-        let config = CacheOptimizerConfig { min_cacheable_tokens: 1, ..Default::default() };
+        let config = CacheOptimizerConfig {
+            min_cacheable_tokens: 1,
+            ..Default::default()
+        };
         let opt = CacheOptimizer::new(config);
         let messages = vec![msg(MessageRole::System, "system prompt here")];
         let result = opt.optimize(messages, "claude-sonnet-4-20250514");
-        assert!(result.messages[0].content.contains("[cache_control: breakpoint type=system]"));
+        assert!(result.messages[0]
+            .content
+            .contains("[cache_control: breakpoint type=system]"));
     }
 }

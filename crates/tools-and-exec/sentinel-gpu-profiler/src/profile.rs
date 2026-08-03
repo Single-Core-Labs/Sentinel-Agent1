@@ -55,7 +55,9 @@ pub fn parse_dmon_csv(text: &str) -> Vec<ProfileSnapshot> {
 
     for line in text.lines() {
         let line = line.trim();
-        if line.is_empty() { continue; }
+        if line.is_empty() {
+            continue;
+        }
 
         // Detect header line
         if line.starts_with('#') || (line.contains("gpu") && line.contains("pwr")) {
@@ -71,13 +73,18 @@ pub fn parse_dmon_csv(text: &str) -> Vec<ProfileSnapshot> {
             continue;
         }
 
-        if header_idx.is_empty() { continue; }
+        if header_idx.is_empty() {
+            continue;
+        }
 
         let cols: Vec<&str> = line.split_whitespace().collect();
-        if cols.len() < 5 { continue; }
+        if cols.len() < 5 {
+            continue;
+        }
 
         let get_f64 = |key: &str| -> f64 {
-            header_idx.get(key)
+            header_idx
+                .get(key)
                 .and_then(|&i| cols.get(i))
                 .and_then(|s| s.parse::<f64>().ok())
                 .unwrap_or(0.0)
@@ -107,7 +114,9 @@ pub fn parse_dmon_csv_generic(text: &str) -> Vec<ProfileSnapshot> {
 
     for line in text.lines() {
         let line = line.trim();
-        if line.is_empty() { continue; }
+        if line.is_empty() {
+            continue;
+        }
 
         if skip_header {
             skip_header = false;
@@ -117,7 +126,9 @@ pub fn parse_dmon_csv_generic(text: &str) -> Vec<ProfileSnapshot> {
         // Format: time, gpu%, mem%, enc%, dec%, pcie_tx, pcie_rx (from nvidia-smi dmon)
         // Or: timestamp, gpu_pwr, gpu_temp, gpu_util, gpu_mem_util (from other tools)
         let cols: Vec<&str> = line.split(',').map(|s| s.trim()).collect();
-        if cols.len() < 3 { continue; }
+        if cols.len() < 3 {
+            continue;
+        }
 
         let parse = |i: usize| -> f64 { cols.get(i).and_then(|s| s.parse().ok()).unwrap_or(0.0) };
 
@@ -158,11 +169,15 @@ pub fn analyze_profile(snapshots: &[ProfileSnapshot], host: &str) -> ProfileResu
         anomalies.push(Anomaly {
             kind: BottleneckKind::CpuBound,
             severity: ProfileSeverity::Warn,
-            message: format!("GPU underutilized: avg {:.0}% util, {:.0}% mem", avg_gpu, avg_mem),
+            message: format!(
+                "GPU underutilized: avg {:.0}% util, {:.0}% mem",
+                avg_gpu, avg_mem
+            ),
             detail: "GPU is mostly idle. Workload is likely CPU-bound or I/O-bound.".into(),
         });
         recommendations.push("Profile CPU usage alongside GPU: add `top -bn1` sampling.".into());
-        recommendations.push("Increase batch size or parallelize data loading to feed GPU faster.".into());
+        recommendations
+            .push("Increase batch size or parallelize data loading to feed GPU faster.".into());
     }
 
     // Anomaly: high GPU util + low mem util = compute-bound
@@ -170,10 +185,15 @@ pub fn analyze_profile(snapshots: &[ProfileSnapshot], host: &str) -> ProfileResu
         anomalies.push(Anomaly {
             kind: BottleneckKind::ComputeBound,
             severity: ProfileSeverity::Info,
-            message: format!("Compute-bound: {:.0}% GPU util vs {:.0}% mem util", avg_gpu, avg_mem),
+            message: format!(
+                "Compute-bound: {:.0}% GPU util vs {:.0}% mem util",
+                avg_gpu, avg_mem
+            ),
             detail: "GPU compute units are the bottleneck. Memory bandwidth has headroom.".into(),
         });
-        recommendations.push("Optimize kernel arithmetic intensity: fuse element-wise ops, use Tensor Cores.".into());
+        recommendations.push(
+            "Optimize kernel arithmetic intensity: fuse element-wise ops, use Tensor Cores.".into(),
+        );
         recommendations.push("Increase block size to hide instruction latency.".into());
     }
 
@@ -183,9 +203,12 @@ pub fn analyze_profile(snapshots: &[ProfileSnapshot], host: &str) -> ProfileResu
             kind: BottleneckKind::MemoryBound,
             severity: ProfileSeverity::Warn,
             message: format!("Memory-bandwidth-bound: {:.0}% mem util", avg_mem),
-            detail: "Workload is saturating memory bandwidth. Compute units may be stalled on data.".into(),
+            detail:
+                "Workload is saturating memory bandwidth. Compute units may be stalled on data."
+                    .into(),
         });
-        recommendations.push("Use shared memory to cache frequently accessed global memory data.".into());
+        recommendations
+            .push("Use shared memory to cache frequently accessed global memory data.".into());
         recommendations.push("Enable FP16/INT8 quantization to reduce memory traffic.".into());
         recommendations.push("Optimize memory access patterns for coalesced loads/stores.".into());
     }
@@ -198,9 +221,11 @@ pub fn analyze_profile(snapshots: &[ProfileSnapshot], host: &str) -> ProfileResu
             message: format!("High PCIe transfer: {:.0} MB/s TX, {:.0} MB/s RX", avg_pcie_tx, avg_pcie_rx),
             detail: "Significant data movement over PCIe. Host-device communication may be the bottleneck.".into(),
         });
-        recommendations.push("Use async CUDA streams to overlap data transfer with kernel execution.".into());
+        recommendations
+            .push("Use async CUDA streams to overlap data transfer with kernel execution.".into());
         recommendations.push("Enable GPUDirect RDMA if available.".into());
-        recommendations.push("Move preprocessing to GPU: use CUDA graphs to reduce launch overhead.".into());
+        recommendations
+            .push("Move preprocessing to GPU: use CUDA graphs to reduce launch overhead.".into());
     }
 
     // Anomaly: high temperature
@@ -211,8 +236,11 @@ pub fn analyze_profile(snapshots: &[ProfileSnapshot], host: &str) -> ProfileResu
             message: format!("Thermal throttling risk: avg {:.0}°C", avg_temp),
             detail: "GPU temperature is near throttling threshold. Performance may degrade.".into(),
         });
-        recommendations.push("Improve cooling: check fan speeds, ambient temperature, and airflow.".into());
-        recommendations.push("Reduce power limit with `nvidia-smi -pl <watts>` to control temperature.".into());
+        recommendations
+            .push("Improve cooling: check fan speeds, ambient temperature, and airflow.".into());
+        recommendations.push(
+            "Reduce power limit with `nvidia-smi -pl <watts>` to control temperature.".into(),
+        );
         recommendations.push("Undervolt GPU for sustained performance under load.".into());
     }
 
@@ -226,7 +254,9 @@ pub fn analyze_profile(snapshots: &[ProfileSnapshot], host: &str) -> ProfileResu
                 message: format!("Peak power draw: {:.0}W", max_power),
                 detail: "GPU is drawing significant power. May be power-limited on shared infrastructure.".into(),
             });
-            recommendations.push("Monitor power capping: `nvidia-smi -pm 1` to enable persistence mode.".into());
+            recommendations.push(
+                "Monitor power capping: `nvidia-smi -pm 1` to enable persistence mode.".into(),
+            );
         }
     }
 
@@ -234,7 +264,8 @@ pub fn analyze_profile(snapshots: &[ProfileSnapshot], host: &str) -> ProfileResu
 
     // Default recommendation if no specific anomaly
     if recommendations.is_empty() {
-        recommendations.push("Workload is well-balanced. No significant bottlenecks detected.".into());
+        recommendations
+            .push("Workload is well-balanced. No significant bottlenecks detected.".into());
     }
 
     ProfileResult {
@@ -249,7 +280,10 @@ pub fn analyze_profile(snapshots: &[ProfileSnapshot], host: &str) -> ProfileResu
 pub fn profile_summary_text(result: &ProfileResult) -> String {
     let mut out = String::new();
 
-    out.push_str(&format!("Profile of {} ({:.0}s):\n", result.host, result.duration_s));
+    out.push_str(&format!(
+        "Profile of {} ({:.0}s):\n",
+        result.host, result.duration_s
+    ));
 
     if !result.snapshots.is_empty() {
         let n = result.snapshots.len() as f64;
@@ -290,11 +324,17 @@ mod tests {
 
     fn make_snapshot(gpu: f64, mem: f64, pcie_tx: f64, pcie_rx: f64, temp: f64) -> ProfileSnapshot {
         ProfileSnapshot {
-            time_s: 0.0, gpu_util: gpu, mem_util: mem,
-            enc_util: 0.0, dec_util: 0.0,
-            pcie_tx_mb: pcie_tx, pcie_rx_mb: pcie_rx,
-            mem_clock_mhz: 0.0, sm_clock_mhz: 0.0,
-            temp_c: temp, power_w: 0.0,
+            time_s: 0.0,
+            gpu_util: gpu,
+            mem_util: mem,
+            enc_util: 0.0,
+            dec_util: 0.0,
+            pcie_tx_mb: pcie_tx,
+            pcie_rx_mb: pcie_rx,
+            mem_clock_mhz: 0.0,
+            sm_clock_mhz: 0.0,
+            temp_c: temp,
+            power_w: 0.0,
         }
     }
 
@@ -302,42 +342,60 @@ mod tests {
     fn test_compute_bound_detection() {
         let snapshots = vec![make_snapshot(95.0, 30.0, 10.0, 5.0, 60.0)];
         let result = analyze_profile(&snapshots, "local");
-        assert!(result.anomalies.iter().any(|a| matches!(a.kind, BottleneckKind::ComputeBound)));
+        assert!(result
+            .anomalies
+            .iter()
+            .any(|a| matches!(a.kind, BottleneckKind::ComputeBound)));
     }
 
     #[test]
     fn test_memory_bound_detection() {
         let snapshots = vec![make_snapshot(80.0, 90.0, 10.0, 5.0, 60.0)];
         let result = analyze_profile(&snapshots, "local");
-        assert!(result.anomalies.iter().any(|a| matches!(a.kind, BottleneckKind::MemoryBound)));
+        assert!(result
+            .anomalies
+            .iter()
+            .any(|a| matches!(a.kind, BottleneckKind::MemoryBound)));
     }
 
     #[test]
     fn test_cpu_bound_detection() {
         let snapshots = vec![make_snapshot(10.0, 10.0, 10.0, 5.0, 40.0)];
         let result = analyze_profile(&snapshots, "local");
-        assert!(result.anomalies.iter().any(|a| matches!(a.kind, BottleneckKind::CpuBound)));
+        assert!(result
+            .anomalies
+            .iter()
+            .any(|a| matches!(a.kind, BottleneckKind::CpuBound)));
     }
 
     #[test]
     fn test_pcie_bound_detection() {
         let snapshots = vec![make_snapshot(50.0, 50.0, 600.0, 500.0, 60.0)];
         let result = analyze_profile(&snapshots, "local");
-        assert!(result.anomalies.iter().any(|a| matches!(a.kind, BottleneckKind::PcieBound)));
+        assert!(result
+            .anomalies
+            .iter()
+            .any(|a| matches!(a.kind, BottleneckKind::PcieBound)));
     }
 
     #[test]
     fn test_thermal_detection() {
         let snapshots = vec![make_snapshot(80.0, 80.0, 10.0, 5.0, 90.0)];
         let result = analyze_profile(&snapshots, "local");
-        assert!(result.anomalies.iter().any(|a| matches!(a.kind, BottleneckKind::ThermalThrottling)));
+        assert!(result
+            .anomalies
+            .iter()
+            .any(|a| matches!(a.kind, BottleneckKind::ThermalThrottling)));
     }
 
     #[test]
     fn test_no_anomaly() {
         let snapshots = vec![make_snapshot(80.0, 60.0, 100.0, 50.0, 65.0)];
         let result = analyze_profile(&snapshots, "local");
-        assert!(result.recommendations.iter().any(|r| r.contains("well-balanced")));
+        assert!(result
+            .recommendations
+            .iter()
+            .any(|r| r.contains("well-balanced")));
     }
 
     #[test]

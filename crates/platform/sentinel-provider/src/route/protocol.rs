@@ -1,9 +1,9 @@
+use super::framing::FramingProvider;
+use crate::error::ProviderError;
 /// Protocol: the semantic API contract for a provider.
 /// Decomposed into Body, Frame, Event, State generics.
 use async_trait::async_trait;
 use sentinel_protocol::{CompletionRequest, CompletionResponse};
-use crate::error::ProviderError;
-use super::framing::FramingProvider;
 
 #[async_trait]
 pub trait Protocol: Send + Sync {
@@ -61,7 +61,13 @@ impl<P: Protocol> Route<P> {
             .timeout(timeout)
             .build()
             .expect("valid reqwest client");
-        Self { protocol, endpoint, auth, framing, client }
+        Self {
+            protocol,
+            endpoint,
+            auth,
+            framing,
+            client,
+        }
     }
 
     pub fn with_client(mut self, client: reqwest::Client) -> Self {
@@ -69,7 +75,10 @@ impl<P: Protocol> Route<P> {
         self
     }
 
-    pub async fn complete(&self, req: &CompletionRequest) -> Result<CompletionResponse, ProviderError> {
+    pub async fn complete(
+        &self,
+        req: &CompletionRequest,
+    ) -> Result<CompletionResponse, ProviderError> {
         let body = self.protocol.build_body(req)?;
         let json_bytes = self.protocol.serialize_body(&body)?;
         let url = self.endpoint.chat_url();
@@ -81,7 +90,8 @@ impl<P: Protocol> Route<P> {
         );
         self.auth.apply(&mut headers);
 
-        let resp = self.client
+        let resp = self
+            .client
             .post(&url)
             .headers(headers)
             .body(json_bytes)
@@ -100,8 +110,8 @@ impl<P: Protocol> Route<P> {
             .await
             .map_err(|e| ProviderError::RequestError(e.to_string()))?;
 
-        let response: CompletionResponse = serde_json::from_value(json)
-            .map_err(ProviderError::JsonError)?;
+        let response: CompletionResponse =
+            serde_json::from_value(json).map_err(ProviderError::JsonError)?;
 
         Ok(response)
     }
@@ -109,7 +119,14 @@ impl<P: Protocol> Route<P> {
     pub async fn complete_stream(
         &self,
         req: &CompletionRequest,
-    ) -> Result<Box<dyn tokio_stream::Stream<Item = Result<sentinel_protocol::StreamChunk, ProviderError>> + Send + Unpin>, ProviderError> {
+    ) -> Result<
+        Box<
+            dyn tokio_stream::Stream<Item = Result<sentinel_protocol::StreamChunk, ProviderError>>
+                + Send
+                + Unpin,
+        >,
+        ProviderError,
+    > {
         let body = self.protocol.build_body(req)?;
         let json_bytes = self.protocol.serialize_body(&body)?;
         let url = self.endpoint.chat_url();
@@ -125,7 +142,8 @@ impl<P: Protocol> Route<P> {
         );
         self.auth.apply(&mut headers);
 
-        let resp = self.client
+        let resp = self
+            .client
             .post(&url)
             .headers(headers)
             .body(json_bytes)

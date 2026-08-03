@@ -1,10 +1,10 @@
-use std::sync::OnceLock;
-use async_trait::async_trait;
-use regex::Regex;
-use sha2::{Sha256, Digest};
+use super::{CompressionResult, CompressionStrategy};
 use crate::classifier::ContentType;
 use crate::metrics::CompressionMetrics;
-use super::{CompressionStrategy, CompressionResult};
+use async_trait::async_trait;
+use regex::Regex;
+use sha2::{Digest, Sha256};
+use std::sync::OnceLock;
 
 static FN_SIG_RE: OnceLock<Regex> = OnceLock::new();
 fn fn_sig_re() -> &'static Regex {
@@ -15,7 +15,9 @@ fn fn_sig_re() -> &'static Regex {
 
 static IMPORT_RE: OnceLock<Regex> = OnceLock::new();
 fn import_re() -> &'static Regex {
-    IMPORT_RE.get_or_init(|| Regex::new(r"(?m)^\s*(use |import |from |require|#include|package |namespace )").unwrap())
+    IMPORT_RE.get_or_init(|| {
+        Regex::new(r"(?m)^\s*(use |import |from |require|#include|package |namespace )").unwrap()
+    })
 }
 
 static COMMENT_RE: OnceLock<Regex> = OnceLock::new();
@@ -32,7 +34,9 @@ pub struct CodeCompressor;
 
 #[async_trait]
 impl CompressionStrategy for CodeCompressor {
-    fn name(&self) -> &'static str { "code" }
+    fn name(&self) -> &'static str {
+        "code"
+    }
     fn content_types(&self) -> Vec<ContentType> {
         vec![ContentType::SourceCode]
     }
@@ -64,7 +68,10 @@ impl CompressionStrategy for CodeCompressor {
                 sig_count += 1;
                 if in_fn_body {
                     if skipped_body_lines > 0 {
-                        out_lines.push(format!("        // ... {} lines omitted", skipped_body_lines));
+                        out_lines.push(format!(
+                            "        // ... {} lines omitted",
+                            skipped_body_lines
+                        ));
                     }
                     in_fn_body = false;
                     skipped_body_lines = 0;
@@ -85,8 +92,12 @@ impl CompressionStrategy for CodeCompressor {
 
             if is_comment {
                 let lower = line.to_lowercase();
-                if lower.contains("todo") || lower.contains("fixme") || lower.contains("hack")
-                    || lower.contains("warning") || lower.contains("note") || lower.contains("safe")
+                if lower.contains("todo")
+                    || lower.contains("fixme")
+                    || lower.contains("hack")
+                    || lower.contains("warning")
+                    || lower.contains("note")
+                    || lower.contains("safe")
                 {
                     out_lines.push(line.to_string());
                 }
@@ -110,8 +121,12 @@ impl CompressionStrategy for CodeCompressor {
                     skipped_body_lines = 0;
                 } else {
                     let lower = line.to_lowercase();
-                    if lower.contains("error") || lower.contains("panic") || lower.contains("return")
-                        || lower.contains("throw") || lower.contains("fail") || trimmed.contains("//")
+                    if lower.contains("error")
+                        || lower.contains("panic")
+                        || lower.contains("return")
+                        || lower.contains("throw")
+                        || lower.contains("fail")
+                        || trimmed.contains("//")
                         || trimmed.starts_with('#')
                     {
                         out_lines.push(format!("  → {}", trimmed));
@@ -134,12 +149,19 @@ impl CompressionStrategy for CodeCompressor {
         }
 
         if sig_count == 0 {
-            tracing::warn!("CodeCompressor: no function signatures found in {} lines", line_count);
+            tracing::warn!(
+                "CodeCompressor: no function signatures found in {} lines",
+                line_count
+            );
         }
         let compressed = out_lines.join("\n");
         let took = (chrono::Utc::now() - start).num_microseconds().unwrap_or(0) as u64;
         let metrics = CompressionMetrics::new(content, &compressed, "code", "source_code", took);
-        Some(CompressionResult { text: compressed, metrics, retrieval_key: Some(key) })
+        Some(CompressionResult {
+            text: compressed,
+            metrics,
+            retrieval_key: Some(key),
+        })
     }
 }
 
@@ -164,8 +186,11 @@ mod tests {
         assert!(
             r.metrics.tokens_saved > 0,
             "orig_tokens={} comp_tokens={} ratio={} orig_chars={} comp_chars={}",
-            r.metrics.original_tokens, r.metrics.compressed_tokens,
-            r.metrics.savings_pct(), r.metrics.original_chars, r.metrics.compressed_chars,
+            r.metrics.original_tokens,
+            r.metrics.compressed_tokens,
+            r.metrics.savings_pct(),
+            r.metrics.original_chars,
+            r.metrics.compressed_chars,
         );
         assert!(r.text.contains("func_"), "should preserve function names");
     }

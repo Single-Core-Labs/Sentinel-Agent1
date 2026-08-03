@@ -23,6 +23,12 @@ pub struct ModelPicker {
     pub visible: bool,
 }
 
+impl Default for ModelPicker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ModelPicker {
     pub fn new() -> Self {
         Self {
@@ -34,16 +40,76 @@ impl ModelPicker {
 
     fn default_models() -> Vec<ModelOption> {
         vec![
-            ModelOption { id: "anthropic/claude-sonnet-4".into(), name: "Claude Sonnet 4".into(), provider: "Anthropic".into(), tag: "recommended".into(), description: "Best balance of speed and capability".into() },
-            ModelOption { id: "anthropic/claude-haiku-3.5".into(), name: "Claude Haiku 3.5".into(), provider: "Anthropic".into(), tag: "fast".into(), description: "Fast, lightweight".into() },
-            ModelOption { id: "openai/gpt-4o".into(), name: "GPT-4o".into(), provider: "OpenAI".into(), tag: "fast".into(), description: "Fast multimodal, strong coding".into() },
-            ModelOption { id: "google/gemini-2.5-pro".into(), name: "Gemini 2.5 Pro".into(), provider: "Google".into(), tag: "large-ctx".into(), description: "Best reasoning, large context, multimodal".into() },
-            ModelOption { id: "deepseek-ai/DeepSeek-V4-Pro".into(), name: "DeepSeek V4 Pro".into(), provider: "DeepSeek".into(), tag: "open".into(), description: "Open-weight, strong reasoning".into() },
-            ModelOption { id: "moonshotai/Kimi-K2.7-Code".into(), name: "Kimi K2.7 Code".into(), provider: "Moonshot".into(), tag: "code".into(), description: "Code-specialized, long context".into() },
-            ModelOption { id: "zai-org/GLM-5.2".into(), name: "GLM-5.2".into(), provider: "ZhipuAI".into(), tag: "efficient".into(), description: "Efficient, multilingual".into() },
-            ModelOption { id: "nvidia/llama-3.1-nemotron-70b-instruct".into(), name: "Nemotron 70B".into(), provider: "NVIDIA".into(), tag: "nim".into(), description: "Tuned Llama for reasoning/chat".into() },
-            ModelOption { id: "nvidia/llama-3.3-nemotron-super-49b".into(), name: "Nemotron Super 49B".into(), provider: "NVIDIA".into(), tag: "nim".into(), description: "Balanced cost/quality".into() },
-            ModelOption { id: "openrouter/auto".into(), name: "Auto (best model)".into(), provider: "OpenRouter".into(), tag: "recommended".into(), description: "Routes to best available model".into() },
+            ModelOption {
+                id: "anthropic/claude-sonnet-4".into(),
+                name: "Claude Sonnet 4".into(),
+                provider: "Anthropic".into(),
+                tag: "recommended".into(),
+                description: "Best balance of speed and capability".into(),
+            },
+            ModelOption {
+                id: "anthropic/claude-haiku-3.5".into(),
+                name: "Claude Haiku 3.5".into(),
+                provider: "Anthropic".into(),
+                tag: "fast".into(),
+                description: "Fast, lightweight".into(),
+            },
+            ModelOption {
+                id: "openai/gpt-4o".into(),
+                name: "GPT-4o".into(),
+                provider: "OpenAI".into(),
+                tag: "fast".into(),
+                description: "Fast multimodal, strong coding".into(),
+            },
+            ModelOption {
+                id: "google/gemini-2.5-pro".into(),
+                name: "Gemini 2.5 Pro".into(),
+                provider: "Google".into(),
+                tag: "large-ctx".into(),
+                description: "Best reasoning, large context, multimodal".into(),
+            },
+            ModelOption {
+                id: "deepseek-ai/DeepSeek-V4-Pro".into(),
+                name: "DeepSeek V4 Pro".into(),
+                provider: "DeepSeek".into(),
+                tag: "open".into(),
+                description: "Open-weight, strong reasoning".into(),
+            },
+            ModelOption {
+                id: "moonshotai/Kimi-K2.7-Code".into(),
+                name: "Kimi K2.7 Code".into(),
+                provider: "Moonshot".into(),
+                tag: "code".into(),
+                description: "Code-specialized, long context".into(),
+            },
+            ModelOption {
+                id: "zai-org/GLM-5.2".into(),
+                name: "GLM-5.2".into(),
+                provider: "ZhipuAI".into(),
+                tag: "efficient".into(),
+                description: "Efficient, multilingual".into(),
+            },
+            ModelOption {
+                id: "nvidia/llama-3.1-nemotron-70b-instruct".into(),
+                name: "Nemotron 70B".into(),
+                provider: "NVIDIA".into(),
+                tag: "nim".into(),
+                description: "Tuned Llama for reasoning/chat".into(),
+            },
+            ModelOption {
+                id: "nvidia/llama-3.3-nemotron-super-49b".into(),
+                name: "Nemotron Super 49B".into(),
+                provider: "NVIDIA".into(),
+                tag: "nim".into(),
+                description: "Balanced cost/quality".into(),
+            },
+            ModelOption {
+                id: "openrouter/auto".into(),
+                name: "Auto (best model)".into(),
+                provider: "OpenRouter".into(),
+                tag: "recommended".into(),
+                description: "Routes to best available model".into(),
+            },
         ]
     }
 
@@ -102,7 +168,10 @@ impl ModelPicker {
 
         lines.push(Line::from(vec![
             Span::styled("Select a model  ", Style::default().fg(c.accent).bold()),
-            Span::styled("↑↓ navigate · Enter confirm · Esc cancel", Style::default().fg(c.muted)),
+            Span::styled(
+                "↑↓ navigate · Enter confirm · Esc cancel",
+                Style::default().fg(c.muted),
+            ),
         ]));
 
         for (i, m) in self.models.iter().enumerate() {
@@ -115,9 +184,15 @@ impl ModelPicker {
             };
             let tag_color = Self::tag_color(&m.tag);
             lines.push(Line::from(vec![
-                Span::styled(prefix, Style::default().fg(if active { c.accent } else { c.border })),
+                Span::styled(
+                    prefix,
+                    Style::default().fg(if active { c.accent } else { c.border }),
+                ),
                 Span::styled(format!("{:<18}", m.name), name_style),
-                Span::styled(m.provider.clone(), Style::default().fg(if active { c.accent_alt } else { c.border })),
+                Span::styled(
+                    m.provider.clone(),
+                    Style::default().fg(if active { c.accent_alt } else { c.border }),
+                ),
                 Span::raw(" "),
                 Span::styled(format!("[{}]", m.tag), Style::default().fg(tag_color)),
             ]));
@@ -137,7 +212,9 @@ impl ModelPicker {
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(c.border));
-        let para = Paragraph::new(lines).block(block).wrap(Wrap { trim: false });
+        let para = Paragraph::new(lines)
+            .block(block)
+            .wrap(Wrap { trim: false });
         f.render_widget(para, popup_area);
     }
 }

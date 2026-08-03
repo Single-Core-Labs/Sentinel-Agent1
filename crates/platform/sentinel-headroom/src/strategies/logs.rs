@@ -1,9 +1,9 @@
-use std::sync::OnceLock;
-use async_trait::async_trait;
-use regex::Regex;
+use super::{CompressionResult, CompressionStrategy};
 use crate::classifier::ContentType;
 use crate::metrics::CompressionMetrics;
-use super::{CompressionStrategy, CompressionResult};
+use async_trait::async_trait;
+use regex::Regex;
+use std::sync::OnceLock;
 
 #[derive(Debug, Clone)]
 pub struct LogCompressorConfig {
@@ -15,7 +15,12 @@ pub struct LogCompressorConfig {
 
 impl Default for LogCompressorConfig {
     fn default() -> Self {
-        Self { preserve_stack_traces: true, preserve_section_headers: true, max_error_lines: 200, max_pass_lines: 0 }
+        Self {
+            preserve_stack_traces: true,
+            preserve_section_headers: true,
+            max_error_lines: 200,
+            max_pass_lines: 0,
+        }
     }
 }
 
@@ -40,7 +45,8 @@ fn passing_test_re() -> &'static Regex {
 
 static STACK_TRACE_RE: OnceLock<Regex> = OnceLock::new();
 fn stack_trace_re() -> &'static Regex {
-    STACK_TRACE_RE.get_or_init(|| Regex::new(r"(?m)^\s{2,}(at |--> |\[|```|in |--> |\\s{4})").unwrap())
+    STACK_TRACE_RE
+        .get_or_init(|| Regex::new(r"(?m)^\s{2,}(at |--> |\[|```|in |--> |\\s{4})").unwrap())
 }
 
 static SECTION_HEADER_RE: OnceLock<Regex> = OnceLock::new();
@@ -53,20 +59,36 @@ pub struct LogCompressor {
 }
 
 impl LogCompressor {
-    pub fn new() -> Self { Self { config: LogCompressorConfig::default() } }
-    pub fn with_config(config: LogCompressorConfig) -> Self { Self { config } }
+    pub fn new() -> Self {
+        Self {
+            config: LogCompressorConfig::default(),
+        }
+    }
+    pub fn with_config(config: LogCompressorConfig) -> Self {
+        Self { config }
+    }
 }
 
-impl Default for LogCompressor { fn default() -> Self { Self::new() } }
+impl Default for LogCompressor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[async_trait]
 impl CompressionStrategy for LogCompressor {
-    fn name(&self) -> &'static str { "logs" }
-    fn content_types(&self) -> Vec<ContentType> { vec![ContentType::BuildLog] }
+    fn name(&self) -> &'static str {
+        "logs"
+    }
+    fn content_types(&self) -> Vec<ContentType> {
+        vec![ContentType::BuildLog]
+    }
 
     async fn compress(&self, content: &str) -> Option<CompressionResult> {
         let lines: Vec<&str> = content.lines().collect();
-        if lines.len() < 10 { return None; }
+        if lines.len() < 10 {
+            return None;
+        }
         let start = chrono::Utc::now();
 
         let mut kept: Vec<String> = Vec::new();
@@ -80,7 +102,9 @@ impl CompressionStrategy for LogCompressor {
         for &line in &lines {
             let trimmed = line.trim();
             if trimmed.is_empty() {
-                if in_stack_trace { kept.push(String::new()); }
+                if in_stack_trace {
+                    kept.push(String::new());
+                }
                 continue;
             }
             let is_error = error_re().is_match(line);
@@ -89,20 +113,40 @@ impl CompressionStrategy for LogCompressor {
             let is_stack = config.preserve_stack_traces && stack_trace_re().is_match(line);
             let is_section = config.preserve_section_headers && section_header_re().is_match(line);
 
-            if is_error { in_stack_trace = true; error_lines_found += 1; kept.push(line.to_string()); }
-            else if is_summary { in_stack_trace = false; kept.push(line.to_string()); }
-            else if is_stack && in_stack_trace { kept.push(line.to_string()); }
-            else if is_section { kept.push(line.to_string()); }
-            else if is_passing { passing_count += 1; in_stack_trace = false; }
-            else { info_count += 1; in_stack_trace = false; }
+            if is_error {
+                in_stack_trace = true;
+                error_lines_found += 1;
+                kept.push(line.to_string());
+            } else if is_summary {
+                in_stack_trace = false;
+                kept.push(line.to_string());
+            } else if (is_stack && in_stack_trace) || is_section {
+                kept.push(line.to_string());
+            } else if is_passing {
+                passing_count += 1;
+                in_stack_trace = false;
+            } else {
+                info_count += 1;
+                in_stack_trace = false;
+            }
         }
 
-        let mut compressed = format!("‖ Log: {} lines, {} pass, {} err, {} info omitted\n", total_lines, passing_count, error_lines_found, info_count);
-        for line in &kept { compressed.push_str(line); compressed.push('\n'); }
+        let mut compressed = format!(
+            "‖ Log: {} lines, {} pass, {} err, {} info omitted\n",
+            total_lines, passing_count, error_lines_found, info_count
+        );
+        for line in &kept {
+            compressed.push_str(line);
+            compressed.push('\n');
+        }
 
         let took = (chrono::Utc::now() - start).num_microseconds().unwrap_or(0) as u64;
         let metrics = CompressionMetrics::new(content, &compressed, "logs", "build_log", took);
-        Some(CompressionResult { text: compressed, metrics, retrieval_key: None })
+        Some(CompressionResult {
+            text: compressed,
+            metrics,
+            retrieval_key: None,
+        })
     }
 }
 
@@ -114,7 +158,9 @@ mod tests {
     async fn test_log_basic() {
         let mut log = String::new();
         log.push_str("running 42 tests\n");
-        for i in 0..40 { log.push_str(&format!("test foo_{} ... ok\n", i)); }
+        for i in 0..40 {
+            log.push_str(&format!("test foo_{} ... ok\n", i));
+        }
         log.push_str("test bar_0 ... FAILED\n");
         log.push_str("test bar_1 ... FAILED\n");
         log.push_str("\ntest result: FAILED. 40 passed; 2 failed\n");
@@ -134,7 +180,9 @@ mod tests {
     #[tokio::test]
     async fn test_log_preserves_errors() {
         let mut log = String::new();
-        for i in 0..10 { log.push_str(&format!("INFO: item {}\n", i)); }
+        for i in 0..10 {
+            log.push_str(&format!("INFO: item {}\n", i));
+        }
         log.push_str("ERROR: connection refused\n");
         log.push_str("FATAL: crash\n");
         let r = LogCompressor::new().compress(&log).await.unwrap();
@@ -146,7 +194,9 @@ mod tests {
     async fn test_log_preserves_section_headers() {
         let mut log = String::new();
         log.push_str("===== test session starts =====\n");
-        for i in 0..10 { log.push_str(&format!("ok {}\n", i + 1)); }
+        for i in 0..10 {
+            log.push_str(&format!("ok {}\n", i + 1));
+        }
         log.push_str("===== 10 passed =====\n");
         let r = LogCompressor::new().compress(&log).await.unwrap();
         assert!(r.text.contains("====="));
@@ -154,7 +204,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_log_config() {
-        let cfg = LogCompressorConfig { preserve_stack_traces: false, ..Default::default() };
+        let cfg = LogCompressorConfig {
+            preserve_stack_traces: false,
+            ..Default::default()
+        };
         let c = LogCompressor::with_config(cfg);
         assert!(!c.config.preserve_stack_traces);
     }

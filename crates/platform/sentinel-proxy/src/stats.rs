@@ -48,6 +48,12 @@ struct PersistentSavings {
     _total_requests: u64,
 }
 
+impl Default for SharedStats {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SharedStats {
     pub fn new() -> Self {
         Self {
@@ -67,8 +73,12 @@ impl SharedStats {
 
     pub fn record_request(&self, tokens_before: u64, tokens_after: u64) {
         self.inner.total_requests.fetch_add(1, Ordering::Relaxed);
-        self.inner.tokens_before.fetch_add(tokens_before, Ordering::Relaxed);
-        self.inner.tokens_after.fetch_add(tokens_after, Ordering::Relaxed);
+        self.inner
+            .tokens_before
+            .fetch_add(tokens_before, Ordering::Relaxed);
+        self.inner
+            .tokens_after
+            .fetch_add(tokens_after, Ordering::Relaxed);
         let saved = tokens_before.saturating_sub(tokens_after);
         self.inner.tokens_saved.fetch_add(saved, Ordering::Relaxed);
     }

@@ -5,9 +5,9 @@
 //! tracks live agents and enforces a configurable concurrency limit.
 
 use std::{collections::HashMap, sync::Arc};
+use thiserror::Error;
 use tokio::sync::RwLock;
 use uuid::Uuid;
-use thiserror::Error;
 
 mod thread;
 pub use thread::{AgentThread, ThreadMessage};
@@ -77,15 +77,15 @@ impl AgentRegistry {
     /// Retrieve a handle to an existing agent.
     pub async fn get(&self, id: AgentId) -> Result<Arc<Agent>, RegistryError> {
         let map = self.inner.read().await;
-        map.get(&id)
-            .cloned()
-            .ok_or(RegistryError::NotFound(id))
+        map.get(&id).cloned().ok_or(RegistryError::NotFound(id))
     }
 
     /// Unregister (shut down) an agent.
     pub async fn unregister(&self, id: AgentId) -> Result<(), RegistryError> {
         let mut map = self.inner.write().await;
-        map.remove(&id).map(|_| ()).ok_or(RegistryError::NotFound(id))
+        map.remove(&id)
+            .map(|_| ())
+            .ok_or(RegistryError::NotFound(id))
     }
 
     /// Return the current number of registered agents.

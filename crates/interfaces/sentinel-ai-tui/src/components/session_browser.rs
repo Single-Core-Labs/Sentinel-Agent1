@@ -47,15 +47,25 @@ impl<'a> Widget for SessionBrowserWidget<'a> {
             .sessions
             .iter()
             .enumerate()
-            .filter(|(_, s)| self.filter.is_empty() || s.title.to_lowercase().contains(&self.filter.to_lowercase()) || s.id.contains(self.filter))
+            .filter(|(_, s)| {
+                self.filter.is_empty()
+                    || s.title.to_lowercase().contains(&self.filter.to_lowercase())
+                    || s.id.contains(self.filter)
+            })
             .map(|(idx, s)| {
                 let is_sel = idx == self.selected_index;
                 let style = if is_sel {
-                    Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD)
+                    Style::default()
+                        .fg(Color::Black)
+                        .bg(Color::Cyan)
+                        .add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(Color::White)
                 };
-                let text = format!("ID: {} | Title: {} | Tokens: {} | Msgs: {}", s.id, s.title, s.total_tokens, s.message_count);
+                let text = format!(
+                    "ID: {} | Title: {} | Tokens: {} | Msgs: {}",
+                    s.id, s.title, s.total_tokens, s.message_count
+                );
                 ListItem::new(text).style(style)
             })
             .collect();

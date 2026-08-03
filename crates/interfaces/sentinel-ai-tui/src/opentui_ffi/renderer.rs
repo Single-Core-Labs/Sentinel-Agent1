@@ -263,7 +263,9 @@ impl OptimizedBuffer {
             Some(t) => (t.as_ptr(), t.len() as u32),
             None => (std::ptr::null(), 0),
         };
-        let border_chars: [u32; 8] = [0x250C, 0x2510, 0x2518, 0x2514, 0x2500, 0x2502, 0x2500, 0x2502];
+        let border_chars: [u32; 8] = [
+            0x250C, 0x2510, 0x2518, 0x2514, 0x2500, 0x2502, 0x2500, 0x2502,
+        ];
         unsafe {
             ffi::bufferDrawBox(
                 self.handle,
@@ -340,7 +342,8 @@ impl TextBuffer {
     pub fn get_plain_text(&self) -> String {
         let len = unsafe { ffi::textBufferGetLength(self.handle) } as usize;
         let mut buf = vec![0u8; len + 1];
-        let written = unsafe { ffi::textBufferGetPlainText(self.handle, buf.as_mut_ptr(), len as u32) };
+        let written =
+            unsafe { ffi::textBufferGetPlainText(self.handle, buf.as_mut_ptr(), len as u32) };
         buf.truncate(written as usize);
         String::from_utf8_lossy(&buf).to_string()
     }
@@ -392,7 +395,11 @@ impl TextBufferView {
         let ok = unsafe {
             ffi::textBufferViewMeasureForDimensions(self.handle, width, height, &mut result)
         };
-        if ok { Some(result) } else { None }
+        if ok {
+            Some(result)
+        } else {
+            None
+        }
     }
 
     pub fn draw(&self, buffer: &OptimizedBuffer, x: i32, y: i32) {

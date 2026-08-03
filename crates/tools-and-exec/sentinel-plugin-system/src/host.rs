@@ -1,7 +1,7 @@
-use std::sync::Arc;
 use async_trait::async_trait;
+use std::sync::Arc;
 
-use crate::plugin::{Plugin, PluginEvent, PluginAction, PluginHook, PluginManifest, PluginId};
+use crate::plugin::{Plugin, PluginAction, PluginEvent, PluginHook, PluginId, PluginManifest};
 
 /// A built-in hook implementation that wraps a closure.
 pub struct FnHook {
@@ -57,7 +57,10 @@ impl PluginBuilder {
         self
     }
 
-    pub fn on_event(mut self, handler: Box<dyn Fn(&PluginEvent) -> PluginAction + Send + Sync>) -> Self {
+    pub fn on_event(
+        mut self,
+        handler: Box<dyn Fn(&PluginEvent) -> PluginAction + Send + Sync>,
+    ) -> Self {
         self.hooks.push(Box::new(FnHook::new(handler)));
         self
     }
@@ -98,13 +101,9 @@ mod tests {
         let plugin = PluginBuilder::new("my-plugin", "My Plugin", "1.0.0")
             .description("A test plugin")
             .author("test@example.com")
-            .on_event(Box::new(|event| {
-                match event {
-                    PluginEvent::SessionCreated { .. } => {
-                        PluginAction::Veto("no new sessions".into())
-                    }
-                    _ => PluginAction::Continue,
-                }
+            .on_event(Box::new(|event| match event {
+                PluginEvent::SessionCreated { .. } => PluginAction::Veto("no new sessions".into()),
+                _ => PluginAction::Continue,
             }))
             .build();
 

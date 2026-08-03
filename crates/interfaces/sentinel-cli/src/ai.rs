@@ -1,14 +1,16 @@
-use std::sync::Arc;
-use colored::*;
 use crate::approval::CliApprovalGate;
 use crate::display::{print_banner, print_divider};
 use crate::handler::CliEventHandler;
+use colored::*;
 use sentinel_core::thread_store::ThreadStore;
+use std::sync::Arc;
 
 const TUI_WS_ADDR: &str = "127.0.0.1:9090";
 
 fn port_open(addr: &str) -> bool {
-    std::net::TcpStream::connect(addr).map(|_| true).unwrap_or(false)
+    std::net::TcpStream::connect(addr)
+        .map(|_| true)
+        .unwrap_or(false)
 }
 
 fn resolve_ts_agent() -> Option<(std::path::PathBuf, std::path::PathBuf)> {
@@ -17,17 +19,23 @@ fn resolve_ts_agent() -> Option<(std::path::PathBuf, std::path::PathBuf)> {
     if let Ok(home) = std::env::var("SENTINEL_HOME") {
         let home = std::path::PathBuf::from(home);
         let ap = home.join(agent_relative);
-        if ap.exists() { return Some((ap, home)); }
+        if ap.exists() {
+            return Some((ap, home));
+        }
     }
 
     if let Ok(cwd) = std::env::current_dir() {
         let ap = cwd.join(agent_relative);
-        if ap.exists() { return Some((ap, cwd)); }
+        if ap.exists() {
+            return Some((ap, cwd));
+        }
     }
 
     let fallback = std::path::PathBuf::from(r"d:\ml-intern-main\ml-intern-main");
     let fallback_ap = fallback.join(agent_relative);
-    if fallback_ap.exists() { return Some((fallback_ap, fallback)); }
+    if fallback_ap.exists() {
+        return Some((fallback_ap, fallback));
+    }
 
     None
 }
@@ -60,12 +68,19 @@ fn try_spawn_ts_agent(args: &[String]) -> bool {
                     server_child = Some(child);
                     let mut up = false;
                     for _ in 0..80 {
-                        if port_open(TUI_WS_ADDR) { up = true; break; }
+                        if port_open(TUI_WS_ADDR) {
+                            up = true;
+                            break;
+                        }
                         std::thread::sleep(std::time::Duration::from_millis(100));
                     }
                     if !up {
                         let _ = server_child.take().map(|mut c| c.kill());
-                        eprintln!("{} Could not start WebSocket server on {}", "W".yellow(), TUI_WS_ADDR);
+                        eprintln!(
+                            "{} Could not start WebSocket server on {}",
+                            "W".yellow(),
+                            TUI_WS_ADDR
+                        );
                         return false;
                     }
                 }
@@ -96,7 +111,11 @@ fn try_spawn_ts_agent(args: &[String]) -> bool {
             true
         }
         Err(e) => {
-            eprintln!("{} Could not start TUI ({}) — OpenTUI is the only interactive UI.", "W".yellow(), e);
+            eprintln!(
+                "{} Could not start TUI ({}) — OpenTUI is the only interactive UI.",
+                "W".yellow(),
+                e
+            );
             if let Some(mut s) = server_child {
                 let _ = s.kill();
             }
@@ -173,7 +192,9 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         println!("  --resume <id>     Continue a previously saved session (mutually exclusive with --new)");
         println!("  --new             Start a fresh session (mutually exclusive with --resume)");
         println!("  --yolo            Auto-approve tool actions");
-        println!("  --model <id>      Select a model (e.g. gpt-4o, claude-sonnet-4, gemini-2.5-flash)");
+        println!(
+            "  --model <id>      Select a model (e.g. gpt-4o, claude-sonnet-4, gemini-2.5-flash)"
+        );
         println!("  --prompt <t>      Run a single turn non-interactively, then exit");
         println!("  --hook-command <c> Policy script gating every tool call:");
         println!("                     stdout: 'allow' | 'deny <reason>' | 'ask' (fail-closed)");
@@ -196,7 +217,11 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     let config = Arc::new(match sentinel_config::SentinelConfig::load() {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("{} Warning: config error: {}; using defaults", "W".yellow(), e);
+            eprintln!(
+                "{} Warning: config error: {}; using defaults",
+                "W".yellow(),
+                e
+            );
             sentinel_config::SentinelConfig::default()
         }
     });
@@ -217,7 +242,10 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     // The inline terminal REPL is gone — OpenTUI (bun) is the only interactive UI.
     // Without bun and without --prompt there is nothing to do.
     if prompt_arg.is_none() {
-        eprintln!("{} No interactive TUI available (bun required).", "W".yellow());
+        eprintln!(
+            "{} No interactive TUI available (bun required).",
+            "W".yellow()
+        );
         eprintln!("   Install bun (https://bun.sh) and rerun, or use one-shot mode:");
         eprintln!("       sentinel ai <model> --prompt \"<text>\"");
         return Ok(());
@@ -250,9 +278,17 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         match sentinel_mcp::register_mcp_tools(&mut tool_registry, client).await {
             Ok(count) => {
                 if count > 0 {
-                    println!("   {} MCP tools registered from '{}'", format!("{}", count).green(), def.id.green());
+                    println!(
+                        "   {} MCP tools registered from '{}'",
+                        format!("{}", count).green(),
+                        def.id.green()
+                    );
                 } else {
-                    eprintln!("{} MCP server '{}' is connected but exposes no tools", "W".yellow(), def.id);
+                    eprintln!(
+                        "{} MCP server '{}' is connected but exposes no tools",
+                        "W".yellow(),
+                        def.id
+                    );
                 }
             }
             Err(e) => {
@@ -279,7 +315,12 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     let plugin_dir = plugin_dir();
     if !plugin_dir.exists() {
         if let Err(e) = std::fs::create_dir_all(&plugin_dir) {
-            eprintln!("{} Could not create plugin directory '{}': {}", "W".yellow(), plugin_dir.display(), e);
+            eprintln!(
+                "{} Could not create plugin directory '{}': {}",
+                "W".yellow(),
+                plugin_dir.display(),
+                e
+            );
         }
     }
     let loaded_plugins = sentinel_plugin_system::load_plugins_dir(&plugin_dir);
@@ -292,10 +333,17 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         }
     }
     if loaded_count > 0 {
-        println!(" {} plugins loaded", format!("{}", loaded_count).green().bold());
+        println!(
+            " {} plugins loaded",
+            format!("{}", loaded_count).green().bold()
+        );
     }
     if !failed_plugins.is_empty() {
-        eprintln!("{} {} plugins failed:", "✖".red().bold(), failed_plugins.len());
+        eprintln!(
+            "{} {} plugins failed:",
+            "✖".red().bold(),
+            failed_plugins.len()
+        );
         for err in failed_plugins {
             eprintln!("  {} {}", "•".red(), err);
         }
@@ -309,18 +357,21 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     let store = sentinel_core::JsonFileThreadStore::new(session_dir());
 
     let mut thread = match resume_id {
-        Some(id) => {
-            match store.load_thread(&id).await {
-                Ok(t) => {
-                    println!(" Resumed session {}", id.green().bold());
-                    t
-                }
-                Err(e) => {
-                    eprintln!("{} Could not load session '{}': {}", "✖".red().bold(), id, e);
-                    return Ok(());
-                }
+        Some(id) => match store.load_thread(&id).await {
+            Ok(t) => {
+                println!(" Resumed session {}", id.green().bold());
+                t
             }
-        }
+            Err(e) => {
+                eprintln!(
+                    "{} Could not load session '{}': {}",
+                    "✖".red().bold(),
+                    id,
+                    e
+                );
+                return Ok(());
+            }
+        },
         None => sentinel_core::AgentThread::new(
             config.agent.max_turns,
             config.agent.max_iterations,
@@ -332,10 +383,21 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
 
     print_banner();
     println!(" Model:  {}", model_id.green().bold());
-    println!(" Yolo:   {}", if yolo_mode { "yes".green() } else { "no".yellow() });
+    println!(
+        " Yolo:   {}",
+        if yolo_mode {
+            "yes".green()
+        } else {
+            "no".yellow()
+        }
+    );
     print_divider();
     println!(" Session: {}", thread.id.to_string().green().bold());
-    println!(" {} Resume later with: sentinel ai --resume {}", "→".cyan().bold(), thread.id.to_string().dimmed());
+    println!(
+        " {} Resume later with: sentinel ai --resume {}",
+        "→".cyan().bold(),
+        thread.id.to_string().dimmed()
+    );
 
     let approval: Box<dyn sentinel_core::ApprovalGate> = if yolo_mode {
         Box::new(sentinel_core::AutoApprovalGate)
@@ -346,18 +408,30 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     let policy: Option<std::sync::Arc<dyn sentinel_core::PolicyEngine>> = match hook_command {
         Some(cmd) => {
             if prompt_arg.is_some() {
-                eprintln!(" {} Policy script active: {}", "⚖".yellow().bold(), cmd.yellow());
+                eprintln!(
+                    " {} Policy script active: {}",
+                    "⚖".yellow().bold(),
+                    cmd.yellow()
+                );
             } else {
-                println!(" {} Policy script active: {}", "⚖".yellow().bold(), cmd.yellow());
+                println!(
+                    " {} Policy script active: {}",
+                    "⚖".yellow().bold(),
+                    cmd.yellow()
+                );
             }
-            Some(std::sync::Arc::new(sentinel_core::ScriptPolicyEngine::new(cmd)))
+            Some(std::sync::Arc::new(sentinel_core::ScriptPolicyEngine::new(
+                cmd,
+            )))
         }
         None => None,
     };
 
     // Non-interactive single-shot mode (used by the eval harness)
     if let Some(one_shot) = prompt_arg {
-        let result = agent.run_with_approval(&mut thread, &one_shot, approval.as_ref(), &policy).await;
+        let result = agent
+            .run_with_approval(&mut thread, &one_shot, approval.as_ref(), &policy)
+            .await;
         if let Err(e) = store.save_thread(&thread).await {
             eprintln!("{} Failed to save session: {}", "W".yellow(), e);
         }
@@ -381,7 +455,9 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         let (p, c) = (agent.prompt_tokens(), agent.completion_tokens());
         println!(
             "\n[sentinel] session summary: prompt_tokens={} completion_tokens={} total_tokens={}",
-            p, c, p + c
+            p,
+            c,
+            p + c
         );
         println!();
     }
@@ -394,7 +470,11 @@ fn session_dir() -> std::path::PathBuf {
     }
     std::env::var("USERPROFILE")
         .or_else(|_| std::env::var("HOME"))
-        .map(|h| std::path::PathBuf::from(h).join(".sentinel").join("threads"))
+        .map(|h| {
+            std::path::PathBuf::from(h)
+                .join(".sentinel")
+                .join("threads")
+        })
         .unwrap_or_else(|_| std::path::PathBuf::from("sentinel_threads"))
 }
 
@@ -404,7 +484,11 @@ fn plugin_dir() -> std::path::PathBuf {
     }
     std::env::var("USERPROFILE")
         .or_else(|_| std::env::var("HOME"))
-        .map(|h| std::path::PathBuf::from(h).join(".sentinel").join("plugins"))
+        .map(|h| {
+            std::path::PathBuf::from(h)
+                .join(".sentinel")
+                .join("plugins")
+        })
         .unwrap_or_else(|_| std::path::PathBuf::from("plugins"))
 }
 

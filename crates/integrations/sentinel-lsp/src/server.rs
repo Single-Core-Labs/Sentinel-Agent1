@@ -1,8 +1,8 @@
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tower_lsp::{LspService, Server};
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::*;
+use tower_lsp::{LspService, Server};
 
 use crate::session::LspSession;
 
@@ -20,7 +20,9 @@ pub struct SentinelLspServer {
 impl SentinelLspServer {
     pub fn new(session: LspSession) -> Self {
         let capabilities = ServerCapabilities {
-            text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::INCREMENTAL)),
+            text_document_sync: Some(TextDocumentSyncCapability::Kind(
+                TextDocumentSyncKind::INCREMENTAL,
+            )),
             code_action_provider: Some(CodeActionProviderCapability::Simple(true)),
             execute_command_provider: Some(ExecuteCommandOptions {
                 commands: vec![
@@ -116,7 +118,10 @@ impl tower_lsp::LanguageServer for SentinelLspServer {
         Ok(session.get_code_actions(&params))
     }
 
-    async fn execute_command(&self, params: ExecuteCommandParams) -> Result<Option<serde_json::Value>> {
+    async fn execute_command(
+        &self,
+        params: ExecuteCommandParams,
+    ) -> Result<Option<serde_json::Value>> {
         match params.command.as_str() {
             "sentinel.explain" => {
                 let session = self.session.read().await;
@@ -137,7 +142,10 @@ impl tower_lsp::LanguageServer for SentinelLspServer {
         }
     }
 
-    async fn diagnostic(&self, params: DocumentDiagnosticParams) -> Result<DocumentDiagnosticReportResult> {
+    async fn diagnostic(
+        &self,
+        params: DocumentDiagnosticParams,
+    ) -> Result<DocumentDiagnosticReportResult> {
         let session = self.session.read().await;
         let diagnostics = session.analyze_document(&params.text_document.uri).await;
         Ok(DocumentDiagnosticReportResult::Report(

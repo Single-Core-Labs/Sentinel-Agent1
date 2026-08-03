@@ -1,6 +1,6 @@
-use serde::{Deserialize, Serialize};
-use async_trait::async_trait;
 use crate::conversation::Conversation;
+use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UploadConfig {
@@ -53,11 +53,19 @@ pub struct NullUploader;
 #[async_trait]
 impl SessionUploader for NullUploader {
     async fn upload(&self, _payload: &SessionPayload) -> UploadResult {
-        UploadResult { ok: true, error: None, url: None }
+        UploadResult {
+            ok: true,
+            error: None,
+            url: None,
+        }
     }
 
     async fn upload_path(&self, _local_path: &str) -> UploadResult {
-        UploadResult { ok: true, error: None, url: None }
+        UploadResult {
+            ok: true,
+            error: None,
+            url: None,
+        }
     }
 }
 
@@ -70,7 +78,9 @@ pub struct HttpUploader {
 
 impl HttpUploader {
     pub fn new(endpoint: impl Into<String>, config: &UploadConfig) -> Self {
-        let token = config.api_token_env.as_ref()
+        let token = config
+            .api_token_env
+            .as_ref()
             .and_then(|env_var| std::env::var(env_var).ok());
 
         Self {
@@ -88,7 +98,10 @@ impl HttpUploader {
         if !config.enabled {
             return None;
         }
-        config.endpoint_url.as_ref().map(|url| Self::new(url, config))
+        config
+            .endpoint_url
+            .as_ref()
+            .map(|url| Self::new(url, config))
     }
 }
 
@@ -97,7 +110,13 @@ impl SessionUploader for HttpUploader {
     async fn upload(&self, payload: &SessionPayload) -> UploadResult {
         let body = match serde_json::to_string(payload) {
             Ok(b) => b,
-            Err(e) => return UploadResult { ok: false, error: Some(format!("Serialization error: {}", e)), url: None },
+            Err(e) => {
+                return UploadResult {
+                    ok: false,
+                    error: Some(format!("Serialization error: {}", e)),
+                    url: None,
+                }
+            }
         };
 
         self.send_request(&body).await
@@ -106,7 +125,13 @@ impl SessionUploader for HttpUploader {
     async fn upload_path(&self, local_path: &str) -> UploadResult {
         let body = match tokio::fs::read_to_string(local_path).await {
             Ok(b) => b,
-            Err(e) => return UploadResult { ok: false, error: Some(format!("Read error: {}", e)), url: None },
+            Err(e) => {
+                return UploadResult {
+                    ok: false,
+                    error: Some(format!("Read error: {}", e)),
+                    url: None,
+                }
+            }
         };
 
         self.send_request(&body).await
@@ -122,7 +147,8 @@ impl HttpUploader {
                 tokio::time::sleep(std::time::Duration::from_secs(1 << attempt)).await;
             }
 
-            let mut req = self.client
+            let mut req = self
+                .client
                 .put(&self.endpoint)
                 .header("Content-Type", "application/json");
 
@@ -135,7 +161,11 @@ impl HttpUploader {
                     let status = resp.status();
                     if status.is_success() {
                         let url = resp.url().to_string();
-                        return UploadResult { ok: true, error: None, url: Some(url) };
+                        return UploadResult {
+                            ok: true,
+                            error: None,
+                            url: Some(url),
+                        };
                     } else {
                         let body_text = resp.text().await.unwrap_or_default();
                         last_error = Some(format!("HTTP {}: {}", status, body_text));
@@ -161,7 +191,9 @@ pub struct FileUploader {
 
 impl FileUploader {
     pub fn new(dest_dir: impl Into<std::path::PathBuf>) -> Self {
-        Self { dest_dir: dest_dir.into() }
+        Self {
+            dest_dir: dest_dir.into(),
+        }
     }
 }
 
@@ -173,17 +205,37 @@ impl SessionUploader for FileUploader {
 
         let json = match serde_json::to_string_pretty(payload) {
             Ok(j) => j,
-            Err(e) => return UploadResult { ok: false, error: Some(format!("Serialization error: {}", e)), url: None },
+            Err(e) => {
+                return UploadResult {
+                    ok: false,
+                    error: Some(format!("Serialization error: {}", e)),
+                    url: None,
+                }
+            }
         };
 
         match tokio::fs::create_dir_all(&self.dest_dir).await {
             Ok(_) => {}
-            Err(e) => return UploadResult { ok: false, error: Some(format!("Dir create error: {}", e)), url: None },
+            Err(e) => {
+                return UploadResult {
+                    ok: false,
+                    error: Some(format!("Dir create error: {}", e)),
+                    url: None,
+                }
+            }
         }
 
         match tokio::fs::write(&path, &json).await {
-            Ok(_) => UploadResult { ok: true, error: None, url: Some(path.to_string_lossy().to_string()) },
-            Err(e) => UploadResult { ok: false, error: Some(format!("Write error: {}", e)), url: None },
+            Ok(_) => UploadResult {
+                ok: true,
+                error: None,
+                url: Some(path.to_string_lossy().to_string()),
+            },
+            Err(e) => UploadResult {
+                ok: false,
+                error: Some(format!("Write error: {}", e)),
+                url: None,
+            },
         }
     }
 
@@ -194,12 +246,26 @@ impl SessionUploader for FileUploader {
 
         match tokio::fs::create_dir_all(&self.dest_dir).await {
             Ok(_) => {}
-            Err(e) => return UploadResult { ok: false, error: Some(format!("Dir create error: {}", e)), url: None },
+            Err(e) => {
+                return UploadResult {
+                    ok: false,
+                    error: Some(format!("Dir create error: {}", e)),
+                    url: None,
+                }
+            }
         }
 
         match tokio::fs::copy(src, &dest).await {
-            Ok(_) => UploadResult { ok: true, error: None, url: Some(dest.to_string_lossy().to_string()) },
-            Err(e) => UploadResult { ok: false, error: Some(format!("Copy error: {}", e)), url: None },
+            Ok(_) => UploadResult {
+                ok: true,
+                error: None,
+                url: Some(dest.to_string_lossy().to_string()),
+            },
+            Err(e) => UploadResult {
+                ok: false,
+                error: Some(format!("Copy error: {}", e)),
+                url: None,
+            },
         }
     }
 }

@@ -1,12 +1,7 @@
-use std::sync::Arc;
 use async_trait::async_trait;
-use sentinel_gpu_profiler::{
-    GpuArch, GpuLanguage,
-    bench, emulate, langs, optimizer, vram,
-};
-use sentinel_tools::{
-    Tool, ToolContext, ToolOutput, ToolRegistry,
-};
+use sentinel_gpu_profiler::{bench, emulate, langs, optimizer, vram, GpuArch, GpuLanguage};
+use sentinel_tools::{Tool, ToolContext, ToolOutput, ToolRegistry};
+use std::sync::Arc;
 
 /// Auto-Optimize Loop (design: docs/design/standout-roadmap.md §1).
 ///
@@ -59,9 +54,10 @@ impl GpuOptimizeKernelTool {
                 lower.ends_with(".cuh") || lower.ends_with(".hpp") || lower.ends_with(".h")
             }
             GpuLanguage::Mojo => lower.ends_with(".mojo") || lower.ends_with("🔥"),
-            GpuLanguage::Triton | GpuLanguage::Numba | GpuLanguage::PyTorch | GpuLanguage::TileLang => {
-                lower.ends_with(".py")
-            }
+            GpuLanguage::Triton
+            | GpuLanguage::Numba
+            | GpuLanguage::PyTorch
+            | GpuLanguage::TileLang => lower.ends_with(".py"),
             GpuLanguage::Unknown => false,
         }
     }
@@ -85,12 +81,20 @@ impl GpuOptimizeKernelTool {
 
     /// Map a compute-capability or architecture string ("h100", "rtx4090", "b200", "8.9") to GpuArch.
     fn parse_arch_arg(raw: &str) -> Option<GpuArch> {
-        let lower = raw.to_lowercase().replace('_', "").replace('-', "");
+        let lower = raw.to_lowercase().replace(['_', '-'], "");
         if lower.contains("h100") || lower.contains("sm90") || lower == "9.0" {
             Some(GpuArch::Hopper90)
-        } else if lower.contains("b200") || lower.contains("blackwell") || lower.contains("sm100") || lower == "10.0" {
+        } else if lower.contains("b200")
+            || lower.contains("blackwell")
+            || lower.contains("sm100")
+            || lower == "10.0"
+        {
             Some(GpuArch::Blackwell100)
-        } else if lower.contains("4090") || lower.contains("ada") || lower.contains("sm89") || lower == "8.9" {
+        } else if lower.contains("4090")
+            || lower.contains("ada")
+            || lower.contains("sm89")
+            || lower == "8.9"
+        {
             Some(GpuArch::Ada89)
         } else if lower.contains("a100") || lower.contains("sm80") || lower == "8.0" {
             Some(GpuArch::Ampere80)
@@ -191,9 +195,7 @@ impl GpuOptimizeKernelTool {
         for (i, detail) in bottleneck.details.iter().take(2).enumerate() {
             report.push_str(&format!("\n  {} {detail}", i + 2));
         }
-        report.push_str(&format!(
-            "\n  3. Ask for `gpu_optimize_kernel` with run_real_bench=true to prove on real nvcc hardware."
-        ));
+        report.push_str("\n  3. Ask for `gpu_optimize_kernel` with run_real_bench=true to prove on real nvcc hardware.");
 
         if run_real_bench {
             let sm_count = vram::query_gpu_stats().sm_count.unwrap_or(80);
@@ -202,7 +204,9 @@ impl GpuOptimizeKernelTool {
             report.push_str(&match tokio::task::spawn_blocking(move || {
                 let result = bench::benchmark_kernel_real(&source, &fname, sm_count);
                 bench::format_real_bench_result(&result)
-            }).await {
+            })
+            .await
+            {
                 Ok(text) => format!("\n[real bench]\n{text}"),
                 Err(e) => format!("\n[real bench] failed: {e}"),
             });
@@ -214,7 +218,8 @@ impl GpuOptimizeKernelTool {
 
 impl GpuOptimizeKernelTool {
     fn file_path_arg(args: &serde_json::Value) -> Option<String> {
-        args["file_path"].as_str()
+        args["file_path"]
+            .as_str()
             .or_else(|| args["path"].as_str())
             .map(|s| s.to_string())
     }
@@ -338,14 +343,13 @@ impl Tool for GpuOptimizeKernelTool {
 
         let gpu_name = vram::detect_gpu_name();
         let target_arch = Self::resolve_arch_from_args(&args);
-        let report = Self::build_report(&fname, &source, target_arch, run_real_bench, gpu_name).await;
+        let report =
+            Self::build_report(&fname, &source, target_arch, run_real_bench, gpu_name).await;
 
         match (&inner_output, report) {
-            (Some(output), Some(report)) => ToolOutput::ok(format!(
-                "{}\n\n{}",
-                output.text.trim_end(),
-                report
-            )),
+            (Some(output), Some(report)) => {
+                ToolOutput::ok(format!("{}\n\n{}", output.text.trim_end(), report))
+            }
             (Some(output), None) => output.clone(),
             (None, Some(report)) => ToolOutput::ok(report),
             (None, None) => ToolOutput::err(format!(
@@ -369,9 +373,15 @@ mod tests {
     struct FakeWriteTool;
     #[async_trait]
     impl Tool for FakeWriteTool {
-        fn name(&self) -> &str { "write" }
-        fn description(&self) -> &str { "write a file" }
-        fn input_schema(&self) -> serde_json::Value { serde_json::json!({}) }
+        fn name(&self) -> &str {
+            "write"
+        }
+        fn description(&self) -> &str {
+            "write a file"
+        }
+        fn input_schema(&self) -> serde_json::Value {
+            serde_json::json!({})
+        }
         async fn execute(&self, args: serde_json::Value, _ctx: &ToolContext) -> ToolOutput {
             let path = args["file_path"].as_str().unwrap_or("");
             let content = args["content"].as_str().unwrap_or("");
@@ -395,7 +405,12 @@ mod tests {
         let ctx = ToolContext::new();
         let tool = GpuOptimizeKernelTool::wrap(Arc::new(FakeWriteTool));
         let p = temp_kernel_path("readme.md", "# docs\n");
-        let out = tool.execute(serde_json::json!({ "file_path": p, "content": "# docs\n" }), &ctx).await;
+        let out = tool
+            .execute(
+                serde_json::json!({ "file_path": p, "content": "# docs\n" }),
+                &ctx,
+            )
+            .await;
         assert!(!out.is_error);
         assert!(!out.text.contains("[gpu_optimize]"));
     }
@@ -405,10 +420,12 @@ mod tests {
         let ctx = ToolContext::new();
         let tool = GpuOptimizeKernelTool::wrap(Arc::new(FakeWriteTool));
         let p = temp_kernel_path("saxpy.cu", KERNEL);
-        let out = tool.execute(
-            serde_json::json!({ "file_path": p, "content": KERNEL }),
-            &ctx,
-        ).await;
+        let out = tool
+            .execute(
+                serde_json::json!({ "file_path": p, "content": KERNEL }),
+                &ctx,
+            )
+            .await;
         assert!(!out.is_error, "output: {}", out.text);
         assert!(out.text.contains("[gpu_optimize]"), "output: {}", out.text);
         assert!(out.text.contains("Best:"), "output: {}", out.text);
@@ -422,7 +439,9 @@ mod tests {
         let ctx = ToolContext::new();
         let tool = GpuOptimizeKernelTool::standalone();
         let p = temp_kernel_path("vecadd.py", "import triton\n");
-        let out = tool.execute(serde_json::json!({ "file_path": p }), &ctx).await;
+        let out = tool
+            .execute(serde_json::json!({ "file_path": p }), &ctx)
+            .await;
         assert!(!out.is_error, "output: {}", out.text);
         assert!(out.text.contains("[gpu_optimize]"));
         assert!(out.text.contains("Best:"));
@@ -434,7 +453,9 @@ mod tests {
         let ctx = ToolContext::new();
         let tool = GpuOptimizeKernelTool::standalone();
         let p = temp_kernel_path("notes.txt", "plain text");
-        let out = tool.execute(serde_json::json!({ "file_path": p }), &ctx).await;
+        let out = tool
+            .execute(serde_json::json!({ "file_path": p }), &ctx)
+            .await;
         assert!(out.is_error);
         assert!(out.text.contains("not a recognized GPU kernel"));
     }
@@ -443,10 +464,12 @@ mod tests {
     async fn missing_file_returns_error() {
         let ctx = ToolContext::new();
         let tool = GpuOptimizeKernelTool::standalone();
-        let out = tool.execute(
-            serde_json::json!({ "file_path": "C:\\definitely\\missing\\kern.cu" }),
-            &ctx,
-        ).await;
+        let out = tool
+            .execute(
+                serde_json::json!({ "file_path": "C:\\definitely\\missing\\kern.cu" }),
+                &ctx,
+            )
+            .await;
         assert!(out.is_error);
     }
 
@@ -465,6 +488,9 @@ mod tests {
         assert!(names.contains(&"write".to_string()));
         assert!(names.contains(&"edit".to_string()));
         let wrapper = reg.get("write").unwrap();
-        assert!(wrapper.to_tool_def().description.contains("Write content to a file"));
+        assert!(wrapper
+            .to_tool_def()
+            .description
+            .contains("Write content to a file"));
     }
 }

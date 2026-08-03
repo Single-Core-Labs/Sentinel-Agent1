@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ProviderInfo {
     pub id: String,
     pub name: String,
@@ -15,13 +15,19 @@ pub struct ProviderInfo {
     pub extra_headers: HashMap<String, String>,
 }
 
-fn default_timeout() -> u64 { 120 }
+fn default_timeout() -> u64 {
+    120
+}
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum AuthConfig {
-    EnvKey { var: String },
-    Bearer { token: String },
+    EnvKey {
+        var: String,
+    },
+    Bearer {
+        token: String,
+    },
     #[default]
     None,
 }
@@ -73,20 +79,26 @@ mod tests {
     #[test]
     fn env_key_auth_resolves_from_environment() {
         std::env::set_var("SENTINEL_TEST_API_KEY", "sk-test-123");
-        let p = provider_with_auth(AuthConfig::EnvKey { var: "SENTINEL_TEST_API_KEY".into() });
+        let p = provider_with_auth(AuthConfig::EnvKey {
+            var: "SENTINEL_TEST_API_KEY".into(),
+        });
         assert_eq!(p.resolve_api_key().as_deref(), Some("sk-test-123"));
         std::env::remove_var("SENTINEL_TEST_API_KEY");
     }
 
     #[test]
     fn env_key_auth_returns_none_when_unset() {
-        let p = provider_with_auth(AuthConfig::EnvKey { var: "SENTINEL_UNSET_VAR_XYZ".into() });
+        let p = provider_with_auth(AuthConfig::EnvKey {
+            var: "SENTINEL_UNSET_VAR_XYZ".into(),
+        });
         assert_eq!(p.resolve_api_key(), None);
     }
 
     #[test]
     fn bearer_auth_returns_token_without_env() {
-        let p = provider_with_auth(AuthConfig::Bearer { token: "tok-42".into() });
+        let p = provider_with_auth(AuthConfig::Bearer {
+            token: "tok-42".into(),
+        });
         assert_eq!(p.resolve_api_key().as_deref(), Some("tok-42"));
     }
 
@@ -118,9 +130,9 @@ mod tests {
 
     #[test]
     fn timeout_and_headers_default_in_provider() {
-        let p: ProviderInfo = serde_json::from_str(
-            r#"{"id":"p","name":"P","base_url":"http://x","models":[]}"#,
-        ).unwrap();
+        let p: ProviderInfo =
+            serde_json::from_str(r#"{"id":"p","name":"P","base_url":"http://x","models":[]}"#)
+                .unwrap();
         assert_eq!(p.timeout_secs, 120);
         assert!(p.extra_headers.is_empty());
     }

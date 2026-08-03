@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use super::types::*;
 use super::store::MemoryStore;
+use super::types::*;
 
 #[derive(Clone)]
 pub struct InjectionConfig {
@@ -42,13 +42,15 @@ impl MemoryInjector {
     }
 
     pub fn with_config(store: Arc<dyn MemoryStore>, config: InjectionConfig) -> Self {
-        Self {
-            store,
-            config,
-        }
+        Self { store, config }
     }
 
-    pub async fn retrieve(&self, query: &str, user_id: &str, session_id: Option<&str>) -> crate::memory::Result<Vec<ScoredMemory>> {
+    pub async fn retrieve(
+        &self,
+        query: &str,
+        user_id: &str,
+        session_id: Option<&str>,
+    ) -> crate::memory::Result<Vec<ScoredMemory>> {
         let mut filter = MemoryFilter::for_user(user_id);
         filter.limit = self.config.max_memories * 3;
         if let Some(sid) = session_id {
@@ -68,14 +70,21 @@ impl MemoryInjector {
                 + recency * self.config.recency_weight;
         }
 
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         results.retain(|sm| sm.score >= self.config.min_score);
         results.truncate(self.config.max_memories);
         Ok(results)
     }
 
     pub async fn retrieve_by_category(
-        &self, user_id: &str, categories: &[MemoryCategory], limit: usize,
+        &self,
+        user_id: &str,
+        categories: &[MemoryCategory],
+        limit: usize,
     ) -> crate::memory::Result<Vec<ScoredMemory>> {
         let filter = MemoryFilter {
             user_id: Some(user_id.to_string()),
@@ -116,14 +125,23 @@ impl MemoryInjector {
         ))
     }
 
-    pub async fn inject_into_system_prompt(&self, system_prompt: &str, user_id: &str, session_id: Option<&str>) -> String {
-        let memories = self.retrieve(system_prompt, user_id, session_id).await.unwrap_or_default();
+    pub async fn inject_into_system_prompt(
+        &self,
+        system_prompt: &str,
+        user_id: &str,
+        session_id: Option<&str>,
+    ) -> String {
+        let memories = self
+            .retrieve(system_prompt, user_id, session_id)
+            .await
+            .unwrap_or_default();
         match self.format_as_system_block(&memories) {
             Some(block) => {
                 let marker = "<!-- KNOWN_FACTS -->";
                 if system_prompt.contains(marker) {
-                    let re = regex::Regex::new(r"(?s)<!-- KNOWN_FACTS -->.*?(?:-->|$)").expect("valid regex");
-                    re.replace(system_prompt, format!("{}", block)).to_string()
+                    let re = regex::Regex::new(r"(?s)<!-- KNOWN_FACTS -->.*?(?:-->|$)")
+                        .expect("valid regex");
+                    re.replace(system_prompt, block.to_string()).to_string()
                 } else {
                     format!("{}\n{}", system_prompt, block)
                 }
@@ -148,7 +166,12 @@ mod tests {
         (store, injector)
     }
 
-    fn test_memory(user_id: &str, content: &str, category: MemoryCategory, importance: f64) -> Memory {
+    fn test_memory(
+        user_id: &str,
+        content: &str,
+        category: MemoryCategory,
+        importance: f64,
+    ) -> Memory {
         let now = now_seconds();
         Memory {
             id: generate_memory_id(),
@@ -174,10 +197,29 @@ mod tests {
     #[tokio::test]
     async fn test_retrieve_relevant() {
         let (store, injector) = create_test_injector();
-        store.add(test_memory("alice", "Prefers Python for backend work", MemoryCategory::Preference, 0.7)).await.unwrap();
-        store.add(test_memory("alice", "Works at a startup", MemoryCategory::Fact, 0.5)).await.unwrap();
+        store
+            .add(test_memory(
+                "alice",
+                "Prefers Python for backend work",
+                MemoryCategory::Preference,
+                0.7,
+            ))
+            .await
+            .unwrap();
+        store
+            .add(test_memory(
+                "alice",
+                "Works at a startup",
+                MemoryCategory::Fact,
+                0.5,
+            ))
+            .await
+            .unwrap();
 
-        let results = injector.retrieve("python backend", "alice", None).await.unwrap();
+        let results = injector
+            .retrieve("python backend", "alice", None)
+            .await
+            .unwrap();
         assert!(!results.is_empty());
         assert!(results[0].memory.content.contains("Python"));
     }
@@ -185,24 +227,25 @@ mod tests {
     #[tokio::test]
     async fn test_retrieve_empty_when_no_relevant() {
         let (_, injector) = create_test_injector();
-        let results = injector.retrieve("something", "nobody", None).await.unwrap();
+        let results = injector
+            .retrieve("something", "nobody", None)
+            .await
+            .unwrap();
         assert!(results.is_empty());
     }
 
     #[test]
     fn test_format_memories() {
         let injector = MemoryInjector::new(Arc::new(InMemoryStore::new()));
-        let memories = vec![
-            ScoredMemory {
-                memory: Memory {
-                    content: "Likes Python".to_string(),
-                    category: MemoryCategory::Preference,
-                    ..test_memory("u", "Likes Python", MemoryCategory::Preference, 0.5)
-                },
-                score: 0.8,
-                relevance: 0.7,
-            }
-        ];
+        let memories = vec![ScoredMemory {
+            memory: Memory {
+                content: "Likes Python".to_string(),
+                category: MemoryCategory::Preference,
+                ..test_memory("u", "Likes Python", MemoryCategory::Preference, 0.5)
+            },
+            score: 0.8,
+            relevance: 0.7,
+        }];
         let formatted = injector.format_memories(&memories);
         assert!(formatted.unwrap().contains("[preference]"));
     }
@@ -216,9 +259,19 @@ mod tests {
     #[tokio::test]
     async fn test_inject_into_system_prompt() {
         let (store, injector) = create_test_injector();
-        store.add(test_memory("alice", "Likes Rust", MemoryCategory::Preference, 0.8)).await.unwrap();
+        store
+            .add(test_memory(
+                "alice",
+                "Likes Rust",
+                MemoryCategory::Preference,
+                0.8,
+            ))
+            .await
+            .unwrap();
 
-        let prompt = injector.inject_into_system_prompt("You are a helpful assistant.", "alice", None).await;
+        let prompt = injector
+            .inject_into_system_prompt("You are a helpful assistant.", "alice", None)
+            .await;
         assert!(prompt.contains("Likes Rust"));
         assert!(prompt.contains("You are a helpful assistant."));
     }
@@ -226,17 +279,38 @@ mod tests {
     #[tokio::test]
     async fn test_inject_into_empty_no_memories() {
         let (_, injector) = create_test_injector();
-        let prompt = injector.inject_into_system_prompt("Hello", "nobody", None).await;
+        let prompt = injector
+            .inject_into_system_prompt("Hello", "nobody", None)
+            .await;
         assert_eq!(prompt, "Hello");
     }
 
     #[tokio::test]
     async fn test_retrieve_by_category() {
         let (store, injector) = create_test_injector();
-        store.add(test_memory("alice", "Likes Go", MemoryCategory::Preference, 0.6)).await.unwrap();
-        store.add(test_memory("alice", "Works at Co", MemoryCategory::Fact, 0.6)).await.unwrap();
+        store
+            .add(test_memory(
+                "alice",
+                "Likes Go",
+                MemoryCategory::Preference,
+                0.6,
+            ))
+            .await
+            .unwrap();
+        store
+            .add(test_memory(
+                "alice",
+                "Works at Co",
+                MemoryCategory::Fact,
+                0.6,
+            ))
+            .await
+            .unwrap();
 
-        let prefs = injector.retrieve_by_category("alice", &[MemoryCategory::Preference], 10).await.unwrap();
+        let prefs = injector
+            .retrieve_by_category("alice", &[MemoryCategory::Preference], 10)
+            .await
+            .unwrap();
         assert_eq!(prefs.len(), 1);
         assert!(prefs[0].memory.content.contains("Go"));
     }

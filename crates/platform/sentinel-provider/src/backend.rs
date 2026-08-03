@@ -44,7 +44,11 @@ pub fn chat_url(base_url: &str) -> String {
     format!("{}/v1/chat/completions", normalize_url(base_url))
 }
 
-pub async fn check_backend(client: &reqwest::Client, base_url: &str, kind: &BackendKind) -> Option<BackendInfo> {
+pub async fn check_backend(
+    client: &reqwest::Client,
+    base_url: &str,
+    kind: &BackendKind,
+) -> Option<BackendInfo> {
     let url = models_url(base_url);
     let resp = client.get(&url).send().await.ok()?;
     if !resp.status().is_success() {
@@ -58,15 +62,19 @@ pub async fn check_backend(client: &reqwest::Client, base_url: &str, kind: &Back
     }
 
     let data: serde_json::Value = resp.json().await.ok()?;
-    let models = data["data"].as_array()
-        .map(|arr| arr.iter()
-            .filter_map(|m| m["id"].as_str().map(String::from))
-            .collect::<Vec<_>>())
+    let models = data["data"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|m| m["id"].as_str().map(String::from))
+                .collect::<Vec<_>>()
+        })
         .unwrap_or_default();
 
-    let version = data["object"].as_str().or_else(|| {
-        models.first().and_then(|_| Some("detected"))
-    }).map(String::from);
+    let version = data["object"]
+        .as_str()
+        .or_else(|| models.first().map(|_| "detected"))
+        .map(String::from);
 
     Some(BackendInfo {
         kind: kind.clone(),
@@ -77,22 +85,33 @@ pub async fn check_backend(client: &reqwest::Client, base_url: &str, kind: &Back
     })
 }
 
-pub async fn list_backend_models(client: &reqwest::Client, base_url: &str) -> Result<Vec<String>, String> {
+pub async fn list_backend_models(
+    client: &reqwest::Client,
+    base_url: &str,
+) -> Result<Vec<String>, String> {
     let url = models_url(base_url);
-    let resp = client.get(&url).send().await
+    let resp = client
+        .get(&url)
+        .send()
+        .await
         .map_err(|e| format!("Connection failed: {}", e))?;
 
     if !resp.status().is_success() {
         return Err(format!("Backend returned status {}", resp.status()));
     }
 
-    let data: serde_json::Value = resp.json().await
+    let data: serde_json::Value = resp
+        .json()
+        .await
         .map_err(|e| format!("Parse failed: {}", e))?;
 
-    let models = data["data"].as_array()
-        .map(|arr| arr.iter()
-            .filter_map(|m| m["id"].as_str().map(String::from))
-            .collect())
+    let models = data["data"]
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|m| m["id"].as_str().map(String::from))
+                .collect()
+        })
         .unwrap_or_default();
 
     Ok(models)

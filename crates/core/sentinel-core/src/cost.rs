@@ -1,21 +1,93 @@
 use std::collections::HashMap;
-use std::sync::LazyLock;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::LazyLock;
 
 static MODEL_PRICING: LazyLock<HashMap<&'static str, ModelPrice>> = LazyLock::new(|| {
     let mut m = HashMap::new();
-    m.insert("gpt-4o", ModelPrice { input_per_1k: 0.01, output_per_1k: 0.03 });
-    m.insert("gpt-4o-mini", ModelPrice { input_per_1k: 0.0015, output_per_1k: 0.006 });
-    m.insert("gpt-5.5", ModelPrice { input_per_1k: 0.01, output_per_1k: 0.03 });
-    m.insert("claude-opus-4.8", ModelPrice { input_per_1k: 0.015, output_per_1k: 0.075 });
-    m.insert("claude-sonnet-4.6", ModelPrice { input_per_1k: 0.003, output_per_1k: 0.015 });
-    m.insert("claude-haiku-3.5", ModelPrice { input_per_1k: 0.0008, output_per_1k: 0.004 });
-    m.insert("gemini-2.5-pro", ModelPrice { input_per_1k: 0.00125, output_per_1k: 0.005 });
-    m.insert("gemini-2.0-flash", ModelPrice { input_per_1k: 0.0001, output_per_1k: 0.0004 });
-    m.insert("deepseek-chat", ModelPrice { input_per_1k: 0.0003, output_per_1k: 0.0015 });
-    m.insert("deepseek-v4-pro", ModelPrice { input_per_1k: 0.002, output_per_1k: 0.008 });
-    m.insert("openai/gpt-4o", ModelPrice { input_per_1k: 0.01, output_per_1k: 0.03 });
-    m.insert("openai/gpt-4o-mini", ModelPrice { input_per_1k: 0.0015, output_per_1k: 0.006 });
+    m.insert(
+        "gpt-4o",
+        ModelPrice {
+            input_per_1k: 0.01,
+            output_per_1k: 0.03,
+        },
+    );
+    m.insert(
+        "gpt-4o-mini",
+        ModelPrice {
+            input_per_1k: 0.0015,
+            output_per_1k: 0.006,
+        },
+    );
+    m.insert(
+        "gpt-5.5",
+        ModelPrice {
+            input_per_1k: 0.01,
+            output_per_1k: 0.03,
+        },
+    );
+    m.insert(
+        "claude-opus-4.8",
+        ModelPrice {
+            input_per_1k: 0.015,
+            output_per_1k: 0.075,
+        },
+    );
+    m.insert(
+        "claude-sonnet-4.6",
+        ModelPrice {
+            input_per_1k: 0.003,
+            output_per_1k: 0.015,
+        },
+    );
+    m.insert(
+        "claude-haiku-3.5",
+        ModelPrice {
+            input_per_1k: 0.0008,
+            output_per_1k: 0.004,
+        },
+    );
+    m.insert(
+        "gemini-2.5-pro",
+        ModelPrice {
+            input_per_1k: 0.00125,
+            output_per_1k: 0.005,
+        },
+    );
+    m.insert(
+        "gemini-2.0-flash",
+        ModelPrice {
+            input_per_1k: 0.0001,
+            output_per_1k: 0.0004,
+        },
+    );
+    m.insert(
+        "deepseek-chat",
+        ModelPrice {
+            input_per_1k: 0.0003,
+            output_per_1k: 0.0015,
+        },
+    );
+    m.insert(
+        "deepseek-v4-pro",
+        ModelPrice {
+            input_per_1k: 0.002,
+            output_per_1k: 0.008,
+        },
+    );
+    m.insert(
+        "openai/gpt-4o",
+        ModelPrice {
+            input_per_1k: 0.01,
+            output_per_1k: 0.03,
+        },
+    );
+    m.insert(
+        "openai/gpt-4o-mini",
+        ModelPrice {
+            input_per_1k: 0.0015,
+            output_per_1k: 0.006,
+        },
+    );
     m
 });
 
@@ -33,7 +105,10 @@ pub struct Usage {
 
 impl Usage {
     pub fn new(prompt_tokens: u32, completion_tokens: u32) -> Self {
-        Self { prompt_tokens, completion_tokens }
+        Self {
+            prompt_tokens,
+            completion_tokens,
+        }
     }
 
     pub fn total_tokens(&self) -> u32 {
@@ -43,7 +118,8 @@ impl Usage {
 
 /// Estimate the cost of an LLM call based on model and token usage.
 pub fn estimate_llm_cost(model: &str, usage: &Usage) -> f64 {
-    let key = MODEL_PRICING.keys()
+    let key = MODEL_PRICING
+        .keys()
         .find(|k| model.contains(*k))
         .copied()
         .unwrap_or("gpt-4o-mini");
@@ -55,7 +131,8 @@ pub fn estimate_llm_cost(model: &str, usage: &Usage) -> f64 {
 
 /// Estimate the cost of a request before it's made (prompt tokens only).
 pub fn estimate_input_cost(model: &str, prompt_tokens: u32) -> f64 {
-    let key = MODEL_PRICING.keys()
+    let key = MODEL_PRICING
+        .keys()
         .find(|k| model.contains(*k))
         .copied()
         .unwrap_or("gpt-4o-mini");
@@ -66,7 +143,7 @@ pub fn estimate_input_cost(model: &str, prompt_tokens: u32) -> f64 {
 /// Real-time cost tracker across a session.
 #[derive(Debug)]
 pub struct CostTracker {
-    session_spend: AtomicU64,   // stored as microdollars (USD * 1_000_000)
+    session_spend: AtomicU64, // stored as microdollars (USD * 1_000_000)
     turn_spend: AtomicU64,
 }
 

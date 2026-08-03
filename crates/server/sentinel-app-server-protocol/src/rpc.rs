@@ -40,19 +40,39 @@ pub struct JsonRpcError {
 
 impl JsonRpcError {
     pub fn parse_error(msg: impl Into<String>) -> Self {
-        Self { code: -32700, message: msg.into(), data: None }
+        Self {
+            code: -32700,
+            message: msg.into(),
+            data: None,
+        }
     }
     pub fn invalid_request(msg: impl Into<String>) -> Self {
-        Self { code: -32600, message: msg.into(), data: None }
+        Self {
+            code: -32600,
+            message: msg.into(),
+            data: None,
+        }
     }
     pub fn method_not_found(msg: impl Into<String>) -> Self {
-        Self { code: -32601, message: msg.into(), data: None }
+        Self {
+            code: -32601,
+            message: msg.into(),
+            data: None,
+        }
     }
     pub fn invalid_params(msg: impl Into<String>) -> Self {
-        Self { code: -32602, message: msg.into(), data: None }
+        Self {
+            code: -32602,
+            message: msg.into(),
+            data: None,
+        }
     }
     pub fn internal_error(msg: impl Into<String>) -> Self {
-        Self { code: -32603, message: msg.into(), data: None }
+        Self {
+            code: -32603,
+            message: msg.into(),
+            data: None,
+        }
     }
     pub fn with_data(mut self, data: Value) -> Self {
         self.data = Some(data);
@@ -69,9 +89,8 @@ pub enum JsonRpcMessage {
 }
 
 pub fn parse_message(data: &str) -> Result<JsonRpcMessage, JsonRpcError> {
-    serde_json::from_str(data).map_err(|e| {
-        JsonRpcError::parse_error(format!("Invalid JSON: {}", e))
-    })
+    serde_json::from_str(data)
+        .map_err(|e| JsonRpcError::parse_error(format!("Invalid JSON: {}", e)))
 }
 
 #[cfg(test)]

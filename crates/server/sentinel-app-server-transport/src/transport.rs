@@ -1,13 +1,13 @@
+use futures_util::{SinkExt, StreamExt};
 use std::pin::Pin;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
-use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::{accept_async, tungstenite::Message};
 use uuid::Uuid;
 
-use sentinel_app_server_protocol::rpc::{JsonRpcMessage, JsonRpcResponse};
 use crate::auth::Authenticator;
+use sentinel_app_server_protocol::rpc::{JsonRpcMessage, JsonRpcResponse};
 
 #[cfg(unix)]
 use tokio::net::UnixListener;
@@ -58,10 +58,16 @@ impl std::error::Error for TransportError {
 
 pub enum TransportKind {
     Stdio,
-    Tcp { addr: String },
-    WebSocket { addr: String },
+    Tcp {
+        addr: String,
+    },
+    WebSocket {
+        addr: String,
+    },
     #[cfg(unix)]
-    Unix { path: String },
+    Unix {
+        path: String,
+    },
 }
 
 pub struct TransportServer {
@@ -71,7 +77,10 @@ pub struct TransportServer {
 
 impl TransportServer {
     pub fn new(kind: TransportKind) -> Self {
-        Self { kind, _authenticator: None }
+        Self {
+            kind,
+            _authenticator: None,
+        }
     }
 
     pub fn with_auth(mut self, auth: Authenticator) -> Self {
@@ -79,30 +88,26 @@ impl TransportServer {
         self
     }
 
-    pub async fn accept(&self) -> Result<(BoxedMessageStream, BoxedSink, Option<String>), TransportError> {
+    pub async fn accept(
+        &self,
+    ) -> Result<(BoxedMessageStream, BoxedSink, Option<String>), TransportError> {
         match &self.kind {
             TransportKind::Stdio => Ok(Self::stdio_transport()),
             TransportKind::Tcp { addr } => {
-                let stream = TcpListener::bind(addr).await
-                    .map_err(TransportError::Io)?;
-                let (tcp, _) = stream.accept().await
-                    .map_err(TransportError::Io)?;
+                let stream = TcpListener::bind(addr).await.map_err(TransportError::Io)?;
+                let (tcp, _) = stream.accept().await.map_err(TransportError::Io)?;
                 Ok(Self::tcp_transport(tcp, self._authenticator.as_ref()))
             }
             TransportKind::WebSocket { addr } => {
-                let stream = TcpListener::bind(addr).await
-                    .map_err(TransportError::Io)?;
-                let (tcp, _) = stream.accept().await
-                    .map_err(TransportError::Io)?;
+                let stream = TcpListener::bind(addr).await.map_err(TransportError::Io)?;
+                let (tcp, _) = stream.accept().await.map_err(TransportError::Io)?;
                 Self::ws_transport(tcp, self._authenticator.as_ref()).await
             }
             #[cfg(unix)]
             TransportKind::Unix { path } => {
                 let _ = std::fs::remove_file(path);
-                let listener = UnixListener::bind(path)
-                    .map_err(TransportError::Io)?;
-                let (unix, _) = listener.accept().await
-                    .map_err(TransportError::Io)?;
+                let listener = UnixListener::bind(path).map_err(TransportError::Io)?;
+                let (unix, _) = listener.accept().await.map_err(TransportError::Io)?;
                 Ok(Self::unix_transport(unix, self._authenticator.as_ref()))
             }
         }
@@ -118,9 +123,13 @@ impl TransportServer {
             let mut lines = reader.lines();
             let tx = tx;
             while let Ok(Some(line)) = lines.next_line().await {
-                if line.trim().is_empty() { continue; }
+                if line.trim().is_empty() {
+                    continue;
+                }
                 match sentinel_app_server_protocol::rpc::parse_message(&line) {
-                    Ok(msg) => { let _ = tx.send(TransportEvent::Message(msg)); }
+                    Ok(msg) => {
+                        let _ = tx.send(TransportEvent::Message(msg));
+                    }
                     Err(e) => {
                         let resp = JsonRpcResponse {
                             jsonrpc: "2.0".into(),
@@ -139,7 +148,10 @@ impl TransportServer {
         (Box::pin(stream), Box::new(StdioSink), Some(client_id))
     }
 
-    fn tcp_transport(stream: TcpStream, _auth: Option<&Authenticator>) -> (BoxedMessageStream, BoxedSink, Option<String>) {
+    fn tcp_transport(
+        stream: TcpStream,
+        _auth: Option<&Authenticator>,
+    ) -> (BoxedMessageStream, BoxedSink, Option<String>) {
         let (reader, writer) = stream.into_split();
         let (tx, rx) = mpsc::unbounded_channel();
         let client_id = format!("tcp:{}", Uuid::new_v4());
@@ -153,7 +165,9 @@ impl TransportServer {
                 match buf_reader.read_line(&mut line).await {
                     Ok(0) | Err(_) => break,
                     Ok(_) => {
-                        if let Ok(msg) = sentinel_app_server_protocol::rpc::parse_message(line.trim()) {
+                        if let Ok(msg) =
+                            sentinel_app_server_protocol::rpc::parse_message(line.trim())
+                        {
                             let _ = tx.send(TransportEvent::Message(msg));
                         }
                     }
@@ -166,8 +180,12 @@ impl TransportServer {
         (Box::pin(stream), Box::new(TcpSink(writer)), Some(client_id))
     }
 
-    async fn ws_transport(stream: TcpStream, _auth: Option<&Authenticator>) -> Result<(BoxedMessageStream, BoxedSink, Option<String>), TransportError> {
-        let ws_stream = accept_async(stream).await
+    async fn ws_transport(
+        stream: TcpStream,
+        _auth: Option<&Authenticator>,
+    ) -> Result<(BoxedMessageStream, BoxedSink, Option<String>), TransportError> {
+        let ws_stream = accept_async(stream)
+            .await
             .map_err(|e| TransportError::Protocol(e.to_string()))?;
         let (ws_sink, ws_stream) = ws_stream.split();
         let (tx, rx) = mpsc::unbounded_channel();
@@ -196,7 +214,10 @@ impl TransportServer {
     }
 
     #[cfg(unix)]
-    fn unix_transport(stream: UnixStream, _auth: Option<&Authenticator>) -> (BoxedMessageStream, BoxedSink, Option<String>) {
+    fn unix_transport(
+        stream: UnixStream,
+        _auth: Option<&Authenticator>,
+    ) -> (BoxedMessageStream, BoxedSink, Option<String>) {
         let (reader, writer) = stream.into_split();
         let (tx, rx) = mpsc::unbounded_channel();
         let client_id = format!("unix:{}", Uuid::new_v4());
@@ -210,7 +231,9 @@ impl TransportServer {
                 match buf_reader.read_line(&mut line).await {
                     Ok(0) | Err(_) => break,
                     Ok(_) => {
-                        if let Ok(msg) = sentinel_app_server_protocol::rpc::parse_message(line.trim()) {
+                        if let Ok(msg) =
+                            sentinel_app_server_protocol::rpc::parse_message(line.trim())
+                        {
                             let _ = tx.send(TransportEvent::Message(msg));
                         }
                     }
@@ -220,7 +243,11 @@ impl TransportServer {
         });
 
         let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx);
-        (Box::pin(stream), Box::new(UnixSink(writer)), Some(client_id))
+        (
+            Box::pin(stream),
+            Box::new(UnixSink(writer)),
+            Some(client_id),
+        )
     }
 }
 
@@ -228,10 +255,13 @@ struct StdioSink;
 #[async_trait::async_trait]
 impl MessageSink for StdioSink {
     async fn send(&mut self, msg: &JsonRpcMessage) -> Result<(), TransportError> {
-        let json = serde_json::to_string(msg)
-            .map_err(|e| TransportError::Protocol(e.to_string()))?;
+        let json =
+            serde_json::to_string(msg).map_err(|e| TransportError::Protocol(e.to_string()))?;
         let mut stdout = tokio::io::stdout();
-        stdout.write_all(json.as_bytes()).await.map_err(TransportError::Io)?;
+        stdout
+            .write_all(json.as_bytes())
+            .await
+            .map_err(TransportError::Io)?;
         stdout.write_all(b"\n").await.map_err(TransportError::Io)?;
         stdout.flush().await.map_err(TransportError::Io)
     }
@@ -241,21 +271,28 @@ struct TcpSink(tokio::net::tcp::OwnedWriteHalf);
 #[async_trait::async_trait]
 impl MessageSink for TcpSink {
     async fn send(&mut self, msg: &JsonRpcMessage) -> Result<(), TransportError> {
-        let json = serde_json::to_string(msg)
-            .map_err(|e| TransportError::Protocol(e.to_string()))?;
-        self.0.write_all(json.as_bytes()).await.map_err(TransportError::Io)?;
+        let json =
+            serde_json::to_string(msg).map_err(|e| TransportError::Protocol(e.to_string()))?;
+        self.0
+            .write_all(json.as_bytes())
+            .await
+            .map_err(TransportError::Io)?;
         self.0.write_all(b"\n").await.map_err(TransportError::Io)?;
         self.0.flush().await.map_err(TransportError::Io)
     }
 }
 
-struct WsSink(futures_util::stream::SplitSink<tokio_tungstenite::WebSocketStream<TcpStream>, Message>);
+struct WsSink(
+    futures_util::stream::SplitSink<tokio_tungstenite::WebSocketStream<TcpStream>, Message>,
+);
 #[async_trait::async_trait]
 impl MessageSink for WsSink {
     async fn send(&mut self, msg: &JsonRpcMessage) -> Result<(), TransportError> {
-        let json = serde_json::to_string(msg)
-            .map_err(|e| TransportError::Protocol(e.to_string()))?;
-        self.0.send(Message::Text(json)).await
+        let json =
+            serde_json::to_string(msg).map_err(|e| TransportError::Protocol(e.to_string()))?;
+        self.0
+            .send(Message::Text(json))
+            .await
             .map_err(|e| TransportError::Protocol(e.to_string()))
     }
 }
@@ -266,9 +303,12 @@ struct UnixSink(tokio::net::unix::OwnedWriteHalf);
 #[async_trait::async_trait]
 impl MessageSink for UnixSink {
     async fn send(&mut self, msg: &JsonRpcMessage) -> Result<(), TransportError> {
-        let json = serde_json::to_string(msg)
-            .map_err(|e| TransportError::Protocol(e.to_string()))?;
-        self.0.write_all(json.as_bytes()).await.map_err(TransportError::Io)?;
+        let json =
+            serde_json::to_string(msg).map_err(|e| TransportError::Protocol(e.to_string()))?;
+        self.0
+            .write_all(json.as_bytes())
+            .await
+            .map_err(TransportError::Io)?;
         self.0.write_all(b"\n").await.map_err(TransportError::Io)?;
         self.0.flush().await.map_err(TransportError::Io)
     }
@@ -314,26 +354,30 @@ mod tests {
             .await
             .map_err(|_| "connect timed out".to_string())?
             .map_err(|e| format!("connect failed: {e}"))?;
-            tcp.write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}\n").await.unwrap();
+            tcp.write_all(b"{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"ping\"}\n")
+                .await
+                .unwrap();
             tcp.flush().await.unwrap();
             let mut buf = String::new();
             let mut reader = tokio::io::BufReader::new(tcp);
-            tokio::time::timeout(std::time::Duration::from_secs(5), reader.read_line(&mut buf))
-                .await
-                .map_err(|_| "client read timed out".to_string())?
-                .map_err(|e| format!("client read failed: {e}"))?;
+            tokio::time::timeout(
+                std::time::Duration::from_secs(5),
+                reader.read_line(&mut buf),
+            )
+            .await
+            .map_err(|_| "client read timed out".to_string())?
+            .map_err(|e| format!("client read failed: {e}"))?;
             Ok(buf)
         });
 
-        let (mut stream, mut sink, _client_id) = tokio::time::timeout(
-            std::time::Duration::from_secs(5),
-            server.accept(),
-        )
-        .await
-        .map_err(|_| "accept timed out".to_string())?
-        .map_err(|e| format!("accept failed: {e}"))?;
+        let (mut stream, mut sink, _client_id) =
+            tokio::time::timeout(std::time::Duration::from_secs(5), server.accept())
+                .await
+                .map_err(|_| "accept timed out".to_string())?
+                .map_err(|e| format!("accept failed: {e}"))?;
 
-        let event = tokio::time::timeout(std::time::Duration::from_secs(5), stream.next()).await
+        let event = tokio::time::timeout(std::time::Duration::from_secs(5), stream.next())
+            .await
             .map_err(|_| "timeout waiting for request".to_string())?
             .ok_or_else(|| "stream ended".to_string())?;
         match event {
@@ -350,13 +394,19 @@ mod tests {
             result: Some(serde_json::json!({"pong": true})),
             error: None,
         });
-        sink.send(&resp).await.map_err(|e| format!("send response: {e}"))?;
+        sink.send(&resp)
+            .await
+            .map_err(|e| format!("send response: {e}"))?;
 
         let line: String = client
             .await
             .map_err(|e| format!("client task panicked: {e}"))?
             .map_err(|e: String| e)?;
-        assert!(line.contains("\"pong\"") && line.contains("\"id\":1"), "got: {}", line);
+        assert!(
+            line.contains("\"pong\"") && line.contains("\"id\":1"),
+            "got: {}",
+            line
+        );
         Ok(())
     }
 

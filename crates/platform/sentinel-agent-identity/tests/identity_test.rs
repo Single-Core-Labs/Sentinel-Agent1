@@ -1,5 +1,5 @@
-use sentinel_agent_identity::identity::{AgentIdentity, IdentityError};
 use sentinel_agent_identity::crypto::KeyPair;
+use sentinel_agent_identity::identity::{AgentIdentity, IdentityError};
 
 #[test]
 fn test_agent_identity_new_creates_unique_id_and_keypair() {
@@ -8,7 +8,10 @@ fn test_agent_identity_new_creates_unique_id_and_keypair() {
     assert_ne!(id1.agent_id, id2.agent_id);
     assert_eq!(id1.keypair.public_key_bytes().len(), 32);
     assert_eq!(id2.keypair.public_key_bytes().len(), 32);
-    assert_ne!(id1.keypair.public_key_bytes(), id2.keypair.public_key_bytes());
+    assert_ne!(
+        id1.keypair.public_key_bytes(),
+        id2.keypair.public_key_bytes()
+    );
 }
 
 #[test]
@@ -16,7 +19,10 @@ fn test_agent_identity_new_creates_bom() {
     let identity = AgentIdentity::new();
     assert_eq!(identity.bom.agent_id, identity.agent_id);
     assert_eq!(identity.bom.public_key, identity.keypair.public_key_bytes());
-    assert!(identity.bom.capabilities.contains(&"agent.chat".to_string()));
+    assert!(identity
+        .bom
+        .capabilities
+        .contains(&"agent.chat".to_string()));
 }
 
 #[test]
@@ -31,7 +37,9 @@ fn test_agent_identity_from_keypair() {
 #[test]
 fn test_create_and_verify_jwt_roundtrip() {
     let identity = AgentIdentity::new();
-    let jwt = identity.create_jwt("sentinel-backend", Some("task-42")).unwrap();
+    let jwt = identity
+        .create_jwt("sentinel-backend", Some("task-42"))
+        .unwrap();
     assert!(jwt.starts_with("ey")); // JWT header starts with base64
 
     let claims = identity.verify_jwt(&jwt).unwrap();
@@ -68,7 +76,9 @@ fn test_verify_jwt_invalid_token_fails() {
 #[test]
 fn test_authorization_header_format() {
     let identity = AgentIdentity::new();
-    let header = identity.authorization_header_for_agent_task("task-1").unwrap();
+    let header = identity
+        .authorization_header_for_agent_task("task-1")
+        .unwrap();
     assert!(header.starts_with("Bearer "));
     let jwt = header.trim_start_matches("Bearer ");
     let claims = identity.verify_jwt(jwt).unwrap();

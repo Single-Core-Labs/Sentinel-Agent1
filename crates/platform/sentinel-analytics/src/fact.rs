@@ -39,10 +39,7 @@ pub enum FactKind {
         success: bool,
     },
     /// A plugin was used.
-    PluginUsage {
-        plugin_id: String,
-        action: String,
-    },
+    PluginUsage { plugin_id: String, action: String },
     /// A tool call was executed.
     ToolCall {
         tool_id: String,
@@ -69,10 +66,7 @@ pub enum FactKind {
         deleted_lines: u32,
     },
     /// A turn started.
-    TurnStarted {
-        turn_id: String,
-        thread_id: String,
-    },
+    TurnStarted { turn_id: String, thread_id: String },
     /// A turn ended with aggregated stats.
     TurnEnded {
         turn_id: String,
@@ -81,20 +75,11 @@ pub enum FactKind {
         duration_ms: u64,
     },
     /// A session-level event.
-    SessionEvent {
-        session_id: String,
-        event: String,
-    },
+    SessionEvent { session_id: String, event: String },
     /// An approval gate was triggered.
-    Approval {
-        action: String,
-        granted: bool,
-    },
+    Approval { action: String, granted: bool },
     /// An error occurred.
-    Error {
-        source: String,
-        message: String,
-    },
+    Error { source: String, message: String },
     /// A process crash / panic was captured.
     Crash {
         crash_id: String,

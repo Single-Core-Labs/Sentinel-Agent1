@@ -1,14 +1,18 @@
-use async_trait::async_trait;
+use super::{CompressionResult, CompressionStrategy};
 use crate::classifier::ContentType;
 use crate::metrics::CompressionMetrics;
-use super::{CompressionStrategy, CompressionResult};
+use async_trait::async_trait;
 
 pub struct ImageCompressor;
 
 #[async_trait]
 impl CompressionStrategy for ImageCompressor {
-    fn name(&self) -> &'static str { "image" }
-    fn content_types(&self) -> Vec<ContentType> { vec![ContentType::Image] }
+    fn name(&self) -> &'static str {
+        "image"
+    }
+    fn content_types(&self) -> Vec<ContentType> {
+        vec![ContentType::Image]
+    }
 
     async fn compress(&self, content: &str) -> Option<CompressionResult> {
         if content.len() < 100 {
@@ -36,7 +40,11 @@ impl CompressionStrategy for ImageCompressor {
 
         let took = (chrono::Utc::now() - start).num_microseconds().unwrap_or(0) as u64;
         let metrics = CompressionMetrics::new(content, &metadata, "image", "image", took);
-        Some(CompressionResult { text: metadata, metrics, retrieval_key: None })
+        Some(CompressionResult {
+            text: metadata,
+            metrics,
+            retrieval_key: None,
+        })
     }
 }
 

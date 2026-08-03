@@ -1,13 +1,13 @@
-use std::sync::Arc;
-use std::sync::atomic::Ordering;
-use tokio_util::sync::CancellationToken;
-use sentinel_protocol::{Message, ContentBlock, Role};
+use sentinel_protocol::{ContentBlock, Message, Role};
 use sentinel_tools::ToolContext;
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
+use tokio_util::sync::CancellationToken;
 
 use crate::agent::*;
-use crate::thread::*;
 use crate::event::SessionEvent;
 use crate::memory_file::MemoryFileManager;
+use crate::thread::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PipelineStage {
@@ -119,7 +119,10 @@ pub struct PipelineAgent {
 
 impl PipelineAgent {
     pub fn new(agent: Agent) -> Self {
-        Self { agent, config: PipelineConfig::default() }
+        Self {
+            agent,
+            config: PipelineConfig::default(),
+        }
     }
 
     pub fn with_config(agent: Agent, config: PipelineConfig) -> Self {
@@ -149,11 +152,14 @@ impl PipelineAgent {
         let mut checkpoints: Vec<ThreadCheckpoint> = Vec::new();
         let sid = thread.id;
 
-        self.agent.event_store.append(SessionEvent::UserMessage {
-            session_id: sid.to_string(),
-            timestamp: chrono::Utc::now(),
-            content: user_input.to_string(),
-        }).await;
+        self.agent
+            .event_store
+            .append(SessionEvent::UserMessage {
+                session_id: sid.to_string(),
+                timestamp: chrono::Utc::now(),
+                content: user_input.to_string(),
+            })
+            .await;
 
         thread.status = ThreadStatus::Running;
 
@@ -250,17 +256,24 @@ impl PipelineAgent {
             };
 
             if let Some(ref usage) = response.usage {
-                self.agent.total_prompt_tokens.fetch_add(usage.prompt_tokens as u64, Ordering::Relaxed);
-                self.agent.total_completion_tokens.fetch_add(usage.completion_tokens as u64, Ordering::Relaxed);
-                let cost = crate::cost::estimate_llm_cost(self.agent.provider.name(), &crate::cost::Usage::new(
-                    usage.prompt_tokens, usage.completion_tokens,
-                ));
+                self.agent
+                    .total_prompt_tokens
+                    .fetch_add(usage.prompt_tokens as u64, Ordering::Relaxed);
+                self.agent
+                    .total_completion_tokens
+                    .fetch_add(usage.completion_tokens as u64, Ordering::Relaxed);
+                let cost = crate::cost::estimate_llm_cost(
+                    self.agent.provider.name(),
+                    &crate::cost::Usage::new(usage.prompt_tokens, usage.completion_tokens),
+                );
                 thread.budget.record_spend(cost);
             }
 
             if thread.budget.exhausted {
                 thread.status = ThreadStatus::Completed;
-                return Ok(AgentOutput::success("[Budget exhausted — spend cap reached]"));
+                return Ok(AgentOutput::success(
+                    "[Budget exhausted — spend cap reached]",
+                ));
             }
 
             let choice = match response.choices.into_iter().next() {
@@ -274,13 +287,27 @@ impl PipelineAgent {
             thread.add_message(choice.message.clone());
             thread.conversation.add_assistant_text(&last_text);
             let handler = self.agent.events.read().unwrap().clone();
-            handler.handle_event(AgentEvent::Thinking { text: last_text.clone() }).await;
+            handler
+                .handle_event(AgentEvent::Thinking {
+                    text: last_text.clone(),
+                })
+                .await;
 
-            let tool_calls: Vec<_> = choice.message.content.iter()
+            let tool_calls: Vec<_> = choice
+                .message
+                .content
+                .iter()
                 .filter_map(|b| {
-                    if let ContentBlock::ToolCall { id, name, arguments } = b {
+                    if let ContentBlock::ToolCall {
+                        id,
+                        name,
+                        arguments,
+                    } = b
+                    {
                         Some((id.clone(), name.clone(), arguments.clone()))
-                    } else { None }
+                    } else {
+                        None
+                    }
                 })
                 .collect();
 
@@ -289,8 +316,7 @@ impl PipelineAgent {
                     let error_detail = validation_errors.join("; ");
                     let hint = Message::user(format!(
                         "[SYSTEM: Malformed tool calls detected — {}]\n\n{}",
-                        error_detail,
-                        MALFORMED_TOOL_CALL_HINT,
+                        error_detail, MALFORMED_TOOL_CALL_HINT,
                     ));
                     thread.add_message(hint);
                     continue;
@@ -333,16 +359,18 @@ impl PipelineAgent {
                 &None,
                 &None,
                 &self.agent.plugin_registry,
-            ).await;
+            )
+            .await;
 
             for result in &tool_results {
-                thread.add_message(Message::new(Role::Tool, vec![
-                    ContentBlock::ToolResult {
+                thread.add_message(Message::new(
+                    Role::Tool,
+                    vec![ContentBlock::ToolResult {
                         tool_call_id: result.tool_call_id.clone(),
                         content: result.output.clone(),
                         is_error: Some(result.is_error),
-                    }
-                ]));
+                    }],
+                ));
             }
 
             if !thread.increment_turn() {
@@ -366,9 +394,14 @@ impl PipelineAgent {
 
     async fn build_request(&self, thread: &AgentThread) -> sentinel_protocol::CompletionRequest {
         let messages = thread.context.messages().to_vec();
-        let compressed = self.agent.compressor.compress_conversation(&messages, &self.agent.config.agent.default_model).await;
+        let compressed = self
+            .agent
+            .compressor
+            .compress_conversation(&messages, &self.agent.config.agent.default_model)
+            .await;
 
-        let mut req = sentinel_protocol::CompletionRequest::new(&self.agent.config.agent.default_model);
+        let mut req =
+            sentinel_protocol::CompletionRequest::new(&self.agent.config.agent.default_model);
         for msg in compressed {
             req = req.with_message(msg);
         }

@@ -1,11 +1,6 @@
-use std::sync::Arc;
-use sentinel_core::{
-    AgentThread,
-    ApprovalGate,
-    AutoApprovalGate,
-    pipeline::PipelineAgent,
-};
+use sentinel_core::{pipeline::PipelineAgent, AgentThread, ApprovalGate, AutoApprovalGate};
 use sentinel_protocol::Message;
+use std::sync::Arc;
 
 /// A high-level session wrapping PipelineAgent + AgentThread.
 pub struct Session {
@@ -33,11 +28,11 @@ impl Session {
 
     /// Run the pipeline with a user input.
     pub async fn send(&mut self, input: &str) -> Result<String, String> {
-        let result = self.pipeline.run_pipeline(
-            &mut self.thread,
-            input,
-            self.approval.as_ref(),
-        ).await.map_err(|e| e.to_string())?;
+        let result = self
+            .pipeline
+            .run_pipeline(&mut self.thread, input, self.approval.as_ref())
+            .await
+            .map_err(|e| e.to_string())?;
 
         Ok(result.text_or_empty())
     }

@@ -1,6 +1,8 @@
-use std::collections::HashMap;
+use crate::events::{
+    LineStats, SessionEvent, TokenUsage, ToolCallSummary, TrackEventRequest, TurnEvent,
+};
 use crate::fact::{AnalyticsFact, FactKind};
-use crate::events::{TrackEventRequest, TurnEvent, TokenUsage, ToolCallSummary, LineStats, SessionEvent};
+use std::collections::HashMap;
 
 /// Internal state tracked for one active turn.
 #[derive(Debug, Default)]
@@ -46,7 +48,11 @@ impl TurnState {
                     deleted_lines: self.deleted_lines,
                 })
             },
-            error: if self.errors.is_empty() { None } else { Some(self.errors.join("; ")) },
+            error: if self.errors.is_empty() {
+                None
+            } else {
+                Some(self.errors.join("; "))
+            },
         }
     }
 
@@ -96,24 +102,36 @@ impl AnalyticsReducer {
                 });
                 Vec::new()
             }
-            FactKind::TurnEnded { turn_id, .. } => {
-                self.handle_turn_ended(turn_id)
-            }
-            FactKind::ModelRequest { model, prompt_tokens, .. } => {
+            FactKind::TurnEnded { turn_id, .. } => self.handle_turn_ended(turn_id),
+            FactKind::ModelRequest {
+                model,
+                prompt_tokens,
+                ..
+            } => {
                 if let Some(turn) = self.current_turn_mut(&fact) {
                     turn.model = Some(model.clone());
                     turn.prompt_tokens = turn.prompt_tokens.saturating_add(*prompt_tokens);
                 }
                 Vec::new()
             }
-            FactKind::ModelResponse { model, completion_tokens, .. } => {
+            FactKind::ModelResponse {
+                model,
+                completion_tokens,
+                ..
+            } => {
                 if let Some(turn) = self.current_turn_mut(&fact) {
                     turn.model = Some(model.clone());
-                    turn.completion_tokens = turn.completion_tokens.saturating_add(*completion_tokens);
+                    turn.completion_tokens =
+                        turn.completion_tokens.saturating_add(*completion_tokens);
                 }
                 Vec::new()
             }
-            FactKind::ToolCall { tool_id: _, tool_name, duration_ms, success } => {
+            FactKind::ToolCall {
+                tool_id: _,
+                tool_name,
+                duration_ms,
+                success,
+            } => {
                 if let Some(turn) = self.current_turn_mut(&fact) {
                     turn.tool_calls.push(ToolCallSummary {
                         tool_name: tool_name.clone(),
@@ -123,7 +141,11 @@ impl AnalyticsReducer {
                 }
                 Vec::new()
             }
-            FactKind::CodeChange { file, added_lines, deleted_lines } => {
+            FactKind::CodeChange {
+                file,
+                added_lines,
+                deleted_lines,
+            } => {
                 if let Some(turn) = self.current_turn_mut(&fact) {
                     turn.added_lines = turn.added_lines.saturating_add(*added_lines);
                     turn.deleted_lines = turn.deleted_lines.saturating_add(*deleted_lines);
@@ -149,11 +171,13 @@ impl AnalyticsReducer {
     fn handle_session_event(&mut self, session_id: &str, event: &str) -> Vec<TrackEventRequest> {
         match event {
             "created" => {
-                self.sessions.entry(session_id.to_string()).or_insert(SessionState {
-                    session_id: session_id.to_string(),
-                    start_time: chrono::Utc::now(),
-                    turn_count: 0,
-                });
+                self.sessions
+                    .entry(session_id.to_string())
+                    .or_insert(SessionState {
+                        session_id: session_id.to_string(),
+                        start_time: chrono::Utc::now(),
+                        turn_count: 0,
+                    });
                 Vec::new()
             }
             "ended" => {
@@ -182,7 +206,9 @@ impl AnalyticsReducer {
     }
 
     fn current_turn_mut(&mut self, fact: &AnalyticsFact) -> Option<&mut TurnState> {
-        fact.turn_id.as_ref().and_then(|tid| self.turns.get_mut(tid))
+        fact.turn_id
+            .as_ref()
+            .and_then(|tid| self.turns.get_mut(tid))
     }
 
     /// Number of active turns being tracked.

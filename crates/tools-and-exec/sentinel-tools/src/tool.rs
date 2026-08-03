@@ -34,16 +34,32 @@ pub struct ToolOutput {
 
 impl ToolOutput {
     pub fn ok(text: impl Into<String>) -> Self {
-        Self { text: text.into(), is_error: false, sandboxed: false }
+        Self {
+            text: text.into(),
+            is_error: false,
+            sandboxed: false,
+        }
     }
     pub fn err(text: impl Into<String>) -> Self {
-        Self { text: text.into(), is_error: true, sandboxed: false }
+        Self {
+            text: text.into(),
+            is_error: true,
+            sandboxed: false,
+        }
     }
     pub fn ok_sandboxed(text: impl Into<String>) -> Self {
-        Self { text: text.into(), is_error: false, sandboxed: true }
+        Self {
+            text: text.into(),
+            is_error: false,
+            sandboxed: true,
+        }
     }
     pub fn err_sandboxed(text: impl Into<String>) -> Self {
-        Self { text: text.into(), is_error: true, sandboxed: true }
+        Self {
+            text: text.into(),
+            is_error: true,
+            sandboxed: true,
+        }
     }
 }
 
@@ -52,7 +68,9 @@ pub trait Tool: Send + Sync {
     fn name(&self) -> &str;
     fn description(&self) -> &str;
     fn input_schema(&self) -> serde_json::Value;
-    fn is_mutating(&self) -> bool { false }
+    fn is_mutating(&self) -> bool {
+        false
+    }
 
     /// Returns a typed JSON Schema for the tool's input parameters.
     /// Defaults to the same value as `input_schema()`.
@@ -75,17 +93,30 @@ pub struct TruncatingTool {
 
 impl TruncatingTool {
     pub fn new(tool: Box<dyn Tool>, max_output_chars: usize) -> Self {
-        Self { inner: tool, max_output_chars }
+        Self {
+            inner: tool,
+            max_output_chars,
+        }
     }
 }
 
 #[async_trait]
 impl Tool for TruncatingTool {
-    fn name(&self) -> &str { self.inner.name() }
-    fn description(&self) -> &str { self.inner.description() }
-    fn input_schema(&self) -> serde_json::Value { self.inner.input_schema() }
-    fn parameters(&self) -> serde_json::Value { self.inner.parameters() }
-    fn is_mutating(&self) -> bool { self.inner.is_mutating() }
+    fn name(&self) -> &str {
+        self.inner.name()
+    }
+    fn description(&self) -> &str {
+        self.inner.description()
+    }
+    fn input_schema(&self) -> serde_json::Value {
+        self.inner.input_schema()
+    }
+    fn parameters(&self) -> serde_json::Value {
+        self.inner.parameters()
+    }
+    fn is_mutating(&self) -> bool {
+        self.inner.is_mutating()
+    }
 
     async fn execute(&self, args: serde_json::Value, ctx: &ToolContext) -> ToolOutput {
         let output = self.inner.execute(args, ctx).await;
@@ -97,7 +128,11 @@ impl Tool for TruncatingTool {
                 output.text.len(),
                 output.text.len() - self.max_output_chars,
             );
-            ToolOutput { text: truncated, is_error: output.is_error, sandboxed: output.sandboxed }
+            ToolOutput {
+                text: truncated,
+                is_error: output.is_error,
+                sandboxed: output.sandboxed,
+            }
         } else {
             output
         }

@@ -50,6 +50,12 @@ pub struct ProviderPicker {
     pub message: String,
 }
 
+impl Default for ProviderPicker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ProviderPicker {
     pub fn new() -> Self {
         Self {
@@ -97,7 +103,8 @@ impl ProviderPicker {
                 name: "Anthropic".into(),
                 auth_type: "api_key".into(),
                 docs_url: "https://console.anthropic.com/".into(),
-                api_key_instructions: "Get your key at https://console.anthropic.com/settings/keys".into(),
+                api_key_instructions: "Get your key at https://console.anthropic.com/settings/keys"
+                    .into(),
                 env_var: "ANTHROPIC_API_KEY".into(),
                 models: vec![
                     ProviderModel {
@@ -145,17 +152,16 @@ impl ProviderPicker {
                 name: "DeepSeek".into(),
                 auth_type: "api_key".into(),
                 docs_url: "https://platform.deepseek.com/".into(),
-                api_key_instructions: "Get your key at https://platform.deepseek.com/api_keys".into(),
+                api_key_instructions: "Get your key at https://platform.deepseek.com/api_keys"
+                    .into(),
                 env_var: "DEEPSEEK_API_KEY".into(),
-                models: vec![
-                    ProviderModel {
-                        provider_id: "deepseek".into(),
-                        model_id: "deepseek-chat-v4".into(),
-                        name: "DeepSeek V4 Chat".into(),
-                        description: "Open-weight, strong reasoning".into(),
-                        tag: "open".into(),
-                    },
-                ],
+                models: vec![ProviderModel {
+                    provider_id: "deepseek".into(),
+                    model_id: "deepseek-chat-v4".into(),
+                    name: "DeepSeek V4 Chat".into(),
+                    description: "Open-weight, strong reasoning".into(),
+                    tag: "open".into(),
+                }],
             },
             ProviderInfo {
                 id: "nvidia-nim".into(),
@@ -212,15 +218,13 @@ impl ProviderPicker {
                 docs_url: "https://github.com/settings/tokens".into(),
                 api_key_instructions: "Log in with GitHub to use your Copilot account".into(),
                 env_var: "GITHUB_TOKEN".into(),
-                models: vec![
-                    ProviderModel {
-                        provider_id: "github-copilot".into(),
-                        model_id: "copilot-gpt-4o".into(),
-                        name: "Copilot GPT-4o".into(),
-                        description: "GitHub Copilot hosted model".into(),
-                        tag: "copilot".into(),
-                    },
-                ],
+                models: vec![ProviderModel {
+                    provider_id: "github-copilot".into(),
+                    model_id: "copilot-gpt-4o".into(),
+                    name: "Copilot GPT-4o".into(),
+                    description: "GitHub Copilot hosted model".into(),
+                    tag: "copilot".into(),
+                }],
             },
             ProviderInfo {
                 id: "openrouter".into(),
@@ -301,16 +305,11 @@ impl ProviderPicker {
     }
 
     pub fn select_provider(&mut self) {
-        let p = &self.providers[self.provider_cursor];
         self.selected_provider = Some(self.provider_cursor);
         self.model_cursor = 0;
         self.api_key_input.clear();
         self.base_url_input.clear();
-        if p.auth_type == "oauth" {
-            self.phase = PickerPhase::ApiKeyInput;
-        } else {
-            self.phase = PickerPhase::ApiKeyInput;
-        }
+        self.phase = PickerPhase::ApiKeyInput;
     }
 
     pub fn submit_api_key(&mut self) {
@@ -348,8 +347,12 @@ impl ProviderPicker {
 
     pub fn pop_char(&mut self) {
         match self.phase {
-            PickerPhase::ApiKeyInput => { self.api_key_input.pop(); }
-            PickerPhase::BaseUrlInput => { self.base_url_input.pop(); }
+            PickerPhase::ApiKeyInput => {
+                self.api_key_input.pop();
+            }
+            PickerPhase::BaseUrlInput => {
+                self.base_url_input.pop();
+            }
             _ => {}
         }
     }
@@ -410,7 +413,10 @@ impl ProviderPicker {
         let mut lines: Vec<Line> = Vec::new();
         lines.push(Line::from(vec![
             Span::styled("Select a provider  ", Style::default().fg(c.accent).bold()),
-            Span::styled("↑↓ navigate · Enter select · Esc cancel", Style::default().fg(c.muted)),
+            Span::styled(
+                "↑↓ navigate · Enter select · Esc cancel",
+                Style::default().fg(c.muted),
+            ),
         ]));
 
         for (i, p) in self.providers.iter().enumerate() {
@@ -423,13 +429,20 @@ impl ProviderPicker {
             };
             let auth_color = if active { c.accent } else { c.muted };
             lines.push(Line::from(vec![
-                Span::styled(prefix, Style::default().fg(if active { c.accent } else { c.border })),
                 Span::styled(
-                    format!("{:<18}", p.name),
-                    name_style,
+                    prefix,
+                    Style::default().fg(if active { c.accent } else { c.border }),
                 ),
+                Span::styled(format!("{:<18}", p.name), name_style),
                 Span::styled(
-                    format!("{:<10}", if p.auth_type == "oauth" { "OAuth" } else { "API Key" }),
+                    format!(
+                        "{:<10}",
+                        if p.auth_type == "oauth" {
+                            "OAuth"
+                        } else {
+                            "API Key"
+                        }
+                    ),
                     Style::default().fg(auth_color),
                 ),
             ]));
@@ -437,7 +450,10 @@ impl ProviderPicker {
 
         if !self.message.is_empty() {
             lines.push(Line::from(""));
-            lines.push(Line::from(Span::styled(&self.message, Style::default().fg(c.warning))));
+            lines.push(Line::from(Span::styled(
+                &self.message,
+                Style::default().fg(c.warning),
+            )));
         }
 
         let block = Block::default()
@@ -446,7 +462,9 @@ impl ProviderPicker {
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(c.border));
-        let para = Paragraph::new(lines).block(block).wrap(Wrap { trim: false });
+        let para = Paragraph::new(lines)
+            .block(block)
+            .wrap(Wrap { trim: false });
         f.render_widget(para, popup);
     }
 
@@ -454,10 +472,12 @@ impl ProviderPicker {
         let popup = centered_rect(70, 40, area);
         f.render_widget(Clear, popup);
 
-        let provider_name = self.selected_provider
+        let provider_name = self
+            .selected_provider
             .map(|i| self.providers[i].name.as_str())
             .unwrap_or("Provider");
-        let instructions = self.selected_provider
+        let instructions = self
+            .selected_provider
             .map(|i| self.providers[i].api_key_instructions.as_str())
             .unwrap_or("");
 
@@ -482,7 +502,10 @@ impl ProviderPicker {
                 Span::styled("█", Style::default().fg(c.accent)),
             ]),
             Line::from(""),
-            Line::from(Span::styled("Enter to save · Esc to cancel", Style::default().fg(c.muted))),
+            Line::from(Span::styled(
+                "Enter to save · Esc to cancel",
+                Style::default().fg(c.muted),
+            )),
         ];
 
         let block = Block::default()
@@ -491,7 +514,9 @@ impl ProviderPicker {
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(c.border));
-        let para = Paragraph::new(lines).block(block).wrap(Wrap { trim: false });
+        let para = Paragraph::new(lines)
+            .block(block)
+            .wrap(Wrap { trim: false });
         f.render_widget(para, popup);
     }
 
@@ -499,7 +524,8 @@ impl ProviderPicker {
         let popup = centered_rect(70, 40, area);
         f.render_widget(Clear, popup);
 
-        let provider_name = self.selected_provider
+        let provider_name = self
+            .selected_provider
             .map(|i| self.providers[i].name.as_str())
             .unwrap_or("Provider");
 
@@ -526,7 +552,10 @@ impl ProviderPicker {
                 Span::styled("█", Style::default().fg(c.accent)),
             ]),
             Line::from(""),
-            Line::from(Span::styled("Enter to save · Esc to go back", Style::default().fg(c.muted))),
+            Line::from(Span::styled(
+                "Enter to save · Esc to go back",
+                Style::default().fg(c.muted),
+            )),
         ];
 
         let block = Block::default()
@@ -535,7 +564,9 @@ impl ProviderPicker {
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(c.border));
-        let para = Paragraph::new(lines).block(block).wrap(Wrap { trim: false });
+        let para = Paragraph::new(lines)
+            .block(block)
+            .wrap(Wrap { trim: false });
         f.render_widget(para, popup);
     }
 
@@ -543,10 +574,12 @@ impl ProviderPicker {
         let popup = centered_rect(70, 50, area);
         f.render_widget(Clear, popup);
 
-        let provider_name = self.selected_provider
+        let provider_name = self
+            .selected_provider
             .map(|i| self.providers[i].name.as_str())
             .unwrap_or("Provider");
-        let models = self.selected_provider
+        let models = self
+            .selected_provider
             .map(|i| &self.providers[i].models)
             .map(|v| v.as_slice())
             .unwrap_or(&[]);
@@ -557,7 +590,10 @@ impl ProviderPicker {
                 format!("Select a model from {}  ", provider_name),
                 Style::default().fg(c.accent).bold(),
             ),
-            Span::styled("↑↓ navigate · Enter confirm · Esc back", Style::default().fg(c.muted)),
+            Span::styled(
+                "↑↓ navigate · Enter confirm · Esc back",
+                Style::default().fg(c.muted),
+            ),
         ]));
 
         for (i, m) in models.iter().enumerate() {
@@ -570,7 +606,10 @@ impl ProviderPicker {
             };
             let tag_color = Self::tag_color(&m.tag);
             lines.push(Line::from(vec![
-                Span::styled(prefix, Style::default().fg(if active { c.accent } else { c.border })),
+                Span::styled(
+                    prefix,
+                    Style::default().fg(if active { c.accent } else { c.border }),
+                ),
                 Span::styled(format!("{:<24}", m.name), name_style),
                 Span::styled(format!("[{}]", m.tag), Style::default().fg(tag_color)),
             ]));
@@ -590,7 +629,9 @@ impl ProviderPicker {
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
             .border_style(Style::default().fg(c.border));
-        let para = Paragraph::new(lines).block(block).wrap(Wrap { trim: false });
+        let para = Paragraph::new(lines)
+            .block(block)
+            .wrap(Wrap { trim: false });
         f.render_widget(para, popup);
     }
 }

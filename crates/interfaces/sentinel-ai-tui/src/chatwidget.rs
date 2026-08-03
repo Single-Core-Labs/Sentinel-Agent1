@@ -101,7 +101,11 @@ impl ChatWidget {
                         data: ev.data.clone(),
                     }));
                 } else {
-                    let txt = ev.data.get("text").and_then(Value::as_str).unwrap_or("Done");
+                    let txt = ev
+                        .data
+                        .get("text")
+                        .and_then(Value::as_str)
+                        .unwrap_or("Done");
                     self.messages.push(DisplayEvent::Message(ChatMessage {
                         event_type: "completed".into(),
                         text: txt.to_string(),
@@ -134,7 +138,11 @@ impl ChatWidget {
             "error" => {
                 self.pending_text.clear();
                 self.streaming = false;
-                let msg = ev.data.get("message").and_then(Value::as_str).unwrap_or("unknown error");
+                let msg = ev
+                    .data
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown error");
                 self.messages.push(DisplayEvent::Message(ChatMessage {
                     event_type: "error".into(),
                     text: msg.to_string(),
@@ -144,23 +152,41 @@ impl ChatWidget {
                 self.scroll_to_bottom();
             }
             "tool_call" => {
-                let name = ev.data.get("name").and_then(Value::as_str).unwrap_or("tool");
+                let name = ev
+                    .data
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .unwrap_or("tool");
                 let args_str = Self::format_tool_args(&ev.data);
-                let status = ev.data.get("status").and_then(Value::as_str).unwrap_or("pending");
+                let status = ev
+                    .data
+                    .get("status")
+                    .and_then(Value::as_str)
+                    .unwrap_or("pending");
                 let output = ev.data.get("output").and_then(Value::as_str).unwrap_or("");
 
                 // If a tool_call with the same name already exists, update it in place
                 let updated = if status == "completed" || status == "error" {
-                    self.messages.iter_mut().rev().find_map(|m| {
-                        if let DisplayEvent::ToolCall(ref mut tc) = m {
-                            if tc.name == name {
-                                tc.status = status.to_string();
-                                tc.output = output.to_string();
-                                Some(())
-                            } else { None }
-                        } else { None }
-                    }).is_some()
-                } else { false };
+                    self.messages
+                        .iter_mut()
+                        .rev()
+                        .find_map(|m| {
+                            if let DisplayEvent::ToolCall(ref mut tc) = m {
+                                if tc.name == name {
+                                    tc.status = status.to_string();
+                                    tc.output = output.to_string();
+                                    Some(())
+                                } else {
+                                    None
+                                }
+                            } else {
+                                None
+                            }
+                        })
+                        .is_some()
+                } else {
+                    false
+                };
 
                 if !updated {
                     self.messages.push(DisplayEvent::ToolCall(ToolCallInfo {
@@ -174,7 +200,11 @@ impl ChatWidget {
                 self.scroll_to_bottom();
             }
             "tool_log" => {
-                let tool = ev.data.get("name").and_then(Value::as_str).unwrap_or("tool");
+                let tool = ev
+                    .data
+                    .get("name")
+                    .and_then(Value::as_str)
+                    .unwrap_or("tool");
                 let msg = ev.data.get("message").and_then(Value::as_str).unwrap_or("");
                 self.messages.push(DisplayEvent::ToolLog {
                     tool: tool.to_string(),
@@ -187,7 +217,9 @@ impl ChatWidget {
                 self.scroll_to_bottom();
             }
             "plan_generated" | "plan" => {
-                let items: Vec<PlanItem> = ev.data.get("items")
+                let items: Vec<PlanItem> = ev
+                    .data
+                    .get("items")
                     .and_then(|v| serde_json::from_value(v.clone()).ok())
                     .unwrap_or_default();
                 self.messages.push(DisplayEvent::Plan { items });
@@ -201,8 +233,16 @@ impl ChatWidget {
                 self.scroll_to_bottom();
             }
             "approval" | "approval_required" => {
-                let tool = ev.data.get("tool").and_then(Value::as_str).unwrap_or("unknown");
-                let args_str = ev.data.get("arguments").and_then(Value::as_str).unwrap_or("");
+                let tool = ev
+                    .data
+                    .get("tool")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown");
+                let args_str = ev
+                    .data
+                    .get("arguments")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
                 self.messages.push(DisplayEvent::Approval {
                     tool: tool.to_string(),
                     args: args_str.to_string(),
@@ -210,8 +250,16 @@ impl ChatWidget {
                 self.scroll_to_bottom();
             }
             "compacted" => {
-                let before = ev.data.get("tokens_before").and_then(Value::as_u64).unwrap_or(0) as usize;
-                let after = ev.data.get("tokens_after").and_then(Value::as_u64).unwrap_or(0) as usize;
+                let before = ev
+                    .data
+                    .get("tokens_before")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0) as usize;
+                let after = ev
+                    .data
+                    .get("tokens_after")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0) as usize;
                 self.messages.push(DisplayEvent::Compacted {
                     tokens_before: before,
                     tokens_after: after,
@@ -226,8 +274,16 @@ impl ChatWidget {
                 self.scroll_to_bottom();
             }
             "turn_complete" | "turn-complete" => {
-                let summary = ev.data.get("summary").and_then(Value::as_str).unwrap_or("turn complete");
-                let turn_count = ev.data.get("turn_count").and_then(Value::as_u64).unwrap_or(0) as usize;
+                let summary = ev
+                    .data
+                    .get("summary")
+                    .and_then(Value::as_str)
+                    .unwrap_or("turn complete");
+                let turn_count = ev
+                    .data
+                    .get("turn_count")
+                    .and_then(Value::as_u64)
+                    .unwrap_or(0) as usize;
                 self.messages.push(DisplayEvent::TurnComplete {
                     summary: summary.to_string(),
                     turn_count,
@@ -262,9 +318,7 @@ impl ChatWidget {
     }
 
     fn format_tool_args(data: &Value) -> String {
-        let raw = data.get("arguments")
-            .and_then(|a| a.as_str())
-            .unwrap_or("");
+        let raw = data.get("arguments").and_then(|a| a.as_str()).unwrap_or("");
         if raw.len() > 120 {
             format!("{}...", &raw[..120])
         } else {
@@ -295,7 +349,9 @@ impl ChatWidget {
         }
         if self.streaming && !self.pending_text.is_empty() {
             let msg_count = base.len();
-            if msg_count == 0 || !matches!(base[msg_count - 1], DisplayEvent::Message(ref m) if m.event_type == "stream_chunk") {
+            if msg_count == 0
+                || !matches!(base[msg_count - 1], DisplayEvent::Message(ref m) if m.event_type == "stream_chunk")
+            {
             }
         }
         let total = base.len();

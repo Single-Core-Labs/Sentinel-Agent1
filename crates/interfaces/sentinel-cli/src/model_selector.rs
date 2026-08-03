@@ -130,7 +130,10 @@ fn available_model_map(config: &SentinelConfig) -> Vec<(String, Vec<String>)> {
 
 /// Resolve `model_id` to a validated provider, checking the model exists and
 /// that the provider's API key is available.
-pub fn resolve_model(config: &SentinelConfig, model_id: &str) -> Result<SelectedModel, SelectError> {
+pub fn resolve_model(
+    config: &SentinelConfig,
+    model_id: &str,
+) -> Result<SelectedModel, SelectError> {
     let trimmed = model_id.trim();
     if trimmed.is_empty() {
         return Err(SelectError::NoProvider {
@@ -153,7 +156,10 @@ pub fn resolve_model(config: &SentinelConfig, model_id: &str) -> Result<Selected
         // Wildcard local backends accept any model id (e.g. ollama/<tag>).
         let is_local = matches!(pid, "ollama" | "vllm" | "lm-studio" | "llamacpp");
         if let Some(provider) = config.providers().iter().find(|p| p.id == pid) {
-            if provider.models.iter().any(|m| m.id == trimmed) || provider.models.is_empty() || is_local {
+            if provider.models.iter().any(|m| m.id == trimmed)
+                || provider.models.is_empty()
+                || is_local
+            {
                 return finish(trimmed, provider.clone());
             }
             return Err(SelectError::ModelNotInProvider {
@@ -200,7 +206,10 @@ fn finish(selected_model: &str, provider: ProviderInfo) -> Result<SelectedModel,
     // Local backends (Ollama/vLLM/lm-studio/llamacpp) don't require a key.
     if !is_local {
         if let sentinel_provider_info::AuthConfig::EnvKey { var } = &provider.auth {
-            if std::env::var(var).map(|v| v.trim().is_empty()).unwrap_or(true) {
+            if std::env::var(var)
+                .map(|v| v.trim().is_empty())
+                .unwrap_or(true)
+            {
                 return Err(SelectError::ApiKeyMissing {
                     provider: provider.name.clone(),
                     env_var: var.clone(),
@@ -221,19 +230,20 @@ mod tests {
     use sentinel_provider_info::{AuthConfig, ModelEntry};
 
     fn test_config(models: Vec<ModelEntry>) -> SentinelConfig {
-        let mut cfg = SentinelConfig::default();
-        cfg.providers = vec![ProviderInfo {
-            id: "openai".into(),
-            name: "OpenAI".into(),
-            base_url: "https://api.openai.com/v1".into(),
-            auth: AuthConfig::EnvKey {
-                var: "OPENAI_API_KEY".into(),
-            },
-            models,
-            timeout_secs: 120,
-            extra_headers: Default::default(),
-        }];
-        cfg
+        SentinelConfig {
+            providers: vec![ProviderInfo {
+                id: "openai".into(),
+                name: "OpenAI".into(),
+                base_url: "https://api.openai.com/v1".into(),
+                auth: AuthConfig::EnvKey {
+                    var: "OPENAI_API_KEY".into(),
+                },
+                models,
+                timeout_secs: 120,
+                ..Default::default()
+            }],
+            ..Default::default()
+        }
     }
 
     fn model(id: &str) -> ModelEntry {

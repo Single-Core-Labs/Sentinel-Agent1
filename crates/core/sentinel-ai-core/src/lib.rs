@@ -8,6 +8,6 @@
 //! for the purpose of this repository.
 
 pub mod agent;
-pub mod compact;
-pub mod apply_patch;
 pub mod agents_md;
+pub mod apply_patch;
+pub mod compact;

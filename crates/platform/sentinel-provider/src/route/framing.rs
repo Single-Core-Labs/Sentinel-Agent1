@@ -1,7 +1,7 @@
+use crate::error::ProviderError;
 /// Framing: bytes-to-frames parsing for streaming responses.
 use async_trait::async_trait;
 use tokio_stream::Stream;
-use crate::error::ProviderError;
 
 pub type FrameStream = Box<dyn Stream<Item = Result<Vec<u8>, ProviderError>> + Send + Unpin>;
 
@@ -16,9 +16,7 @@ pub trait FramingProvider: Send + Sync {
 /// SSE (Server-Sent Events) framing parser.
 /// Strips `data: ` prefix lines and yields each as raw bytes.
 /// Buffers partial events across chunk boundaries.
-pub fn sse_frame_stream(
-    response: reqwest::Response,
-) -> FrameStream {
+pub fn sse_frame_stream(response: reqwest::Response) -> FrameStream {
     use futures::StreamExt;
 
     let (tx, rx) = futures::channel::mpsc::unbounded();
@@ -34,7 +32,10 @@ pub fn sse_frame_stream(
         while let Some(chunk_result) = byte_stream.next().await {
             let bytes = match chunk_result {
                 Ok(b) => b,
-                Err(e) => { let _ = tx.unbounded_send(Err(e)); return; }
+                Err(e) => {
+                    let _ = tx.unbounded_send(Err(e));
+                    return;
+                }
             };
             buffer.extend_from_slice(&bytes);
             while let Some(pos) = buffer.windows(2).position(|w| w == b"\n\n") {
@@ -46,7 +47,9 @@ pub fn sse_frame_stream(
                         if data == "[DONE]" {
                             continue;
                         }
-                        if tx.unbounded_send(Ok(data.as_bytes().to_vec())).is_err() { return; }
+                        if tx.unbounded_send(Ok(data.as_bytes().to_vec())).is_err() {
+                            return;
+                        }
                     }
                 }
             }

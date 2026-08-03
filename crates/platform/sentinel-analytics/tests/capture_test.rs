@@ -19,7 +19,9 @@ async fn test_dispatch_to_file_creates_file() {
     std::fs::create_dir_all(&dir).unwrap();
     let file_path = dir.join("events.jsonl");
 
-    let dest = AnalyticsDestination::CaptureFile { path: file_path.clone() };
+    let dest = AnalyticsDestination::CaptureFile {
+        path: file_path.clone(),
+    };
     assert!(!dest.is_null());
 
     let events = vec![
@@ -48,9 +50,15 @@ async fn test_dispatch_to_file_appends_to_existing() {
     std::fs::create_dir_all(&dir).unwrap();
     let file_path = dir.join("append.jsonl");
 
-    let dest = AnalyticsDestination::CaptureFile { path: file_path.clone() };
-    dest.dispatch(&[TrackEventRequest::new("first")]).await.unwrap();
-    dest.dispatch(&[TrackEventRequest::new("second")]).await.unwrap();
+    let dest = AnalyticsDestination::CaptureFile {
+        path: file_path.clone(),
+    };
+    dest.dispatch(&[TrackEventRequest::new("first")])
+        .await
+        .unwrap();
+    dest.dispatch(&[TrackEventRequest::new("second")])
+        .await
+        .unwrap();
 
     let content = std::fs::read_to_string(&file_path).unwrap();
     assert_eq!(content.trim().lines().count(), 2);
@@ -63,8 +71,12 @@ async fn test_dispatch_to_file_creates_parent_dirs() {
     let dir = std::env::temp_dir().join(format!("analytics-nested-{}", uuid::Uuid::new_v4()));
     let file_path = dir.join("sub").join("nested").join("events.jsonl");
 
-    let dest = AnalyticsDestination::CaptureFile { path: file_path.clone() };
-    dest.dispatch(&[TrackEventRequest::new("test")]).await.unwrap();
+    let dest = AnalyticsDestination::CaptureFile {
+        path: file_path.clone(),
+    };
+    dest.dispatch(&[TrackEventRequest::new("test")])
+        .await
+        .unwrap();
 
     assert!(file_path.exists());
     std::fs::remove_dir_all(&dir).ok();
@@ -72,8 +84,7 @@ async fn test_dispatch_to_file_creates_parent_dirs() {
 
 #[tokio::test]
 async fn test_serialized_event_fields() {
-    let event = TrackEventRequest::new("custom.event")
-        .with_session("sess-1");
+    let event = TrackEventRequest::new("custom.event").with_session("sess-1");
     let json = serde_json::to_value(&event).unwrap();
     assert_eq!(json["event_type"], "custom.event");
     assert_eq!(json["session_id"], "sess-1");

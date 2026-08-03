@@ -1,8 +1,8 @@
-use uuid::Uuid;
-use sentinel_protocol::Message;
 use crate::budget::BudgetGuard;
 use crate::context::ContextManager;
 use crate::conversation::Conversation;
+use sentinel_protocol::Message;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Phase {
@@ -11,8 +11,12 @@ pub enum Phase {
 }
 
 impl Phase {
-    pub fn is_plan(self) -> bool { self == Phase::Plan }
-    pub fn is_act(self) -> bool { self == Phase::Act }
+    pub fn is_plan(self) -> bool {
+        self == Phase::Plan
+    }
+    pub fn is_act(self) -> bool {
+        self == Phase::Act
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -35,7 +39,11 @@ pub struct ApprovalRequest {
 }
 
 impl ApprovalRequest {
-    pub fn new(tool_name: impl Into<String>, args: serde_json::Value, prompt: impl Into<String>) -> Self {
+    pub fn new(
+        tool_name: impl Into<String>,
+        args: serde_json::Value,
+        prompt: impl Into<String>,
+    ) -> Self {
         Self {
             tool_name: tool_name.into(),
             args,
@@ -90,23 +98,26 @@ impl AgentThread {
 
     pub fn is_doom_loop(&self) -> bool {
         let msgs = self.context.messages();
-        let tool_call_count = msgs.iter()
-            .filter(|m| m.is_tool_call())
-            .count();
+        let tool_call_count = msgs.iter().filter(|m| m.is_tool_call()).count();
 
         let is_all_tool_calls = tool_call_count > 20 && tool_call_count == self.iterations as usize;
 
         let is_repeated_tool = if msgs.len() >= 6 {
             let recent: Vec<&sentinel_protocol::Message> = msgs.iter().rev().take(6).collect();
-            let tool_names: Vec<&str> = recent.iter()
+            let tool_names: Vec<&str> = recent
+                .iter()
                 .filter_map(|m| {
                     if m.is_tool_call() {
                         m.content.iter().find_map(|b| {
                             if let sentinel_protocol::ContentBlock::ToolCall { name, .. } = b {
                                 Some(name.as_str())
-                            } else { None }
+                            } else {
+                                None
+                            }
                         })
-                    } else { None }
+                    } else {
+                        None
+                    }
                 })
                 .collect();
             tool_names.len() >= 3 && tool_names.windows(3).all(|w| w[0] == w[1] && w[1] == w[2])
@@ -116,15 +127,23 @@ impl AgentThread {
 
         let is_same_tool_result = if msgs.len() >= 4 {
             let recent: Vec<&sentinel_protocol::Message> = msgs.iter().rev().take(4).collect();
-            let errors: Vec<bool> = recent.iter()
+            let errors: Vec<bool> = recent
+                .iter()
                 .filter_map(|m| {
                     if m.role == sentinel_protocol::Role::Tool {
                         m.content.iter().find_map(|b| {
-                            if let sentinel_protocol::ContentBlock::ToolResult { is_error, .. } = b {
+                            if let sentinel_protocol::ContentBlock::ToolResult {
+                                is_error, ..
+                            } = b
+                            {
                                 Some(is_error.unwrap_or(false))
-                            } else { None }
+                            } else {
+                                None
+                            }
                         })
-                    } else { None }
+                    } else {
+                        None
+                    }
                 })
                 .collect();
             errors.len() >= 3 && errors.iter().all(|e| *e)
@@ -146,7 +165,13 @@ impl AgentThread {
     }
 
     /// Create a thread with a specific budget cap (for YOLO mode with cost limits).
-    pub fn with_budget(max_turns: u32, max_iterations: u32, yolo_mode: bool, cost_cap_usd: Option<f64>, phase: Phase) -> Self {
+    pub fn with_budget(
+        max_turns: u32,
+        max_iterations: u32,
+        yolo_mode: bool,
+        cost_cap_usd: Option<f64>,
+        phase: Phase,
+    ) -> Self {
         Self {
             budget: BudgetGuard::new(cost_cap_usd, yolo_mode),
             phase,

@@ -1,8 +1,8 @@
-use std::sync::Arc;
+use crate::client::McpClient;
 use async_trait::async_trait;
 use sentinel_protocol::ToolDef;
 use sentinel_tools::{Tool, ToolContext, ToolOutput};
-use crate::client::McpClient;
+use std::sync::Arc;
 
 pub struct McpToolAdapter {
     client: Arc<McpClient>,

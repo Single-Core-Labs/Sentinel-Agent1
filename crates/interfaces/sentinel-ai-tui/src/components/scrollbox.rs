@@ -25,6 +25,12 @@ pub struct StyledLine {
     prefix_color: Color,
 }
 
+impl Default for ScrollBox {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ScrollBox {
     pub fn new() -> Self {
         Self {
@@ -76,6 +82,10 @@ impl ScrollBox {
 
     pub fn len(&self) -> usize {
         self.lines.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.lines.is_empty()
     }
 
     pub fn visible_range(&self, max_height: usize) -> &[StyledLine] {

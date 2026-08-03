@@ -1,10 +1,10 @@
-use std::sync::OnceLock;
-use std::collections::{HashMap, HashSet};
-use async_trait::async_trait;
-use regex::Regex;
+use super::{CompressionResult, CompressionStrategy};
 use crate::classifier::ContentType;
 use crate::metrics::CompressionMetrics;
-use super::{CompressionStrategy, CompressionResult};
+use async_trait::async_trait;
+use regex::Regex;
+use std::collections::{HashMap, HashSet};
+use std::sync::OnceLock;
 
 #[derive(Debug, Clone)]
 pub struct SearchCompressorConfig {
@@ -15,13 +15,18 @@ pub struct SearchCompressorConfig {
 
 impl Default for SearchCompressorConfig {
     fn default() -> Self {
-        Self { max_results: 20, preserve_file_diversity: true, relevance_threshold: 0.3 }
+        Self {
+            max_results: 20,
+            preserve_file_diversity: true,
+            relevance_threshold: 0.3,
+        }
     }
 }
 
 static PATH_RE: OnceLock<Regex> = OnceLock::new();
 fn path_re() -> &'static Regex {
-    PATH_RE.get_or_init(|| Regex::new(r"(?m)^\s*([\w./\\-]+\.[a-z]+)(?::(\d+))?(?::(\d+))?").unwrap())
+    PATH_RE
+        .get_or_init(|| Regex::new(r"(?m)^\s*([\w./\\-]+\.[a-z]+)(?::(\d+))?(?::(\d+))?").unwrap())
 }
 
 static SCORE_RE: OnceLock<Regex> = OnceLock::new();
@@ -39,11 +44,21 @@ pub struct SearchCompressor {
 }
 
 impl SearchCompressor {
-    pub fn new() -> Self { Self { config: SearchCompressorConfig::default() } }
-    pub fn with_config(config: SearchCompressorConfig) -> Self { Self { config } }
+    pub fn new() -> Self {
+        Self {
+            config: SearchCompressorConfig::default(),
+        }
+    }
+    pub fn with_config(config: SearchCompressorConfig) -> Self {
+        Self { config }
+    }
 }
 
-impl Default for SearchCompressor { fn default() -> Self { Self::new() } }
+impl Default for SearchCompressor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 fn tokenize(text: &str) -> Vec<String> {
     text.split(|c: char| !c.is_alphanumeric())
@@ -52,32 +67,51 @@ fn tokenize(text: &str) -> Vec<String> {
         .collect()
 }
 
-fn bm25_score(query_tokens: &[String], doc_tokens: &[String], doc_freq: &HashMap<String, f64>, total_docs: f64, avg_dl: f64) -> f64 {
-    let k1 = 1.5; let b = 0.75;
+fn bm25_score(
+    query_tokens: &[String],
+    doc_tokens: &[String],
+    doc_freq: &HashMap<String, f64>,
+    total_docs: f64,
+    avg_dl: f64,
+) -> f64 {
+    let k1 = 1.5;
+    let b = 0.75;
     let dl = doc_tokens.len() as f64;
     let mut score = 0.0;
     let mut tf = HashMap::new();
-    for t in doc_tokens { *tf.entry(t.clone()).or_insert(0u64) += 1; }
+    for t in doc_tokens {
+        *tf.entry(t.clone()).or_insert(0u64) += 1;
+    }
     for qt in query_tokens {
         let df = doc_freq.get(qt).copied().unwrap_or(1.0);
         let idf = ((total_docs - df + 0.5) / (df + 0.5) + 1.0).ln();
         let term_freq = *tf.get(qt).unwrap_or(&0) as f64;
-        score += idf * (term_freq * (k1 + 1.0)) / (term_freq + k1 * (1.0 - b + b * dl / avg_dl.max(1.0)));
+        score += idf * (term_freq * (k1 + 1.0))
+            / (term_freq + k1 * (1.0 - b + b * dl / avg_dl.max(1.0)));
     }
     score
 }
 
 #[async_trait]
 impl CompressionStrategy for SearchCompressor {
-    fn name(&self) -> &'static str { "search" }
-    fn content_types(&self) -> Vec<ContentType> { vec![ContentType::SearchResults] }
+    fn name(&self) -> &'static str {
+        "search"
+    }
+    fn content_types(&self) -> Vec<ContentType> {
+        vec![ContentType::SearchResults]
+    }
 
     async fn compress(&self, content: &str) -> Option<CompressionResult> {
         let lines: Vec<&str> = content.lines().collect();
-        if lines.len() < 5 { return None; }
+        if lines.len() < 5 {
+            return None;
+        }
         let start = chrono::Utc::now();
 
-        let path_matches: Vec<&str> = path_re().find_iter(content).map(|m| m.as_str().trim()).collect();
+        let path_matches: Vec<&str> = path_re()
+            .find_iter(content)
+            .map(|m| m.as_str().trim())
+            .collect();
         let total_matches = path_matches.len();
 
         let mut blocks: Vec<(f64, String, String)> = Vec::new();
@@ -85,11 +119,13 @@ impl CompressionStrategy for SearchCompressor {
         for &line in &lines {
             if separator_re().is_match(line) || line.trim().is_empty() {
                 if !current_block.is_empty() {
-                    let score = score_re().captures(&current_block)
+                    let score = score_re()
+                        .captures(&current_block)
                         .and_then(|c| c.get(2))
                         .and_then(|m| m.as_str().parse::<f64>().ok())
                         .unwrap_or(0.5);
-                    let file = path_re().captures(&current_block)
+                    let file = path_re()
+                        .captures(&current_block)
                         .map(|c| c.get(1).map(|m| m.as_str().to_string()).unwrap_or_default())
                         .unwrap_or_default();
                     blocks.push((score, file, current_block.clone()));
@@ -101,17 +137,21 @@ impl CompressionStrategy for SearchCompressor {
             current_block.push('\n');
         }
         if !current_block.is_empty() {
-            let score = score_re().captures(&current_block)
+            let score = score_re()
+                .captures(&current_block)
                 .and_then(|c| c.get(2))
                 .and_then(|m| m.as_str().parse::<f64>().ok())
                 .unwrap_or(0.5);
-            let file = path_re().captures(&current_block)
+            let file = path_re()
+                .captures(&current_block)
                 .map(|c| c.get(1).map(|m| m.as_str().to_string()).unwrap_or_default())
                 .unwrap_or_default();
             blocks.push((score, file, current_block));
         }
 
-        if blocks.is_empty() { return None; }
+        if blocks.is_empty() {
+            return None;
+        }
 
         let total_docs = blocks.len() as f64;
         let all_tokens: Vec<Vec<String>> = blocks.iter().map(|(_, _, b)| tokenize(b)).collect();
@@ -119,11 +159,14 @@ impl CompressionStrategy for SearchCompressor {
         let mut doc_freq: HashMap<String, f64> = HashMap::new();
         for toks in &all_tokens {
             let unique: HashSet<&String> = toks.iter().collect();
-            for t in unique { *doc_freq.entry(t.clone()).or_insert(0.0) += 1.0; }
+            for t in unique {
+                *doc_freq.entry(t.clone()).or_insert(0.0) += 1.0;
+            }
         }
         let query_tokens = tokenize(content);
 
-        let mut scored: Vec<(f64, String, String)> = blocks.into_iter()
+        let mut scored: Vec<(f64, String, String)> = blocks
+            .into_iter()
             .map(|(s, f, b)| {
                 let toks = tokenize(&b);
                 let bm25 = bm25_score(&query_tokens, &toks, &doc_freq, total_docs, avg_dl);
@@ -139,7 +182,12 @@ impl CompressionStrategy for SearchCompressor {
 
         for (score, file, block) in &scored {
             let keep = if config.preserve_file_diversity && !file.is_empty() {
-                if seen_files.contains(file) { false } else { seen_files.insert(file.clone()); true }
+                if seen_files.contains(file) {
+                    false
+                } else {
+                    seen_files.insert(file.clone());
+                    true
+                }
             } else {
                 true
             };
@@ -148,22 +196,36 @@ impl CompressionStrategy for SearchCompressor {
             }
         }
         if selected.len() < 3 && scored.len() >= 3 {
-            selected = scored.iter().take(config.max_results.min(10))
-                .map(|(s, f, b)| (*s, f.clone(), b.clone())).collect();
+            selected = scored
+                .iter()
+                .take(config.max_results.min(10))
+                .map(|(s, f, b)| (*s, f.clone(), b.clone()))
+                .collect();
         }
 
-        let mut result = format!("‖ Search results: {} total matches, showing top {} by relevance\n", total_matches, selected.len());
+        let mut result = format!(
+            "‖ Search results: {} total matches, showing top {} by relevance\n",
+            total_matches,
+            selected.len()
+        );
         for (i, (score, _, block)) in selected.iter().enumerate() {
             let short: String = block.lines().take(3).collect::<Vec<_>>().join("  ");
             result.push_str(&format!("{}. [{:.3}] {}\n", i + 1, score, short));
         }
         if scored.len() > selected.len() {
-            result.push_str(&format!("‖ ... and {} more results omitted\n", scored.len() - selected.len()));
+            result.push_str(&format!(
+                "‖ ... and {} more results omitted\n",
+                scored.len() - selected.len()
+            ));
         }
 
         let took = (chrono::Utc::now() - start).num_microseconds().unwrap_or(0) as u64;
         let metrics = CompressionMetrics::new(content, &result, "search", "search_results", took);
-        Some(CompressionResult { text: result, metrics, retrieval_key: None })
+        Some(CompressionResult {
+            text: result,
+            metrics,
+            retrieval_key: None,
+        })
     }
 }
 
@@ -174,19 +236,34 @@ mod tests {
     #[tokio::test]
     async fn test_search_compression_basic() {
         let mut r = String::new();
-        for i in 0..50 { r.push_str(&format!("src/file_{}.rs:{}: content {}\n---\n", i, i*10, i)); }
+        for i in 0..50 {
+            r.push_str(&format!(
+                "src/file_{}.rs:{}: content {}\n---\n",
+                i,
+                i * 10,
+                i
+            ));
+        }
         let c = SearchCompressor::new();
         let res = c.compress(&r).await;
         assert!(res.is_some(), "compressor returned None for 50-entry input");
         let r_out = res.unwrap();
-        assert!(r_out.metrics.tokens_saved > 0, "expected savings > 0, got tokens_saved={} orig={} comp={}",
-            r_out.metrics.tokens_saved, r_out.metrics.original_tokens, r_out.metrics.compressed_tokens);
+        assert!(
+            r_out.metrics.tokens_saved > 0,
+            "expected savings > 0, got tokens_saved={} orig={} comp={}",
+            r_out.metrics.tokens_saved,
+            r_out.metrics.original_tokens,
+            r_out.metrics.compressed_tokens
+        );
         assert!(r_out.text.contains("50 total matches"));
     }
 
     #[tokio::test]
     async fn test_search_small() {
-        assert!(SearchCompressor::new().compress("a.rs:1: foo").await.is_none());
+        assert!(SearchCompressor::new()
+            .compress("a.rs:1: foo")
+            .await
+            .is_none());
     }
 
     #[tokio::test]
@@ -201,15 +278,23 @@ mod tests {
     #[tokio::test]
     async fn test_search_file_diversity() {
         let mut r = String::new();
-        for i in 0..20 { r.push_str(&format!("src/main.rs:{}: line {}\n---\n", i, i)); }
-        for i in 0..20 { r.push_str(&format!("src/util.rs:{}: line {}\n---\n", i, i)); }
+        for i in 0..20 {
+            r.push_str(&format!("src/main.rs:{}: line {}\n---\n", i, i));
+        }
+        for i in 0..20 {
+            r.push_str(&format!("src/util.rs:{}: line {}\n---\n", i, i));
+        }
         let res = SearchCompressor::new().compress(&r).await.unwrap();
         assert!(res.text.contains("main.rs") || res.text.contains("util.rs"));
     }
 
     #[test]
     fn test_search_config() {
-        let cfg = SearchCompressorConfig { max_results: 10, preserve_file_diversity: false, relevance_threshold: 0.5 };
+        let cfg = SearchCompressorConfig {
+            max_results: 10,
+            preserve_file_diversity: false,
+            relevance_threshold: 0.5,
+        };
         assert_eq!(cfg.max_results, 10);
     }
 }

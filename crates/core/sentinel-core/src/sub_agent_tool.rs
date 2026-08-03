@@ -1,13 +1,13 @@
-use std::sync::Arc;
+use crate::agent::AgentOutput;
+use crate::sub_agent::{run_sub_agent_team, SubTask};
+use crate::thread::AgentThread;
 use async_trait::async_trait;
-use serde_json::json;
-use sentinel_tools::{Tool, ToolContext, ToolOutput};
 use sentinel_config::SentinelConfig;
 use sentinel_provider::ModelProvider;
 use sentinel_tools::ToolRegistry;
-use crate::sub_agent::{SubTask, run_sub_agent_team};
-use crate::thread::AgentThread;
-use crate::agent::AgentOutput;
+use sentinel_tools::{Tool, ToolContext, ToolOutput};
+use serde_json::json;
+use std::sync::Arc;
 
 /// A tool that forks a sub-agent thread to execute a task in parallel.
 /// Registered alongside builtin tools when the agent is initialized.
@@ -26,7 +26,9 @@ impl SubAgentTool {
         config: Arc<SentinelConfig>,
     ) -> Self {
         Self {
-            provider, tools, config,
+            provider,
+            tools,
+            config,
             max_turns: 50,
             max_iterations: 250,
         }
@@ -45,11 +47,15 @@ impl SubAgentTool {
 
 #[async_trait]
 impl Tool for SubAgentTool {
-    fn name(&self) -> &str { "fork_sub_agent" }
+    fn name(&self) -> &str {
+        "fork_sub_agent"
+    }
     fn description(&self) -> &str {
         "Fork a sub-agent thread to execute a task in parallel. Returns the result when complete."
     }
-    fn is_mutating(&self) -> bool { false }
+    fn is_mutating(&self) -> bool {
+        false
+    }
     fn input_schema(&self) -> serde_json::Value {
         json!({
             "type": "object",
@@ -70,7 +76,11 @@ impl Tool for SubAgentTool {
             return ToolOutput::err("instruction is required");
         }
 
-        let task = SubTask { id, description, instruction: instruction.to_string() };
+        let task = SubTask {
+            id,
+            description,
+            instruction: instruction.to_string(),
+        };
         let parent = AgentThread::new(self.max_turns, self.max_iterations, true);
         let results = run_sub_agent_team(
             &parent,
@@ -78,7 +88,8 @@ impl Tool for SubAgentTool {
             Arc::clone(&self.provider),
             Arc::clone(&self.tools),
             Arc::clone(&self.config),
-        ).await;
+        )
+        .await;
 
         match results.into_iter().next() {
             Some(result) => match &result.output {
@@ -108,17 +119,23 @@ mod tests {
         assert_eq!(tool.name(), "fork_sub_agent");
         assert!(!tool.description().is_empty());
         let schema = tool.input_schema();
-        assert!(schema["required"].as_array().unwrap().contains(&json!("id")));
-        assert!(schema["required"].as_array().unwrap().contains(&json!("instruction")));
+        assert!(schema["required"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("id")));
+        assert!(schema["required"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("instruction")));
     }
 
     #[test]
     fn test_sub_agent_tool_requires_instruction() {
         let tool = make_tool();
         let args = json!({ "id": "test", "description": "test task", "instruction": "" });
-        let result = tokio::runtime::Runtime::new().unwrap().block_on(
-            tool.execute(args, &ToolContext::new())
-        );
+        let result = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(tool.execute(args, &ToolContext::new()));
         assert!(result.is_error);
         assert!(result.text.contains("instruction is required"));
     }
@@ -134,9 +151,9 @@ mod tests {
     fn test_sub_agent_tool_provides_instruction_as_empty_err() {
         let tool = make_tool();
         let args = json!({ "id": "", "description": "", "instruction": "" });
-        let result = tokio::runtime::Runtime::new().unwrap().block_on(
-            tool.execute(args, &ToolContext::new())
-        );
+        let result = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(tool.execute(args, &ToolContext::new()));
         assert!(result.is_error);
     }
 
@@ -145,7 +162,8 @@ mod tests {
     #[async_trait]
     impl ModelProvider for TestProvider {
         fn info(&self) -> &sentinel_provider_info::ProviderInfo {
-            static INFO: std::sync::OnceLock<sentinel_provider_info::ProviderInfo> = std::sync::OnceLock::new();
+            static INFO: std::sync::OnceLock<sentinel_provider_info::ProviderInfo> =
+                std::sync::OnceLock::new();
             INFO.get_or_init(|| sentinel_provider_info::ProviderInfo {
                 id: "test".into(),
                 name: "Test".into(),
@@ -157,7 +175,11 @@ mod tests {
             })
         }
 
-        async fn complete(&self, _req: &sentinel_protocol::CompletionRequest) -> Result<sentinel_protocol::CompletionResponse, sentinel_provider::ProviderError> {
+        async fn complete(
+            &self,
+            _req: &sentinel_protocol::CompletionRequest,
+        ) -> Result<sentinel_protocol::CompletionResponse, sentinel_provider::ProviderError>
+        {
             Ok(sentinel_protocol::CompletionResponse {
                 id: "test".into(),
                 model: "test".into(),
@@ -166,15 +188,32 @@ mod tests {
                     message: sentinel_protocol::Message::assistant("ok"),
                     finish_reason: Some("stop".into()),
                 }],
-                usage: Some(sentinel_protocol::Usage { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 }),
+                usage: Some(sentinel_protocol::Usage {
+                    prompt_tokens: 1,
+                    completion_tokens: 1,
+                    total_tokens: 2,
+                }),
             })
         }
 
-        async fn complete_stream(&self, _req: &sentinel_protocol::CompletionRequest) -> Result<
-            Box<dyn tokio_stream::Stream<Item = Result<sentinel_protocol::StreamChunk, sentinel_provider::ProviderError>> + Send + Unpin>,
+        async fn complete_stream(
+            &self,
+            _req: &sentinel_protocol::CompletionRequest,
+        ) -> Result<
+            Box<
+                dyn tokio_stream::Stream<
+                        Item = Result<
+                            sentinel_protocol::StreamChunk,
+                            sentinel_provider::ProviderError,
+                        >,
+                    > + Send
+                    + Unpin,
+            >,
             sentinel_provider::ProviderError,
         > {
-            Err(sentinel_provider::ProviderError::RequestError("unsupported".into()))
+            Err(sentinel_provider::ProviderError::RequestError(
+                "unsupported".into(),
+            ))
         }
     }
 }

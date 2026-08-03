@@ -15,7 +15,11 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
             Ok(())
         }
         _ => {
-            eprintln!("{} Unknown server subcommand: '{}'", "Error:".red().bold(), sub);
+            eprintln!(
+                "{} Unknown server subcommand: '{}'",
+                "Error:".red().bold(),
+                sub
+            );
             std::process::exit(1);
         }
     }
@@ -24,17 +28,22 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
 async fn cmd_start(args: &[String]) -> anyhow::Result<()> {
     // Accept either "--addr" or "--port" flag for the listening address.
     // If not provided, default to stdio mode (pipe JSON-RPC over stdin/stdout).
-    let maybe_addr: Option<String> = if args.len() >= 2 && (args[0] == "--addr" || args[0] == "--port") {
-        Some(args[1].clone())
-    } else {
-        None
-    };
+    let maybe_addr: Option<String> =
+        if args.len() >= 2 && (args[0] == "--addr" || args[0] == "--port") {
+            Some(args[1].clone())
+        } else {
+            None
+        };
 
     // #60 – surface config parse errors instead of silently using defaults
     let config = match sentinel_config::SentinelConfig::load() {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("{} Warning: config error: {}; using defaults", "W".yellow(), e);
+            eprintln!(
+                "{} Warning: config error: {}; using defaults",
+                "W".yellow(),
+                e
+            );
             sentinel_config::SentinelConfig::default()
         }
     };

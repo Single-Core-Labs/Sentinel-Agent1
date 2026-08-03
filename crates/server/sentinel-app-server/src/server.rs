@@ -1,13 +1,15 @@
-use std::sync::Arc;
-use std::net::SocketAddr;
-use sentinel_app_server_protocol::rpc::{JsonRpcMessage, JsonRpcResponse};
-use sentinel_app_server_transport::{TransportServer, TransportKind, Authenticator, TransportEvent, MessageSink};
-use sentinel_config::SentinelConfig;
-use sentinel_tools::ToolRegistry;
-use sentinel_analytics::AnalyticsPipeline;
-use sentinel_core::thread_store::{ThreadStore, JsonFileThreadStore};
 use crate::handler::RequestHandler;
 use crate::http::HttpServer;
+use sentinel_analytics::AnalyticsPipeline;
+use sentinel_app_server_protocol::rpc::{JsonRpcMessage, JsonRpcResponse};
+use sentinel_app_server_transport::{
+    Authenticator, MessageSink, TransportEvent, TransportKind, TransportServer,
+};
+use sentinel_config::SentinelConfig;
+use sentinel_core::thread_store::{JsonFileThreadStore, ThreadStore};
+use sentinel_tools::ToolRegistry;
+use std::net::SocketAddr;
+use std::sync::Arc;
 
 pub struct AppServer {
     _config: Arc<SentinelConfig>,
@@ -23,7 +25,7 @@ impl AppServer {
         let tools = {
             let mut reg = ToolRegistry::new();
             let headroom_retrieve = sentinel_headroom::integration::HeadroomRetrieveTool::new(
-                Arc::new(sentinel_headroom::ccr::CcrStore::default())
+                Arc::new(sentinel_headroom::ccr::CcrStore::default()),
             );
             reg.register(Arc::new(headroom_retrieve));
             Arc::new(reg)
@@ -75,7 +77,10 @@ impl AppServer {
         };
 
         let handler = Arc::new(RequestHandler::new_with_store(
-            config.clone(), analytics.clone(), tools, thread_store,
+            config.clone(),
+            analytics.clone(),
+            tools,
+            thread_store,
         ));
 
         Self {
@@ -93,7 +98,9 @@ impl AppServer {
 
     pub async fn run_stdio(&self) -> Result<(), Box<dyn std::error::Error>> {
         let transport = TransportServer::new(TransportKind::Stdio);
-        let (mut stream, mut sink, _client_id) = transport.accept().await
+        let (mut stream, mut sink, _client_id) = transport
+            .accept()
+            .await
             .map_err(|e| format!("accept error: {}", e))?;
         Self::handle_stream(&self.handler, &mut stream, &mut sink).await
     }
@@ -103,7 +110,11 @@ impl AppServer {
         http.run(addr).await
     }
 
-    pub async fn run_http_with_dir(&self, addr: &SocketAddr, static_dir: &str) -> anyhow::Result<()> {
+    pub async fn run_http_with_dir(
+        &self,
+        addr: &SocketAddr,
+        static_dir: &str,
+    ) -> anyhow::Result<()> {
         let http = HttpServer::new(self.handler.clone()).with_static_dir(static_dir);
         http.run(addr).await
     }
@@ -111,7 +122,9 @@ impl AppServer {
     pub async fn run_tcp(&self, addr: &str) -> Result<(), Box<dyn std::error::Error>> {
         let transport = TransportServer::new(TransportKind::Tcp { addr: addr.into() });
         loop {
-            let (mut stream, mut sink, _client_id) = transport.accept().await
+            let (mut stream, mut sink, _client_id) = transport
+                .accept()
+                .await
                 .map_err(|e| format!("accept error: {}", e))?;
             let handler = self.handler.clone();
             tokio::spawn(async move {
@@ -134,7 +147,8 @@ impl AppServer {
         use tokio_stream::StreamExt;
 
         // (session_id, event receiver) pairs for active event subscriptions.
-        let mut subscriptions: Vec<(String, tokio::sync::broadcast::Receiver<ServerEvent>)> = Vec::new();
+        let mut subscriptions: Vec<(String, tokio::sync::broadcast::Receiver<ServerEvent>)> =
+            Vec::new();
 
         while let Some(event) = stream.next().await {
             match event {
@@ -144,7 +158,8 @@ impl AppServer {
                         match handler.subscribe_events(req.params).await {
                             Ok(session_id) => {
                                 if let Some(session) = handler.get_session(&session_id).await {
-                                    subscriptions.push((session_id.clone(), session.events.subscribe()));
+                                    subscriptions
+                                        .push((session_id.clone(), session.events.subscribe()));
                                     let resp = JsonRpcResponse {
                                         jsonrpc: "2.0".into(),
                                         id: req.id,
@@ -178,7 +193,9 @@ impl AppServer {
                             }
                         }
                     } else if req.method == methods::EVENT_UNSUBSCRIBE {
-                        let session_id = req.params.as_ref()
+                        let session_id = req
+                            .params
+                            .as_ref()
                             .and_then(|p| p.get("session_id"))
                             .and_then(|v| v.as_str())
                             .unwrap_or("");
@@ -196,7 +213,10 @@ impl AppServer {
                     }
                 }
                 TransportEvent::Message(JsonRpcMessage::Notification(notif))
-                    if notif.method == "exit" || notif.method == "shutdown" => { break; }
+                    if notif.method == "exit" || notif.method == "shutdown" =>
+                {
+                    break;
+                }
                 TransportEvent::Message(JsonRpcMessage::Notification(_)) => {
                     // Unhandled notification, ignore
                 }
@@ -221,7 +241,11 @@ impl AppServer {
                                 method: "event".into(),
                                 params: Some(serde_json::to_value(evt).unwrap_or_default()),
                             };
-                            if sink.send(&JsonRpcMessage::Notification(notif)).await.is_err() {
+                            if sink
+                                .send(&JsonRpcMessage::Notification(notif))
+                                .await
+                                .is_err()
+                            {
                                 drop_sub = true;
                                 break;
                             }

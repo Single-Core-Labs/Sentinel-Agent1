@@ -1,5 +1,5 @@
-use std::collections::HashSet;
 use crate::config::{IntelligentContextConfig, Message, MessageRole, ScoringWeights};
+use std::collections::HashSet;
 
 #[derive(Debug, Clone)]
 pub struct ScoredMessage {
@@ -35,15 +35,24 @@ impl IntelligentContext {
             return ScoredConversation {
                 messages: Vec::new(),
                 total_tokens: 0,
-                budget_tokens: self.config.token_budget.saturating_sub(self.config.output_buffer_tokens),
+                budget_tokens: self
+                    .config
+                    .token_budget
+                    .saturating_sub(self.config.output_buffer_tokens),
                 dropped_count: 0,
                 dropped_tokens: 0,
             };
         }
 
-        let token_counts: Vec<usize> = messages.iter().map(|m| estimate_tokens(&m.content)).collect();
+        let token_counts: Vec<usize> = messages
+            .iter()
+            .map(|m| estimate_tokens(&m.content))
+            .collect();
         let total_tokens: usize = token_counts.iter().sum();
-        let effective_budget = self.config.token_budget.saturating_sub(self.config.output_buffer_tokens);
+        let effective_budget = self
+            .config
+            .token_budget
+            .saturating_sub(self.config.output_buffer_tokens);
 
         if self.config.use_importance_scoring {
             self.score_with_importance(messages, token_counts, total_tokens, effective_budget)
@@ -80,11 +89,11 @@ impl IntelligentContext {
             if matches!(messages[i].role, MessageRole::Tool) {
                 if let Some(ref id) = messages[i].tool_call_id {
                     for j in (0..i).rev() {
-                        if matches!(messages[j].role, MessageRole::Assistant) {
-                            if messages[j].content.contains(id) {
-                                tool_pairs.push((j, i));
-                                break;
-                            }
+                        if matches!(messages[j].role, MessageRole::Assistant)
+                            && messages[j].content.contains(id)
+                        {
+                            tool_pairs.push((j, i));
+                            break;
                         }
                     }
                 }
@@ -113,8 +122,10 @@ impl IntelligentContext {
         let protected = self.protected_indices(&messages, total);
         let scores = self.compute_scores(&messages, &token_counts, weights, &norm, total);
 
-        let mut scored: Vec<ScoredMessage> = messages.into_iter().enumerate().map(|(i, msg)| {
-            ScoredMessage {
+        let mut scored: Vec<ScoredMessage> = messages
+            .into_iter()
+            .enumerate()
+            .map(|(i, msg)| ScoredMessage {
                 index: i,
                 role: msg.role,
                 content: msg.content,
@@ -122,10 +133,14 @@ impl IntelligentContext {
                 token_count: token_counts[i],
                 tool_call_id: msg.tool_call_id,
                 name: msg.name,
-            }
-        }).collect();
+            })
+            .collect();
 
-        scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        scored.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         let mut selected: Vec<ScoredMessage> = Vec::with_capacity(total);
         let mut used_tokens = 0usize;
@@ -224,7 +239,11 @@ impl IntelligentContext {
     ) -> Vec<f64> {
         let recency_scores = Self::compute_recency(total, self.config.recency_decay_rate);
         let forward_refs = Self::compute_forward_references(messages, total);
-        let max_forward = forward_refs.iter().cloned().fold(0.0_f64, f64::max).max(1.0);
+        let max_forward = forward_refs
+            .iter()
+            .cloned()
+            .fold(0.0_f64, f64::max)
+            .max(1.0);
         let error_flags = Self::detect_errors(messages, self.config.preserve_errors);
 
         let mut scores = Vec::with_capacity(total);
@@ -265,24 +284,24 @@ impl IntelligentContext {
     fn compute_forward_references(messages: &[Message], total: usize) -> Vec<f64> {
         let mut ref_counts = vec![0.0_f64; total];
 
-        for i in 0..total {
-            if let Some(ref id) = messages[i].tool_call_id {
-                for j in (i + 1)..total {
-                    if messages[j].content.contains(id) {
-                        ref_counts[i] += 1.0;
-                    }
-                }
+        for (i, message) in messages[..total].iter().enumerate() {
+            if let Some(id) = message.tool_call_id.as_ref() {
+                ref_counts[i] += messages[i + 1..total]
+                    .iter()
+                    .filter(|m| m.content.contains(id))
+                    .count() as f64;
             }
         }
 
         for i in 0..total {
-            let content_lower = messages[i].content.to_lowercase();
-            for j in 0..i {
-                let refs: Vec<&str> = content_lower.split_whitespace()
-                    .filter(|w| *w == "ref" || *w == "see" || *w == "above" || *w == "previous")
-                    .collect();
-                if !refs.is_empty() {
-                    ref_counts[j] += 0.5;
+            let has_refs = messages[i]
+                .content
+                .to_lowercase()
+                .split_whitespace()
+                .any(|w| matches!(w, "ref" | "see" | "above" | "previous"));
+            if has_refs {
+                for count in ref_counts[..i].iter_mut() {
+                    *count += 0.5;
                 }
             }
         }
@@ -296,16 +315,35 @@ impl IntelligentContext {
         }
 
         let error_patterns = [
-            "error", "failed", "panic", "exception", "crash", "fatal",
-            "unexpected", "invalid", "cannot", "unable", "refused",
-            " timeoute", "not found", "permission denied", "segmentation",
-            "abort", "signal", "exit code", "traceback", "stack trace",
+            "error",
+            "failed",
+            "panic",
+            "exception",
+            "crash",
+            "fatal",
+            "unexpected",
+            "invalid",
+            "cannot",
+            "unable",
+            "refused",
+            " timeoute",
+            "not found",
+            "permission denied",
+            "segmentation",
+            "abort",
+            "signal",
+            "exit code",
+            "traceback",
+            "stack trace",
         ];
 
-        messages.iter().map(|m| {
-            let lower = m.content.to_lowercase();
-            error_patterns.iter().any(|p| lower.contains(p))
-        }).collect()
+        messages
+            .iter()
+            .map(|m| {
+                let lower = m.content.to_lowercase();
+                error_patterns.iter().any(|p| lower.contains(p))
+            })
+            .collect()
     }
 }
 
@@ -358,7 +396,10 @@ mod tests {
         ];
         let result = ctx.score(messages);
         assert_eq!(result.messages.len(), 3, "all should fit in large budget");
-        assert!(result.messages[2].score > result.messages[0].score, "most recent should score highest");
+        assert!(
+            result.messages[2].score > result.messages[0].score,
+            "most recent should score highest"
+        );
     }
 
     #[test]
@@ -366,7 +407,10 @@ mod tests {
         let ctx = IntelligentContext::new(config_with_budget(10));
         let messages = vec![
             msg(MessageRole::User, "short"),
-            msg(MessageRole::User, "this is a much longer message that takes more tokens"),
+            msg(
+                MessageRole::User,
+                "this is a much longer message that takes more tokens",
+            ),
             msg(MessageRole::User, "tiny"),
         ];
         let result = ctx.score(messages);
@@ -428,7 +472,11 @@ mod tests {
         };
         let n = w.normalized();
         let sum: f64 = n.iter().sum();
-        assert!((sum - 1.0).abs() < 0.001, "weights should sum to 1.0: {}", sum);
+        assert!(
+            (sum - 1.0).abs() < 0.001,
+            "weights should sum to 1.0: {}",
+            sum
+        );
         assert!((n[0] - 0.2).abs() < 0.01, "recency should be 0.2: {}", n[0]);
     }
 
@@ -444,11 +492,17 @@ mod tests {
         let messages = vec![
             msg(MessageRole::System, "You are a helpful assistant."),
             msg(MessageRole::User, "a longer message that takes more tokens"),
-            msg(MessageRole::User, "another longer message to ensure dropping"),
+            msg(
+                MessageRole::User,
+                "another longer message to ensure dropping",
+            ),
         ];
         let result = ctx.score(messages);
         assert!(result.dropped_count > 0, "should drop some messages");
-        let has_system = result.messages.iter().any(|m| matches!(m.role, MessageRole::System));
+        let has_system = result
+            .messages
+            .iter()
+            .any(|m| matches!(m.role, MessageRole::System));
         assert!(has_system, "system message should be kept");
     }
 
@@ -464,7 +518,10 @@ mod tests {
         let result = ctx.score(messages);
         let indices: Vec<usize> = result.messages.iter().map(|m| m.index).collect();
         assert!(indices.contains(&3), "should keep last turn (index 3)");
-        assert!(indices.contains(&2), "should keep second-to-last turn (index 2)");
+        assert!(
+            indices.contains(&2),
+            "should keep second-to-last turn (index 2)"
+        );
     }
 
     #[test]
@@ -501,7 +558,11 @@ mod tests {
         let indices: Vec<usize> = result.messages.iter().map(|m| m.index).collect();
         let has_both = indices.contains(&1) && indices.contains(&2);
         let has_neither = !indices.contains(&1) && !indices.contains(&2);
-        assert!(has_both || has_neither, "tool pair should be kept or dropped together: {:?}", indices);
+        assert!(
+            has_both || has_neither,
+            "tool pair should be kept or dropped together: {:?}",
+            indices
+        );
     }
 
     #[test]
@@ -517,7 +578,10 @@ mod tests {
             msg(MessageRole::User, &"long message ".repeat(30)),
         ];
         let result = ctx.score(messages);
-        assert_eq!(result.budget_tokens, 40, "budget should be token_budget - output_buffer");
+        assert_eq!(
+            result.budget_tokens, 40,
+            "budget should be token_budget - output_buffer"
+        );
     }
 
     #[test]
@@ -528,8 +592,11 @@ mod tests {
             msg(MessageRole::User, "unique words here now"),
         ];
         let result = ctx.score(messages);
-        assert!(result.messages[1].score > result.messages[0].score,
+        assert!(
+            result.messages[1].score > result.messages[0].score,
             "diverse message should score higher than repetitive one: {:.3} vs {:.3}",
-            result.messages[1].score, result.messages[0].score);
+            result.messages[1].score,
+            result.messages[0].score
+        );
     }
 }

@@ -1,5 +1,5 @@
+use crate::executor::{ExecError, ExecOutput, Executor};
 use async_trait::async_trait;
-use crate::executor::{ExecOutput, ExecError, Executor};
 
 pub struct LocalExecutor;
 
@@ -17,7 +17,12 @@ impl Default for LocalExecutor {
 
 #[async_trait]
 impl Executor for LocalExecutor {
-    async fn exec(&self, command: &str, args: &[&str], _env: Option<Vec<(String, String)>>) -> Result<ExecOutput, ExecError> {
+    async fn exec(
+        &self,
+        command: &str,
+        args: &[&str],
+        _env: Option<Vec<(String, String)>>,
+    ) -> Result<ExecOutput, ExecError> {
         let result = tokio::process::Command::new(command)
             .args(args)
             .output()

@@ -1,10 +1,10 @@
-use std::sync::Arc;
+use crate::error::ProviderError;
+use crate::fallback::{classify_error, ModelAvailabilityService, RetryConfig};
+use crate::provider::ModelProvider;
 use async_trait::async_trait;
 use sentinel_protocol::{CompletionRequest, CompletionResponse, StreamChunk, ToolDef};
 use sentinel_provider_info::ProviderInfo;
-use crate::error::ProviderError;
-use crate::provider::ModelProvider;
-use crate::fallback::{ModelAvailabilityService, RetryConfig, classify_error};
+use std::sync::Arc;
 
 /// A provider wrapper that routes to the best available provider,
 /// with automatic fallback on failure and health-aware model selection.
@@ -52,14 +52,16 @@ impl ModelRouter {
         self.providers[self.active].as_ref()
     }
 
-
     /// Number of available providers.
     pub fn provider_count(&self) -> usize {
         self.providers.len()
     }
 
     /// Attempt a completion with health-aware fallback and retry.
-    pub async fn complete_with_fallback(&self, req: CompletionRequest) -> Result<CompletionResponse, ProviderError> {
+    pub async fn complete_with_fallback(
+        &self,
+        req: CompletionRequest,
+    ) -> Result<CompletionResponse, ProviderError> {
         let req = if let Some(ref prompt) = self.system_prompt_override {
             req.with_system(prompt.clone())
         } else {
@@ -102,9 +104,13 @@ impl ModelRouter {
     }
 
     /// Attempt a streaming completion with health-aware fallback and retry.
-    pub async fn complete_stream_with_fallback(&self, req: CompletionRequest)
-        -> Result<Box<dyn tokio_stream::Stream<Item = Result<StreamChunk, ProviderError>> + Send + Unpin>, ProviderError>
-    {
+    pub async fn complete_stream_with_fallback(
+        &self,
+        req: CompletionRequest,
+    ) -> Result<
+        Box<dyn tokio_stream::Stream<Item = Result<StreamChunk, ProviderError>> + Send + Unpin>,
+        ProviderError,
+    > {
         let req = if let Some(ref prompt) = self.system_prompt_override {
             req.with_system(prompt.clone())
         } else {
@@ -161,13 +167,13 @@ impl ModelRouter {
                     let kind = classify_error(&e);
                     match kind {
                         crate::fallback::ErrorKind::Transient
-                        | crate::fallback::ErrorKind::RateLimited => {
-                            if attempt < self.retry_config.max_attempts {
-                                let delay = self.retry_config.delay_for(attempt);
-                                tracing::info!(attempt, delay_ms = %delay.as_millis(), "retrying after error");
-                                tokio::time::sleep(delay).await;
-                                continue;
-                            }
+                        | crate::fallback::ErrorKind::RateLimited
+                            if attempt < self.retry_config.max_attempts =>
+                        {
+                            let delay = self.retry_config.delay_for(attempt);
+                            tracing::info!(attempt, delay_ms = %delay.as_millis(), "retrying after error");
+                            tokio::time::sleep(delay).await;
+                            continue;
                         }
                         _ => {}
                     }
@@ -181,7 +187,10 @@ impl ModelRouter {
         &self,
         provider: &dyn ModelProvider,
         req: &CompletionRequest,
-    ) -> Result<Box<dyn tokio_stream::Stream<Item = Result<StreamChunk, ProviderError>> + Send + Unpin>, ProviderError> {
+    ) -> Result<
+        Box<dyn tokio_stream::Stream<Item = Result<StreamChunk, ProviderError>> + Send + Unpin>,
+        ProviderError,
+    > {
         let mut attempt = 0u32;
         loop {
             attempt += 1;
@@ -191,12 +200,12 @@ impl ModelRouter {
                     let kind = classify_error(&e);
                     match kind {
                         crate::fallback::ErrorKind::Transient
-                        | crate::fallback::ErrorKind::RateLimited => {
-                            if attempt < self.retry_config.max_attempts {
-                                let delay = self.retry_config.delay_for(attempt);
-                                tokio::time::sleep(delay).await;
-                                continue;
-                            }
+                        | crate::fallback::ErrorKind::RateLimited
+                            if attempt < self.retry_config.max_attempts =>
+                        {
+                            let delay = self.retry_config.delay_for(attempt);
+                            tokio::time::sleep(delay).await;
+                            continue;
                         }
                         _ => {}
                     }
@@ -221,7 +230,13 @@ impl ModelProvider for ModelRouter {
         self.complete_with_fallback(req.clone()).await
     }
 
-    async fn complete_stream(&self, req: &CompletionRequest) -> Result<Box<dyn tokio_stream::Stream<Item = Result<StreamChunk, ProviderError>> + Send + Unpin>, ProviderError> {
+    async fn complete_stream(
+        &self,
+        req: &CompletionRequest,
+    ) -> Result<
+        Box<dyn tokio_stream::Stream<Item = Result<StreamChunk, ProviderError>> + Send + Unpin>,
+        ProviderError,
+    > {
         self.complete_stream_with_fallback(req.clone()).await
     }
 

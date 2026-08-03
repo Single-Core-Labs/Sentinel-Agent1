@@ -1,23 +1,14 @@
-use std::sync::Arc;
-use crate::classifier::{self, ContentType};
-use crate::ccr::{CcrStore, generate_retrieval_marker, generate_tool_schema};
+use crate::ccr::{generate_retrieval_marker, generate_tool_schema, CcrStore};
 use crate::ccr_tracker::CcrContextTracker;
+use crate::classifier::{self, ContentType};
 use crate::metrics::CompressionMetrics;
 use crate::strategies::{
-    CompressionStrategy,
-    CompressionResult,
-    json::JsonCompressor,
-    code::CodeCompressor,
-    code_aware::CodeAwareCompressor,
-    image_aware::ImageAwareCompressor,
-    llmlingua::LLMLinguaCompressor,
-    logs::LogCompressor,
-    text::TextCompressor,
-    search::SearchCompressor,
-    diff::DiffCompressor,
-    image::ImageCompressor,
-    html::HtmlCompressor,
+    code::CodeCompressor, code_aware::CodeAwareCompressor, diff::DiffCompressor,
+    html::HtmlCompressor, image::ImageCompressor, image_aware::ImageAwareCompressor,
+    json::JsonCompressor, llmlingua::LLMLinguaCompressor, logs::LogCompressor,
+    search::SearchCompressor, text::TextCompressor, CompressionResult, CompressionStrategy,
 };
+use std::sync::Arc;
 
 pub struct CompressionConfig {
     pub min_savings_pct: f64,
@@ -151,7 +142,8 @@ impl ContentCompressor {
             _ => ccr.retrieve(hash).await,
         };
         let matched = result.is_some();
-        ccr.log_retrieval(hash.to_string(), query.map(|s| s.to_string()), matched).await;
+        ccr.log_retrieval(hash.to_string(), query.map(|s| s.to_string()), matched)
+            .await;
         self.tracker.learn_from_retrieval(hash, matched).await;
         result
     }
@@ -180,7 +172,9 @@ impl ContentCompressor {
             };
         }
 
-        let candidates: Vec<Arc<dyn CompressionStrategy>> = self.strategies.iter()
+        let candidates: Vec<Arc<dyn CompressionStrategy>> = self
+            .strategies
+            .iter()
             .filter(|s| s.content_types().contains(&content_type))
             .cloned()
             .collect();
@@ -192,32 +186,33 @@ impl ContentCompressor {
             };
         }
 
-        let results: Vec<Option<CompressionResult>> = if self.config.parallel_strategies && candidates.len() > 1 {
-            let futures: Vec<_> = candidates.iter()
-                .map(|s| s.compress(content))
-                .collect();
-            futures::future::join_all(futures).await
-        } else {
-            let mut results = Vec::new();
-            for s in &candidates {
-                results.push(s.compress(content).await);
-            }
-            results
-        };
+        let results: Vec<Option<CompressionResult>> =
+            if self.config.parallel_strategies && candidates.len() > 1 {
+                let futures: Vec<_> = candidates.iter().map(|s| s.compress(content)).collect();
+                futures::future::join_all(futures).await
+            } else {
+                let mut results = Vec::new();
+                for s in &candidates {
+                    results.push(s.compress(content).await);
+                }
+                results
+            };
 
-        let best: Option<CompressionResult> = results.into_iter()
+        let best: Option<CompressionResult> = results
+            .into_iter()
             .flatten()
-            .max_by(|a, b| {
-                a.metrics.tokens_saved.cmp(&b.metrics.tokens_saved)
-            });
+            .max_by(|a, b| a.metrics.tokens_saved.cmp(&b.metrics.tokens_saved));
 
         match best {
             Some(mut result) if (result.metrics.savings_pct() >= self.config.min_savings_pct) => {
-                let key = self.ccr.store(
-                    content.to_string(),
-                    content_type.name(),
-                    result.text.clone(),
-                ).await;
+                let key = self
+                    .ccr
+                    .store(
+                        content.to_string(),
+                        content_type.name(),
+                        result.text.clone(),
+                    )
+                    .await;
 
                 if self.config.inject_retrieval_markers {
                     let marker = generate_retrieval_marker(
@@ -229,8 +224,10 @@ impl ContentCompressor {
                     result.text.push_str(&marker);
                 }
 
-                self.tracker.record_query(&content_type.name()).await;
-                self.ccr.log_retrieval(key.clone(), Some(content_type.name().to_string()), true).await;
+                self.tracker.record_query(content_type.name()).await;
+                self.ccr
+                    .log_retrieval(key.clone(), Some(content_type.name().to_string()), true)
+                    .await;
 
                 CompressOutcome::Compressed {
                     text: result.text,
@@ -260,13 +257,25 @@ impl ContentCompressor {
     pub async fn proactive_expand(&self, query: &str) -> Option<String> {
         self.tracker.record_query(query).await;
         let matches = self.tracker.find_relevant_cached(query, self).await;
-        if matches.is_empty() { return None; }
+        if matches.is_empty() {
+            return None;
+        }
         let mut result = String::from("‖ Headroom CCR: proactively expanded cached content\n");
         for (i, (key, data, score)) in matches.iter().enumerate() {
             let preview: String = data.lines().take(5).collect::<Vec<_>>().join("\n");
-            result.push_str(&format!("‖ [{}. hash={}] relevance={:.2}\n{}\n", i + 1, key, score, preview));
+            result.push_str(&format!(
+                "‖ [{}. hash={}] relevance={:.2}\n{}\n",
+                i + 1,
+                key,
+                score,
+                preview
+            ));
             if data.lines().count() > 5 {
-                result.push_str(&format!("‖ ... ({} more lines, retrieve via hash={})\n", data.lines().count() - 5, key));
+                result.push_str(&format!(
+                    "‖ ... ({} more lines, retrieve via hash={})\n",
+                    data.lines().count() - 5,
+                    key
+                ));
             }
         }
         Some(result)
@@ -275,7 +284,9 @@ impl ContentCompressor {
 
 fn default_strategies() -> Vec<Arc<dyn CompressionStrategy>> {
     vec![
-        Arc::new(JsonCompressor::with_smart_crusher(crate::strategies::smart_crusher::SmartCrusherConfig::default())),
+        Arc::new(JsonCompressor::with_smart_crusher(
+            crate::strategies::smart_crusher::SmartCrusherConfig::default(),
+        )),
         Arc::new(CodeCompressor),
         Arc::new(CodeAwareCompressor::new()),
         Arc::new(ImageAwareCompressor::new()),
@@ -333,14 +344,26 @@ mod tests {
 
     #[tokio::test]
     async fn test_orchestrator_compresses_json_array() {
-        let rows: Vec<serde_json::Value> = (0..200).map(|i| serde_json::json!({
-            "id": i, "name": format!("n{}", i), "value": i * 2
-        })).collect();
+        let rows: Vec<serde_json::Value> = (0..200)
+            .map(|i| {
+                serde_json::json!({
+                    "id": i, "name": format!("n{}", i), "value": i * 2
+                })
+            })
+            .collect();
         let content = serde_json::to_string(&rows).unwrap();
         let compressor = ContentCompressor::default();
         let outcome = compressor.compress(&content, None).await;
-        assert!(outcome.is_compressed(), "should compress json array: tokens_saved={}", outcome.tokens_saved());
-        assert!(outcome.tokens_saved() > 0, "should save tokens, got: {}", outcome.tokens_saved());
+        assert!(
+            outcome.is_compressed(),
+            "should compress json array: tokens_saved={}",
+            outcome.tokens_saved()
+        );
+        assert!(
+            outcome.tokens_saved() > 0,
+            "should save tokens, got: {}",
+            outcome.tokens_saved()
+        );
     }
 
     #[tokio::test]
@@ -353,7 +376,9 @@ mod tests {
     #[tokio::test]
     async fn test_orchestrator_hint_overrides_classification() {
         let compressor = ContentCompressor::default();
-        let outcome = compressor.compress("hello", Some(ContentType::SourceCode)).await;
+        let outcome = compressor
+            .compress("hello", Some(ContentType::SourceCode))
+            .await;
         assert!(!outcome.is_compressed(), "tiny code also skipped");
     }
 
@@ -361,8 +386,11 @@ mod tests {
     async fn test_ccr_retrieval_after_compression() {
         let compressor = ContentCompressor::default();
         let sentence = "The quick brown fox jumps over the lazy dog. ";
-        let text = sentence.repeat(30) + "This is a unique sentence with critical information that is not duplicated.";
-        let outcome = compressor.compress(&text, Some(ContentType::PlainText)).await;
+        let text = sentence.repeat(30)
+            + "This is a unique sentence with critical information that is not duplicated.";
+        let outcome = compressor
+            .compress(&text, Some(ContentType::PlainText))
+            .await;
         assert!(outcome.is_compressed(), "text should compress");
     }
 
@@ -400,12 +428,22 @@ mod tests {
     #[tokio::test]
     async fn test_handle_retrieve_with_query() {
         let compressor = ContentCompressor::default();
-        let data = "line one\nerror: authentication failed\nline three\nline four\nline five\nline six\n";
-        let key = compressor.ccr.store(data.into(), "text", "compressed".into()).await;
-        let result = compressor.handle_retrieve(&key, Some("authentication")).await;
+        let data =
+            "line one\nerror: authentication failed\nline three\nline four\nline five\nline six\n";
+        let key = compressor
+            .ccr
+            .store(data.into(), "text", "compressed".into())
+            .await;
+        let result = compressor
+            .handle_retrieve(&key, Some("authentication"))
+            .await;
         assert!(result.is_some());
         let text = result.unwrap();
-        assert!(text.contains("authentication"), "should contain matched line: {}", text);
+        assert!(
+            text.contains("authentication"),
+            "should contain matched line: {}",
+            text
+        );
     }
 
     #[tokio::test]
@@ -418,7 +456,15 @@ mod tests {
     #[tokio::test]
     async fn test_proactive_expand_finds_matches() {
         let compressor = ContentCompressor::default();
-        compressor.ccr.store_with_key("test_hash", "authentication error details here".into(), "text", "auth data".into()).await;
+        compressor
+            .ccr
+            .store_with_key(
+                "test_hash",
+                "authentication error details here".into(),
+                "text",
+                "auth data".into(),
+            )
+            .await;
         let result = compressor.proactive_expand("authentication").await;
         assert!(result.is_some(), "should find auth match");
         assert!(result.as_ref().unwrap().contains("test_hash"));
@@ -429,10 +475,19 @@ mod tests {
         let compressor = ContentCompressor::default();
         let rows: Vec<serde_json::Value> = (0..50).map(|i| serde_json::json!({"id": i})).collect();
         let content = serde_json::to_string(&rows).unwrap();
-        let outcome = compressor.compress(&content, Some(ContentType::JsonArray)).await;
+        let outcome = compressor
+            .compress(&content, Some(ContentType::JsonArray))
+            .await;
         if let CompressOutcome::Compressed { text, .. } = &outcome {
-            assert!(text.contains("[headroom: hash="), "output should have retrieval marker: {}", text);
-            assert!(text.contains("headroom_retrieve"), "marker should reference retrieve tool");
+            assert!(
+                text.contains("[headroom: hash="),
+                "output should have retrieval marker: {}",
+                text
+            );
+            assert!(
+                text.contains("headroom_retrieve"),
+                "marker should reference retrieve tool"
+            );
         }
     }
 

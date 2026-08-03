@@ -103,9 +103,7 @@ pub struct SafePolicy;
 impl PolicyEngine for SafePolicy {
     async fn evaluate(&self, tool_name: &str, _args: &serde_json::Value) -> PolicyDecision {
         match tool_name {
-            "write" | "edit" | "bash" | "git_commit" | "github" => {
-                PolicyDecision::PromptUser
-            }
+            "write" | "edit" | "bash" | "git_commit" | "github" => PolicyDecision::PromptUser,
             _ => PolicyDecision::Allow,
         }
     }
@@ -167,7 +165,9 @@ impl PolicyEngine for ScriptPolicyEngine {
             let mut child = cmd.spawn().ok()?;
             use tokio::io::AsyncWriteExt;
             if let Some(mut stdin) = child.stdin.take() {
-                let _ = stdin.write_all(format!("{}\n{}\n", tool_name, args_json).as_bytes()).await;
+                let _ = stdin
+                    .write_all(format!("{}\n{}\n", tool_name, args_json).as_bytes())
+                    .await;
             }
             let output = child.wait_with_output().await.ok()?;
             Some(output)
@@ -182,7 +182,11 @@ impl PolicyEngine for ScriptPolicyEngine {
                     PolicyDecision::Allow
                 } else if let Some(reason) = line.strip_prefix("deny") {
                     let reason = reason.trim().trim_start_matches(':').trim().to_string();
-                    PolicyDecision::Deny(if reason.is_empty() { "denied by policy script".into() } else { reason })
+                    PolicyDecision::Deny(if reason.is_empty() {
+                        "denied by policy script".into()
+                    } else {
+                        reason
+                    })
                 } else if line == "ask" || line == "prompt" {
                     PolicyDecision::PromptUser
                 } else {
@@ -193,7 +197,9 @@ impl PolicyEngine for ScriptPolicyEngine {
                 }
             }
             Ok(None) => PolicyDecision::Deny("policy script failed to run".into()),
-            Err(_) => PolicyDecision::Deny(format!("policy script timed out after {:?}", self.timeout)),
+            Err(_) => {
+                PolicyDecision::Deny(format!("policy script timed out after {:?}", self.timeout))
+            }
         }
     }
 }

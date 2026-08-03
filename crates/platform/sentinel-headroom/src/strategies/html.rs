@@ -1,15 +1,15 @@
-use std::sync::OnceLock;
-use async_trait::async_trait;
-use regex::Regex;
+use super::{CompressionResult, CompressionStrategy};
 use crate::classifier::ContentType;
 use crate::metrics::CompressionMetrics;
-use super::{CompressionStrategy, CompressionResult};
+use async_trait::async_trait;
+use regex::Regex;
+use std::sync::OnceLock;
 
 static SCRIPT_STYLE_COMMENT_RE: OnceLock<Regex> = OnceLock::new();
 fn script_style_comment_re() -> &'static Regex {
-    SCRIPT_STYLE_COMMENT_RE.get_or_init(|| Regex::new(
-        r"(?is)<script[^>]*>.*?</script>|<style[^>]*>.*?</style>|<!--.*?-->"
-    ).unwrap())
+    SCRIPT_STYLE_COMMENT_RE.get_or_init(|| {
+        Regex::new(r"(?is)<script[^>]*>.*?</script>|<style[^>]*>.*?</style>|<!--.*?-->").unwrap()
+    })
 }
 
 static OPEN_TAG_RE: OnceLock<Regex> = OnceLock::new();
@@ -26,8 +26,12 @@ pub struct HtmlCompressor;
 
 #[async_trait]
 impl CompressionStrategy for HtmlCompressor {
-    fn name(&self) -> &'static str { "html" }
-    fn content_types(&self) -> Vec<ContentType> { vec![ContentType::Html] }
+    fn name(&self) -> &'static str {
+        "html"
+    }
+    fn content_types(&self) -> Vec<ContentType> {
+        vec![ContentType::Html]
+    }
 
     async fn compress(&self, content: &str) -> Option<CompressionResult> {
         if content.len() < 500 {
@@ -52,7 +56,9 @@ impl CompressionStrategy for HtmlCompressor {
 
         for line in step3.lines() {
             let trimmed = line.trim();
-            if trimmed.is_empty() { continue; }
+            if trimmed.is_empty() {
+                continue;
+            }
             if trimmed.starts_with('<') {
                 flush_text(&mut out, &mut last_text, &mut repeat);
                 out.push_str(trimmed);
@@ -61,7 +67,9 @@ impl CompressionStrategy for HtmlCompressor {
                 if trimmed.len() > 150 {
                     let keep: String = trimmed.chars().take(150).collect();
                     match last_text {
-                        Some(ref t) if t == &keep => { repeat += 1; }
+                        Some(ref t) if t == &keep => {
+                            repeat += 1;
+                        }
                         _ => {
                             flush_text(&mut out, &mut last_text, &mut repeat);
                             last_text = Some(keep);
@@ -70,7 +78,9 @@ impl CompressionStrategy for HtmlCompressor {
                     }
                 } else {
                     match last_text {
-                        Some(ref t) if t == trimmed => { repeat += 1; }
+                        Some(ref t) if t == trimmed => {
+                            repeat += 1;
+                        }
                         _ => {
                             flush_text(&mut out, &mut last_text, &mut repeat);
                             last_text = Some(trimmed.to_string());
@@ -88,7 +98,11 @@ impl CompressionStrategy for HtmlCompressor {
 
         let took = (chrono::Utc::now() - start).num_microseconds().unwrap_or(0) as u64;
         let metrics = CompressionMetrics::new(content, &out, "html", "html", took);
-        Some(CompressionResult { text: out, metrics, retrieval_key: None })
+        Some(CompressionResult {
+            text: out,
+            metrics,
+            retrieval_key: None,
+        })
     }
 }
 
@@ -124,7 +138,9 @@ fn simplify_open_tag(name: &str, full_tag: &str) -> String {
             "🖼".into()
         }
         "input" | "button" | "textarea" => {
-            let val = extract_attr(full_tag, "value").or_else(|| extract_attr(full_tag, "placeholder")).unwrap_or_default();
+            let val = extract_attr(full_tag, "value")
+                .or_else(|| extract_attr(full_tag, "placeholder"))
+                .unwrap_or_default();
             if !val.is_empty() {
                 return format!("[{}]", val);
             }
@@ -161,13 +177,59 @@ fn simplify_open_tag(name: &str, full_tag: &str) -> String {
 }
 
 fn is_structural(name: &str) -> bool {
-    matches!(name, "html" | "head" | "body" | "div" | "span" | "p" | "section" | "article"
-        | "nav" | "header" | "footer" | "main" | "aside" | "form" | "table"
-        | "ul" | "ol" | "li" | "dl" | "dt" | "dd" | "blockquote"
-        | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "br" | "hr"
-        | "pre" | "code" | "em" | "strong" | "i" | "b" | "u" | "title"
-        | "thead" | "tbody" | "tfoot" | "tr" | "th" | "td"
-        | "caption" | "audio" | "video" | "source" | "iframe" | "svg")
+    matches!(
+        name,
+        "html"
+            | "head"
+            | "body"
+            | "div"
+            | "span"
+            | "p"
+            | "section"
+            | "article"
+            | "nav"
+            | "header"
+            | "footer"
+            | "main"
+            | "aside"
+            | "form"
+            | "table"
+            | "ul"
+            | "ol"
+            | "li"
+            | "dl"
+            | "dt"
+            | "dd"
+            | "blockquote"
+            | "h1"
+            | "h2"
+            | "h3"
+            | "h4"
+            | "h5"
+            | "h6"
+            | "br"
+            | "hr"
+            | "pre"
+            | "code"
+            | "em"
+            | "strong"
+            | "i"
+            | "b"
+            | "u"
+            | "title"
+            | "thead"
+            | "tbody"
+            | "tfoot"
+            | "tr"
+            | "th"
+            | "td"
+            | "caption"
+            | "audio"
+            | "video"
+            | "source"
+            | "iframe"
+            | "svg"
+    )
 }
 
 fn extract_attr(tag: &str, attr: &str) -> Option<String> {

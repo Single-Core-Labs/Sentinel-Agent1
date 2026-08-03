@@ -1,7 +1,7 @@
-use async_trait::async_trait;
-use sentinel_protocol::{CompletionRequest, CompletionResponse, Choice, Usage};
 use crate::error::ProviderError;
-use crate::route::{Protocol, Endpoint, Auth, Route, FramingProvider};
+use crate::route::{Auth, Endpoint, FramingProvider, Protocol, Route};
+use async_trait::async_trait;
+use sentinel_protocol::{Choice, CompletionRequest, CompletionResponse, Usage};
 
 #[derive(Debug, Clone)]
 pub struct AnthropicMessagesProtocol;
@@ -32,9 +32,21 @@ pub struct AnthropicMessage {
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(untagged)]
 pub enum AnthropicContent {
-    Text { r#type: String, text: String },
-    ToolUse { r#type: String, id: String, name: String, input: serde_json::Value },
-    ToolResult { r#type: String, tool_use_id: String, content: String },
+    Text {
+        r#type: String,
+        text: String,
+    },
+    ToolUse {
+        r#type: String,
+        id: String,
+        name: String,
+        input: serde_json::Value,
+    },
+    ToolResult {
+        r#type: String,
+        tool_use_id: String,
+        content: String,
+    },
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -51,8 +63,16 @@ pub struct AnthropicResponse {
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(untagged)]
 pub enum AnthropicResponseContent {
-    Text { r#type: String, text: String },
-    ToolUse { r#type: String, id: String, name: String, input: serde_json::Value },
+    Text {
+        r#type: String,
+        text: String,
+    },
+    ToolUse {
+        r#type: String,
+        id: String,
+        name: String,
+        input: serde_json::Value,
+    },
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -117,8 +137,10 @@ impl Protocol for AnthropicMessagesProtocol {
                     system = Some(msg.extract_text());
                 }
                 sentinel_protocol::Role::User => {
-                    let content: Vec<AnthropicContent> = msg.content.iter().map(|b| {
-                        match b {
+                    let content: Vec<AnthropicContent> = msg
+                        .content
+                        .iter()
+                        .map(|b| match b {
                             sentinel_protocol::ContentBlock::Text { text } => {
                                 AnthropicContent::Text {
                                     r#type: "text".into(),
@@ -128,9 +150,9 @@ impl Protocol for AnthropicMessagesProtocol {
                             _ => AnthropicContent::Text {
                                 r#type: "text".into(),
                                 text: format!("{:?}", b),
-                            }
-                        }
-                    }).collect();
+                            },
+                        })
+                        .collect();
                     messages.push(AnthropicMessage {
                         role: "user".into(),
                         content,
@@ -146,7 +168,11 @@ impl Protocol for AnthropicMessagesProtocol {
                                     text: text.clone(),
                                 });
                             }
-                            sentinel_protocol::ContentBlock::ToolCall { id, name, arguments } => {
+                            sentinel_protocol::ContentBlock::ToolCall {
+                                id,
+                                name,
+                                arguments,
+                            } => {
                                 content.push(AnthropicContent::ToolUse {
                                     r#type: "tool_use".into(),
                                     id: id.clone(),
@@ -164,7 +190,12 @@ impl Protocol for AnthropicMessagesProtocol {
                 }
                 sentinel_protocol::Role::Tool => {
                     for block in &msg.content {
-                        if let sentinel_protocol::ContentBlock::ToolResult { tool_call_id, content, .. } = block {
+                        if let sentinel_protocol::ContentBlock::ToolResult {
+                            tool_call_id,
+                            content,
+                            ..
+                        } = block
+                        {
                             messages.push(AnthropicMessage {
                                 role: "user".into(),
                                 content: vec![AnthropicContent::ToolResult {
@@ -180,11 +211,16 @@ impl Protocol for AnthropicMessagesProtocol {
         }
 
         let tools = req.tools.as_ref().map(|tools| {
-            tools.iter().map(|t| serde_json::json!({
-                "name": t.name,
-                "description": t.description,
-                "input_schema": t.input_schema,
-            })).collect::<Vec<_>>()
+            tools
+                .iter()
+                .map(|t| {
+                    serde_json::json!({
+                        "name": t.name,
+                        "description": t.description,
+                        "input_schema": t.input_schema,
+                    })
+                })
+                .collect::<Vec<_>>()
         });
 
         Ok(AnthropicBody {
@@ -208,8 +244,8 @@ impl Protocol for AnthropicMessagesProtocol {
             return Ok(None);
         }
         let text = String::from_utf8_lossy(&frame);
-        let json: AnthropicStreamEvent = serde_json::from_str(&text)
-            .map_err(ProviderError::JsonError)?;
+        let json: AnthropicStreamEvent =
+            serde_json::from_str(&text).map_err(ProviderError::JsonError)?;
         Ok(Some(json))
     }
 
@@ -250,7 +286,10 @@ impl Protocol for AnthropicMessagesProtocol {
             "content_block_delta" => {
                 if let Some(delta) = event.delta {
                     if let Some(text) = delta.text {
-                        if let Some(AnthropicResponseContent::Text { text: ref mut t, .. }) = state.content.last_mut() {
+                        if let Some(AnthropicResponseContent::Text {
+                            text: ref mut t, ..
+                        }) = state.content.last_mut()
+                        {
                             t.push_str(&text);
                         }
                     }
@@ -277,9 +316,12 @@ impl Protocol for AnthropicMessagesProtocol {
         for c in &state.content {
             match c {
                 AnthropicResponseContent::Text { text, .. } => {
-                    message_content.push(sentinel_protocol::ContentBlock::Text { text: text.clone() });
+                    message_content
+                        .push(sentinel_protocol::ContentBlock::Text { text: text.clone() });
                 }
-                AnthropicResponseContent::ToolUse { id, name, input, .. } => {
+                AnthropicResponseContent::ToolUse {
+                    id, name, input, ..
+                } => {
                     message_content.push(sentinel_protocol::ContentBlock::ToolCall {
                         id: id.clone(),
                         name: name.clone(),
@@ -288,7 +330,8 @@ impl Protocol for AnthropicMessagesProtocol {
                 }
             }
         }
-        let message = sentinel_protocol::Message::new(sentinel_protocol::Role::Assistant, message_content);
+        let message =
+            sentinel_protocol::Message::new(sentinel_protocol::Role::Assistant, message_content);
         let usage = state.usage.map(|u| Usage {
             prompt_tokens: u.input_tokens,
             completion_tokens: u.output_tokens,
@@ -315,10 +358,19 @@ impl AnthropicMessagesProtocol {
     pub fn route() -> Route<Self> {
         let endpoint = Endpoint::anthropic("https://api.anthropic.com");
         let auth = Auth::from_env("ANTHROPIC_API_KEY").unwrap_or(Auth::None);
-        Route::new(Self, endpoint, auth, Box::new(crate::route::framing::NullFraming))
+        Route::new(
+            Self,
+            endpoint,
+            auth,
+            Box::new(crate::route::framing::NullFraming),
+        )
     }
 
-    pub fn route_with(endpoint: Endpoint, auth: Auth, framing: Box<dyn FramingProvider>) -> Route<Self> {
+    pub fn route_with(
+        endpoint: Endpoint,
+        auth: Auth,
+        framing: Box<dyn FramingProvider>,
+    ) -> Route<Self> {
         Route::new(Self, endpoint, auth, framing)
     }
 }
@@ -345,13 +397,14 @@ mod tests {
         let proto = AnthropicMessagesProtocol;
         let mut req = CompletionRequest::new("claude-3-5-sonnet-20241022")
             .with_message(Message::user("check weather"));
-        let tool_msg = sentinel_protocol::Message::new(sentinel_protocol::Role::Tool, vec![
-            sentinel_protocol::ContentBlock::ToolResult {
+        let tool_msg = sentinel_protocol::Message::new(
+            sentinel_protocol::Role::Tool,
+            vec![sentinel_protocol::ContentBlock::ToolResult {
                 tool_call_id: "tc1".into(),
                 content: "sunny".into(),
                 is_error: Some(false),
-            }
-        ]);
+            }],
+        );
         req = req.with_message(tool_msg);
         let body = proto.build_body(&req).unwrap();
         assert_eq!(body.messages.len(), 2);
@@ -374,7 +427,10 @@ mod tests {
             message: Some(AnthropicStreamMessage {
                 id: Some("msg_1".into()),
                 model: Some("claude-3-5-sonnet-20241022".into()),
-                usage: Some(AnthropicUsage { input_tokens: 10, output_tokens: 0 }),
+                usage: Some(AnthropicUsage {
+                    input_tokens: 10,
+                    output_tokens: 0,
+                }),
             }),
             content_block: None,
             delta: None,

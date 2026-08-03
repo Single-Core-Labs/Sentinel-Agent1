@@ -1,10 +1,10 @@
-use std::sync::Arc;
-use std::time::{Duration, Instant};
 use sentinel_core::*;
 use sentinel_protocol::*;
 use sentinel_provider::*;
 use sentinel_provider_info::*;
 use sentinel_tools::ToolRegistry;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 /// Micro-benchmark for the core agent loop hot path.
 ///
@@ -38,14 +38,22 @@ impl MockProvider {
 
 #[async_trait::async_trait]
 impl ModelProvider for MockProvider {
-    fn info(&self) -> &ProviderInfo { &self.info }
-    async fn complete(&self, _req: &CompletionRequest) -> Result<CompletionResponse, ProviderError> {
+    fn info(&self) -> &ProviderInfo {
+        &self.info
+    }
+    async fn complete(
+        &self,
+        _req: &CompletionRequest,
+    ) -> Result<CompletionResponse, ProviderError> {
         Ok(self.response.clone())
     }
     async fn complete_stream(
         &self,
         _req: &CompletionRequest,
-    ) -> Result<Box<dyn tokio_stream::Stream<Item = Result<StreamChunk, ProviderError>> + Send + Unpin>, ProviderError> {
+    ) -> Result<
+        Box<dyn tokio_stream::Stream<Item = Result<StreamChunk, ProviderError>> + Send + Unpin>,
+        ProviderError,
+    > {
         Err(ProviderError::RequestError("stream not supported".into()))
     }
 }
@@ -59,7 +67,11 @@ fn make_bench_provider() -> Arc<dyn ModelProvider> {
             message: Message::assistant("Hello from benchmark"),
             finish_reason: Some("stop".into()),
         }],
-        usage: Some(Usage { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }),
+        usage: Some(Usage {
+            prompt_tokens: 10,
+            completion_tokens: 5,
+            total_tokens: 15,
+        }),
     }))
 }
 
@@ -77,7 +89,9 @@ async fn bench_agent_loop_hot_path() {
     for i in 0..ITERATIONS {
         let mut thread = AgentThread::new(5, 3, true);
         let start = Instant::now();
-        let result = agent.run(&mut thread, &format!("bench iteration {}", i)).await;
+        let result = agent
+            .run(&mut thread, &format!("bench iteration {}", i))
+            .await;
         let elapsed = start.elapsed();
         durations.push(elapsed);
 
@@ -97,7 +111,11 @@ async fn bench_agent_loop_hot_path() {
     println!("  total: {:?}", total);
 
     // Sanity: each iteration should be fast with a mock provider
-    assert!(avg < Duration::from_secs(1), "avg should be < 1s, was {:?}", avg);
+    assert!(
+        avg < Duration::from_secs(1),
+        "avg should be < 1s, was {:?}",
+        avg
+    );
 }
 
 #[tokio::test]
@@ -109,13 +127,22 @@ async fn bench_tool_registry_lookup() {
     let start = Instant::now();
 
     for i in 0..ITERATIONS {
-        let _ = tools.execute("read", serde_json::json!({"file_path": format!("test_{}.txt", i)}), &ctx).await;
+        let _ = tools
+            .execute(
+                "read",
+                serde_json::json!({"file_path": format!("test_{}.txt", i)}),
+                &ctx,
+            )
+            .await;
     }
 
     let elapsed = start.elapsed();
     let avg = elapsed / ITERATIONS as u32;
 
-    println!("\n[bench] Tool registry lookups ({} iterations)", ITERATIONS);
+    println!(
+        "\n[bench] Tool registry lookups ({} iterations)",
+        ITERATIONS
+    );
     println!("  total: {:?}", elapsed);
     println!("  avg: {:?}", avg);
 }

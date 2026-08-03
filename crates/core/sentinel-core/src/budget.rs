@@ -43,7 +43,8 @@ impl BudgetGuard {
 
     /// Remaining budget before hitting the cap. None if unlimited.
     pub fn remaining_usd(&self) -> Option<f64> {
-        self.cost_cap_usd.map(|cap| (cap - self.estimated_total()).max(0.0))
+        self.cost_cap_usd
+            .map(|cap| (cap - self.estimated_total()).max(0.0))
     }
 
     /// Reserve budget for an operation with an estimated cost.

@@ -1,5 +1,5 @@
-use std::sync::Arc;
 use sentinel_core::Agent;
+use std::sync::Arc;
 
 /// Handlers for agent-powered LSP operations.
 ///

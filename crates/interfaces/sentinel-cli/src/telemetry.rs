@@ -39,7 +39,9 @@ fn crash_dir() -> std::path::PathBuf {
         let base = std::env::var("USERPROFILE")
             .or_else(|_| std::env::var("HOME"))
             .unwrap_or_else(|_| ".".into());
-        std::path::PathBuf::from(base).join(".sentinel").join("logs")
+        std::path::PathBuf::from(base)
+            .join(".sentinel")
+            .join("logs")
     }
 }
 
@@ -70,14 +72,20 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
 
 fn cmd_on() -> anyhow::Result<()> {
     let path = save_consent(true).map_err(|e| anyhow::anyhow!("{}", e))?;
-    println!(" {} Telemetry enabled. Anonymous crash reports will be sent.", "✓".green().bold());
+    println!(
+        " {} Telemetry enabled. Anonymous crash reports will be sent.",
+        "✓".green().bold()
+    );
     println!("   Consent: {}", path.display());
     Ok(())
 }
 
 fn cmd_off() -> anyhow::Result<()> {
     let path = save_consent(false).map_err(|e| anyhow::anyhow!("{}", e))?;
-    println!(" {} Telemetry disabled. No data is collected.", "✗".red().bold());
+    println!(
+        " {} Telemetry disabled. No data is collected.",
+        "✗".red().bold()
+    );
     println!("   Consent: {}", path.display());
     Ok(())
 }
@@ -85,15 +93,30 @@ fn cmd_off() -> anyhow::Result<()> {
 fn cmd_status() -> anyhow::Result<()> {
     match load_consent() {
         TelemetryConsent::OptedIn => {
-            println!(" {} Anonymous crash reporting: {} (opt-in)", "•".green(), "ENABLED".green().bold())
+            println!(
+                " {} Anonymous crash reporting: {} (opt-in)",
+                "•".green(),
+                "ENABLED".green().bold()
+            )
         }
         TelemetryConsent::OptedOut => {
-            println!(" {} Anonymous crash reporting: {} (opt-out)", "•".yellow(), "disabled".yellow())
+            println!(
+                " {} Anonymous crash reporting: {} (opt-out)",
+                "•".yellow(),
+                "disabled".yellow()
+            )
         }
         TelemetryConsent::Unset => {
             println!(" {} Anonymous crash reporting: not decided yet", "•".cyan())
         }
     }
-    println!("   Active: {}", if is_consent_granted() { "yes".green() } else { "no".red() });
+    println!(
+        "   Active: {}",
+        if is_consent_granted() {
+            "yes".green()
+        } else {
+            "no".red()
+        }
+    );
     Ok(())
 }

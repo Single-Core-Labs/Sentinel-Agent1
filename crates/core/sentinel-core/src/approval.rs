@@ -158,11 +158,7 @@ impl Default for YoloBudgetState {
 }
 
 impl YoloBudgetConfig {
-    pub fn check(
-        &self,
-        state: &YoloBudgetState,
-        estimated_cost: f64,
-    ) -> YoloBudgetDecision {
+    pub fn check(&self, state: &YoloBudgetState, estimated_cost: f64) -> YoloBudgetDecision {
         if !self.enabled {
             return YoloBudgetDecision::Allowed;
         }
@@ -194,9 +190,7 @@ impl YoloBudgetConfig {
 #[derive(Debug, Clone)]
 pub enum YoloBudgetDecision {
     Allowed,
-    RequiresApproval {
-        reason: String,
-    },
+    RequiresApproval { reason: String },
     Paused,
 }
 
@@ -344,7 +338,10 @@ mod tests {
 
     #[test]
     fn test_usage_threshold_allowed_when_disabled() {
-        let t = UsageThreshold { enabled: false, ..Default::default() };
+        let t = UsageThreshold {
+            enabled: false,
+            ..Default::default()
+        };
         assert!(matches!(t.check(0.0, 0.01), UsageCheckResult::Allowed));
     }
 
@@ -385,7 +382,10 @@ mod tests {
             ..Default::default()
         };
         let state = YoloBudgetState::new();
-        assert!(matches!(cfg.check(&state, 0.05), YoloBudgetDecision::Allowed));
+        assert!(matches!(
+            cfg.check(&state, 0.05),
+            YoloBudgetDecision::Allowed
+        ));
     }
 
     #[test]
@@ -396,7 +396,10 @@ mod tests {
             max_spend_per_session: 1.0,
             ..Default::default()
         };
-        let state = YoloBudgetState { turn_spend: 0.08, ..Default::default() };
+        let state = YoloBudgetState {
+            turn_spend: 0.08,
+            ..Default::default()
+        };
         match cfg.check(&state, 0.05) {
             YoloBudgetDecision::RequiresApproval { .. } => {}
             _ => panic!("Expected requires approval"),
@@ -405,21 +408,28 @@ mod tests {
 
     #[test]
     fn test_yolo_budget_paused() {
-        let cfg = YoloBudgetConfig { enabled: true, ..Default::default() };
-        let state = YoloBudgetState { paused: true, ..Default::default() };
-        assert!(matches!(cfg.check(&state, 0.01), YoloBudgetDecision::Paused));
+        let cfg = YoloBudgetConfig {
+            enabled: true,
+            ..Default::default()
+        };
+        let state = YoloBudgetState {
+            paused: true,
+            ..Default::default()
+        };
+        assert!(matches!(
+            cfg.check(&state, 0.01),
+            YoloBudgetDecision::Paused
+        ));
     }
 
     #[test]
     fn test_approval_gate_v2_deny_by_permission() {
         let gate = ApprovalGateV2 {
-            permission_ruleset: PermissionRuleset::new(vec![
-                PermissionRule {
-                    pattern: "bash".into(),
-                    level: PermissionLevel::Deny,
-                    reason: Some("not allowed".into()),
-                },
-            ]),
+            permission_ruleset: PermissionRuleset::new(vec![PermissionRule {
+                pattern: "bash".into(),
+                level: PermissionLevel::Deny,
+                reason: Some("not allowed".into()),
+            }]),
             ..Default::default()
         };
         let ctx = ApprovalContext {
@@ -440,15 +450,19 @@ mod tests {
     #[test]
     fn test_approval_gate_v2_allowed() {
         let gate = ApprovalGateV2 {
-            permission_ruleset: PermissionRuleset::new(vec![
-                PermissionRule {
-                    pattern: "read".into(),
-                    level: PermissionLevel::Allow,
-                    reason: None,
-                },
-            ]),
-            usage_threshold: UsageThreshold { enabled: false, ..Default::default() },
-            yolo_budget_config: YoloBudgetConfig { enabled: false, ..Default::default() },
+            permission_ruleset: PermissionRuleset::new(vec![PermissionRule {
+                pattern: "read".into(),
+                level: PermissionLevel::Allow,
+                reason: None,
+            }]),
+            usage_threshold: UsageThreshold {
+                enabled: false,
+                ..Default::default()
+            },
+            yolo_budget_config: YoloBudgetConfig {
+                enabled: false,
+                ..Default::default()
+            },
         };
         let ctx = ApprovalContext {
             tool_name: "read".into(),

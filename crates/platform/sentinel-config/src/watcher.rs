@@ -81,7 +81,10 @@ mod tests {
         writeln!(file, "[agent]\ndefault_model = \"gpt-4o\"").unwrap();
         drop(file);
 
-        let mut rx = watch_config(Some(config_path.to_str().unwrap()), std::time::Duration::from_millis(20));
+        let mut rx = watch_config(
+            Some(config_path.to_str().unwrap()),
+            std::time::Duration::from_millis(20),
+        );
 
         tokio::time::timeout(std::time::Duration::from_secs(5), rx.changed())
             .await

@@ -1,9 +1,9 @@
 use async_trait::async_trait;
-use rusqlite::{Connection, params};
-use std::sync::{Arc, Mutex};
 use chrono::{DateTime, Utc};
+use rusqlite::{params, Connection};
+use std::sync::{Arc, Mutex};
 
-use crate::graph::{ThreadSpawnEdge, SpawnEdgeStatus, AgentNode};
+use crate::graph::{AgentNode, SpawnEdgeStatus, ThreadSpawnEdge};
 use crate::store::{AgentGraphStore, GraphStoreError};
 
 /// SQLite-backed implementation of `AgentGraphStore`.
@@ -20,9 +20,11 @@ impl LocalAgentGraphStore {
     /// Open (or create) the SQLite database at the given path.
     /// Uses in-memory DB if path is `:memory:`.
     pub fn open(path: &str) -> Result<Self, GraphStoreError> {
-        let conn = Connection::open(path)
-            .map_err(|e| GraphStoreError::DatabaseError(e.to_string()))?;
-        let store = Self { conn: Arc::new(Mutex::new(conn)) };
+        let conn =
+            Connection::open(path).map_err(|e| GraphStoreError::DatabaseError(e.to_string()))?;
+        let store = Self {
+            conn: Arc::new(Mutex::new(conn)),
+        };
         store.init_tables()?;
         Ok(store)
     }
@@ -33,7 +35,9 @@ impl LocalAgentGraphStore {
     }
 
     fn init_tables(&self) -> Result<(), GraphStoreError> {
-        let conn = self.conn.lock()
+        let conn = self
+            .conn
+            .lock()
             .map_err(|e| GraphStoreError::DatabaseError(e.to_string()))?;
         conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS thread_spawn_edges (
@@ -62,9 +66,13 @@ impl LocalAgentGraphStore {
             parent_thread_id: row.get(1)?,
             child_thread_id: row.get(2)?,
             status,
-            created_at: row.get::<_, String>(4)?.parse::<DateTime<Utc>>()
+            created_at: row
+                .get::<_, String>(4)?
+                .parse::<DateTime<Utc>>()
                 .unwrap_or_else(|_| Utc::now()),
-            updated_at: row.get::<_, String>(5)?.parse::<DateTime<Utc>>()
+            updated_at: row
+                .get::<_, String>(5)?
+                .parse::<DateTime<Utc>>()
                 .unwrap_or_else(|_| Utc::now()),
         })
     }
@@ -78,7 +86,9 @@ impl AgentGraphStore for LocalAgentGraphStore {
         child_thread_id: &str,
         status: SpawnEdgeStatus,
     ) -> Result<(), GraphStoreError> {
-        let conn = self.conn.lock()
+        let conn = self
+            .conn
+            .lock()
             .map_err(|e| GraphStoreError::DatabaseError(e.to_string()))?;
         let now = Utc::now().to_rfc3339();
         let status_str = match status {
@@ -110,7 +120,9 @@ impl AgentGraphStore for LocalAgentGraphStore {
         child_thread_id: &str,
         status: SpawnEdgeStatus,
     ) -> Result<(), GraphStoreError> {
-        let conn = self.conn.lock()
+        let conn = self
+            .conn
+            .lock()
             .map_err(|e| GraphStoreError::DatabaseError(e.to_string()))?;
         let now = Utc::now().to_rfc3339();
         let status_str = match status {
@@ -118,11 +130,13 @@ impl AgentGraphStore for LocalAgentGraphStore {
             SpawnEdgeStatus::Closed => "Closed",
         };
 
-        let rows = conn.execute(
-            "UPDATE thread_spawn_edges SET status = ?1, updated_at = ?2
+        let rows = conn
+            .execute(
+                "UPDATE thread_spawn_edges SET status = ?1, updated_at = ?2
              WHERE parent_thread_id = ?3 AND child_thread_id = ?4",
-            params![status_str, now, parent_thread_id, child_thread_id],
-        ).map_err(|e| GraphStoreError::DatabaseError(e.to_string()))?;
+                params![status_str, now, parent_thread_id, child_thread_id],
+            )
+            .map_err(|e| GraphStoreError::DatabaseError(e.to_string()))?;
 
         if rows == 0 {
             return Err(GraphStoreError::EdgeNotFound {
@@ -137,16 +151,21 @@ impl AgentGraphStore for LocalAgentGraphStore {
         &self,
         thread_id: &str,
     ) -> Result<Vec<ThreadSpawnEdge>, GraphStoreError> {
-        let conn = self.conn.lock()
+        let conn = self
+            .conn
+            .lock()
             .map_err(|e| GraphStoreError::DatabaseError(e.to_string()))?;
-        let mut stmt = conn.prepare(
-            "SELECT id, parent_thread_id, child_thread_id, status, created_at, updated_at
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, parent_thread_id, child_thread_id, status, created_at, updated_at
              FROM thread_spawn_edges
              WHERE parent_thread_id = ?1
-             ORDER BY created_at ASC, id ASC"
-        ).map_err(|e| GraphStoreError::DatabaseError(e.to_string()))?;
+             ORDER BY created_at ASC, id ASC",
+            )
+            .map_err(|e| GraphStoreError::DatabaseError(e.to_string()))?;
 
-        let edges = stmt.query_map(params![thread_id], Self::parse_edge)
+        let edges = stmt
+            .query_map(params![thread_id], Self::parse_edge)
             .map_err(|e| GraphStoreError::DatabaseError(e.to_string()))?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| GraphStoreError::DatabaseError(e.to_string()))?;
@@ -176,16 +195,21 @@ impl AgentGraphStore for LocalAgentGraphStore {
         &self,
         thread_id: &str,
     ) -> Result<Option<ThreadSpawnEdge>, GraphStoreError> {
-        let conn = self.conn.lock()
+        let conn = self
+            .conn
+            .lock()
             .map_err(|e| GraphStoreError::DatabaseError(e.to_string()))?;
-        let mut stmt = conn.prepare(
-            "SELECT id, parent_thread_id, child_thread_id, status, created_at, updated_at
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, parent_thread_id, child_thread_id, status, created_at, updated_at
              FROM thread_spawn_edges
              WHERE child_thread_id = ?1
-             LIMIT 1"
-        ).map_err(|e| GraphStoreError::DatabaseError(e.to_string()))?;
+             LIMIT 1",
+            )
+            .map_err(|e| GraphStoreError::DatabaseError(e.to_string()))?;
 
-        let mut rows = stmt.query_map(params![thread_id], Self::parse_edge)
+        let mut rows = stmt
+            .query_map(params![thread_id], Self::parse_edge)
             .map_err(|e| GraphStoreError::DatabaseError(e.to_string()))?;
 
         match rows.next() {
@@ -196,7 +220,9 @@ impl AgentGraphStore for LocalAgentGraphStore {
     }
 
     async fn list_root_threads(&self) -> Result<Vec<ThreadSpawnEdge>, GraphStoreError> {
-        let conn = self.conn.lock()
+        let conn = self
+            .conn
+            .lock()
             .map_err(|e| GraphStoreError::DatabaseError(e.to_string()))?;
         let mut stmt = conn.prepare(
             "SELECT e.id, e.parent_thread_id, e.child_thread_id, e.status, e.created_at, e.updated_at
@@ -206,7 +232,8 @@ impl AgentGraphStore for LocalAgentGraphStore {
              ORDER BY e.created_at ASC, e.id ASC"
         ).map_err(|e| GraphStoreError::DatabaseError(e.to_string()))?;
 
-        let edges = stmt.query_map([], Self::parse_edge)
+        let edges = stmt
+            .query_map([], Self::parse_edge)
             .map_err(|e| GraphStoreError::DatabaseError(e.to_string()))?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| GraphStoreError::DatabaseError(e.to_string()))?;
@@ -215,16 +242,21 @@ impl AgentGraphStore for LocalAgentGraphStore {
     }
 
     async fn list_all_nodes(&self) -> Result<Vec<AgentNode>, GraphStoreError> {
-        let conn = self.conn.lock()
+        let conn = self
+            .conn
+            .lock()
             .map_err(|e| GraphStoreError::DatabaseError(e.to_string()))?;
-        let mut stmt = conn.prepare(
-            "SELECT DISTINCT parent_thread_id FROM thread_spawn_edges
+        let mut stmt = conn
+            .prepare(
+                "SELECT DISTINCT parent_thread_id FROM thread_spawn_edges
              UNION
              SELECT DISTINCT child_thread_id FROM thread_spawn_edges
-             ORDER BY 1"
-        ).map_err(|e| GraphStoreError::DatabaseError(e.to_string()))?;
+             ORDER BY 1",
+            )
+            .map_err(|e| GraphStoreError::DatabaseError(e.to_string()))?;
 
-        let thread_ids: Vec<String> = stmt.query_map([], |row| row.get::<_, String>(0))
+        let thread_ids: Vec<String> = stmt
+            .query_map([], |row| row.get::<_, String>(0))
             .map_err(|e| GraphStoreError::DatabaseError(e.to_string()))?
             .collect::<Result<Vec<_>, _>>()
             .map_err(|e| GraphStoreError::DatabaseError(e.to_string()))?;
@@ -232,14 +264,19 @@ impl AgentGraphStore for LocalAgentGraphStore {
         let mut nodes = Vec::new();
         for tid in thread_ids {
             let parent = Self::get_parent_for_node(&conn, &tid)?;
-            nodes.push(AgentNode { thread_id: tid, parent_id: parent });
+            nodes.push(AgentNode {
+                thread_id: tid,
+                parent_id: parent,
+            });
         }
 
         Ok(nodes)
     }
 
     async fn clear(&self) -> Result<(), GraphStoreError> {
-        let conn = self.conn.lock()
+        let conn = self
+            .conn
+            .lock()
             .map_err(|e| GraphStoreError::DatabaseError(e.to_string()))?;
         conn.execute("DELETE FROM thread_spawn_edges", [])
             .map_err(|e| GraphStoreError::DatabaseError(e.to_string()))?;
@@ -248,12 +285,16 @@ impl AgentGraphStore for LocalAgentGraphStore {
 }
 
 impl LocalAgentGraphStore {
-    fn get_parent_for_node(conn: &Connection, thread_id: &str) -> Result<Option<String>, GraphStoreError> {
+    fn get_parent_for_node(
+        conn: &Connection,
+        thread_id: &str,
+    ) -> Result<Option<String>, GraphStoreError> {
         let mut stmt = conn.prepare(
             "SELECT parent_thread_id FROM thread_spawn_edges WHERE child_thread_id = ?1 LIMIT 1"
         ).map_err(|e| GraphStoreError::DatabaseError(e.to_string()))?;
 
-        let mut rows = stmt.query_map(params![thread_id], |row| row.get::<_, String>(0))
+        let mut rows = stmt
+            .query_map(params![thread_id], |row| row.get::<_, String>(0))
             .map_err(|e| GraphStoreError::DatabaseError(e.to_string()))?;
 
         match rows.next() {

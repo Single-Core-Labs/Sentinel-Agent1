@@ -1,4 +1,4 @@
-use sentinel_protocol::{Message, ContentBlock, Role};
+use sentinel_protocol::{ContentBlock, Message, Role};
 
 #[derive(Debug)]
 pub struct ContextManager {
@@ -10,7 +10,12 @@ pub struct ContextManager {
 
 impl ContextManager {
     pub fn new(max_tokens: usize) -> Self {
-        Self { messages: Vec::new(), max_tokens, compaction_count: 0, summary_count: 0 }
+        Self {
+            messages: Vec::new(),
+            max_tokens,
+            compaction_count: 0,
+            summary_count: 0,
+        }
     }
 
     pub fn add(&mut self, msg: Message) {
@@ -22,7 +27,10 @@ impl ContextManager {
     }
 
     pub fn estimated_tokens(&self) -> usize {
-        self.messages.iter().map(|m| m.extract_text().len() / 4).sum()
+        self.messages
+            .iter()
+            .map(|m| m.extract_text().len() / 4)
+            .sum()
     }
 
     pub fn needs_compaction(&self) -> bool {
@@ -41,14 +49,12 @@ impl ContextManager {
     /// Called by the agent loop after generating a summary via the provider.
     pub fn insert_summary(&mut self, summary_text: &str) {
         self.summary_count += 1;
-        let summary = Message::new(Role::User, vec![
-            ContentBlock::Text {
-                text: format!(
-                    "[Conversation summary: {}]",
-                    summary_text,
-                ),
-            }
-        ]);
+        let summary = Message::new(
+            Role::User,
+            vec![ContentBlock::Text {
+                text: format!("[Conversation summary: {}]", summary_text,),
+            }],
+        );
         // Replace the first user message (placeholder summary) with the real one
         let pos = self.messages.iter().position(|m| {
             m.role == Role::User && m.extract_text().contains("Earlier context compacted")
@@ -61,7 +67,9 @@ impl ContextManager {
     }
 
     pub fn compact(&mut self) {
-        if self.messages.is_empty() { return; }
+        if self.messages.is_empty() {
+            return;
+        }
 
         self.compaction_count += 1;
         let target = self.max_tokens / 2;
@@ -87,8 +95,10 @@ impl ContextManager {
 
         while keep_start > 0 {
             let kept_count = total - keep_start;
-            let estimated = non_system[keep_start..].iter()
-                .map(|m| m.extract_text().len() / 4).sum::<usize>();
+            let estimated = non_system[keep_start..]
+                .iter()
+                .map(|m| m.extract_text().len() / 4)
+                .sum::<usize>();
             if estimated <= target && kept_count >= 4 {
                 break;
             }
@@ -100,14 +110,12 @@ impl ContextManager {
             if self.compaction_count >= 2 {
                 let kept = non_system.split_off(keep_start);
                 // Use placeholder summary; caller can replace via insert_summary
-                let summary = Message::new(Role::User, vec![
-                    ContentBlock::Text {
-                        text: format!(
-                            "[Earlier context compacted: {} messages removed]",
-                            removed,
-                        ),
-                    }
-                ]);
+                let summary = Message::new(
+                    Role::User,
+                    vec![ContentBlock::Text {
+                        text: format!("[Earlier context compacted: {} messages removed]", removed,),
+                    }],
+                );
                 non_system = vec![summary];
                 non_system.extend(kept);
             } else {
@@ -177,9 +185,10 @@ mod tests {
             ctx.add(Message::assistant(format!("Response {}", i)));
         }
         ctx.compact();
-        let has_summary = ctx.messages().iter().any(|m| {
-            m.role == Role::User && m.extract_text().contains("compacted")
-        });
+        let has_summary = ctx
+            .messages()
+            .iter()
+            .any(|m| m.role == Role::User && m.extract_text().contains("compacted"));
         assert!(has_summary);
     }
 }

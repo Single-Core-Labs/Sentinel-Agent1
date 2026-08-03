@@ -55,8 +55,12 @@ pub enum PluginEvent {
         completion_tokens: u32,
     },
     /// Session lifecycle events.
-    SessionCreated { session_id: String },
-    SessionEnded { session_id: String },
+    SessionCreated {
+        session_id: String,
+    },
+    SessionEnded {
+        session_id: String,
+    },
     /// A custom event defined by the plugin itself.
     Custom {
         name: String,

@@ -1,16 +1,21 @@
-use std::sync::Arc;
-use std::net::SocketAddr;
-use axum::{Router, routing::get, extract::ws::{WebSocketUpgrade, WebSocket, Message}, response::IntoResponse};
+use crate::handler::RequestHandler;
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
+use axum::{
+    extract::ws::{Message, WebSocket, WebSocketUpgrade},
+    response::IntoResponse,
+    routing::get,
+    Router,
+};
+use colored::*;
+use futures_util::SinkExt as FuturesSinkExt;
+use futures_util::StreamExt as FuturesStreamExt;
+use sentinel_app_server_protocol::rpc::{JsonRpcMessage, JsonRpcResponse};
 use serde::Deserialize;
+use std::net::SocketAddr;
+use std::sync::Arc;
 use tokio::sync::mpsc;
 use tower_http::services::ServeDir;
-use futures_util::StreamExt as FuturesStreamExt;
-use futures_util::SinkExt as FuturesSinkExt;
-use colored::*;
-use sentinel_app_server_protocol::rpc::{JsonRpcMessage, JsonRpcResponse};
-use crate::handler::RequestHandler;
 
 // ── Query-string params for the /ws upgrade ──────────────────────────────────
 #[derive(Debug, Deserialize)]
@@ -83,7 +88,9 @@ impl HttpServer {
             }
         }
         // 3) Compile-time baked path or bare "public".
-        option_env!("SENTINEL_PUBLIC_DIR").unwrap_or("public").to_string()
+        option_env!("SENTINEL_PUBLIC_DIR")
+            .unwrap_or("public")
+            .to_string()
     }
 
     pub async fn run(&self, addr: &SocketAddr) -> anyhow::Result<()> {
@@ -105,7 +112,12 @@ impl HttpServer {
         println!(" {} WebSocket: ws://{}/ws", "●".cyan().bold(), addr);
         if let Some(ref tok) = self.auth_token {
             println!(" {} Auth token required", "●".yellow().bold());
-            println!("   ws://{}:{}/ws?token={}", addr.ip(), addr.port(), tok.yellow().bold());
+            println!(
+                "   ws://{}:{}/ws?token={}",
+                addr.ip(),
+                addr.port(),
+                tok.yellow().bold()
+            );
         }
 
         axum::serve(listener, app).await?;
@@ -137,7 +149,10 @@ async fn handle_ws(socket: WebSocket, handler: Arc<RequestHandler>) {
         let mut rx = UnboundedReceiverStream::new(rx);
         while let Some(msg) = FuturesStreamExt::next(&mut rx).await {
             let json = serde_json::to_string(&msg).unwrap_or_default();
-            if FuturesSinkExt::send(&mut ws_sender, Message::Text(json)).await.is_err() {
+            if FuturesSinkExt::send(&mut ws_sender, Message::Text(json))
+                .await
+                .is_err()
+            {
                 break;
             }
         }
@@ -152,7 +167,10 @@ async fn handle_ws(socket: WebSocket, handler: Arc<RequestHandler>) {
                         let _ = tx.send(JsonRpcMessage::Response(response));
                     }
                     Ok(JsonRpcMessage::Notification(notif))
-                        if notif.method == "exit" || notif.method == "shutdown" => { break; }
+                        if notif.method == "exit" || notif.method == "shutdown" =>
+                    {
+                        break;
+                    }
                     Ok(JsonRpcMessage::Notification(_)) => {}
                     Ok(JsonRpcMessage::Response(resp)) => {
                         let _ = tx.send(JsonRpcMessage::Response(resp));

@@ -1,10 +1,10 @@
-use std::sync::Arc;
-use async_trait::async_trait;
-use sentinel_tools::{Tool, ToolContext, ToolOutput};
-use sentinel_provider::ModelProvider;
-use sentinel_config::SentinelConfig;
-use crate::thread::AgentThread;
 use crate::agent::{Agent, AutoApprovalGate};
+use crate::thread::AgentThread;
+use async_trait::async_trait;
+use sentinel_config::SentinelConfig;
+use sentinel_provider::ModelProvider;
+use sentinel_tools::{Tool, ToolContext, ToolOutput};
+use std::sync::Arc;
 
 const RESEARCH_CONTEXT_WARN: u64 = 170_000;
 const RESEARCH_CONTEXT_MAX: u64 = 190_000;
@@ -22,13 +22,19 @@ impl ResearchTool {
         read_only_tools: Arc<sentinel_tools::ToolRegistry>,
         config: Arc<SentinelConfig>,
     ) -> Self {
-        Self { provider, read_only_tools, config }
+        Self {
+            provider,
+            read_only_tools,
+            config,
+        }
     }
 }
 
 #[async_trait]
 impl Tool for ResearchTool {
-    fn name(&self) -> &str { "research" }
+    fn name(&self) -> &str {
+        "research"
+    }
     fn description(&self) -> &str {
         "Spawn a research sub-agent to explore documentation, codebases, or repos without polluting the main conversation context."
     }
@@ -48,11 +54,15 @@ impl Tool for ResearchTool {
             "required": ["task"]
         })
     }
-    fn is_mutating(&self) -> bool { false }
+    fn is_mutating(&self) -> bool {
+        false
+    }
 
     async fn execute(&self, args: serde_json::Value, _ctx: &ToolContext) -> ToolOutput {
         let task = args["task"].as_str().unwrap_or("");
-        if task.is_empty() { return ToolOutput::err("No research task provided."); }
+        if task.is_empty() {
+            return ToolOutput::err("No research task provided.");
+        }
         let context = args["context"].as_str().unwrap_or("");
 
         let mut instruction = format!("Research task: {}", task);
@@ -79,7 +89,10 @@ impl Tool for ResearchTool {
                 thread.add_message(sentinel_protocol::Message::user(
                     "[SYSTEM: CONTEXT LIMIT REACHED] Summarize your findings NOW. Do NOT call any more tools."
                 ));
-                match agent.run_with_approval(&mut thread, "Summarize now.", &approval, &None).await {
+                match agent
+                    .run_with_approval(&mut thread, "Summarize now.", &approval, &None)
+                    .await
+                {
                     Ok(output) => return ToolOutput::ok(output.text_or_empty()),
                     Err(_) => return ToolOutput::err("Research context exhausted."),
                 }
@@ -88,11 +101,14 @@ impl Tool for ResearchTool {
             if !warned_context && total_tokens >= RESEARCH_CONTEXT_WARN {
                 warned_context = true;
                 thread.add_message(sentinel_protocol::Message::user(
-                    "[SYSTEM: You have used 75% of your context budget. Start wrapping up.]"
+                    "[SYSTEM: You have used 75% of your context budget. Start wrapping up.]",
                 ));
             }
 
-            match agent.run_with_approval(&mut thread, "", &approval, &None).await {
+            match agent
+                .run_with_approval(&mut thread, "", &approval, &None)
+                .await
+            {
                 Ok(output) => {
                     total_tokens = agent.prompt_tokens() + agent.completion_tokens();
                     match output {
@@ -111,9 +127,12 @@ impl Tool for ResearchTool {
         }
 
         thread.add_message(sentinel_protocol::Message::user(
-            "[SYSTEM: ITERATION LIMIT] Summarize ALL findings so far."
+            "[SYSTEM: ITERATION LIMIT] Summarize ALL findings so far.",
         ));
-        match agent.run_with_approval(&mut thread, "Final summary.", &approval, &None).await {
+        match agent
+            .run_with_approval(&mut thread, "Final summary.", &approval, &None)
+            .await
+        {
             Ok(output) => ToolOutput::ok(output.text_or_empty()),
             Err(_) => ToolOutput::err("Research agent hit iteration limit."),
         }

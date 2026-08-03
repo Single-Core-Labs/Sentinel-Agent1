@@ -12,7 +12,9 @@ pub enum Role {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(untagged)]
 pub enum ContentBlock {
-    Text { text: String },
+    Text {
+        text: String,
+    },
     ToolCall {
         id: String,
         name: String,
@@ -39,9 +41,7 @@ impl Message {
     pub fn text(role: Role, text: impl Into<String>) -> Self {
         Self {
             role,
-            content: vec![ContentBlock::Text {
-                text: text.into(),
-            }],
+            content: vec![ContentBlock::Text { text: text.into() }],
         }
     }
 
@@ -69,7 +69,9 @@ impl Message {
     }
 
     pub fn is_tool_call(&self) -> bool {
-        self.content.iter().any(|b| matches!(b, ContentBlock::ToolCall { .. }))
+        self.content
+            .iter()
+            .any(|b| matches!(b, ContentBlock::ToolCall { .. }))
     }
 }
 
@@ -92,29 +94,35 @@ mod tests {
 
     #[test]
     fn extract_text_joins_text_blocks_and_skips_tool_blocks() {
-        let m = Message::new(Role::Assistant, vec![
-            ContentBlock::Text { text: "one".into() },
-            ContentBlock::ToolCall {
-                id: "tc_1".into(),
-                name: "read".into(),
-                arguments: serde_json::json!({}),
-            },
-            ContentBlock::Text { text: "two".into() },
-        ]);
+        let m = Message::new(
+            Role::Assistant,
+            vec![
+                ContentBlock::Text { text: "one".into() },
+                ContentBlock::ToolCall {
+                    id: "tc_1".into(),
+                    name: "read".into(),
+                    arguments: serde_json::json!({}),
+                },
+                ContentBlock::Text { text: "two".into() },
+            ],
+        );
         assert_eq!(m.extract_text(), "one\ntwo");
         assert!(m.is_tool_call());
     }
 
     #[test]
     fn json_roundtrip_preserves_message() {
-        let m = Message::new(Role::Assistant, vec![
-            ContentBlock::Text { text: "hi".into() },
-            ContentBlock::ToolResult {
-                tool_call_id: "tc_1".into(),
-                content: "out".into(),
-                is_error: Some(false),
-            },
-        ]);
+        let m = Message::new(
+            Role::Assistant,
+            vec![
+                ContentBlock::Text { text: "hi".into() },
+                ContentBlock::ToolResult {
+                    tool_call_id: "tc_1".into(),
+                    content: "out".into(),
+                    is_error: Some(false),
+                },
+            ],
+        );
         let json = serde_json::to_string(&m).unwrap();
         let back: Message = serde_json::from_str(&json).unwrap();
         assert_eq!(m, back);

@@ -11,16 +11,22 @@ pub trait ContentCompressor: Send + Sync {
 pub struct NullCompressor;
 
 impl NullCompressor {
-    pub fn new() -> Self { Self }
+    pub fn new() -> Self {
+        Self
+    }
 }
 
 impl Default for NullCompressor {
-    fn default() -> Self { Self }
+    fn default() -> Self {
+        Self
+    }
 }
 
 #[async_trait]
 impl ContentCompressor for NullCompressor {
-    fn name(&self) -> &'static str { "null" }
+    fn name(&self) -> &'static str {
+        "null"
+    }
     async fn compress(&self, _tool_name: &str, output: &str, _is_error: bool) -> String {
         output.to_string()
     }

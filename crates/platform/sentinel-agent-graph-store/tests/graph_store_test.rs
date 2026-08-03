@@ -1,6 +1,6 @@
-use sentinel_agent_graph_store::graph::{AgentGraph, ThreadSpawnEdge, SpawnEdgeStatus, AgentNode};
-use sentinel_agent_graph_store::store::{AgentGraphStore, GraphStoreError};
+use sentinel_agent_graph_store::graph::{AgentGraph, AgentNode, SpawnEdgeStatus, ThreadSpawnEdge};
 use sentinel_agent_graph_store::local::LocalAgentGraphStore;
+use sentinel_agent_graph_store::store::{AgentGraphStore, GraphStoreError};
 
 // ---------------------------------------------------------------------------
 // In-memory AgentGraph tests
@@ -162,13 +162,22 @@ fn test_edge_new_creates_open_edge() {
 async fn test_local_store_in_memory_crud() {
     let store = LocalAgentGraphStore::in_memory().unwrap();
 
-    store.upsert_thread_spawn_edge("root", "child-a", SpawnEdgeStatus::Open).await.unwrap();
-    store.upsert_thread_spawn_edge("root", "child-b", SpawnEdgeStatus::Open).await.unwrap();
+    store
+        .upsert_thread_spawn_edge("root", "child-a", SpawnEdgeStatus::Open)
+        .await
+        .unwrap();
+    store
+        .upsert_thread_spawn_edge("root", "child-b", SpawnEdgeStatus::Open)
+        .await
+        .unwrap();
 
     let children = store.list_thread_spawn_children("root").await.unwrap();
     assert_eq!(children.len(), 2);
 
-    let child_a = children.iter().find(|e| e.child_thread_id == "child-a").unwrap();
+    let child_a = children
+        .iter()
+        .find(|e| e.child_thread_id == "child-a")
+        .unwrap();
     assert_eq!(child_a.parent_thread_id, "root");
     assert!(child_a.is_open());
 }
@@ -177,8 +186,14 @@ async fn test_local_store_in_memory_crud() {
 async fn test_local_store_upsert_updates_status() {
     let store = LocalAgentGraphStore::in_memory().unwrap();
 
-    store.upsert_thread_spawn_edge("p1", "c1", SpawnEdgeStatus::Open).await.unwrap();
-    store.upsert_thread_spawn_edge("p1", "c1", SpawnEdgeStatus::Closed).await.unwrap();
+    store
+        .upsert_thread_spawn_edge("p1", "c1", SpawnEdgeStatus::Open)
+        .await
+        .unwrap();
+    store
+        .upsert_thread_spawn_edge("p1", "c1", SpawnEdgeStatus::Closed)
+        .await
+        .unwrap();
 
     let children = store.list_thread_spawn_children("p1").await.unwrap();
     assert_eq!(children.len(), 1);
@@ -189,8 +204,14 @@ async fn test_local_store_upsert_updates_status() {
 async fn test_local_store_set_status() {
     let store = LocalAgentGraphStore::in_memory().unwrap();
 
-    store.upsert_thread_spawn_edge("p1", "c1", SpawnEdgeStatus::Open).await.unwrap();
-    store.set_thread_spawn_edge_status("p1", "c1", SpawnEdgeStatus::Closed).await.unwrap();
+    store
+        .upsert_thread_spawn_edge("p1", "c1", SpawnEdgeStatus::Open)
+        .await
+        .unwrap();
+    store
+        .set_thread_spawn_edge_status("p1", "c1", SpawnEdgeStatus::Closed)
+        .await
+        .unwrap();
 
     let children = store.list_thread_spawn_children("p1").await.unwrap();
     assert!(children[0].is_closed());
@@ -200,7 +221,9 @@ async fn test_local_store_set_status() {
 async fn test_local_store_set_status_nonexistent_returns_error() {
     let store = LocalAgentGraphStore::in_memory().unwrap();
 
-    let result = store.set_thread_spawn_edge_status("p1", "c1", SpawnEdgeStatus::Closed).await;
+    let result = store
+        .set_thread_spawn_edge_status("p1", "c1", SpawnEdgeStatus::Closed)
+        .await;
     assert!(result.is_err());
     match result.unwrap_err() {
         GraphStoreError::EdgeNotFound { parent, child } => {
@@ -214,7 +237,10 @@ async fn test_local_store_set_status_nonexistent_returns_error() {
 #[tokio::test]
 async fn test_local_store_get_parent() {
     let store = LocalAgentGraphStore::in_memory().unwrap();
-    store.upsert_thread_spawn_edge("parent-1", "child-1", SpawnEdgeStatus::Open).await.unwrap();
+    store
+        .upsert_thread_spawn_edge("parent-1", "child-1", SpawnEdgeStatus::Open)
+        .await
+        .unwrap();
 
     let parent = store.get_thread_parent("child-1").await.unwrap();
     assert!(parent.is_some());
@@ -232,9 +258,18 @@ async fn test_local_store_get_parent_nonexistent() {
 async fn test_local_store_list_descendants() {
     let store = LocalAgentGraphStore::in_memory().unwrap();
 
-    store.upsert_thread_spawn_edge("root", "child-a", SpawnEdgeStatus::Open).await.unwrap();
-    store.upsert_thread_spawn_edge("child-a", "grandchild-1", SpawnEdgeStatus::Open).await.unwrap();
-    store.upsert_thread_spawn_edge("child-a", "grandchild-2", SpawnEdgeStatus::Open).await.unwrap();
+    store
+        .upsert_thread_spawn_edge("root", "child-a", SpawnEdgeStatus::Open)
+        .await
+        .unwrap();
+    store
+        .upsert_thread_spawn_edge("child-a", "grandchild-1", SpawnEdgeStatus::Open)
+        .await
+        .unwrap();
+    store
+        .upsert_thread_spawn_edge("child-a", "grandchild-2", SpawnEdgeStatus::Open)
+        .await
+        .unwrap();
 
     let desc = store.list_thread_spawn_descendants("root").await.unwrap();
     assert_eq!(desc.len(), 3);
@@ -244,9 +279,18 @@ async fn test_local_store_list_descendants() {
 async fn test_local_store_list_root_threads() {
     let store = LocalAgentGraphStore::in_memory().unwrap();
 
-    store.upsert_thread_spawn_edge("root-a", "child-a", SpawnEdgeStatus::Open).await.unwrap();
-    store.upsert_thread_spawn_edge("root-b", "child-b", SpawnEdgeStatus::Open).await.unwrap();
-    store.upsert_thread_spawn_edge("child-a", "grandchild", SpawnEdgeStatus::Open).await.unwrap();
+    store
+        .upsert_thread_spawn_edge("root-a", "child-a", SpawnEdgeStatus::Open)
+        .await
+        .unwrap();
+    store
+        .upsert_thread_spawn_edge("root-b", "child-b", SpawnEdgeStatus::Open)
+        .await
+        .unwrap();
+    store
+        .upsert_thread_spawn_edge("child-a", "grandchild", SpawnEdgeStatus::Open)
+        .await
+        .unwrap();
 
     let roots = store.list_root_threads().await.unwrap();
     assert_eq!(roots.len(), 2);
@@ -259,7 +303,10 @@ async fn test_local_store_list_root_threads() {
 async fn test_local_store_list_all_nodes() {
     let store = LocalAgentGraphStore::in_memory().unwrap();
 
-    store.upsert_thread_spawn_edge("root", "child", SpawnEdgeStatus::Open).await.unwrap();
+    store
+        .upsert_thread_spawn_edge("root", "child", SpawnEdgeStatus::Open)
+        .await
+        .unwrap();
 
     let nodes = store.list_all_nodes().await.unwrap();
     assert_eq!(nodes.len(), 2);
@@ -275,7 +322,10 @@ async fn test_local_store_list_all_nodes() {
 async fn test_local_store_clear() {
     let store = LocalAgentGraphStore::in_memory().unwrap();
 
-    store.upsert_thread_spawn_edge("p1", "c1", SpawnEdgeStatus::Open).await.unwrap();
+    store
+        .upsert_thread_spawn_edge("p1", "c1", SpawnEdgeStatus::Open)
+        .await
+        .unwrap();
     store.clear().await.unwrap();
 
     let nodes = store.list_all_nodes().await.unwrap();
@@ -291,7 +341,10 @@ async fn test_local_store_file_persistence() {
 
     {
         let store = LocalAgentGraphStore::open(db_str).unwrap();
-        store.upsert_thread_spawn_edge("root", "child", SpawnEdgeStatus::Open).await.unwrap();
+        store
+            .upsert_thread_spawn_edge("root", "child", SpawnEdgeStatus::Open)
+            .await
+            .unwrap();
     }
 
     {
@@ -311,11 +364,20 @@ async fn test_local_store_file_persistence() {
 async fn test_local_store_listing_returns_deterministic_order() {
     let store = LocalAgentGraphStore::in_memory().unwrap();
 
-    store.upsert_thread_spawn_edge("root", "c", SpawnEdgeStatus::Open).await.unwrap();
+    store
+        .upsert_thread_spawn_edge("root", "c", SpawnEdgeStatus::Open)
+        .await
+        .unwrap();
     tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-    store.upsert_thread_spawn_edge("root", "a", SpawnEdgeStatus::Open).await.unwrap();
+    store
+        .upsert_thread_spawn_edge("root", "a", SpawnEdgeStatus::Open)
+        .await
+        .unwrap();
     tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-    store.upsert_thread_spawn_edge("root", "b", SpawnEdgeStatus::Open).await.unwrap();
+    store
+        .upsert_thread_spawn_edge("root", "b", SpawnEdgeStatus::Open)
+        .await
+        .unwrap();
 
     let children = store.list_thread_spawn_children("root").await.unwrap();
     assert_eq!(children[0].child_thread_id, "c");
@@ -335,7 +397,10 @@ fn test_graph_store_error_display() {
     let err = GraphStoreError::DatabaseError("disk full".into());
     assert!(err.to_string().contains("disk full"));
 
-    let err = GraphStoreError::EdgeNotFound { parent: "p".into(), child: "c".into() };
+    let err = GraphStoreError::EdgeNotFound {
+        parent: "p".into(),
+        child: "c".into(),
+    };
     let msg = err.to_string();
     assert!(msg.contains("p"));
     assert!(msg.contains("c"));

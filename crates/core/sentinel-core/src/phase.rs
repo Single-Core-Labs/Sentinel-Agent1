@@ -1,13 +1,17 @@
-use std::sync::{Arc, Mutex};
+use crate::cost::{estimate_input_cost, CostTracker};
+use crate::thread::Phase;
 use async_trait::async_trait;
 use sentinel_protocol::{CompletionRequest, CompletionResponse, StreamChunk, ToolDef};
 use sentinel_provider::{ModelProvider, ProviderError};
 use sentinel_provider_info::ProviderInfo;
-use crate::cost::{CostTracker, estimate_input_cost};
-use crate::thread::Phase;
+use std::sync::{Arc, Mutex};
 
 /// Complexity score (0.0 = trivial, 1.0 = very complex)
-pub fn score_complexity(messages: &[sentinel_protocol::Message], tool_error_rate: f64, has_mutating_tools: bool) -> f64 {
+pub fn score_complexity(
+    messages: &[sentinel_protocol::Message],
+    tool_error_rate: f64,
+    has_mutating_tools: bool,
+) -> f64 {
     if messages.is_empty() {
         return 0.0;
     }
@@ -49,7 +53,9 @@ impl CostAwareRouter {
         powerful: Arc<dyn ModelProvider>,
     ) -> Self {
         Self {
-            cheap, balanced, powerful,
+            cheap,
+            balanced,
+            powerful,
             phase: Mutex::new(Phase::Plan),
             cost_tracker: Arc::new(CostTracker::new()),
             tool_error_rate: Mutex::new(0.0),
@@ -77,8 +83,16 @@ impl CostAwareRouter {
         let phase = *self.phase.lock().unwrap();
         match phase {
             Phase::Plan | Phase::Act => {
-                let has_mutation = req.tools.as_ref()
-                    .map(|tools| tools.iter().any(|t| t.name.contains("write") || t.name.contains("edit") || t.name.contains("bash")))
+                let has_mutation = req
+                    .tools
+                    .as_ref()
+                    .map(|tools| {
+                        tools.iter().any(|t| {
+                            t.name.contains("write")
+                                || t.name.contains("edit")
+                                || t.name.contains("bash")
+                        })
+                    })
                     .unwrap_or(false);
                 let error_rate = *self.tool_error_rate.lock().unwrap();
                 let score = score_complexity(&req.messages, error_rate, has_mutation);
@@ -97,7 +111,9 @@ impl CostAwareRouter {
     pub fn estimate_request_cost(&self, req: &CompletionRequest) -> f64 {
         let provider = self.select(req);
         let model = provider.name();
-        let prompt_tokens: u32 = req.messages.iter()
+        let prompt_tokens: u32 = req
+            .messages
+            .iter()
             .map(|m| m.extract_text().len() as u32 / 4)
             .sum();
         estimate_input_cost(model, prompt_tokens)
@@ -131,7 +147,7 @@ impl ModelProvider for CostAwareRouter {
         let response = provider.complete(req).await?;
         if let Some(ref usage) = response.usage {
             let u = crate::cost::Usage::new(usage.prompt_tokens, usage.completion_tokens);
-            self.cost_tracker.record(&model, &u);
+            self.cost_tracker.record(model, &u);
         }
         Ok(response)
     }
@@ -139,7 +155,10 @@ impl ModelProvider for CostAwareRouter {
     async fn complete_stream(
         &self,
         req: &CompletionRequest,
-    ) -> Result<Box<dyn tokio_stream::Stream<Item = Result<StreamChunk, ProviderError>> + Send + Unpin>, ProviderError> {
+    ) -> Result<
+        Box<dyn tokio_stream::Stream<Item = Result<StreamChunk, ProviderError>> + Send + Unpin>,
+        ProviderError,
+    > {
         let provider = self.select(req);
         provider.complete_stream(req).await
     }
@@ -167,7 +186,11 @@ impl std::fmt::Debug for PlanActRouter {
 
 impl PlanActRouter {
     pub fn new(cheap: Arc<dyn ModelProvider>, powerful: Arc<dyn ModelProvider>) -> Self {
-        Self { cheap, powerful, phase: Mutex::new(Phase::Plan) }
+        Self {
+            cheap,
+            powerful,
+            phase: Mutex::new(Phase::Plan),
+        }
     }
 
     pub fn set_phase(&self, phase: Phase) {
@@ -188,12 +211,22 @@ impl PlanActRouter {
 
 #[async_trait]
 impl ModelProvider for PlanActRouter {
-    fn info(&self) -> &ProviderInfo { self.select().info() }
-    fn name(&self) -> &str { self.select().name() }
+    fn info(&self) -> &ProviderInfo {
+        self.select().info()
+    }
+    fn name(&self) -> &str {
+        self.select().name()
+    }
     async fn complete(&self, req: &CompletionRequest) -> Result<CompletionResponse, ProviderError> {
         self.select().complete(req).await
     }
-    async fn complete_stream(&self, req: &CompletionRequest) -> Result<Box<dyn tokio_stream::Stream<Item = Result<StreamChunk, ProviderError>> + Send + Unpin>, ProviderError> {
+    async fn complete_stream(
+        &self,
+        req: &CompletionRequest,
+    ) -> Result<
+        Box<dyn tokio_stream::Stream<Item = Result<StreamChunk, ProviderError>> + Send + Unpin>,
+        ProviderError,
+    > {
         self.select().complete_stream(req).await
     }
     fn supports_tool(&self, tool: &ToolDef) -> bool {

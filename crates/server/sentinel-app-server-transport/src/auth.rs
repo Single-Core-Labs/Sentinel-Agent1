@@ -16,7 +16,9 @@ pub struct Authenticator {
 
 impl Authenticator {
     pub fn new(secret: impl Into<String>) -> Self {
-        Self { secret: secret.into() }
+        Self {
+            secret: secret.into(),
+        }
     }
 
     pub fn create_token(&self, subject: &str, agent_id: Option<&str>) -> Result<String, AuthError> {

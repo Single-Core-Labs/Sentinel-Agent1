@@ -1,11 +1,11 @@
-use async_trait::async_trait;
-use sentinel_protocol::{CompletionRequest, CompletionResponse, StreamChunk, ToolDef};
-use sentinel_provider_info::ProviderInfo;
 use crate::error::ProviderError;
-use crate::OpenAIProvider;
 use crate::AnthropicProvider;
 use crate::GoogleProvider;
 use crate::LocalProvider;
+use crate::OpenAIProvider;
+use async_trait::async_trait;
+use sentinel_protocol::{CompletionRequest, CompletionResponse, StreamChunk, ToolDef};
+use sentinel_provider_info::ProviderInfo;
 
 pub enum ProviderKind {
     OpenAI(OpenAIProvider),
@@ -22,7 +22,11 @@ impl ProviderKind {
                 Ok(Self::Google(GoogleProvider::new(info)?))
             }
             "ollama" | "vllm" | "lm-studio" | "llamacpp" => {
-                let local_name = info.models.first().map(|m| m.id.clone()).unwrap_or_else(|| "qwen3:latest".into());
+                let local_name = info
+                    .models
+                    .first()
+                    .map(|m| m.id.clone())
+                    .unwrap_or_else(|| "qwen3:latest".into());
                 let base_url = if info.base_url.is_empty() {
                     "http://localhost:11434/v1".to_string()
                 } else {
@@ -69,7 +73,13 @@ impl ModelProvider for ProviderKind {
         }
     }
 
-    async fn complete_stream(&self, req: &CompletionRequest) -> Result<Box<dyn tokio_stream::Stream<Item = Result<StreamChunk, ProviderError>> + Send + Unpin>, ProviderError> {
+    async fn complete_stream(
+        &self,
+        req: &CompletionRequest,
+    ) -> Result<
+        Box<dyn tokio_stream::Stream<Item = Result<StreamChunk, ProviderError>> + Send + Unpin>,
+        ProviderError,
+    > {
         match self {
             Self::OpenAI(p) => p.complete_stream(req).await,
             Self::Anthropic(p) => p.complete_stream(req).await,
@@ -85,6 +95,30 @@ impl ModelProvider for ProviderKind {
             Self::Google(p) => p.supports_tool(tool),
             Self::Local(p) => p.supports_tool(tool),
         }
+    }
+}
+
+#[async_trait]
+pub trait ModelProvider: Send + Sync {
+    fn info(&self) -> &ProviderInfo;
+    fn name(&self) -> &str {
+        self.info().name.as_str()
+    }
+
+    async fn complete(&self, req: &CompletionRequest) -> Result<CompletionResponse, ProviderError>;
+    async fn complete_stream(
+        &self,
+        req: &CompletionRequest,
+    ) -> Result<
+        Box<dyn tokio_stream::Stream<Item = Result<StreamChunk, ProviderError>> + Send + Unpin>,
+        ProviderError,
+    >;
+
+    fn supports_tool(&self, tool: &ToolDef) -> bool {
+        self.info()
+            .models
+            .iter()
+            .any(|m| m.supports_tools && m.id == tool.name)
     }
 }
 
@@ -121,18 +155,5 @@ mod tests {
         assert!(matches!(kind, ProviderKind::OpenAI(_)));
         assert_eq!(kind.name(), "OpenRouter");
         std::env::remove_var("OPENROUTER_API_KEY");
-    }
-}
-
-#[async_trait]
-pub trait ModelProvider: Send + Sync {
-    fn info(&self) -> &ProviderInfo;
-    fn name(&self) -> &str { self.info().name.as_str() }
-
-    async fn complete(&self, req: &CompletionRequest) -> Result<CompletionResponse, ProviderError>;
-    async fn complete_stream(&self, req: &CompletionRequest) -> Result<Box<dyn tokio_stream::Stream<Item = Result<StreamChunk, ProviderError>> + Send + Unpin>, ProviderError>;
-
-    fn supports_tool(&self, tool: &ToolDef) -> bool {
-        self.info().models.iter().any(|m| m.supports_tools && m.id == tool.name)
     }
 }

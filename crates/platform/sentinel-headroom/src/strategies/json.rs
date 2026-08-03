@@ -1,11 +1,11 @@
-use std::sync::OnceLock;
-use async_trait::async_trait;
-use regex::Regex;
-use sha2::{Sha256, Digest};
+use super::smart_crusher::{crush_json_array, SmartCrusherConfig};
+use super::{CompressionResult, CompressionStrategy};
 use crate::classifier::ContentType;
 use crate::metrics::CompressionMetrics;
-use super::{CompressionStrategy, CompressionResult};
-use super::smart_crusher::{SmartCrusherConfig, crush_json_array};
+use async_trait::async_trait;
+use regex::Regex;
+use sha2::{Digest, Sha256};
+use std::sync::OnceLock;
 
 static JSON_ARRAY_RE: OnceLock<Regex> = OnceLock::new();
 fn json_array_re() -> &'static Regex {
@@ -18,11 +18,15 @@ pub struct JsonCompressor {
 
 impl JsonCompressor {
     pub fn new() -> Self {
-        Self { smart_crusher_config: None }
+        Self {
+            smart_crusher_config: None,
+        }
     }
 
     pub fn with_smart_crusher(config: SmartCrusherConfig) -> Self {
-        Self { smart_crusher_config: Some(config) }
+        Self {
+            smart_crusher_config: Some(config),
+        }
     }
 }
 
@@ -34,8 +38,12 @@ impl Default for JsonCompressor {
 
 #[async_trait]
 impl CompressionStrategy for JsonCompressor {
-    fn name(&self) -> &'static str { "json" }
-    fn content_types(&self) -> Vec<ContentType> { vec![ContentType::Json, ContentType::JsonArray] }
+    fn name(&self) -> &'static str {
+        "json"
+    }
+    fn content_types(&self) -> Vec<ContentType> {
+        vec![ContentType::Json, ContentType::JsonArray]
+    }
 
     async fn compress(&self, content: &str) -> Option<CompressionResult> {
         if !json_array_re().is_match(content.trim()) {
@@ -50,14 +58,22 @@ impl CompressionStrategy for JsonCompressor {
             Some(text) => {
                 let took = (chrono::Utc::now() - start).num_microseconds().unwrap_or(0) as u64;
                 let metrics = CompressionMetrics::new(content, &text, "json", "json_array", took);
-                Some(CompressionResult { text, metrics, retrieval_key: None })
+                Some(CompressionResult {
+                    text,
+                    metrics,
+                    retrieval_key: None,
+                })
             }
             None => {
                 let val: serde_json::Value = serde_json::from_str(content).ok()?;
                 let arr = val.as_array()?;
                 if arr.is_empty() {
                     let metrics = CompressionMetrics::new(content, "[]", "json", "json_array", 0);
-                    return Some(CompressionResult { text: "[]".into(), metrics, retrieval_key: None });
+                    return Some(CompressionResult {
+                        text: "[]".into(),
+                        metrics,
+                        retrieval_key: None,
+                    });
                 }
                 None
             }
@@ -79,7 +95,15 @@ impl JsonCompressor {
         }
 
         let first_5: String = content.lines().take(5).collect::<Vec<_>>().join("\n");
-        let last_5: String = content.lines().rev().take(5).collect::<Vec<_>>().into_iter().rev().collect::<Vec<_>>().join("\n");
+        let last_5: String = content
+            .lines()
+            .rev()
+            .take(5)
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect::<Vec<_>>()
+            .join("\n");
         let total_chars = content.len();
         let total_lines = line_count;
 
@@ -90,7 +114,11 @@ impl JsonCompressor {
 
         let took = (chrono::Utc::now() - start).num_microseconds().unwrap_or(0) as u64;
         let metrics = CompressionMetrics::new(content, &compressed, "json", "json", took);
-        Some(CompressionResult { text: compressed, metrics, retrieval_key: Some(key) })
+        Some(CompressionResult {
+            text: compressed,
+            metrics,
+            retrieval_key: Some(key),
+        })
     }
 }
 
@@ -100,21 +128,37 @@ mod tests {
 
     #[tokio::test]
     async fn test_json_array_compression() {
-        let rows: Vec<serde_json::Value> = (0..300).map(|i| serde_json::json!({
-            "id": i,
-            "name": format!("item_{}", i),
-            "status": if i == 150 { "ERROR" } else { "ok" },
-            "score": i as f64 * 1.5,
-        })).collect();
+        let rows: Vec<serde_json::Value> = (0..300)
+            .map(|i| {
+                serde_json::json!({
+                    "id": i,
+                    "name": format!("item_{}", i),
+                    "status": if i == 150 { "ERROR" } else { "ok" },
+                    "score": i as f64 * 1.5,
+                })
+            })
+            .collect();
         let content = serde_json::to_string(&rows).unwrap();
         let compressor = JsonCompressor::new();
         let result = compressor.compress(&content).await;
         assert!(result.is_some(), "compression should produce result");
         let r = result.unwrap();
-        assert!(r.metrics.tokens_saved > 0, "should save tokens: {}", r.metrics.tokens_saved);
-        assert!(r.metrics.savings_pct() > 20.0, "savings should be measurable: {}", r.metrics.savings_pct());
+        assert!(
+            r.metrics.tokens_saved > 0,
+            "should save tokens: {}",
+            r.metrics.tokens_saved
+        );
+        assert!(
+            r.metrics.savings_pct() > 20.0,
+            "savings should be measurable: {}",
+            r.metrics.savings_pct()
+        );
         assert!(r.text.contains("ERROR"), "should preserve anomaly");
-        assert!(r.text.contains("items"), "should mention item count: {}", r.text);
+        assert!(
+            r.text.contains("items"),
+            "should mention item count: {}",
+            r.text
+        );
     }
 
     #[tokio::test]

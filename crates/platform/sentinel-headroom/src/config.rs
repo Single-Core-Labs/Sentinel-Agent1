@@ -1,6 +1,6 @@
 use crate::classifier::ContentType;
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct HeadroomConfig {
     pub cache_alignment: CacheAlignmentConfig,
     pub cache_optimizer: CacheOptimizerConfig,
@@ -13,19 +13,6 @@ pub struct HeadroomConfig {
 impl HeadroomConfig {
     pub fn new() -> Self {
         Self::default()
-    }
-}
-
-impl Default for HeadroomConfig {
-    fn default() -> Self {
-        Self {
-            cache_alignment: CacheAlignmentConfig::default(),
-            cache_optimizer: CacheOptimizerConfig::default(),
-            content_routing: ContentRoutingConfig::default(),
-            intelligent_context: IntelligentContextConfig::default(),
-            ccr: CcrConfig::default(),
-            memory: crate::memory::MemoryConfig::default(),
-        }
     }
 }
 
@@ -96,10 +83,14 @@ impl Default for ContentRoutingConfig {
     fn default() -> Self {
         Self {
             enabled_types: vec![
-                ContentType::Json, ContentType::JsonArray,
-                ContentType::SourceCode, ContentType::BuildLog,
-                ContentType::SearchResults, ContentType::GitDiff,
-                ContentType::PlainText, ContentType::Image,
+                ContentType::Json,
+                ContentType::JsonArray,
+                ContentType::SourceCode,
+                ContentType::BuildLog,
+                ContentType::SearchResults,
+                ContentType::GitDiff,
+                ContentType::PlainText,
+                ContentType::Image,
                 ContentType::Html,
             ],
             min_savings_pct: 15.0,
@@ -124,9 +115,15 @@ pub struct ScoringWeights {
 
 impl ScoringWeights {
     pub fn normalized(&self) -> Vec<f64> {
-        let total: f64 = self.recency + self.semantic_similarity + self.toin_importance
-            + self.error_indicator + self.forward_reference + self.token_density;
-        if total <= 0.0 { return vec![1.0 / 6.0; 6]; }
+        let total: f64 = self.recency
+            + self.semantic_similarity
+            + self.toin_importance
+            + self.error_indicator
+            + self.forward_reference
+            + self.token_density;
+        if total <= 0.0 {
+            return vec![1.0 / 6.0; 6];
+        }
         vec![
             self.recency / total,
             self.semantic_similarity / total,

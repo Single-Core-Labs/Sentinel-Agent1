@@ -81,9 +81,13 @@ impl AgentThread {
     }
 
     /// Append a message to the history.
-    pub fn push_message(&mut self, role: impl Into<String>, content: impl Into<String>, tokens: usize) {
-        self.history
-            .push(ThreadMessage::new(role, content, tokens));
+    pub fn push_message(
+        &mut self,
+        role: impl Into<String>,
+        content: impl Into<String>,
+        tokens: usize,
+    ) {
+        self.history.push(ThreadMessage::new(role, content, tokens));
     }
 
     /// Total estimated tokens: system prompt + every message.

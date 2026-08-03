@@ -274,10 +274,7 @@ fn parse_hunk_header(header: &str, diff_line_idx: usize) -> Result<usize, PatchE
 /// `file_lines` is split from the file **without** the final newline stripped,
 /// i.e. each entry may or may not contain `\n`.  We work with trimmed content
 /// for comparison but preserve original endings in the output where unchanged.
-fn apply_hunks(
-    file_lines: &[&str],
-    hunks: &[Hunk],
-) -> Result<String, PatchError> {
+fn apply_hunks(file_lines: &[&str], hunks: &[Hunk]) -> Result<String, PatchError> {
     let mut output: Vec<String> = Vec::with_capacity(file_lines.len() + 64);
     // Tracks our position in the original file (0-based index into `file_lines`).
     let mut file_pos: usize = 0;
@@ -382,9 +379,7 @@ fn resolve_target(workspace_root: &Path, path: &Path) -> Result<PathBuf, PatchEr
     }
 
     let target = normalized;
-    let abs_root = workspace_root
-        .canonicalize()
-        .map_err(PatchError::Io)?;
+    let abs_root = workspace_root.canonicalize().map_err(PatchError::Io)?;
 
     // Stage 2 (belt-and-suspenders): canonicalize if the file already exists
     // to catch symlink escapes.
@@ -429,10 +424,7 @@ fn strip_diff_prefix(path: &str) -> &str {
 ///
 /// A `--- /dev/null` section creates a new file; a `+++ /dev/null` section
 /// deletes the file.
-pub fn apply_patch_multi(
-    workspace_root: &Path,
-    diff: &str,
-) -> Result<Vec<String>, PatchError> {
+pub fn apply_patch_multi(workspace_root: &Path, diff: &str) -> Result<Vec<String>, PatchError> {
     let files = parse_files(diff)?;
     let mut applied = Vec::with_capacity(files.len());
 
@@ -547,11 +539,7 @@ pub fn apply_patch_multi(
 /// # Errors
 /// Returns [`PatchError`] for path traversal, malformed diffs, stale context,
 /// and I/O errors.
-pub fn apply_patch(
-    workspace_root: &Path,
-    path: &Path,
-    patch: &str,
-) -> Result<(), PatchError> {
+pub fn apply_patch(workspace_root: &Path, path: &Path, patch: &str) -> Result<(), PatchError> {
     // Accept both header-ful and header-less (hunk-only) single-file diffs.
     let files = match parse_files(patch) {
         Ok(files) => {
@@ -696,11 +684,7 @@ mod tests {
     #[test]
     fn test_multiple_hunks() {
         let root = tmp_dir();
-        write_file(
-            &root,
-            "multi.txt",
-            "alpha\nbeta\ngamma\ndelta\nepsilon\n",
-        );
+        write_file(&root, "multi.txt", "alpha\nbeta\ngamma\ndelta\nepsilon\n");
 
         let patch = "\
 --- a/multi.txt
@@ -781,11 +765,7 @@ mod tests {
     fn test_non_ascii_utf8() {
         let root = tmp_dir();
         // Japanese, emoji, Arabic — all valid UTF-8.
-        write_file(
-            &root,
-            "unicode.txt",
-            "こんにちは\n🎉 party time\nمرحبا\n",
-        );
+        write_file(&root, "unicode.txt", "こんにちは\n🎉 party time\nمرحبا\n");
 
         let patch = "\
 --- a/unicode.txt
@@ -819,7 +799,10 @@ mod tests {
             err
         );
         // Original file untouched.
-        assert_eq!(fs::read_to_string(root.join("file.txt")).unwrap(), "hello\n");
+        assert_eq!(
+            fs::read_to_string(root.join("file.txt")).unwrap(),
+            "hello\n"
+        );
     }
 
     // ── Test 7: Malformed hunk header ────────────────────────────────────────
@@ -862,8 +845,7 @@ mod tests {
 +second line
 +third line
 ";
-        apply_patch(&root, Path::new("newfile.txt"), patch)
-            .expect("new-file patch should succeed");
+        apply_patch(&root, Path::new("newfile.txt"), patch).expect("new-file patch should succeed");
 
         let result = fs::read_to_string(root.join("newfile.txt")).unwrap();
         assert_eq!(result, "first line\nsecond line\nthird line\n");
@@ -889,12 +871,7 @@ mod tests {
         let tmp_files: Vec<_> = fs::read_dir(&root)
             .unwrap()
             .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.path()
-                    .extension()
-                    .map(|x| x == "tmp")
-                    .unwrap_or(false)
-            })
+            .filter(|e| e.path().extension().map(|x| x == "tmp").unwrap_or(false))
             .collect();
 
         assert!(
@@ -954,8 +931,14 @@ mod tests {
         assert_eq!(applied.len(), 2);
         assert!(applied.contains(&"a.txt".to_string()));
         assert!(applied.contains(&"b.txt".to_string()));
-        assert_eq!(fs::read_to_string(root.join("a.txt")).unwrap(), "one\nTWO\n");
-        assert_eq!(fs::read_to_string(root.join("b.txt")).unwrap(), "ALPHA\nbeta\n");
+        assert_eq!(
+            fs::read_to_string(root.join("a.txt")).unwrap(),
+            "one\nTWO\n"
+        );
+        assert_eq!(
+            fs::read_to_string(root.join("b.txt")).unwrap(),
+            "ALPHA\nbeta\n"
+        );
     }
 
     // ── Test 12: Multi-file new file + delete ────────────────────────────────
@@ -982,7 +965,10 @@ mod tests {
             fs::read_to_string(root.join("new.txt")).unwrap(),
             "hello\nworld\n"
         );
-        assert!(!root.join("old.txt").exists(), "deleted file should be gone");
+        assert!(
+            !root.join("old.txt").exists(),
+            "deleted file should be gone"
+        );
     }
 
     // ── Test 13: Multi-file stale context leaves all files untouched ────────
@@ -1006,8 +992,8 @@ mod tests {
 -line two
 +line TWO
 ";
-        let err = apply_patch_multi(&root, patch)
-            .expect_err("stale context in second file should fail");
+        let err =
+            apply_patch_multi(&root, patch).expect_err("stale context in second file should fail");
         assert!(matches!(err, PatchError::StaleContext { .. }));
         // The first file must NOT have been modified (all-or-nothing per file,
         // and the first file is only committed after the full parse succeeds).
@@ -1051,8 +1037,7 @@ mod tests {
 -old
 +new
 ";
-        let err = apply_patch_multi(&root, patch)
-            .expect_err("traversal should be rejected");
+        let err = apply_patch_multi(&root, patch).expect_err("traversal should be rejected");
         assert!(matches!(err, PatchError::PathEscape(_)));
     }
 }
