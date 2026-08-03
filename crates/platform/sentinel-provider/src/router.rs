@@ -244,3 +244,256 @@ impl ModelProvider for ModelRouter {
         self.providers[self.active].supports_tool(tool)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::fallback::{ErrorKind, ModelAvailabilityService, RetryConfig};
+    use sentinel_protocol::{Choice, Message};
+    use sentinel_provider_info::{AuthConfig, ModelEntry};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Mutex;
+
+    fn provider_info(name: &str) -> ProviderInfo {
+        ProviderInfo {
+            id: "mock".into(),
+            name: name.into(),
+            base_url: "http://localhost".into(),
+            auth: AuthConfig::EnvKey {
+                var: "MOCK_KEY".into(),
+            },
+            models: vec![ModelEntry {
+                id: format!("{name}-model"),
+                name: name.into(),
+                context_window: 4096,
+                supports_streaming: true,
+                supports_tools: true,
+            }],
+            timeout_secs: 10,
+            extra_headers: Default::default(),
+        }
+    }
+
+    fn ok_response(model: &str) -> CompletionResponse {
+        CompletionResponse {
+            id: format!("resp-{model}"),
+            model: model.into(),
+            choices: vec![Choice {
+                index: 0,
+                message: Message::assistant("hi"),
+                finish_reason: Some("stop".into()),
+            }],
+            usage: None,
+        }
+    }
+
+    #[derive(Clone, Copy)]
+    enum FakeError {
+        Unauthorized,
+        NotFound,
+        ServerError,
+    }
+
+    impl FakeError {
+        fn to_provider_error(self) -> ProviderError {
+            match self {
+                Self::Unauthorized => ProviderError::Unauthorized {
+                    detail: "no".into(),
+                },
+                Self::NotFound => ProviderError::NotFound("gone".into()),
+                Self::ServerError => ProviderError::ServerError { status: 500 },
+            }
+        }
+    }
+
+    struct FakeProvider {
+        info: ProviderInfo,
+        results: Vec<Result<CompletionResponse, FakeError>>,
+        calls: Arc<AtomicUsize>,
+        last_request: Arc<Mutex<Option<CompletionRequest>>>,
+    }
+
+    impl FakeProvider {
+        fn new(
+            name: &str,
+            results: Vec<Result<CompletionResponse, FakeError>>,
+        ) -> (
+            Self,
+            Arc<AtomicUsize>,
+            Arc<Mutex<Option<CompletionRequest>>>,
+        ) {
+            let calls = Arc::new(AtomicUsize::new(0));
+            let last_request = Arc::new(Mutex::new(None));
+            (
+                Self {
+                    info: provider_info(name),
+                    results,
+                    calls: calls.clone(),
+                    last_request: last_request.clone(),
+                },
+                calls,
+                last_request,
+            )
+        }
+    }
+
+    #[async_trait]
+    impl ModelProvider for FakeProvider {
+        fn info(&self) -> &ProviderInfo {
+            &self.info
+        }
+
+        async fn complete(
+            &self,
+            req: &CompletionRequest,
+        ) -> Result<CompletionResponse, ProviderError> {
+            let idx = self.calls.fetch_add(1, Ordering::SeqCst);
+            *self.last_request.lock().unwrap() = Some(req.clone());
+            match self.results.get(self.results.len().min(idx)) {
+                Some(Ok(resp)) => Ok(resp.clone()),
+                Some(Err(e)) => Err(e.to_provider_error()),
+                None => Err(ProviderError::AllProvidersFailed),
+            }
+        }
+
+        async fn complete_stream(
+            &self,
+            _req: &CompletionRequest,
+        ) -> Result<
+            Box<dyn tokio_stream::Stream<Item = Result<StreamChunk, ProviderError>> + Send + Unpin>,
+            ProviderError,
+        > {
+            Ok(Box::new(tokio_stream::iter(vec![])))
+        }
+    }
+
+    #[allow(clippy::type_complexity)]
+    fn simple_provider(
+        name: &str,
+        results: Vec<Result<CompletionResponse, FakeError>>,
+    ) -> (
+        Box<dyn ModelProvider>,
+        Arc<AtomicUsize>,
+        Arc<Mutex<Option<CompletionRequest>>>,
+    ) {
+        let (p, calls, last) = FakeProvider::new(name, results);
+        (Box::new(p), calls, last)
+    }
+
+    fn server_error() -> Result<CompletionResponse, FakeError> {
+        Err(FakeError::ServerError)
+    }
+
+    #[tokio::test]
+    async fn primary_succeeds_without_fallback() {
+        let (primary, _, _) = simple_provider("provider-0", vec![Ok(ok_response("provider-0"))]);
+        let (secondary, secondary_calls, _) =
+            simple_provider("provider-1", vec![Ok(ok_response("provider-1"))]);
+        let router = ModelRouter::new(vec![primary, secondary]);
+
+        let resp = router
+            .complete_with_fallback(CompletionRequest::new("test"))
+            .await
+            .expect("should succeed");
+        assert_eq!(resp.model, "provider-0");
+        assert_eq!(secondary_calls.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn falls_back_when_primary_fails() {
+        let (primary, _, _) = simple_provider("provider-0", vec![server_error()]);
+        let (secondary, _, _) = simple_provider("provider-1", vec![Ok(ok_response("provider-1"))]);
+        let router = ModelRouter::new(vec![primary, secondary]);
+
+        let resp = router
+            .complete_with_fallback(CompletionRequest::new("test"))
+            .await
+            .expect("fallback should succeed");
+        assert_eq!(resp.model, "provider-1");
+    }
+
+    #[tokio::test]
+    async fn returns_last_error_when_all_providers_fail() {
+        let (primary, _, _) = simple_provider("provider-0", vec![Err(FakeError::Unauthorized)]);
+        let (secondary, _, _) = simple_provider("provider-1", vec![Err(FakeError::NotFound)]);
+        let router = ModelRouter::new(vec![primary, secondary]);
+
+        let err = router
+            .complete_with_fallback(CompletionRequest::new("test"))
+            .await
+            .expect_err("should fail");
+        assert!(matches!(err, ProviderError::NotFound(_)));
+    }
+
+    #[tokio::test]
+    async fn unavailable_provider_is_skipped() {
+        let (primary, _, _) = simple_provider("provider-0", vec![Ok(ok_response("provider-0"))]);
+        let (secondary, secondary_calls, _) =
+            simple_provider("provider-1", vec![Ok(ok_response("provider-1"))]);
+        let providers: Vec<Box<dyn ModelProvider>> = vec![primary, secondary];
+        let names: Vec<String> = providers.iter().map(|p| p.name().to_string()).collect();
+        let svc = ModelAvailabilityService::new(&names);
+        svc.mark_failure("provider-0", ErrorKind::Terminal);
+
+        let router = ModelRouter::new(providers).with_availability(Arc::new(svc));
+        let resp = router
+            .complete_with_fallback(CompletionRequest::new("test"))
+            .await
+            .expect("secondary should handle");
+        assert_eq!(resp.model, "provider-1");
+        assert_eq!(secondary_calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn system_prompt_override_is_injected() {
+        let (primary, _, last_request) =
+            simple_provider("provider-0", vec![Ok(ok_response("provider-0"))]);
+        let router = ModelRouter::new(vec![primary]).with_system_prompt_override("OVERRIDE".into());
+
+        let resp = router
+            .complete_with_fallback(CompletionRequest::new("test"))
+            .await
+            .expect("should succeed");
+        assert_eq!(resp.model, "provider-0");
+        let request = last_request
+            .lock()
+            .unwrap()
+            .as_ref()
+            .expect("request captured")
+            .clone();
+        assert!(request
+            .messages
+            .iter()
+            .any(|m| m.extract_text().contains("OVERRIDE")));
+    }
+
+    #[tokio::test]
+    async fn transient_errors_are_retried() {
+        let (primary, calls, _) = simple_provider(
+            "provider-0",
+            vec![server_error(), Ok(ok_response("provider-0"))],
+        );
+        let router = ModelRouter::new(vec![primary]).with_retry(RetryConfig {
+            max_attempts: 2,
+            base_delay_ms: 1,
+            max_delay_ms: 2,
+            jitter: false,
+        });
+        let resp = router
+            .complete_with_fallback(CompletionRequest::new("test"))
+            .await
+            .expect("should succeed after retry");
+        assert_eq!(resp.model, "provider-0");
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn fallback_order_covers_all_providers() {
+        let (p0, _, _) = simple_provider("provider-0", vec![Err(FakeError::NotFound)]);
+        let (p1, _, _) = simple_provider("provider-1", vec![Err(FakeError::NotFound)]);
+        let (p2, _, _) = simple_provider("provider-2", vec![Err(FakeError::NotFound)]);
+        let router = ModelRouter::new(vec![p0, p1, p2]);
+        assert_eq!(router.fallback_order(), vec![0, 1, 2]);
+        assert_eq!(router.provider_count(), 3);
+    }
+}

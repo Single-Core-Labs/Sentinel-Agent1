@@ -63,3 +63,59 @@ pub enum AuthError {
     #[error("Not authenticated")]
     NotAuthenticated,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn token_round_trip_returns_claims() {
+        let auth = Authenticator::new("test-secret");
+        let token = auth
+            .create_token("user-1", Some("agent-7"))
+            .expect("token creation failed");
+        let claims = auth.validate_token(&token).expect("validation failed");
+        assert_eq!(claims.sub, "user-1");
+        assert_eq!(claims.agent_id.as_deref(), Some("agent-7"));
+        assert!(claims.exp > claims.iat);
+    }
+
+    #[test]
+    fn token_round_trip_without_agent_id() {
+        let auth = Authenticator::new("test-secret");
+        let token = auth
+            .create_token("user-2", None)
+            .expect("token creation failed");
+        let claims = auth.validate_token(&token).expect("validation failed");
+        assert_eq!(claims.sub, "user-2");
+        assert_eq!(claims.agent_id, None);
+    }
+
+    #[test]
+    fn token_rejected_with_wrong_secret() {
+        let auth = Authenticator::new("secret-a");
+        let other = Authenticator::new("secret-b");
+        let token = auth
+            .create_token("user-1", None)
+            .expect("token creation failed");
+        assert!(other.validate_token(&token).is_err());
+    }
+
+    #[test]
+    fn tampered_token_rejected() {
+        let auth = Authenticator::new("test-secret");
+        let token = auth
+            .create_token("user-1", None)
+            .expect("token creation failed");
+        let tampered = format!("{}x", token);
+        assert!(auth.validate_token(&tampered).is_err());
+    }
+
+    #[test]
+    fn tokens_are_unique_across_subjects() {
+        let auth = Authenticator::new("test-secret");
+        let a = auth.create_token("user-a", None).expect("token a failed");
+        let b = auth.create_token("user-b", None).expect("token b failed");
+        assert_ne!(a, b);
+    }
+}
