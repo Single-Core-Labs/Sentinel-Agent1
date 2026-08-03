@@ -20,6 +20,8 @@ function wsConnect() {
       setWsStatus('connected');
       if (wsReconnectTimer) { clearTimeout(wsReconnectTimer); wsReconnectTimer = null; }
       termLog('t-ok', 'WebSocket connected to ' + WS_URL);
+      // Immediately probe real GPU data — don't wait for the 2s poll tick.
+      setTimeout(() => fetchLiveGpuQuery(), 100);
     };
     ws.onclose = () => {
       setWsStatus('disconnected');
@@ -94,42 +96,122 @@ function rpcCall(method, params = {}) {
 }
 
 // ── Live GPU query (replaces simulated metrics) ───────────────────────────────
+
+// Tracks whether we've already injected the real GPU into GPU_DATA.
+let realGpuInjected = false;
+const REAL_GPU_ID = 'real-gpu-local';
+
 async function fetchLiveGpuQuery() {
   try {
     const { result, error } = await rpcCall('gpu/query');
-    if (error || !result) return;
-    // Map real GPU name → GPU_DATA entry and update util.
-    const name = (result.name || '').trim().toLowerCase();
-    const util = result.util_gpu ?? 0;
-    const vramUsed = result.vram_used_gb ?? 0;
-    const vramTotal = result.vram_total_gb ?? 0;
-    const temp = result.temp_c ?? 0;
+    if (error || !result || !result.name) return;
 
-    // Update the first GPU_DATA entry that matches the real GPU name.
-    let matched = GPU_DATA.find(g => name.includes(g.name.toLowerCase()) || name.includes(g.arch.toLowerCase()));
-    if (!matched) matched = GPU_DATA[0]; // fallback to first entry
-    if (matched) {
-      matched.util = Math.round(util);
-      sparkHistory[matched.id].push(matched.util);
-      sparkHistory[matched.id].shift();
+    const rawName  = result.name.trim();
+    const util     = typeof result.util_gpu === 'number' ? result.util_gpu : 0;
+    const vramUsed = typeof result.vram_used_gb === 'number' ? result.vram_used_gb : 0;
+    const vramTotal= typeof result.vram_total_gb === 'number' ? result.vram_total_gb : 0;
+    const temp     = typeof result.temp_c === 'number' ? result.temp_c : 0;
+
+    // ── Inject real GPU as first entry on first successful fetch ─────────────
+    if (!realGpuInjected) {
+      realGpuInjected = true;
+
+      // Derive family + arch from name.
+      const n = rawName.toLowerCase();
+      const family = n.includes('h100') || n.includes('h200') ? 'hopper'
+                   : n.includes('b200') || n.includes('b100') || n.includes('rtx 50') ? 'blackwell'
+                   : n.includes('rtx 40') || n.includes('ada') ? 'ada'
+                   : n.includes('a100') || n.includes('rtx 30') || n.includes('ampere') ? 'ampere'
+                   : 'ada';
+      const archLabel = family === 'hopper' ? 'Hopper'
+                      : family === 'blackwell' ? 'Blackwell'
+                      : family === 'ada' ? 'Ada'
+                      : 'Ampere';
+
+      const realEntry = {
+        id: REAL_GPU_ID,
+        name: rawName,
+        family,
+        vram: Math.round(vramTotal),
+        price: 0,           // local machine — no cloud price
+        util: Math.round(util),
+        arch: archLabel,
+        interconnect: 'PCIe',
+        tflops: 0,
+        isReal: true,       // flag so UI can badge it
+      };
+
+      // Remove any previous real entry and prepend.
+      const existing = GPU_DATA.findIndex(g => g.id === REAL_GPU_ID);
+      if (existing !== -1) GPU_DATA.splice(existing, 1);
+      GPU_DATA.unshift(realEntry);
+      sparkHistory[REAL_GPU_ID] = Array(20).fill(0);
+
+      termLog('t-ok', `Detected: ${rawName}  ${vramTotal.toFixed(1)} GB VRAM`);
     }
 
-    // Update virt pool alloc bar with real VRAM.
+    // ── Update real entry on every poll ──────────────────────────────────────
+    const entry = GPU_DATA.find(g => g.id === REAL_GPU_ID);
+    if (entry) {
+      entry.util  = Math.round(util);
+      entry.vram  = Math.round(vramTotal);
+      sparkHistory[REAL_GPU_ID].push(entry.util);
+      sparkHistory[REAL_GPU_ID].shift();
+    }
+
+    // ── Virt pool allocation bar ──────────────────────────────────────────────
     if (vramTotal > 0) {
       const pct = Math.round((vramUsed / vramTotal) * 100);
-      const bar = document.getElementById('virtAllocBar');
-      const pctEl = document.getElementById('virtAllocPct');
-      if (bar) bar.style.width = pct + '%';
+      const bar  = document.getElementById('virtAllocBar');
+      const pctEl= document.getElementById('virtAllocPct');
+      if (bar)   bar.style.width = pct + '%';
       if (pctEl) pctEl.textContent = pct + '%';
     }
 
-    // Push to terminal.
-    if (result.name) {
-      termLog('t-ok', `GPU: ${result.name}  util=${util.toFixed(0)}%  temp=${temp}°C  VRAM=${vramUsed.toFixed(1)}/${vramTotal.toFixed(1)}GB`);
+    // ── Live terminal line (throttle: only every 4th poll to reduce noise) ───
+    if (kernelCount % 4 === 0) {
+      termLog('t-dim',
+        `[gpu/query] ${rawName}  util=${util.toFixed(0)}%  `+
+        `temp=${temp.toFixed(0)}°C  VRAM=${vramUsed.toFixed(1)}/${vramTotal.toFixed(1)}GB`
+      );
     }
 
     renderGpuTable();
-  } catch (_) { /* server not up, use simulation */ }
+    updateGpuInfoBanner(rawName, util, vramUsed, vramTotal, temp);
+
+  } catch (_) { /* server not up — silently fall back to simulation */ }
+}
+
+// ── Small banner injected into the GPU Selector panel header ─────────────────
+function updateGpuInfoBanner(name, util, used, total, temp) {
+  let banner = document.getElementById('realGpuBanner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'realGpuBanner';
+    banner.style.cssText = [
+      'padding:4px 14px 6px',
+      'font-family:var(--mono)',
+      'font-size:10px',
+      'color:var(--text-secondary)',
+      'border-bottom:1px solid var(--panel-border)',
+      'display:flex',
+      'gap:12px',
+      'flex-shrink:0',
+      'background:rgba(74,222,128,0.04)',
+    ].join(';');
+    // Insert just below the panel header.
+    const gpuPanel = document.getElementById('panelGpuSelector');
+    const filters  = gpuPanel && gpuPanel.querySelector('.gpu-filters');
+    if (filters) gpuPanel.insertBefore(banner, filters);
+  }
+  const utilColor = util > 80 ? 'var(--accent-amber)' : 'var(--accent-green)';
+  const tempColor = temp > 80 ? 'var(--accent-red)'   : temp > 65 ? 'var(--accent-amber)' : 'var(--text-secondary)';
+  banner.innerHTML =
+    `<span style="color:var(--accent-green)">● LIVE</span>` +
+    `<span>${name}</span>` +
+    `<span style="color:${utilColor}">util: ${util.toFixed(0)}%</span>` +
+    `<span>${(used).toFixed(1)}/${(total).toFixed(1)} GB VRAM</span>` +
+    `<span style="color:${tempColor}">${temp.toFixed(0)}°C</span>`;
 }
 
 // ── Real emulation RPC → feed bottleneck + terminal panels ───────────────────
@@ -242,6 +324,7 @@ let sortAsc = true;
 
 // Live metrics: tries real gpu/query first, falls back to simulation
 async function simulateLiveMetrics() {
+  kernelCount++;   // drives the terminal throttle (every 4th poll)
   // Attempt a real gpu/query RPC.  If WebSocket is open, use real data;
   // otherwise keep the simulated path so the dashboard always shows something.
   if (ws && ws.readyState === WebSocket.OPEN) {
@@ -324,9 +407,9 @@ function renderGpuTable() {
 
     tr.innerHTML = `
       <td><input type="checkbox" ${selectedGpus.has(g.id) ? 'checked' : ''} data-id="${g.id}" style="accent-color:var(--accent-green);width:12px;height:12px;cursor:pointer" /></td>
-      <td class="gpu-name">${g.name}</td>
-      <td class="mono">${g.vram} GB</td>
-      <td class="mono">$${g.price.toFixed(2)}</td>
+      <td class="gpu-name">${g.name}${g.isReal ? ' <span style="font-size:9px;color:var(--accent-green);background:rgba(74,222,128,.12);padding:1px 5px;border-radius:4px;border:1px solid rgba(74,222,128,.25)">LIVE</span>' : ''}</td>
+      <td class="mono">${g.vram > 0 ? g.vram + ' GB' : '—'}</td>
+      <td class="mono">${g.price > 0 ? '$' + g.price.toFixed(2) : 'local'}</td>
       <td class="mono util-cell ${g.util > 85 ? 'glow-amber' : ''}">${g.util}%</td>
       <td>${svg}</td>
     `;
@@ -1163,9 +1246,9 @@ document.addEventListener('DOMContentLoaded', () => {
   updateClock();
   setInterval(updateClock, 1000);
 
-  // Live GPU metrics simulation (every 2s)
+  // Live GPU metrics simulation (every 3s) — real data takes over when WS connects
   simulateLiveMetrics();
-  setInterval(simulateLiveMetrics, 2000);
+  setInterval(simulateLiveMetrics, 3000);
 
   // WebSocket (connect after short delay so UI is painted first)
   setTimeout(wsConnect, 400);
