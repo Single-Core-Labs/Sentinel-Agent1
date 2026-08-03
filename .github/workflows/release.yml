@@ -3,133 +3,99 @@ name: Release
 on:
   push:
     tags: ['v*']
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: Tag to release
-        required: true
 
 permissions:
   contents: write
-  attestations: write
-  id-token: write
 
 env:
   CARGO_TERM_COLOR: always
+  RELEASE_VERSION: ${{ github.ref_name }}
 
 jobs:
-  # ---------------------------------------------------------------------------
-  # Build release binaries for all Tier-1 platforms
-  # ---------------------------------------------------------------------------
   build:
-    name: ${{ matrix.target }}
+    name: Build (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            archive: tar.gz
+            archive: tar
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             archive: zip
           - os: macos-latest
             target: x86_64-apple-darwin
-            archive: tar.gz
-          - os: macos-latest
-            target: aarch64-apple-darwin
-            archive: tar.gz
+            archive: tar
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
-      - uses: swatinem/rust-cache@v2
-        with:
-          key: release-${{ matrix.target }}
 
-      - name: Build release binary
-        run: cargo build --release --target ${{ matrix.target }} --workspace
+      - uses: Swatinem/rust-cache@v2
 
-      - name: Prepare staging directory
+      - name: Build binaries
+        run: cargo build --release --locked --target ${{ matrix.target }} -p sentinel-cli -p sentinel-app-server
+
+      - name: Package (tar)
+        if: matrix.archive == 'tar'
         shell: bash
         run: |
-          mkdir -p staging/sentinel-${{ matrix.target }}
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            cp target/${{ matrix.target }}/release/sentinel.exe staging/sentinel-${{ matrix.target }}/
-            cp target/${{ matrix.target }}/release/sentinel-ai-tui.exe staging/sentinel-${{ matrix.target }}/ 2>/dev/null || true
-          else
-            cp target/${{ matrix.target }}/release/sentinel staging/sentinel-${{ matrix.target }}/
-            cp target/${{ matrix.target }}/release/sentinel-ai-tui staging/sentinel-${{ matrix.target }}/ 2>/dev/null || true
-          fi
-          cp README.md LICENSE staging/sentinel-${{ matrix.target }}/
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/sentinel target/${{ matrix.target }}/release/sentinel-app-server dist/
+          tar -czf sentinel-${{ env.RELEASE_VERSION }}-${{ matrix.target }}.tar.gz -C dist sentinel sentinel-app-server
 
-      - name: Create archive
-        shell: bash
+      - name: Package (zip)
+        if: matrix.archive == 'zip'
+        shell: powershell
         run: |
-          cd staging
-          if [ "${{ matrix.archive }}" = "zip" ]; then
-            7z a ../sentinel-${{ matrix.target }}.zip sentinel-${{ matrix.target }}/
-          else
-            tar czf ../sentinel-${{ matrix.target }}.tar.gz sentinel-${{ matrix.target }}/
-          fi
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/sentinel.exe", "target/${{ matrix.target }}/release/sentinel-app-server.exe" dist/
+          Compress-Archive -Path dist/* -DestinationPath "sentinel-${{ env.RELEASE_VERSION }}-${{ matrix.target }}.zip"
 
-      - name: Generate checksums
-        shell: bash
-        run: |
-          cd staging
-          if [ "${{ matrix.archive }}" = "zip" ]; then
-            sha256sum ../sentinel-${{ matrix.target }}.zip > ../sentinel-${{ matrix.target }}.sha256
-          else
-            sha256sum ../sentinel-${{ matrix.target }}.tar.gz > ../sentinel-${{ matrix.target }}.sha256
-          fi
-
-      - uses: actions/upload-artifact@v7
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.target }}
-          path: |
-            sentinel-${{ matrix.target }}.tar.gz
-            sentinel-${{ matrix.target }}.zip
-            sentinel-${{ matrix.target }}.sha256
+          path: sentinel-${{ env.RELEASE_VERSION }}-${{ matrix.target }}.*
 
-  # ---------------------------------------------------------------------------
-  # Create GitHub Release with all artifacts
-  # ---------------------------------------------------------------------------
-  release:
-    name: Create Release
-    needs: [build]
+  publish:
+    name: Publish GitHub Release
+    needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v4
         with:
-          path: artifacts
+          path: release-artifacts
+          merge-multiple: true
 
-      - name: Generate release notes
-        id: notes
+      - name: Generate changelog
+        shell: bash
         run: |
-          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
-          if [ -n "$PREV_TAG" ]; then
-            git log --pretty=format:"* %s (%h)" $PREV_TAG..HEAD > release-notes.md
-          else
-            echo "Initial release" > release-notes.md
-          fi
+          PREV=$(git tag --sort=-creatordate | sed -n '2p')
+          {
+            echo "## What's changed"
+            echo
+            if [ -n "$PREV" ]; then
+              git log "$PREV"..HEAD --oneline --no-merges
+            else
+              git log --oneline --no-merges
+            fi
+          } > CHANGELOG.md
 
-      - name: Create release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          TAG="${GITHUB_REF_NAME#refs/tags/}"
-          gh release create "$TAG" \
-            --title "Sentinel AI $TAG" \
-            --notes-file release-notes.md \
-            artifacts/release-*/*.{tar.gz,zip,sha256} 2>/dev/null || \
-          gh release create "$TAG" \
-            --title "Sentinel AI $TAG" \
-            --notes-file release-notes.md \
-            artifacts/release-*/sentinel-*.* 2>/dev/null || true
+      - name: Publish
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          body_path: CHANGELOG.md
+          files: release-artifacts/**
+          generate_release_notes: true
