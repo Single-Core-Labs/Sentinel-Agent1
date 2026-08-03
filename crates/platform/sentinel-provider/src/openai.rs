@@ -25,12 +25,12 @@ impl OpenAIProvider {
             "application/json".parse().expect("valid header value"),
         );
         if !api_key.is_empty() {
-            headers.insert(
-                reqwest::header::AUTHORIZATION,
-                format!("Bearer {}", api_key)
-                    .parse()
-                    .expect("valid header value"),
-            );
+            let auth = format!("Bearer {}", api_key)
+                .parse::<reqwest::header::HeaderValue>()
+                .map_err(|_| {
+                    ProviderError::InvalidRequest("API key contains invalid characters".into())
+                })?;
+            headers.insert(reqwest::header::AUTHORIZATION, auth);
         }
         for (k, v) in &info.extra_headers {
             if let (Ok(name), Ok(val)) = (

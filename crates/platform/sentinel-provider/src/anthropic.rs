@@ -25,7 +25,12 @@ impl AnthropicProvider {
             })?;
 
         let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert("x-api-key", api_key.parse().expect("valid API key"));
+        let key_header = api_key
+            .parse::<reqwest::header::HeaderValue>()
+            .map_err(|_| {
+                ProviderError::InvalidRequest("API key contains invalid characters".into())
+            })?;
+        headers.insert("x-api-key", key_header);
         headers.insert(
             "anthropic-version",
             "2023-06-01".parse().expect("valid header value"),

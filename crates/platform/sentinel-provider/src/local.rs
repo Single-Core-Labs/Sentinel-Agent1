@@ -31,12 +31,12 @@ impl LocalProvider {
                     reqwest::header::CONTENT_TYPE,
                     "application/json".parse().expect("valid header value"),
                 );
-                h.insert(
-                    reqwest::header::AUTHORIZATION,
-                    format!("Bearer {}", api_key)
-                        .parse()
-                        .expect("valid header value"),
-                );
+                let auth = format!("Bearer {}", api_key)
+                    .parse::<reqwest::header::HeaderValue>()
+                    .map_err(|_| {
+                        ProviderError::InvalidRequest("API key contains invalid characters".into())
+                    })?;
+                h.insert(reqwest::header::AUTHORIZATION, auth);
                 h
             })
             .build()
