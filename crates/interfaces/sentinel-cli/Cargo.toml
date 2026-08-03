@@ -34,8 +34,10 @@ sentinel-provider-info = { workspace = true }
 sentinel-headroom = { workspace = true }
 sentinel-proxy = { workspace = true }
 sentinel-gpu-profiler = { workspace = true }
+sentinel-auth = { path = "../../platform/sentinel-auth" }
 hex.workspace = true
 reqwest.workspace = true
 terminal_size = "0.3"
 webbrowser = "1.2.2"
 dotenv = "0.15"
+rpassword = "7.3"
