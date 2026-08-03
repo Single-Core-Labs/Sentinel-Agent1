@@ -25,13 +25,15 @@ pub fn save(creds: &Credentials) -> Result<()> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
-        fs::OpenOptions::new()
+        use std::io::Write;
+        let mut file = fs::OpenOptions::new()
             .write(true)
             .create(true)
             .truncate(true)
             .mode(0o600)
             .open(&path)
-            .and_then(|_| fs::write(&path, json))
+            .map_err(|e| anyhow!("Failed to write auth file: {}", e))?;
+        file.write_all(json.as_bytes())
             .map_err(|e| anyhow!("Failed to write auth file: {}", e))?;
     }
     #[cfg(not(unix))]
@@ -62,8 +64,14 @@ pub fn remove(provider_id: &str) -> Result<()> {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+    use std::sync::Mutex;
+
+    lazy_static::lazy_static! {
+        static ref ENV_LOCK: Mutex<()> = Mutex::new(());
+    }
 
     fn with_temp_auth_file<F: FnOnce() -> Result<()>>(f: F) -> Result<()> {
+        let _guard = ENV_LOCK.lock().unwrap();
         let temp = TempDir::new()?;
         let temp_path = temp.path().to_string_lossy().to_string();
         let old_home = std::env::var("SENTINEL_HOME").ok();
