@@ -1,0 +1,159 @@
+{
+  "metadata": {
+    "chunk": 6,
+    "total_chunks": 7,
+    "extraction_date": "2026-07-31",
+    "files_processed": 12
+  },
+  "nodes": [
+    {
+      "id": "gpu_server_infrastructure",
+      "label": "GPU Server Infrastructure",
+      "type": "concept",
+      "file_type": "image",
+      "confidence_score": 1.0,
+      "source": "gpu-server/*.png"
+    },
+    {
+      "id": "server_room_deployment",
+      "label": "Server Room / Data Center Facility",
+      "type": "infrastructure",
+      "file_type": "image",
+      "confidence_score": 1.0,
+      "source": "server-room.png, manufacturing-server.png"
+    },
+    {
+      "id": "nvidia_dsx_system",
+      "label": "NVIDIA DSX GPU Computing System",
+      "type": "hardware",
+      "file_type": "image",
+      "confidence_score": 1.0,
+      "source": "nvidia-dsx.png"
+    },
+    {
+      "id": "networking_infrastructure",
+      "label": "Network Cable Infrastructure",
+      "type": "infrastructure",
+      "file_type": "image",
+      "confidence_score": 1.0,
+      "source": "server-1.png, server-room.png"
+    },
+    {
+      "id": "power_distribution",
+      "label": "Power Distribution Units (PDU)",
+      "type": "infrastructure",
+      "file_type": "image",
+      "confidence_score": 1.0,
+      "source": "server-1.png, manufacturing-server.png"
+    },
+    {
+      "id": "monitoring_system",
+      "label": "Server Monitoring System",
+      "type": "concept",
+      "file_type": "image",
+      "confidence_score": 0.95,
+      "source": "nvidia-dsx.png, server-2.png, server-3.png"
+    },
+    {
+      "id": "react_framework",
+      "label": "React Frontend Framework",
+      "type": "technology",
+      "file_type": "image",
+      "confidence_score": 1.0,
+      "source": "react.svg"
+    },
+    {
+      "id": "vite_build_tool",
+      "label": "Vite Build Tool",
+      "type": "technology",
+      "file_type": "image",
+      "confidence_score": 1.0,
+      "source": "vite.svg"
+    },
+    {
+      "id": "web_tech_stack",
+      "label": "Modern Web Development Stack",
+      "type": "concept",
+      "file_type": "image",
+      "confidence_score": 0.95,
+      "source": "react.svg, vite.svg"
+    },
+    {
+      "id": "hero_visualization",
+      "label": "Tech Stack Hero Visualization",
+      "type": "image",
+      "file_type": "image",
+      "confidence_score": 0.85,
+      "source": "hero.png"
+    },
+    {
+      "id": "deployment_scenario",
+      "label": "Deployment Architecture Scenario",
+      "type": "concept",
+      "file_type": "image",
+      "confidence_score": 0.85,
+      "source": "hero.png, gpu-server/*.png"
+    }
+  ],
+  "edges": [
+    {
+      "source": "gpu_server_infrastructure",
+      "target": "server_room_deployment",
+      "relationship": "deployed_in",
+      "confidence_score": 1.0,
+      "type": "EXTRACTED"
+    },
+    {
+      "source": "gpu_server_infrastructure",
+      "target": "nvidia_dsx_system",
+      "relationship": "uses",
+      "confidence_score": 0.95,
+      "type": "EXTRACTED"
+    },
+    {
+      "source": "server_room_deployment",
+      "target": "networking_infrastructure",
+      "relationship": "contains",
+      "confidence_score": 1.0,
+      "type": "EXTRACTED"
+    },
+    {
+      "source": "server_room_deployment",
+      "target": "power_distribution",
+      "relationship": "contains",
+      "confidence_score": 1.0,
+      "type": "EXTRACTED"
+    },
+    {
+      "source": "gpu_server_infrastructure",
+      "target": "monitoring_system",
+      "relationship": "monitored_by",
+      "confidence_score": 0.95,
+      "type": "EXTRACTED"
+    },
+    {
+      "source": "web_tech_stack",
+      "target": "react_framework",
+      "relationship": "includes",
+      "confidence_score": 1.0,
+      "type": "EXTRACTED"
+    },
+    {
+      "source": "web_tech_stack",
+      "target": "vite_build_tool",
+      "relationship": "includes",
+      "confidence_score": 1.0,
+      "type": "EXTRACTED"
+    },
+    {
+      "source": "deployment_scenario",
+      "target": "gpu_server_infrastructure",
+      "relationship": "utilizes",
+      "confidence_score": 0.85,
+      "type": "INFERRED"
+    }
+  ],
+  "hyperedges": [],
+  "input_tokens": 43597,
+  "output_tokens": 0
+}
