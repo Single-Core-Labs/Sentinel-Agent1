@@ -15,4 +15,5 @@ Thumbs.db
 .codex/
 session_logs/
 session/
-.opencode/threads/
+.opencode/
+threads/
