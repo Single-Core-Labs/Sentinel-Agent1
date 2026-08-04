@@ -1,0 +1,78 @@
+{
+  "id": "41b1315d-1366-4016-a247-383fc970d7db",
+  "conversation": {
+    "id": "86a1123d-4149-45dd-bbeb-30b4f2120daf",
+    "turns": [
+      {
+        "id": "3759946e-6538-42bf-9df0-a6be6371e92e",
+        "number": 1,
+        "items": [
+          {
+            "UserMessage": {
+              "id": "7c49175e-c27c-4cd9-a455-204ab97e0917",
+              "text": "Report the current machine's OS, CPU cores, and RAM by using your tools.",
+              "timestamp": "2026-08-04T17:55:16.281999100Z"
+            }
+          },
+          {
+            "AssistantText": {
+              "id": "0ba3b2ae-9bee-455c-a8f3-b070f465b3a2",
+              "text": "",
+              "timestamp": "2026-08-04T17:58:26.055852600Z"
+            }
+          },
+          {
+            "AssistantToolCall": {
+              "id": "1be33a4b-4645-4033-8437-8b8caa3f1805",
+              "tool_call_id": "call_0k2hofl4",
+              "name": "run_shell_command",
+              "arguments": {
+                "command": "uname -s",
+                "timeout": 1000,
+                "workdir": "/"
+              },
+              "timestamp": "2026-08-04T17:58:26.056158300Z"
+            }
+          },
+          {
+            "AssistantToolCall": {
+              "id": "fe62250d-6b24-4833-83e1-ea3f77ba1d76",
+              "tool_call_id": "call_h0a8spol",
+              "name": "run_shell_command",
+              "arguments": {
+                "command": "nproc",
+                "timeout": 1000,
+                "workdir": "/"
+              },
+              "timestamp": "2026-08-04T17:58:27.369444700Z"
+            }
+          },
+          {
+            "AssistantToolCall": {
+              "id": "f9e2bcc8-1cec-454b-9813-c9e8d6b77b51",
+              "tool_call_id": "call_ntp0uorp",
+              "name": "run_shell_command",
+              "arguments": {
+                "command": "free -m",
+                "timeout": 1000,
+                "workdir": "/"
+              },
+              "timestamp": "2026-08-04T17:58:28.217081700Z"
+            }
+          }
+        ],
+        "created_at": "2026-08-04T17:55:16.281996200Z"
+      }
+    ],
+    "created_at": "2026-08-04T17:55:16.281897100Z",
+    "updated_at": "2026-08-04T17:58:28.217073400Z"
+  },
+  "turn": 1,
+  "iterations": 1,
+  "max_turns": 50,
+  "max_iterations": 100,
+  "yolo_mode": true,
+  "parent_thread_id": null,
+  "budget_cost_cap_usd": null,
+  "budget_total_spend_usd": 0.007858500000000001
+}

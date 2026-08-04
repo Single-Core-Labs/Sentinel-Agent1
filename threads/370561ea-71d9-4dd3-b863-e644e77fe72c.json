@@ -1,0 +1,39 @@
+{
+  "id": "370561ea-71d9-4dd3-b863-e644e77fe72c",
+  "conversation": {
+    "id": "784ad113-3b3f-44e6-b605-68501f7aba2a",
+    "turns": [
+      {
+        "id": "b388105c-24b7-44b4-b98e-68f3cb88c828",
+        "number": 1,
+        "items": [
+          {
+            "UserMessage": {
+              "id": "b11dc651-82b8-40dd-a572-69c03529f142",
+              "text": "Report the current system: OS, CPU cores, and RAM. Do not use tools.",
+              "timestamp": "2026-08-04T17:42:03.840968700Z"
+            }
+          },
+          {
+            "AssistantText": {
+              "id": "9d0af8cb-0d3c-4592-811a-3a72dd9c95c8",
+              "text": "I don't have access to real-time system information or the ability to execute commands to retrieve OS, CPU, and RAM details. My knowledge is based on training data up to 2024, and I can't interact with your local environment directly. You'll need to check your system specifications through tools like `uname -a`, `nproc`, or `free -h` in a terminal.",
+              "timestamp": "2026-08-04T17:42:34.806912500Z"
+            }
+          }
+        ],
+        "created_at": "2026-08-04T17:42:03.840964600Z"
+      }
+    ],
+    "created_at": "2026-08-04T17:42:03.840856100Z",
+    "updated_at": "2026-08-04T17:42:34.806906Z"
+  },
+  "turn": 0,
+  "iterations": 1,
+  "max_turns": 50,
+  "max_iterations": 100,
+  "yolo_mode": true,
+  "parent_thread_id": null,
+  "budget_cost_cap_usd": null,
+  "budget_total_spend_usd": 0.005136
+}

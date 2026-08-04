@@ -970,29 +970,6 @@ fn parse_params<T: serde::de::DeserializeOwned>(params: Option<Value>) -> Result
         })
 }
 
-/// Check if a binary is available on PATH, returning its resolved path.
-fn which_tool(name: &str) -> Option<String> {
-    let out = std::process::Command::new(if cfg!(target_os = "windows") {
-        "where"
-    } else {
-        "which"
-    })
-    .arg(name)
-    .output()
-    .ok()
-    .filter(|o| o.status.success())?;
-    let s = String::from_utf8_lossy(&out.stdout)
-        .trim()
-        .lines()
-        .next()?
-        .to_string();
-    if s.is_empty() {
-        None
-    } else {
-        Some(s)
-    }
-}
-
 /// Parse `ncu --csv` output into a flat list of metric name/value/unit triples.
 /// The CSV format is:  "ID","Process","Host","Kernel","Invocation","MetricName","MetricUnit","MetricValue"
 #[cfg(test)]

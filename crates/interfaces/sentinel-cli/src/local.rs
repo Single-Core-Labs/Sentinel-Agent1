@@ -111,6 +111,20 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     agent.set_event_handler(Arc::new(crate::handler::CliEventHandler));
 
     let approval: Box<dyn sentinel_core::ApprovalGate> = Box::new(sentinel_core::AutoApprovalGate);
+
+    // One-shot slash command mode: `sentinel local <model> /cmd [arg]` runs once and exits.
+    // Used by the cost harness (zero LLM tokens for deterministic work).
+    if let Some(one_shot) = args.get(1) {
+        if one_shot.starts_with('/') {
+            let (cmd, arg) = match one_shot.split_once(' ') {
+                Some((c, a)) => (c, a),
+                None => (one_shot.as_str(), ""),
+            };
+            run_slash(&agent, &mut thread, &model, &info, cmd, arg).await;
+            return Ok(());
+        }
+    }
+
     chat_loop(&agent, &mut thread, &model, &info, approval).await
 }
 
@@ -142,23 +156,7 @@ async fn chat_loop(
             let parts: Vec<&str> = input.splitn(2, ' ').collect();
             let cmd = parts[0];
             let arg = parts.get(1).copied().unwrap_or("");
-            match cmd {
-                "/help" | "/h" => help(),
-                "/clear" => {
-                    print!("\x1B[2J\x1B[H");
-                    let _ = std::io::stdout().flush();
-                }
-                "/models" => cmd_models(),
-                "/pull" => cmd_pull(arg),
-                "/info" => cmd_info(model, sys, agent),
-                "/stats" => cmd_stats(thread),
-                "/bench" => cmd_bench(model).await,
-                "/show" => cmd_show(model).await,
-                "/recommend" => cmd_recommend(sys),
-                "/ssh" => cmd_ssh(arg).await,
-                "/backends" | "/engines" => cmd_backends().await,
-                _ => eprintln!(" {} Unknown command. Type /help.", "✖".red().bold()),
-            }
+            run_slash(agent, thread, model, sys, cmd, arg).await;
             continue;
         }
 
@@ -189,6 +187,34 @@ async fn chat_loop(
 }
 
 // ── Slash command handlers ──
+
+async fn run_slash(
+    agent: &sentinel_core::Agent,
+    thread: &mut sentinel_core::AgentThread,
+    model: &str,
+    sys: &SysInfo,
+    cmd: &str,
+    arg: &str,
+) {
+    match cmd {
+        "/help" | "/h" => help(),
+        "/clear" => {
+            use std::io::Write;
+            print!("\x1B[2J\x1B[H");
+            let _ = std::io::stdout().flush();
+        }
+        "/models" => cmd_models(),
+        "/pull" => cmd_pull(arg),
+        "/info" => cmd_info(model, sys, agent),
+        "/stats" => cmd_stats(thread),
+        "/bench" => cmd_bench(model).await,
+        "/show" => cmd_show(model).await,
+        "/recommend" => cmd_recommend(sys),
+        "/ssh" => cmd_ssh(arg).await,
+        "/backends" | "/engines" => cmd_backends().await,
+        _ => eprintln!(" {} Unknown command. Type /help.", "✖".red().bold()),
+    }
+}
 
 fn help() {
     println!();
