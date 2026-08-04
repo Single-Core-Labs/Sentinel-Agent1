@@ -256,8 +256,8 @@ mod tests {
 
 ## Development Practices
 
-- Run `cargo test -p sentinel-gpu-profiler` after any change
-- Run `cargo check --workspace`
+- Run `cargo check --workspace` after any change
+- Run `cargo test --workspace`
 1. Keep commits small
 
 ## Security
@@ -276,7 +276,7 @@ mod tests {
         assert_eq!(md.sections[1].heading, "Development Practices");
         assert_eq!(md.sections[1].level, 2);
         assert_eq!(md.sections[1].items.len(), 3);
-        assert!(md.sections[1].items[0].contains("cargo test"));
+        assert!(md.sections[1].items[0].contains("cargo check"));
         assert_eq!(md.sections[2].heading, "Security");
         // Sub-bullet preserved as an item.
         assert!(md.sections[2]

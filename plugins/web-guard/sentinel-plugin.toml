@@ -1,0 +1,8 @@
+id = "web-guard"
+name = "Web Guard"
+version = "1.0.0"
+description = "Fail-closed: veto web_fetch/web_search when the target is not in the allowlist"
+author = "Sentinel"
+
+[hooks]
+before_tool_call = "guard"

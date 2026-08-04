@@ -110,13 +110,12 @@ LOCAL_LLM_API_KEY=<optional-local-api-key>
 ```
 ┌──────────────────────────────────────────────────────────────────┐
 │                        User Interfaces                           │
-│  ┌──────────┐  ┌──────────┐  ┌────────────────┐  │
-│  │ CLI      │  │ Frontend │  │ Tauri Desktop  │  │
-│  │ (Rust)   │  │ (Ink UI) │  │ (experimental) │  │
-│  └────┬─────┘  └────┬─────┘  └───────┬────────┘  │
-└───────┼──────────────┼────────────────┼────────────┘
-        │              │                │
-        ▼              ▼                ▼
+│  ┌────────────────────────────────────────────────────┐          │
+│  │  sentinel (Rust CLI)  •  OpenTUI agent (packages/ │          │
+│  │                        cli-agent, Solid.js+OpenTUI)│          │
+│  └───────────────────────┬────────────────────────────┘          │
+└──────────────────────────┼───────────────────────────────────────┘
+                           ▼
 ┌──────────────────────────────────────────────────────────────────┐
 │                      Rust Agent Runtime                          │
 │                                                                  │
@@ -144,11 +143,12 @@ LOCAL_LLM_API_KEY=<optional-local-api-key>
 ┌──────────────────────────────────────────────────────────────────┐
 │                      Rust Crates                                 │
 │                                                                  │
-│  24 crates: sentinel-core, sentinel-cli, sentinel-provider,     │
+│  20 crates: sentinel-core, sentinel-cli, sentinel-provider,     │
 │  sentinel-tools, sentinel-mcp, sentinel-config, sentinel-exec,  │
-│  sentinel-analytics, sentinel-lsp, sentinel-headroom, ...       │
+│  sentinel-analytics, sentinel-headroom, sentinel-app-server,    │
+│  sentinel-plugin-system, ...                                    │
 │                                                                  │
-│  Build system: Bazel + Cargo                                     │
+│  Build system: Cargo (single workspace)                          │
 └──────────────────────────────────────────────────────────────────┘
 ```
 
@@ -208,20 +208,16 @@ The agent emits events via `event_queue`:
 
 ```
 ├── packages/           # TS/JS frontend packages
-│   ├── cli-agent/      # Solid.js + OpenTUI interactive agent
-│   └── desktop-app/    # React + Tauri desktop GUI app
+│   └── cli-agent/      # Solid.js + OpenTUI interactive agent
 ├── crates/             # Domain-categorized Rust crates
 │   ├── core/           # Agent engine & protocol
 │   ├── server/         # App server JSON-RPC daemon
-│   ├── interfaces/     # CLI & TUI binaries
+│   ├── interfaces/     # CLI binary
 │   ├── tools-and-exec/ # Execution sandbox & tool registry
-│   ├── integrations/   # IDE & LSP companions
 │   └── platform/       # Providers, config, infra
-├── configs/            # Runtime configuration JSON
+├── evals/              # Behavioral evals (vitest)
 ├── docs/               # Centralized documentation hub
-├── schemas/            # JSON schemas for protocols
-├── scripts/            # Utility scripts
-└── tools/              # Lint and dev tools
+└── plugins/            # Packaged guard plugins (workspace/web/command)
 ```
 
 ---
@@ -242,24 +238,19 @@ cargo fmt --all --check
 
 ## Adding MCP Servers
 
-Edit `configs/cli_agent_config.json`:
+Edit `sentinel.toml` (copy from `sentinel.example.toml`):
 
-```json
-{
-  "model_name": "openai/gpt-4o",
-  "mcpServers": {
-    "your-server-name": {
-      "transport": "http",
-      "url": "https://example.com/mcp",
-      "headers": {
-        "Authorization": "Bearer ${YOUR_TOKEN}"
-      }
-    }
-  }
-}
+```toml
+[[mcp_servers]]
+id = "github"
+name = "GitHub MCP"
+[mcp_servers.transport]
+type = "http"
+url = "http://localhost:3000/mcp"
+headers = { Authorization = "Bearer your_github_token_here" }
 ```
 
-Environment variables like `${YOUR_TOKEN}` are auto-substituted from `.env`.
+Environment variables in header values are auto-substituted from `.env`.
 
 ## Notification Gateways
 
@@ -270,7 +261,7 @@ SLACK_BOT_TOKEN=xoxb-...
 SLACK_CHANNEL_ID=C...
 ```
 
-The CLI automatically creates a `slack.default` destination when both variables are present. Config overrides in `~/.config/platform-agent/cli_agent_config.json` or via `SENTINEL_AI_CLI_CONFIG`.
+The CLI automatically creates a `slack.default` destination when both variables are present. Config overrides in `sentinel.toml` or via `SENTINEL_AI_CLI_CONFIG`.
 
 ---
 

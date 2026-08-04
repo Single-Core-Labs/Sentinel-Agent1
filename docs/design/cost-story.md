@@ -1,22 +1,22 @@
 # Cost Story — "Measurable work is free"
 
-Sentinel's deterministic GPU/SSH operations (profiling, benchmarking, emulation,
-anomaly detection) run **zero LLM tokens**. A coding agent that offloads
-measurable work to deterministic tooling stops paying per-tool-call tokens for
-work a script can do exactly.
+Sentinel's deterministic operations (token benchmark, model/system info, backend
+discovery, SSH, recommendations) run **zero LLM tokens**. A coding agent that
+offloads measurable work to deterministic tooling stops paying per-tool-call
+tokens for work a script can do exactly.
 
 ## Methodology
 
-Same task, two execution paths (see `docs/design/standout-roadmap.md` §2.1):
+Same task, two execution paths (see `docs/design/standout-roadmap.md` §2):
 
 | Path | Command | LLM tokens |
 |------|---------|-----------|
-| Sentinel (local) | `sentinel local <model>` + piped slash command (e.g. `/emulate test-kernels/x.cu --sweep`) | 0 by construction |
+| Sentinel (local) | `sentinel ai --local --prompt "/<command>"` | 0 by construction |
 | LLM-only agent | `sentinel ai --prompt "<task>" --yolo`, tokens parsed from the `[sentinel] session summary:` line | every tool call + reasoning |
 
-Tasks: (a) kernel sweep/recommendation, (b) GPU stats snapshot, (c) dmon
-anomaly detection, (d) config sweep + best-config selection, (e) SSH remote
-profile.
+Tasks: (a) token throughput benchmark (`/bench`), (b) model/system info
+(`/models`, `/info`), (c) backend discovery (`/backends`), (d) RAM-based model
+recommendation (`/recommend`), (e) SSH remote command (`/ssh`).
 
 ## Results
 
@@ -43,21 +43,21 @@ binary if needed, and tolerates missing pieces: no Ollama → local cells marked
 | Flag | Effect |
 |------|--------|
 | `-Model <id>` | Local model (default `qwen3:8b`) |
-| `-Tasks emulate,gpu,anomaly,sweep,ssh` | Subset of tasks |
+| `-Tasks bench,info,backends,recommend,ssh` | Subset of tasks |
 | `-SkipLLM` / `-SkipLocal` | Run one path only |
 | `-SSHHost <host>` | Remote host for the ssh task |
 | `-DollarsPerMTok <n>` | Pricing assumption for the $ column |
 
 ## The headline
 
-> **Measurable work is free**: 0 tokens for profiling, benchmark, emulate, and
-> anomaly detection. The agent spends tokens only on decisions, not on
+> **Measurable work is free**: 0 tokens for benchmark, info, discovery, and
+> remote commands. The agent spends tokens only on decisions, not on
 > measurements.
 
-This is the Pillar 2 differentiator: Cline/OpenCode/Codex/Claude Code route
-GPU work through the model (tokens per call, per retry, per failure); Sentinel
-routes it through a deterministic emulator + sweep engine that produces the
-same (or better) answer with a stable, auditable cost of zero.
+This is the Pillar 1 differentiator: Cline/OpenCode/Codex/Claude Code route
+deterministic work through the model (tokens per call, per retry, per failure);
+Sentinel routes it through deterministic commands that produce the same (or
+better) answer with a stable, auditable cost of zero.
 
 ## Extending
 

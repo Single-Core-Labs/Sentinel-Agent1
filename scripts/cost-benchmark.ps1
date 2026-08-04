@@ -1,161 +1,126 @@
-# cost-benchmark.ps1 — Measurable work is free: Sentinel local slash commands vs an LLM-only agent.
-#
-# For each task, runs two paths headless:
-#   1. Sentinel local REPL  (`sentinel local <model>` + piped slash command) — 0 LLM tokens by construction.
-#   2. LLM agent            (`sentinel ai --prompt <task> --yolo`) — token counts parsed from the
-#      `[sentinel] session summary: prompt_tokens=.. completion_tokens=.. total_tokens=..` line.
-#
-# Emits docs/design/cost-results.md (Markdown table).
-#
-# Usage:
-#   powershell -ExecutionPolicy Bypass -File scripts/cost-benchmark.ps1
-#   powershell -ExecutionPolicy Bypass -File scripts/cost-benchmark.ps1 -Tasks emulate,gpu,anomaly,sweep,ssh
-#   powershell -ExecutionPolicy Bypass -File scripts/cost-benchmark.ps1 -SkipLLM          # local path only
-#   powershell -ExecutionPolicy Bypass -File scripts/cost-benchmark.ps1 -SkipLocal
-#
-# Requirements: built sentinel binary (cargo build --bin sentinel), a configured
-# provider for the LLM path (sentinel auth login), Ollama for the local path.
 param(
     [string]$Model = "qwen3:8b",
-    [string]$LLMModel = "",
-    [string[]]$Tasks = @("emulate", "gpu", "anomaly", "sweep", "ssh"),
+    [string]$Tasks = "info,models,backends,recommend",
     [switch]$SkipLLM,
     [switch]$SkipLocal,
-    [double]$DollarsPerMTok = 2.0,
-    [string]$SSHHost = $env:SENTINEL_SSH_HOST
+    [string]$SSHHost = "",
+    [double]$DollarsPerMTok = 2.0
 )
 
+# Cost harness: same measurable task, two execution paths.
+#   Local path:  sentinel local <model> /<cmd>     -> 0 LLM tokens by construction
+#   LLM path:    sentinel ai --prompt "<task>"      -> tokens parsed from the
+#                [sentinel] session summary line
+# Emits docs/design/cost-results.md.
+
 $ErrorActionPreference = "Continue"
-$Repo = Split-Path -Parent $PSScriptRoot
-$Bin = Join-Path $Repo "target\debug\sentinel.exe"
-$ResultsFile = Join-Path $Repo "docs\design\cost-results.md"
-$Tasks = $Tasks | ForEach-Object { $_ -split "," } | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne "" }
+$repo = Split-Path -Parent $PSScriptRoot
+$bin = Join-Path $repo "target\debug\sentinel.exe"
+$outDoc = Join-Path $repo "docs\design\cost-results.md"
 
-if (-not (Test-Path $Bin)) {
-    Write-Host "Building sentinel binary..."
-    Push-Location $Repo
-    cargo build --bin sentinel 2>&1 | Out-Null
-    Pop-Location
+if (-not (Test-Path $bin)) {
+    Push-Location $repo
+    try { cargo build -q --bin sentinel } finally { Pop-Location }
 }
-if (-not (Test-Path $Bin)) { Write-Error "sentinel.exe not found after build"; exit 1 }
-
-$KernelDir = Join-Path $Repo "test-kernels"
-$KernelFiles = Get-ChildItem -Path $KernelDir -Filter *.cu -ErrorAction SilentlyContinue
-if (-not $KernelFiles) { $KernelFiles = Get-ChildItem -Path $KernelDir -Filter *.py -ErrorAction SilentlyContinue }
-if (-not $KernelFiles) { Write-Error "no test kernels in test-kernels\"; exit 1 }
-$KernelA = $KernelFiles[0].FullName
-$KernelB = if ($KernelFiles.Count -gt 1) { $KernelFiles[1].FullName } else { $KernelA }
 
 $env:SENTINEL_NON_INTERACTIVE = "1"
 
-function Invoke-LocalCommand {
-    param([string]$Command)
-    $psi = @($Command, "exit") -join "`n"
-    $psi = $psi + "`n"
-    $out = $psi | & $Bin local $Model 2>&1
-    return ($out -join "`n")
+$taskDefs = @{
+    bench      = @{ Local = "/bench"; LLM = "Benchmark the current LLM model's token throughput (tokens per second) using your tools, and report the result." }
+    info       = @{ Local = "/info"; LLM = "Report the current machine's OS, CPU cores, and RAM by using your tools." }
+    models     = @{ Local = "/models"; LLM = "List the models currently pulled in local Ollama, using your tools." }
+    backends   = @{ Local = "/backends"; LLM = "Detect which local LLM backends are available (Ollama, vLLM, LM Studio) using your tools." }
+    recommend  = @{ Local = "/recommend"; LLM = "Recommend a suitable local LLM model for this machine's hardware (RAM, cores) using your tools." }
+    ssh        = @{ Local = "/ssh $SSHHost hostname"; LLM = "Run 'hostname' on remote host $SSHHost via SSH using your tools." }
 }
 
-function Invoke-LLMAgent {
-    param([string]$Prompt)
-    $args = @("ai")
-    if ($LLMModel) { $args += $LLMModel }
-    $args += @("--prompt", $Prompt, "--yolo")
-    $out = & $Bin @args 2>&1
-    $text = ($out -join "`n")
-    $tokens = @{ prompt = 0; completion = 0; total = 0; ok = $false }
-    if ($text -match "\[sentinel\] session summary: prompt_tokens=(\d+) completion_tokens=(\d+) total_tokens=(\d+)") {
-        $tokens.prompt = [int]$Matches[1]
-        $tokens.completion = [int]$Matches[2]
-        $tokens.total = [int]$Matches[3]
-        $tokens.ok = $true
-    } elseif ($text -match "needs setup|No provider configured|✖") {
-        $tokens.ok = $false
+function Run-And-Capture([string]$file, [string[]]$argsArr) {
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    try {
+        $out = & $file @argsArr 2>&1
+    } catch {
+        $out = "error: $_"
     }
-    return @{ text = $text; tokens = $tokens }
+    $sw.Stop()
+    return @{ Out = ($out | Out-String); WallMs = $sw.ElapsedMilliseconds }
 }
 
-function Get-LocalOutput {
-    param([string]$Name)
-    switch ($Name) {
-        "emulate"   { return Invoke-LocalCommand "/emulate $KernelA --sweep" }
-        "gpu"       { return Invoke-LocalCommand "/gpu" }
-        "anomaly"   { return Invoke-LocalCommand "/profile dmon 2" }
-        "sweep"     { return Invoke-LocalCommand "/emulate $KernelB --sweep" }
-        "ssh"       { if ($SSHHost) { return Invoke-LocalCommand "/ssh profile $SSHHost 2" } else { return $null } }
-        default     { return $null }
-    }
-}
-
-function Get-LLMPrompt {
-    param([string]$Name)
-    switch ($Name) {
-        "emulate"   { return "Analyze the GPU kernel in test-kernels\$($KernelFiles[0].Name) and recommend the best block size and shared memory configuration with reasoning." }
-        "gpu"       { return "Report the current GPU stats: name, VRAM, utilization, temperature. Use any available tool." }
-        "anomaly"   { return "Explain how to detect GPU anomalies (compute/memory/thermal) from nvidia-smi dmon output and produce the exact command for a 2-second profile." }
-        "sweep"     { foreach ($f in $KernelFiles) { if ($f.FullName -eq $KernelB) { return "Sweep launch configurations for the GPU kernel $($f.Name) and report the best config with reasoning." } }; return "Sweep launch configurations for the GPU kernel and report the best config with reasoning." }
-        "ssh"       { if ($SSHHost) { return "Profile GPU utilization on remote host $SSHHost for 2 seconds and summarize anomalies." } else { return $null } }
-        default     { return $null }
-    }
+function Get-Tokens([string]$out) {
+    $m = [regex]::Match($out, "\[sentinel\] session summary: prompt_tokens=(\d+) completion_tokens=(\d+) total_tokens=(\d+)")
+    if ($m.Success) { return [int]$m.Groups[3].Value }
+    return -1
 }
 
 $rows = @()
-foreach ($task in $Tasks) {
-    Write-Host ("== task: {0}" -f $task)
-    $row = [ordered]@{ Task = $task; LocalTokens = "n/a"; LLMTokens = "n/a"; Delta = "n/a"; EstCost = "n/a"; LocalMs = "n/a"; LLMMs = "n/a"; Note = "" }
+foreach ($task in $Tasks.Split(',')) {
+    $task = $task.Trim()
+    if (-not $taskDefs.ContainsKey($task)) {
+        Write-Warning "Unknown task '$task' - skipping"
+        continue
+    }
+    $def = $taskDefs[$task]
+    Write-Host "== Task: $task =="
 
-    $t0 = Get-Date
+    $localTokens = 0; $localWall = $null
     if (-not $SkipLocal) {
-        $out = Get-LocalOutput $task
-        $row.LocalMs = [int]((Get-Date) - $t0).TotalMilliseconds
-        if ($null -eq $out) {
-            $row.LocalTokens = "skipped"
-            $row.Note = "no SSH host configured (set SENTINEL_SSH_HOST)"
-        } elseif ($out -match "Unknown command|Ollama not found|Error") {
-            $row.LocalTokens = "error"
-            $row.Note = "local REPL failed (Ollama running?)"
+        if ($task -eq "ssh" -and [string]::IsNullOrEmpty($SSHHost)) {
+            Write-Host "  local : skipped (no SENTINEL_SSH_HOST)"
+            $localTokens = -2
         } else {
-            $row.LocalTokens = "0"
+            $r = Run-And-Capture $bin @("local", $Model, $def.Local)
+            $localWall = $r.WallMs
+            Write-Host ("  local : {0} ms (0 LLM tokens by construction)" -f $localWall)
         }
     }
 
-    $t1 = Get-Date
+    $llmTokens = $null; $llmWall = $null
     if (-not $SkipLLM) {
-        $prompt = Get-LLMPrompt $task
-        if ($null -eq $prompt) {
-            $row.LLMTokens = "skipped"
-            if ($row.Note -eq "") { $row.Note = "no SSH host configured" }
+        if ($task -eq "ssh" -and [string]::IsNullOrEmpty($SSHHost)) {
+            Write-Host "  llm   : skipped (no SENTINEL_SSH_HOST)"
+            $llmTokens = -2
         } else {
-            $r = Invoke-LLMAgent $prompt
-            $row.LLMMs = [int]((Get-Date) - $t1).TotalMilliseconds
-            if ($r.tokens.ok) {
-                $row.LLMTokens = $r.tokens.total
-                $row.Delta = $r.tokens.total
-                $row.EstCost = ("{0:N4}" -f (($r.tokens.total / 1e6) * $DollarsPerMTok))
-            } else {
-                $row.LLMTokens = "error"
-                $row.Note = "LLM path failed (provider configured? `sentinel auth login`)"
-            }
+            $r = Run-And-Capture $bin @("ai", "--model", $Model, "--yolo", "--prompt", $def.LLM)
+            $llmWall = $r.WallMs
+            $llmTokens = Get-Tokens $r.Out
+            Write-Host ("  llm   : {0} ms, total_tokens={1}" -f $llmWall, $llmTokens)
         }
     }
 
-    $rows += [pscustomobject]$row
+    $rows += [pscustomobject]@{
+        Task    = $task
+        Local   = $localTokens
+        LLM     = $llmTokens
+        LocalW  = $localWall
+        LLMW    = $llmWall
+    }
 }
 
-$md = @()
-$md += "# Cost Results (measured)"
-$md += ""
-$md += "Run: $(Get-Date -Format 'yyyy-MM-dd HH:mm') | Local model: $Model | LLM pricing: $DollarsPerMTok USD/Mtok (input, illustrative)"
-$md += ""
-$md += "| Task | Local tokens | LLM tokens | Delta | Est. cost | Local wall | LLM wall |"
-$md += "|---|---|---|---|---|---|---|"
+$now = Get-Date -Format "yyyy-MM-dd HH:mm"
+$sb = New-Object System.Text.StringBuilder
+[void]$sb.AppendLine("# Cost Results (measured)")
+[void]$sb.AppendLine("")
+[void]$sb.AppendLine("Run: $now | Local model: $Model | LLM pricing: $DollarsPerMTok USD/Mtok (input, illustrative)")
+[void]$sb.AppendLine("")
+[void]$sb.AppendLine("| Task | Local tokens | LLM tokens | Delta | Est. cost | Local wall | LLM wall |")
+[void]$sb.AppendLine("|---|---|---|---|---|---|---|")
 foreach ($r in $rows) {
-    $md += "| $($r.Task) | $($r.LocalTokens) | $($r.LLMTokens) | $($r.Delta) | $($r.EstCost) | $($r.LocalMs) ms | $($r.LLMMs) ms |"
+    if ($r.Local -eq -2) { $lt = "skipped" } elseif ($null -eq $r.Local) { $lt = "n/a" } else { $lt = $r.Local }
+    if ($r.LLM -eq -2) { $mt = "skipped" } elseif ($null -eq $r.LLM) { $mt = "n/a" } elseif ($r.LLM -lt 0) { $mt = "error" } else { $mt = $r.LLM }
+    $delta = "n/a"
+    if ($r.Local -ge 0 -and $r.LLM -ge 0) { $delta = $r.LLM - $r.Local }
+    $cost = "n/a"
+    if ($r.LLM -ge 0) { $cost = ("{0:N4}" -f ($r.LLM / 1e6 * $DollarsPerMTok)) }
+    $lw = if ($null -eq $r.LocalW) { "n/a" } else { "$($r.LocalW) ms" }
+    $mw = if ($null -eq $r.LLMW) { "n/a" } else { "$($r.LLMW) ms" }
+    [void]$sb.AppendLine("| $($r.Task) | $lt | $mt | $delta | $cost | $lw | $mw |")
 }
-if (($rows | Where-Object { $_.Note -ne "" } | Measure-Object).Count -gt 0) {
-    $md += ""
-    $md += "Notes:"
-    foreach ($r in $rows) { if ($r.Note -ne "") { $md += "- $($r.Task): $($r.Note)" } }
-}
-$md | Set-Content -Path $ResultsFile -Encoding UTF8
-Write-Host "Wrote $ResultsFile"
+[void]$sb.AppendLine('Notes:')
+[void]$sb.AppendLine('- Local path is `sentinel local <model> /<cmd>` (one-shot); zero LLM tokens by construction.')
+[void]$sb.AppendLine('- LLM path is `sentinel ai --prompt "<task>" --yolo`; tokens parsed from the `[sentinel] session summary:` line.')
+[void]$sb.AppendLine('- Rerun: `powershell -ExecutionPolicy Bypass -File scripts/cost-benchmark.ps1`')
+[void]$sb.AppendLine('- ssh task requires -SSHHost <host> (or the SENTINEL_SSH_HOST env var).')
+
+$utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+[System.IO.File]::WriteAllText($outDoc, $sb.ToString(), $utf8NoBom)
+Write-Host ""
+Write-Host "Wrote $outDoc"

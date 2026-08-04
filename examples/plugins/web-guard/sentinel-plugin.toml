@@ -1,8 +1,0 @@
-id = "web-guard"
-name = "Web Guard"
-version = "0.1.0"
-description = "Allowlist for web_fetch/web_search domains (default: deny all)"
-author = "Sentinel"
-
-[hooks]
-before_tool_call = "guard"

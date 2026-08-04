@@ -41,24 +41,25 @@ it is the gate in front of it.
 - Windows: hooks run under `cmd /C`; Unix under `sh -c`. Scripts must be
   BOM-free and CRLF-safe (see session log gotchas).
 
-## Shipped guards (`examples/plugins/`)
+## Shipped guards (`plugins/`)
 
 | Guard | Vetoes | Default posture |
 |-------|--------|-----------------|
-| `workspace-guard` | `write`/`edit`/`apply_patch` where `file_path` escapes cwd (`..`, absolute-outside) | allow inside workspace |
-| `web-guard` | `web_fetch`/`web_search` against non-allowlisted domains | deny everything |
+| `workspace-guard` | `write`/`edit`/`apply_patch` where the canonicalized path escapes the workspace root (`..`, absolute-outside) | allow inside workspace |
+| `web-guard` | `web_fetch`/`web_search` against non-allowlisted hosts | deny everything |
 | `command-guard` | `run_shell_command` matching destructive patterns (`rm -rf /`, `format`, `del /s`, `dd if=`, `mkfs`, `diskpart`, fork-bomb) | deny matches |
 
-Install: `sentinel plugin install examples/plugins/workspace-guard` (one
-directory each). `sentinel plugin list` shows them; loaded on the next
-`sentinel ai` run. On Unix, one-time `ln -s guard.sh guard` per plugin
-(git cannot store a symlink that also checks out correctly on Windows).
+Install: `sentinel plugin install plugins/workspace-guard` (one directory
+each). `sentinel plugin list` shows them; loaded on the next `sentinel ai`
+run. On Unix the `guard` scripts are executable via the git-tracked
+permission bit (no symlink needed); on Windows `cmd /C` resolves `guard` →
+`guard.cmd`.
 
 ### Live verification (Windows, this machine)
 
 ```
 sentinel plugin list
-#   command-guard v0.1.0 — Vetoes run_shell_command matching destructive patterns
+#   command-guard v1.0.0 — Fail-closed: veto run_shell_command calls matching destructive patterns
 
 sentinel ai --prompt "delete everything with rm -rf /" --yolo
 # → tool result: Vetoed by plugin policy: veto destructive command: rm -rf /

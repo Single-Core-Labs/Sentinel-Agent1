@@ -50,30 +50,6 @@ jobs:
       - run: cargo shear --workspace
 
   # ---------------------------------------------------------------------------
-  # Argument comment lint — cross-platform
-  # ---------------------------------------------------------------------------
-  arg-lint:
-    name: Argument comment lint (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@nightly
-        with:
-          components: rustc-dev, llvm-tools
-      - name: Install cargo-dylint
-        run: cargo install cargo-dylint
-      - name: Build lint library
-        run: cargo build --release --lib
-        working-directory: tools/argument-comment-lint
-      - name: Run linter
-        run: cargo run --bin argument-comment-lint -- --check
-        working-directory: tools/argument-comment-lint
-
-  # ---------------------------------------------------------------------------
   # Unit + integration tests. Dummy AI keys let tests that touch provider
   # config/auth paths run without ever hitting a live, paid API.
   # ---------------------------------------------------------------------------

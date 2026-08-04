@@ -1,0 +1,8 @@
+id = "command-guard"
+name = "Command Guard"
+version = "1.0.0"
+description = "Fail-closed: veto run_shell_command calls matching destructive patterns"
+author = "Sentinel"
+
+[hooks]
+before_tool_call = "guard"

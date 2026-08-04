@@ -88,13 +88,13 @@ The `/local` command in the TUI auto-detects hardware and pulls a suitable Ollam
 
 | Hardware | Default Model |
 |---|---|
-| GPU + ≥8 GB | `llama3.2:3b` |
-| ≥4 GB RAM, no GPU | `llama3.2:1b` |
+| ≥8 GB RAM | `llama3.2:3b` |
+| ≥4 GB RAM | `llama3.2:1b` |
 | Low-end | `tinyllama` |
 
 Override with `/local <model-name>` or `/local llama3.2:3b`.
 
-Detection uses `nvidia-smi` / `rocminfo` for GPU, `wmic` / `sysctl` / `/proc/meminfo` for RAM, and `ollama serve` for the server.
+Detection uses `wmic` / `sysctl` / `/proc/meminfo` for RAM, and `ollama serve` for the server.
 
 ## Adding MCP Servers
 

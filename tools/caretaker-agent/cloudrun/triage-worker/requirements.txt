@@ -1,6 +1,0 @@
-# Triage Worker dependencies
-# Deployed to Cloud Run (Python 3.12+)
-# No external deps required for the base triage logic.
-# For gRPC integration with sentinel-core, add:
-# grpcio>=1.60.0
-# protobuf>=4.25.0

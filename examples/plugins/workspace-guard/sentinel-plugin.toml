@@ -1,8 +1,0 @@
-id = "workspace-guard"
-name = "Workspace Guard"
-version = "0.1.0"
-description = "Vetoes write/edit/apply_patch calls whose file_path escapes the workspace"
-author = "Sentinel"
-
-[hooks]
-before_tool_call = "guard"

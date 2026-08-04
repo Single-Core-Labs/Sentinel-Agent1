@@ -1,8 +1,4 @@
 use colored::*;
-use sentinel_gpu_profiler::{
-    bench, cuda, emulate, langs, model_db, optimizer, profile, vram as gpu_vram, GpuArch,
-    GpuLanguage, LaunchConfig,
-};
 use sentinel_provider_info::{AuthConfig, ProviderInfo};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
@@ -72,15 +68,12 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
 
     let tools = Arc::new(sentinel_tools::ToolRegistry::new());
 
-    let extended = gpu_vram::query_extended_gpu_info();
-    let gpu_ctx = gpu_vram::gpu_context_string(info.gpu.as_deref(), info.vram_gb, &extended);
     let mut ctx = format!(
-        "LOCAL: {os} {arch}, {cores}c/{mem:.0}GB RAM\n{gpu_ctx}",
+        "LOCAL: {os} {arch}, {cores}c/{mem:.0}GB RAM",
         os = info.os,
         arch = info.arch,
         cores = info.cpu_cores,
-        mem = info.mem_gb,
-        gpu_ctx = gpu_ctx
+        mem = info.mem_gb
     );
 
     // Add LLM backend info
@@ -98,22 +91,9 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         }
     }
 
-    let recommended = model_db::recommend_tier(info.vram_gb, info.mem_gb, info.gpu.is_some());
-    ctx.push_str(&format!(
-        "\nRecommended model for hardware: {}",
-        recommended
-    ));
-
-    ctx.push_str("\nProfiling commands (zero-cost, no LLM token spend):");
-    ctx.push_str("\n  /profile         GPU summary (temperature, utilization, VRAM)");
-    ctx.push_str("\n  /profile dmon N  Real-time nvidia-smi dmon for N seconds");
-    ctx.push_str("\n  /profile file.cu Static CUDA kernel analysis (7 rule patterns)");
-    ctx.push_str("\n  /profile log f   Parse existing nvidia-smi dmon log file");
+    ctx.push_str("\nZero-cost commands (no LLM token spend):");
     ctx.push_str("\n  /bench           Token throughput benchmark of current model");
-    ctx.push_str("\n  /bench kernel f  Auto-sweep block sizes for a CUDA kernel");
     ctx.push_str("\n  /ssh host cmd    Run remote command (zero-cost)");
-    ctx.push_str("\n  /ssh profile host N  Remote GPU profiling with anomaly detection");
-    ctx.push_str("\n  /gpu             GPU stats summary");
     ctx.push_str("\n  /backends        Discover local LLM backends");
 
     let mut prompt_mgr = sentinel_core::SystemPromptManager::new();
@@ -131,7 +111,21 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     agent.set_event_handler(Arc::new(crate::handler::CliEventHandler));
 
     let approval: Box<dyn sentinel_core::ApprovalGate> = Box::new(sentinel_core::AutoApprovalGate);
-    chat_loop(&agent, &mut thread, &model, &info, &extended, approval).await
+
+    // One-shot slash command mode: `sentinel local <model> /cmd [arg]` runs once and exits.
+    // Used by the cost harness (zero LLM tokens for deterministic work).
+    if let Some(one_shot) = args.get(1) {
+        if one_shot.starts_with('/') {
+            let (cmd, arg) = match one_shot.split_once(' ') {
+                Some((c, a)) => (c, a),
+                None => (one_shot.as_str(), ""),
+            };
+            run_slash(&agent, &mut thread, &model, &info, cmd, arg).await;
+            return Ok(());
+        }
+    }
+
+    chat_loop(&agent, &mut thread, &model, &info, approval).await
 }
 
 async fn chat_loop(
@@ -139,7 +133,6 @@ async fn chat_loop(
     thread: &mut sentinel_core::AgentThread,
     model: &str,
     sys: &SysInfo,
-    extended: &sentinel_gpu_profiler::vram::ExtendedGpuInfo,
     approval: Box<dyn sentinel_core::ApprovalGate>,
 ) -> anyhow::Result<()> {
     let model_display = format!("[{}]", model).dimmed();
@@ -163,34 +156,7 @@ async fn chat_loop(
             let parts: Vec<&str> = input.splitn(2, ' ').collect();
             let cmd = parts[0];
             let arg = parts.get(1).copied().unwrap_or("");
-            match cmd {
-                "/help" | "/h" => help(),
-                "/clear" => {
-                    print!("\x1B[2J\x1B[H");
-                    let _ = std::io::stdout().flush();
-                }
-                "/models" => cmd_models(),
-                "/pull" => cmd_pull(arg),
-                "/info" => cmd_info(model, sys, agent),
-                "/stats" => cmd_stats(thread),
-                "/bench" => {
-                    if parts.len() > 1 && parts[1] == "kernel" {
-                        cmd_bench_kernel(parts.get(2).copied().unwrap_or("")).await;
-                    } else {
-                        cmd_bench(model).await;
-                    }
-                }
-                "/show" => cmd_show(model).await,
-                "/recommend" => cmd_recommend(model, sys),
-                "/gpu" | "/nvidia" => cmd_gpu(arg).await,
-                "/ssh" => cmd_ssh(arg).await,
-                "/backends" | "/engines" => cmd_backends().await,
-                "/profile" => cmd_profile(arg).await,
-                "/emulate" | "/emu" => cmd_emulate(arg).await,
-                "/optimize" | "/opt" => cmd_optimize(arg, sys, extended, agent, thread).await,
-                "/gpu-context" | "/gpuctx" => cmd_gpu_context(sys, extended).await,
-                _ => eprintln!(" {} Unknown command. Type /help.", "✖".red().bold()),
-            }
+            run_slash(agent, thread, model, sys, cmd, arg).await;
             continue;
         }
 
@@ -222,6 +188,34 @@ async fn chat_loop(
 
 // ── Slash command handlers ──
 
+async fn run_slash(
+    agent: &sentinel_core::Agent,
+    thread: &mut sentinel_core::AgentThread,
+    model: &str,
+    sys: &SysInfo,
+    cmd: &str,
+    arg: &str,
+) {
+    match cmd {
+        "/help" | "/h" => help(),
+        "/clear" => {
+            use std::io::Write;
+            print!("\x1B[2J\x1B[H");
+            let _ = std::io::stdout().flush();
+        }
+        "/models" => cmd_models(),
+        "/pull" => cmd_pull(arg),
+        "/info" => cmd_info(model, sys, agent),
+        "/stats" => cmd_stats(thread),
+        "/bench" => cmd_bench(model).await,
+        "/show" => cmd_show(model).await,
+        "/recommend" => cmd_recommend(sys),
+        "/ssh" => cmd_ssh(arg).await,
+        "/backends" | "/engines" => cmd_backends().await,
+        _ => eprintln!(" {} Unknown command. Type /help.", "✖".red().bold()),
+    }
+}
+
 fn help() {
     println!();
     println!(" {}", "Commands:".yellow().bold());
@@ -230,25 +224,11 @@ fn help() {
     println!("  /pull <name>      Pull a model from Ollama");
     println!("  /show             Show current model metadata & capabilities");
     println!("  /bench            Benchmark current model (tokens/sec, latency)");
-    println!("  /bench kernel <f> Auto-sweep block sizes for CUDA kernel");
     println!("  /recommend        Hardware-aware model recommendations");
     println!("  /info             Show system, model, and token info");
     println!("  /stats            Show conversation statistics");
-    println!("  /gpu [/gpu ps|/gpu detailed]  NVIDIA GPU stats (zero-cost)");
     println!("  /ssh <host> <cmd>  Run command on remote machine (zero-cost)");
-    println!("  /ssh profile <host> <s>  Remote GPU profiling with anomaly detection");
-    println!("  /ssh info <host>   Remote nvidia-smi -q summary");
     println!("  /backends         List detected local LLM backends (Ollama, vLLM, LM Studio)");
-    println!("  /profile [file]   Analyze GPU kernel source (CUDA/Triton/Mojo/Numba/PyTorch/CUTE)");
-    println!("  /profile dmon <s> Local nvidia-smi dmon profiling with analysis");
-    println!("  /profile log <f>  Parse existing nvidia-smi dmon log file");
-    println!("  /profile benchmark <f> Compile & run kernel, measure real perf (nvcc required)");
-    println!("  /emulate <file>    Emulate kernel on GPU (cycle-approx, occupancy, memory)");
-    println!("  /emulate <f> --all Multi-arch comparison (H100, A100, RTX 4090, RTX 3090)");
-    println!("  /emulate <f> --arches=sm_80,sm_89  Emulate on specific architectures");
-    println!("  /optimize <file>   Auto-optimize kernel with AI + emulator speedup estimate");
-    println!("  /optimize <f> --arch=sm_90  Optimize for specific architecture");
-    println!("  /gpu-context       Show hardware context injected into AI prompts");
     println!("  /clear            Clear screen");
     println!("  /exit, /quit      Exit");
     println!();
@@ -268,15 +248,11 @@ fn cmd_models() {
             println!();
             println!(" {} {}", "•".cyan().bold(), "Pulled models:".bold());
             for (name, size, modified) in &list {
-                let vram_est = model_db::lookup_model(name)
-                    .map(|m| format!("  ~{:.1} GB VRAM", m.vram_gb_fp16 * 2.5))
-                    .unwrap_or_default();
                 println!(
-                    "   {}  {} {}{}",
+                    "   {}  {}  {}",
                     name.bold(),
                     size.green(),
                     modified.dimmed(),
-                    vram_est.dimmed(),
                 );
             }
             println!();
@@ -301,15 +277,6 @@ fn cmd_pull(arg: &str) {
 fn cmd_info(model: &str, sys: &SysInfo, agent: &sentinel_core::Agent) {
     let pt = agent.total_prompt_tokens.load(Ordering::Relaxed);
     let ct = agent.total_completion_tokens.load(Ordering::Relaxed);
-    let gpu = sys.gpu.as_deref().unwrap_or("None");
-    let vram_str = sys
-        .vram_gb
-        .map(|v| format!("{:.1} GB", v))
-        .unwrap_or_else(|| "N/A".into());
-    let util_str = sys
-        .gpu_util
-        .map(|u| format!(", {:.0}% util", u))
-        .unwrap_or_default();
 
     println!();
     println!(" {}", "System Info:".yellow().bold());
@@ -320,13 +287,6 @@ fn cmd_info(model: &str, sys: &SysInfo, agent: &sentinel_core::Agent) {
         sys.arch,
         sys.cpu_cores,
         sys.mem_gb
-    );
-    println!(
-        "   {} {} (VRAM: {}{})",
-        "GPU:".dimmed(),
-        gpu,
-        vram_str,
-        util_str
     );
     println!();
     println!(" {}", "Session:".yellow().bold());
@@ -401,80 +361,6 @@ async fn cmd_bench(model: &str) {
     println!();
 }
 
-async fn cmd_bench_kernel(arg: &str) {
-    let arg = arg.trim();
-    if arg.is_empty() {
-        println!();
-        println!(" {} Usage: /bench kernel <file.cu>", "•".yellow().bold());
-        println!(
-            "   {}",
-            "Auto-sweeps block sizes to find optimal kernel config.".dimmed()
-        );
-        println!();
-        return;
-    }
-
-    let path = std::path::Path::new(arg);
-    if !path.exists() {
-        println!(" {} File not found: {}", "✖".red(), arg);
-        return;
-    }
-
-    match std::fs::read_to_string(path) {
-        Ok(source) => {
-            let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or(arg);
-            let lang = langs::detect_language(fname, &source);
-            println!();
-            println!(
-                " {} Generating kernel config sweep for {} [{}]...",
-                "●".cyan().bold(),
-                fname.bold(),
-                lang.name().green()
-            );
-            println!(
-                "   {} {}",
-                "Config hint:".dimmed(),
-                langs::analyze(fname, &source).config_hint.dimmed()
-            );
-
-            let configs = bench::generate_configs(&source);
-            println!("   {} {} configs to evaluate", "→".cyan(), configs.len());
-
-            let stats = gpu_vram::query_gpu_stats();
-            let sm_count = stats.sm_count.unwrap_or(128);
-            println!("   {} GPU: {} SMs", "ℹ".cyan().bold(), sm_count);
-            println!();
-
-            let result = bench::run_bench_suite(&configs, arg, sm_count);
-            println!("{}", bench::format_bench_results(&result));
-
-            // Show top 3 configs
-            println!(" {} Top 3 configurations:", "•".cyan().bold());
-            for (i, br) in result.block_configs.iter().take(3).enumerate() {
-                let medal = match i {
-                    0 => "🥇",
-                    1 => "🥈",
-                    2 => "🥉",
-                    _ => "  ",
-                };
-                let occ = br
-                    .occupancy
-                    .map(|o| format!("{:.0}%", o))
-                    .unwrap_or_else(|| "N/A".into());
-                println!(
-                    "   {} {} ({}, occupancy {})",
-                    medal,
-                    br.label.bold(),
-                    format!("score {:.1}", br.duration_ms).dimmed(),
-                    occ
-                );
-            }
-            println!();
-        }
-        Err(e) => println!(" {} Failed to read file: {}", "✖".red(), e),
-    }
-}
-
 async fn cmd_show(model: &str) {
     println!();
     println!(" {} Fetching model metadata...", "●".cyan().bold());
@@ -547,13 +433,7 @@ async fn cmd_show(model: &str) {
     }
 }
 
-fn cmd_recommend(model: &str, sys: &SysInfo) {
-    let gpu = sys.gpu.as_deref().unwrap_or("No GPU detected");
-    let vram_str = sys
-        .vram_gb
-        .map(|v| format!("{:.1} GB", v))
-        .unwrap_or_else(|| "N/A".into());
-
+fn cmd_recommend(sys: &SysInfo) {
     println!();
     println!(" {} {}", "•".cyan().bold(), "Hardware Profile".bold());
     println!(
@@ -564,7 +444,6 @@ fn cmd_recommend(model: &str, sys: &SysInfo) {
         sys.cpu_cores,
         sys.mem_gb
     );
-    println!("   {} {} ({})", "GPU:".dimmed(), gpu, vram_str);
     println!();
     println!(" {} {}", "•".cyan().bold(), "Recommended Models".bold());
 
@@ -572,58 +451,41 @@ fn cmd_recommend(model: &str, sys: &SysInfo) {
         (
             "Tiny",
             "tinyllama / phi-2 / qwen2.5:0.5b",
-            "< 1 GB VRAM",
             "Fast CPU-friendly, good for testing",
         ),
         (
             "Small",
             "llama3.2:1b / qwen2.5:1.5b",
-            "~1-2 GB",
             "Lightweight, fast responses",
         ),
         (
             "Medium",
             "llama3.2:3b / qwen2.5:3b / phi-3:mini",
-            "~2-4 GB",
             "Good balance of speed & quality",
         ),
         (
             "Large",
             "llama3.1:8b / mistral:7b / qwen2.5:7b",
-            "~4-8 GB",
-            "Strong quality, needs GPU",
+            "Strong quality, needs more RAM",
         ),
         (
             "XL",
             "llama3.3:70b / qwen2.5:72b / deepseek-r1:67b",
-            "~40+ GB",
-            "Best quality, high-end GPU required",
+            "Best quality, high-end hardware required",
         ),
     ];
 
-    let recommended = if let Some(vram) = sys.vram_gb {
-        if vram >= 40.0 {
-            4
-        } else if vram >= 8.0 {
-            3
-        } else if vram >= 4.0 {
-            2
-        } else if vram >= 1.0 {
-            1
-        } else {
-            0
-        }
-    } else if sys.gpu.is_some() && sys.mem_gb >= 32.0 {
+    let recommended = if sys.mem_gb >= 64.0 {
         3
-    } else if sys.gpu.is_some() && sys.mem_gb >= 8.0 {
+    } else if sys.mem_gb >= 32.0 {
         2
-    } else if sys.mem_gb >= 8.0 {
+    } else if sys.mem_gb >= 16.0 {
         1
     } else {
         0
     };
 
-    for (i, (tier, examples, vram, note)) in tiers.iter().enumerate() {
+    for (i, (tier, examples, note)) in tiers.iter().enumerate() {
         let marker = if i == recommended {
             "→".green().bold()
         } else {
@@ -635,137 +497,23 @@ fn cmd_recommend(model: &str, sys: &SysInfo) {
             tier.dimmed()
         };
         println!(
-            " {} {:8}  {}  {}  {}",
+            " {} {:8}  {}  {}",
             marker,
             tier_style,
             examples.dimmed(),
-            vram.dimmed(),
             note.dimmed()
         );
     }
 
-    // VRAM-aware suggestions
-    if let Some(vram) = sys.vram_gb {
-        let compatible: Vec<&model_db::ModelInfo> = model_db::filter_models_by_vram(vram, 0.0);
-        println!();
-        println!(
-            " {} {} models fit in your {:.1} GB VRAM:",
-            "•".cyan().bold(),
-            compatible.len(),
-            vram
-        );
-        for m in compatible.iter().take(6) {
-            println!("   {} ({:.2} GB FP16)", m.name.bold(), m.vram_gb_fp16);
-        }
-        if compatible.len() > 6 {
-            println!("   ... and {} more", compatible.len() - 6);
-        }
-    }
-
-    // Cloud alternatives
-    if let Some((cloud, provider, price)) = model_db::find_cloud_alternative(model) {
-        println!();
-        println!(
-            " {} Cloud alternative for {}: {} via {} ({})",
-            "☁".cyan().bold(),
-            model.dimmed(),
-            cloud.bold(),
-            provider,
-            price
-        );
-    }
-
-    // CUDA architecture targets for compilation
-    if let Some(gpu) = &sys.gpu {
-        if let Some(arch) = gpu_vram::architecture_from_name(gpu) {
-            if let Some(cc) = gpu_vram::compute_capability_from_name(gpu) {
-                let nvcc_flag = gpu_vram::nvcc_arch_flag(&cc);
-                println!();
-                println!(
-                    " {} CUDA Compilation Targets for this GPU:",
-                    "•".cyan().bold()
-                );
-                println!("   {} {} ({})", "Architecture:".dimmed(), arch, gpu);
-                println!("   {} {}", "Compute Capability:".dimmed(), cc);
-                println!("   {} {}", "NVCC Flag:".dimmed(), nvcc_flag.green().bold());
-                println!(
-                    "   {} {}",
-                    "Example:".dimmed(),
-                    format!("nvcc {} kernel.cu", nvcc_flag).dimmed()
-                );
-            }
-        }
-    }
-
-    // Block size recommendations per GPU language
     println!();
-    println!(" {} Recommended Block Sizes:", "•".cyan().bold());
-    let cc = sys
-        .gpu
-        .as_ref()
-        .and_then(|g| gpu_vram::compute_capability_from_name(g));
-    for lang in &[
-        GpuLanguage::Cuda,
-        GpuLanguage::Triton,
-        GpuLanguage::Numba,
-        GpuLanguage::PyTorch,
-        GpuLanguage::Cute,
-    ] {
-        let recs = langs::recommended_block_sizes(*lang, cc.as_deref());
-        let best = recs.first().unwrap();
-        println!(
-            "   {}  {}  =>  {}x{}x{}  ({})",
-            lang.name().cyan().bold(),
-            "→".dimmed(),
-            best.block_x.to_string().yellow(),
-            best.block_y.to_string().yellow(),
-            best.block_z.to_string().yellow(),
-            best.reason.dimmed(),
-        );
-    }
-
-    println!();
-    let current_tier = model_db::recommend_tier(sys.vram_gb, sys.mem_gb, sys.gpu.is_some());
-    if model != current_tier {
-        println!(
-            " {} Currently using {}. {} recommended for your hardware.",
-            "ℹ".cyan().bold(),
-            model.bold(),
-            current_tier.green().bold()
-        );
-        println!(
-            "   Use /pull {} to download, then restart sentinel local.",
-            current_tier
-        );
-    } else {
-        println!(
-            " {} {} is a good fit for your hardware.",
-            "✔".green(),
-            model.green().bold()
-        );
-    }
+    println!(
+        "   {} Tier selection is RAM-based (CPU/Ollama inference).",
+        "ℹ".cyan().bold()
+    );
     println!();
 }
 
-// ── Zero-cost GPU / SSH commands ──
-
-async fn cmd_gpu(arg: &str) {
-    let cmd = match arg.trim() {
-        "ps" | "processes" => "nvidia-smi pmon -c 1 2>&1".to_string(),
-        "detailed" | "d" | "-q" => "nvidia-smi -q 2>&1".to_string(),
-        _ => r#"nvidia-smi --query-gpu=index,name,utilization.gpu,memory.used,memory.total,temperature.gpu --format=csv,noheader 2>&1"#.to_string(),
-    };
-    println!();
-    match run_shell(&cmd).await {
-        Ok(out) => println!("{}", out.trim()),
-        Err(e) => println!(
-            " {} {} (install NVIDIA drivers or run `ollama serve`)",
-            "✖".red(),
-            e
-        ),
-    }
-    println!();
-}
+// ── Zero-cost commands ──
 
 async fn cmd_backends() {
     let client = client();
@@ -809,450 +557,13 @@ async fn cmd_backends() {
     println!();
 }
 
-async fn cmd_profile(arg: &str) {
-    let arg = arg.trim();
-    if arg.is_empty() {
-        // Default: show GPU stats as quick profile
-        println!();
-        println!(" {} {}", "•".cyan().bold(), "GPU Profile Summary".bold());
-        let stats = gpu_vram::query_gpu_stats();
-        if let Some(name) = &stats.name {
-            println!("   {} {}", "GPU:".dimmed(), name.bold());
-        }
-        if let Some(vram) = stats.vram_total_gb {
-            let used = stats.vram_used_gb.unwrap_or(0.0);
-            let pct = if vram > 0.0 { used / vram * 100.0 } else { 0.0 };
-            println!(
-                "   {} {:.1} GB / {:.1} GB ({:.0}%)",
-                "VRAM:".dimmed(),
-                used,
-                vram,
-                pct
-            );
-        }
-        if let Some(util) = stats.util_gpu {
-            println!("   {} {:.0}%", "GPU Util:".dimmed(), util);
-        }
-        if let Some(temp) = stats.temp_c {
-            println!("   {} {:.0}°C", "Temp:".dimmed(), temp);
-        }
-        if let Some(sm) = stats.sm_count {
-            println!("   {} {} SMs", "SM Count:".dimmed(), sm);
-        }
-        println!();
-        println!("   {} Use /profile <file> for GPU kernel analysis (CUDA/Triton/Mojo/Numba/PyTorch/CUTE).", "ℹ".cyan().bold());
-        println!(
-            "   {} Use /profile log <file> to parse nvidia-smi dmon output.",
-            "ℹ".cyan().bold()
-        );
-        println!(
-            "   {} Use /profile dmon <sec> to run local dmon profiling.",
-            "ℹ".cyan().bold()
-        );
-        println!(
-            "   {} Use /profile benchmark <file> to compile & run kernel (nvcc).",
-            "ℹ".cyan().bold()
-        );
-        println!(
-            "   {} Use /emulate <file> to simulate on any GPU architecture (zero-cost).",
-            "ℹ".cyan().bold()
-        );
-        println!();
-        return;
-    }
-
-    // /profile log <file>: parse existing nvidia-smi dmon log
-    if let Some(log_path) = arg.strip_prefix("log ") {
-        let path = std::path::Path::new(log_path.trim());
-        if !path.exists() {
-            println!(" {} File not found: {}", "✖".red(), log_path);
-            return;
-        }
-        match std::fs::read_to_string(path) {
-            Ok(text) => {
-                println!();
-                println!(
-                    " {} Parsing profile log: {}",
-                    "●".cyan().bold(),
-                    log_path.bold()
-                );
-                let snapshots = profile::parse_dmon_csv(&text);
-                if snapshots.is_empty() {
-                    let snapshots2 = profile::parse_dmon_csv_generic(&text);
-                    if snapshots2.is_empty() {
-                        println!("   {} No profile data found in file.", "✖".red());
-                        println!();
-                        return;
-                    }
-                    let result = profile::analyze_profile(&snapshots2, log_path);
-                    println!("{}", profile::profile_summary_text(&result));
-                } else {
-                    let result = profile::analyze_profile(&snapshots, log_path);
-                    println!("{}", profile::profile_summary_text(&result));
-                }
-                println!();
-            }
-            Err(e) => println!(" {} Failed to read file: {}", "✖".red(), e),
-        }
-        return;
-    }
-
-    // /profile benchmark <file>: compile and run kernel, measure real perf
-    if let Some(bench_file) = arg.strip_prefix("benchmark ") {
-        let path = std::path::Path::new(bench_file.trim());
-        if !path.exists() {
-            println!(" {} File not found: {}", "✖".red(), bench_file);
-            return;
-        }
-        match std::fs::read_to_string(path) {
-            Ok(source) => {
-                let kernel_name = path
-                    .file_stem()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("kernel");
-                println!();
-                println!(
-                    " {} Real benchmark: {}",
-                    "●".cyan().bold(),
-                    bench_file.trim().bold()
-                );
-                println!();
-                let stats = gpu_vram::query_gpu_stats();
-                let sm_count = stats.sm_count.unwrap_or(128);
-                let result = bench::benchmark_kernel_real(&source, kernel_name, sm_count);
-                println!("{}", bench::format_real_bench_result(&result));
-                println!();
-            }
-            Err(e) => println!(" {} Failed to read file: {}", "✖".red(), e),
-        }
-        return;
-    }
-
-    // /profile dmon <sec>: run local nvidia-smi dmon profiling
-    if let Some(dur_str) = arg.strip_prefix("dmon ") {
-        let dur_secs = dur_str.trim().parse::<u64>().unwrap_or(5).clamp(1, 60);
-        println!();
-        println!(
-            " {} Profiling GPU with nvidia-smi dmon for {}s...",
-            "●".cyan().bold(),
-            dur_secs
-        );
-        println!();
-        let cmd = format!("nvidia-smi dmon -s pucvmet -d 1 -c {} 2>&1", dur_secs);
-        match run_shell(&cmd).await {
-            Ok(out) => {
-                let snapshots = profile::parse_dmon_csv(&out);
-                if !snapshots.is_empty() {
-                    // Print raw table
-                    for line in out.lines().take(2 + dur_secs as usize) {
-                        println!("   {}", line);
-                    }
-                    println!();
-                    let result = profile::analyze_profile(&snapshots, "local");
-                    println!("{}", profile::profile_summary_text(&result));
-                    // Print raw data rows
-                    println!("   Raw data ({} snapshots):", snapshots.len());
-                    println!(
-                        "   {:<6} {:<8} {:<8} {:<8} {:<8}",
-                        "Time", "GPU%", "Mem%", "TX(MB)", "RX(MB)"
-                    );
-                    for s in snapshots.iter().step_by((snapshots.len() / 5).max(1)) {
-                        println!(
-                            "   {:<6.0} {:<8.0} {:<8.0} {:<8.1} {:<8.1}",
-                            s.time_s, s.gpu_util, s.mem_util, s.pcie_tx_mb, s.pcie_rx_mb
-                        );
-                    }
-                } else {
-                    println!("{}", out);
-                    println!(
-                        "   {} Could not parse dmon output. Raw output shown above.",
-                        "ℹ".cyan()
-                    );
-                }
-                println!();
-            }
-            Err(e) => println!("   {} {}", "✖".red(), e),
-        }
-        return;
-    }
-
-    // Try to read and analyze a source file (any supported language)
-    let path = std::path::Path::new(arg);
-    if !path.exists() {
-        println!(" {} File not found: {}", "✖".red(), arg);
-        println!(
-            "   {} Usage: /profile [file | benchmark <f> | log <f> | dmon <sec>]",
-            "ℹ".cyan().bold()
-        );
-        println!("   {} Supported: .cu, .py, .mojo, .cuh, .hpp (CUDA, Triton, Mojo, Numba, PyTorch, CUTE, TileLang)",
-            "ℹ".cyan().bold());
-        return;
-    }
-    match std::fs::read_to_string(path) {
-        Ok(source) => {
-            let fname = path.file_name().and_then(|n| n.to_str()).unwrap_or(arg);
-            let result = langs::analyze(fname, &source);
-            println!();
-            println!(
-                " {} Analyzing {} [{}]...",
-                "●".cyan().bold(),
-                fname.bold(),
-                result.language.name().green()
-            );
-            println!("   {} {}", "Hint:".dimmed(), result.config_hint.dimmed());
-            println!();
-            if result.issues.is_empty() {
-                println!("   {} No issues found.", "✔".green().bold());
-            } else {
-                let errors = result
-                    .issues
-                    .iter()
-                    .filter(|i| i.severity == cuda::Severity::Error)
-                    .count();
-                let warnings = result
-                    .issues
-                    .iter()
-                    .filter(|i| i.severity == cuda::Severity::Warn)
-                    .count();
-                let infos = result
-                    .issues
-                    .iter()
-                    .filter(|i| i.severity == cuda::Severity::Info)
-                    .count();
-                println!(
-                    "   {} {} issues: {} errors, {} warnings, {} info",
-                    "•".cyan().bold(),
-                    result.issues.len(),
-                    errors.to_string().red().bold(),
-                    warnings.to_string().yellow().bold(),
-                    infos.to_string().cyan().bold(),
-                );
-                println!();
-                for issue in &result.issues {
-                    let severity_colored = match issue.severity {
-                        cuda::Severity::Error => "error".red().bold(),
-                        cuda::Severity::Warn => "warn".yellow().bold(),
-                        cuda::Severity::Info => "info".cyan(),
-                    };
-                    println!(
-                        "   {} [{}:{}] {}",
-                        "→".cyan(),
-                        fname.dimmed(),
-                        issue.line.to_string().dimmed(),
-                        severity_colored
-                    );
-                    println!("       {}", issue.message.bold());
-                    println!("       {}", issue.suggestion.dimmed());
-                    println!();
-                }
-            }
-
-            // Show block size recommendations
-            let extended = gpu_vram::query_extended_gpu_info();
-            let cc = extended.compute_capability.as_deref();
-            let recs = langs::recommended_block_sizes(result.language, cc);
-            println!(
-                "   {} Recommended block sizes for {}:",
-                "•".cyan().bold(),
-                result.language.name().green()
-            );
-            for r in &recs {
-                let dims = if r.block_x > 0 {
-                    format!("{}x{}x{}", r.block_x, r.block_y, r.block_z)
-                } else {
-                    "autotune".into()
-                };
-                println!(
-                    "     {}  {}  ({})",
-                    dims.yellow(),
-                    r.label.dimmed(),
-                    r.reason.dimmed()
-                );
-            }
-            println!();
-        }
-        Err(e) => println!(" {} Failed to read file: {}", "✖".red(), e),
-    }
-}
-
-fn parse_emulate_arches(arg: &str) -> Vec<GpuArch> {
-    let all_arches = vec![
-        GpuArch::Pascal61,
-        GpuArch::Volta70,
-        GpuArch::Turing75,
-        GpuArch::Ampere80,
-        GpuArch::Ampere86,
-        GpuArch::Ada89,
-        GpuArch::Hopper90,
-        GpuArch::Blackwell100,
-    ];
-
-    let arg = arg.trim();
-    if arg.contains("--all") {
-        return all_arches;
-    }
-
-    if let Some(arch_list) = arg
-        .split("--arches=")
-        .nth(1)
-        .or_else(|| arg.split("--arch=").nth(1))
-    {
-        let mut selected = Vec::new();
-        for a in arch_list.split(',') {
-            let a = a.trim();
-            let arch = match a {
-                "sm_61" | "pascal" | "6.1" | "1080" => Some(GpuArch::Pascal61),
-                "sm_70" | "volta" | "7.0" | "v100" => Some(GpuArch::Volta70),
-                "sm_75" | "turing" | "7.5" | "2080" => Some(GpuArch::Turing75),
-                "sm_80" | "a100" | "8.0" => Some(GpuArch::Ampere80),
-                "sm_86" | "ampere" | "8.6" | "3090" => Some(GpuArch::Ampere86),
-                "sm_89" | "ada" | "8.9" | "4090" => Some(GpuArch::Ada89),
-                "sm_90" | "hopper" | "9.0" | "h100" => Some(GpuArch::Hopper90),
-                "sm_100" | "blackwell" | "10.0" | "5090" => Some(GpuArch::Blackwell100),
-                _ => None,
-            };
-            if let Some(a) = arch {
-                selected.push(a);
-            }
-        }
-        if !selected.is_empty() {
-            return selected;
-        }
-    }
-
-    vec![GpuArch::Ampere86, GpuArch::Ada89, GpuArch::Hopper90]
-}
-
-async fn cmd_emulate(arg: &str) {
-    let arg = arg.trim();
-    if arg.is_empty() {
-        println!();
-        println!(" {} Usage:", "•".yellow().bold());
-        println!("   /emulate <file>                  Emulate on RTX 3090, RTX 4090, H100");
-        println!("   /emulate <file> --all            All architectures");
-        println!("   /emulate <file> --arch=sm_80,sm_89,sm_90  Custom selection");
-        println!("   /emulate <file> --sweep          Auto-sweep + detect best config");
-        println!();
-        return;
-    }
-
-    let parts: Vec<&str> = arg.splitn(2, " --").collect();
-    let file_part = parts[0].trim();
-    let flag_part = if parts.len() > 1 {
-        format!("--{}", parts[1])
-    } else {
-        String::new()
-    };
-
-    let path = std::path::Path::new(file_part);
-    if !path.exists() {
-        println!(" {} File not found: {}", "✖".red(), file_part);
-        return;
-    }
-
-    let source = match std::fs::read_to_string(path) {
-        Ok(s) => s,
-        Err(e) => {
-            println!(" {} Failed to read: {}", "✖".red(), e);
-            return;
-        }
-    };
-
-    let fname = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or(file_part);
-    let language = langs::detect_language(fname, &source);
-
-    let do_sweep = flag_part.contains("--sweep");
-    let clean_flags = if do_sweep {
-        flag_part.replace("--sweep", "--noop")
-    } else {
-        flag_part.clone()
-    };
-
-    let arches = parse_emulate_arches(&clean_flags);
-
-    println!();
-    if do_sweep {
-        println!(
-            " {} Config sweep on {} ...",
-            "●".cyan().bold(),
-            fname.bold()
-        );
-    } else {
-        println!(
-            " {} Emulating {} on {} architectures...",
-            "●".cyan().bold(),
-            fname.bold(),
-            arches.len().to_string().green()
-        );
-    }
-    println!();
-
-    let config = LaunchConfig {
-        block_x: 256,
-        block_y: 1,
-        block_z: 1,
-        grid_x: 100,
-        grid_y: 1,
-        grid_z: 1,
-        shared_mem_bytes: 0,
-        registers_per_thread: 32,
-    };
-
-    let req = emulate::EmulateRequest {
-        source: source.clone(),
-        filename: fname.to_string(),
-        config,
-        arches,
-        language,
-        sweep: do_sweep,
-    };
-
-    let out = emulate::run_emulation(&req);
-
-    println!(
-        "   {} {}",
-        "Language:".bold().dimmed(),
-        language.name().cyan()
-    );
-    println!(
-        "   {} {}",
-        "Hint:".bold().dimmed(),
-        out.config_hint.dimmed()
-    );
-    println!();
-
-    if let Some(ref sweep) = out.sweep_result {
-        println!("   {} ", "Config Sweep Results:".bold().green());
-        let table = emulate::format_sweep_table(&sweep.entries);
-        println!("{table}");
-        println!();
-        let recs = emulate::format_sweep_recommendations(&sweep.entries);
-        println!("{recs}");
-        return;
-    }
-
-    if let Some(ref report) = out.single {
-        println!("{}", emulate::execution_report(report));
-    }
-
-    if !out.comparison_text.is_empty() {
-        println!("   {} ", "Multi-Architecture Comparison:".bold().yellow());
-        println!("{}", out.comparison_text);
-    }
-}
-
 async fn cmd_ssh(arg: &str) {
     let args: Vec<&str> = arg.splitn(4, ' ').collect();
     if args.is_empty() || args[0].is_empty() {
         println!();
         println!(" {} Usage:", "•".yellow().bold());
         println!("   /ssh <user@host> <command>               Run command remotely");
-        println!("   /ssh profile <user@host> <sec>           Remote GPU profiling with analysis");
-        println!("   /ssh info <user@host>                    Remote nvidia-smi -q summary");
-        println!("   {}", "Example: /ssh profile ubuntu@10.0.0.1 5".dimmed());
+        println!("   {}", "Example: /ssh ubuntu@10.0.0.1 'ls -la'".dimmed());
         println!();
         return;
     }
@@ -1279,103 +590,19 @@ async fn cmd_ssh(arg: &str) {
         return;
     }
 
-    match args[idx] {
-        // /ssh info <host>
-        "info" if args.len() > idx + 1 => {
-            let host = args[idx + 1];
-            println!();
-            println!(" {} Fetching GPU info from {}...", "●".cyan().bold(), host);
-            let cmd = ssh_cmd(host, "nvidia-smi -q 2>&1 | head -50", ssh_key);
-            match run_shell(&cmd).await {
-                Ok(out) => println!("{}", out.trim()),
-                Err(e) => println!("   {} {}", "✖".red(), e),
-            }
-            println!();
+    if args.len() > idx + 1 {
+        let host = args[idx];
+        let command = args[idx + 1..].join(" ");
+        let cmd = ssh_cmd(host, &command, ssh_key);
+        println!();
+        println!(" {} {} $ {} ...", "→".cyan(), host, command);
+        match run_shell(&cmd).await {
+            Ok(out) => println!("{}", out.trim()),
+            Err(e) => println!("   {} {}", "✖".red(), e),
         }
-
-        // /ssh profile <host> <duration>
-        "profile" if args.len() > idx + 1 => {
-            let host = args[idx + 1];
-            let dur_secs = args
-                .get(idx + 2)
-                .and_then(|s| s.parse::<u64>().ok())
-                .unwrap_or(5)
-                .clamp(1, 60);
-            println!();
-            println!(
-                " {} Profiling remote GPU on {} for {}s...",
-                "●".cyan().bold(),
-                host,
-                dur_secs
-            );
-            let cmd = ssh_cmd(
-                host,
-                &format!("nvidia-smi dmon -s pucvmet -d 1 -c {}", dur_secs),
-                ssh_key,
-            );
-            print!("   {} Connecting...", "→".cyan());
-            use std::io::Write;
-            std::io::stdout().flush().ok();
-            match run_shell(&cmd).await {
-                Ok(out) => {
-                    let line_count = out.lines().count();
-                    println!("\r   {} Data received ({} lines).", "✔".green(), line_count);
-                    println!();
-                    let snapshots = profile::parse_dmon_csv(&out);
-                    if snapshots.is_empty() {
-                        if out.contains("Permission denied")
-                            || out.contains("Connection refused")
-                            || out.contains("Could not resolve")
-                        {
-                            println!(
-                                "   {} SSH failed: {}",
-                                "✖".red(),
-                                out.lines().next().unwrap_or(&out).trim()
-                            );
-                        } else {
-                            println!("{}", out);
-                        }
-                    } else {
-                        let result = profile::analyze_profile(&snapshots, host);
-                        println!("{}", profile::profile_summary_text(&result));
-                        println!("   Timeline:");
-                        println!(
-                            "   {:<6} {:<8} {:<8} {:<8} {:<8} {:<6}",
-                            "Sec", "GPU%", "Mem%", "TX(MB)", "RX(MB)", "Temp°C"
-                        );
-                        for s in &snapshots {
-                            println!(
-                                "   {:<6.0} {:<8.0} {:<8.0} {:<8.1} {:<8.1} {:<6.0}",
-                                s.time_s,
-                                s.gpu_util,
-                                s.mem_util,
-                                s.pcie_tx_mb,
-                                s.pcie_rx_mb,
-                                s.temp_c
-                            );
-                        }
-                    }
-                    println!();
-                }
-                Err(e) => println!("\r   {} {}", "✖".red(), e),
-            }
-        }
-
-        // /ssh <host> <command...>
-        _ if args.len() > idx + 1 => {
-            let host = args[idx];
-            let command = args[idx + 1..].join(" ");
-            let cmd = ssh_cmd(host, &command, ssh_key);
-            println!();
-            println!(" {} {} $ {} ...", "→".cyan(), host, command);
-            match run_shell(&cmd).await {
-                Ok(out) => println!("{}", out.trim()),
-                Err(e) => println!("   {} {}", "✖".red(), e),
-            }
-            println!();
-        }
-
-        _ => print_ssh_help(),
+        println!();
+    } else {
+        print_ssh_help();
     }
 }
 
@@ -1383,9 +610,7 @@ fn print_ssh_help() {
     println!();
     println!(" {} Usage:", "•".yellow().bold());
     println!("   /ssh <user@host> <command>               Run command remotely");
-    println!("   /ssh profile <user@host> <sec>           Remote GPU profiling with analysis");
-    println!("   /ssh info <user@host>                    Remote nvidia-smi -q summary");
-    println!("   {}", "Example: /ssh profile ubuntu@10.0.0.1 5".dimmed());
+    println!("   {}", "Example: /ssh ubuntu@10.0.0.1 'ls -la'".dimmed());
     println!();
 }
 
@@ -1587,20 +812,13 @@ fn ok(msg: &str) {
 
 fn scan_device(info: &SysInfo) {
     println!(" {} {}", "●".cyan().bold(), "Scanning device...".bold());
-    let gpu = info.gpu.as_deref().unwrap_or("No GPU detected (CPU-only)");
-    let vram = info
-        .vram_gb
-        .map(|v| format!(", {:.1} GB VRAM", v))
-        .unwrap_or_default();
     println!(
-        "   {} {} ({}), {} cores, {:.0} GB RAM, {}{}",
+        "   {} {} ({}), {} cores, {:.0} GB RAM",
         "System:".dimmed(),
         info.os,
         info.arch,
         info.cpu_cores,
-        info.mem_gb,
-        gpu,
-        vram
+        info.mem_gb
     );
 }
 
@@ -1613,14 +831,10 @@ async fn select_model(info: &SysInfo) -> anyhow::Result<String> {
         println!("   {}", "(none)".dimmed());
     } else {
         for (i, m) in existing.iter().enumerate() {
-            let vram_badge = model_db::lookup_model(m)
-                .map(|info| format!(" ~{:.1}GB", info.vram_gb_fp16 * 2.5))
-                .unwrap_or_default();
             println!(
-                "   {}. {}{}",
+                "   {}. {}",
                 (i + 1).to_string().cyan().bold(),
-                m.green(),
-                vram_badge.dimmed()
+                m.green()
             );
         }
     }
@@ -1632,48 +846,24 @@ async fn select_model(info: &SysInfo) -> anyhow::Result<String> {
         "Recommended for your hardware".bold()
     );
     let tiers = [
-        ("Small", "llama3.2:1b", "~1-2 GB", "Fast, CPU-friendly"),
-        ("Medium", "llama3.2:3b", "~2-4 GB", "Good balance"),
-        ("Large", "llama3.1:8b", "~4-8 GB", "Strong quality"),
+        ("Small", "llama3.2:1b", "Fast, CPU-friendly"),
+        ("Medium", "llama3.2:3b", "Good balance"),
+        ("Large", "llama3.1:8b", "Strong quality"),
     ];
-    let idx = if info.gpu.is_some() && info.mem_gb >= 16.0 {
-        1
-    } else {
-        0
-    };
-    for (i, (tier, name, vram, note)) in tiers.iter().enumerate() {
+    let idx = if info.mem_gb >= 16.0 { 1 } else { 0 };
+    for (i, (tier, name, note)) in tiers.iter().enumerate() {
         let marker = if i == idx {
             "→".green().bold()
         } else {
             " ".normal()
         };
         println!(
-            " {} {:8}  {}  {}  {}",
+            " {} {:8}  {}  {}",
             marker,
             tier,
             name.bold(),
-            vram.dimmed(),
             note.dimmed()
         );
-    }
-
-    // Show VRAM-compatible models
-    if let Some(vram) = info.vram_gb {
-        let compatible: Vec<&model_db::ModelInfo> = model_db::filter_models_by_vram(vram, 2.5);
-        if !compatible.is_empty() {
-            println!();
-            println!(
-                "   {} Models that fit in {:.1} GB VRAM:",
-                "ℹ".cyan().bold(),
-                vram
-            );
-            for m in compatible.iter().take(5) {
-                println!("     {} ({:.1} GB)", m.name.bold(), m.vram_gb_fp16 * 2.5);
-            }
-            if compatible.len() > 5 {
-                println!("     ... and {} more", compatible.len() - 5);
-            }
-        }
     }
 
     println!();
@@ -1754,9 +944,6 @@ struct SysInfo {
     arch: String,
     cpu_cores: usize,
     mem_gb: f64,
-    gpu: Option<String>,
-    vram_gb: Option<f64>,
-    gpu_util: Option<f64>,
     has_ollama: bool,
 }
 
@@ -1774,39 +961,13 @@ fn detect() -> SysInfo {
         .map(|n| n.get())
         .unwrap_or(0);
     let mem_gb = total_mem_gb();
-    let gpu = detect_gpu();
-    let stats = gpu_vram::query_gpu_stats();
-    let vram_gb = stats.vram_total_gb.or_else(gpu_vram::detect_vram_gb);
-    let gpu_util = stats.util_gpu;
     let has_ollama = has_cmd("ollama");
     SysInfo {
         os,
         arch,
         cpu_cores,
         mem_gb,
-        gpu,
-        vram_gb,
-        gpu_util,
         has_ollama,
-    }
-}
-
-fn detect_gpu() -> Option<String> {
-    if cfg!(target_os = "windows") {
-        cmd_out(
-            "powershell",
-            &["-Command", "(Get-CimInstance Win32_VideoController).Name"],
-        )
-        .or_else(|| {
-            cmd_out(
-                "powershell",
-                &["-Command", "(Get-WmiObject Win32_VideoController).Name"],
-            )
-        })
-        .or_else(|| cmd_out("nvidia-smi", &["--query-gpu=name", "--format=csv,noheader"]))
-    } else {
-        cmd_out("nvidia-smi", &["--query-gpu=name", "--format=csv,noheader"])
-            .or_else(|| cmd_out("rocminfo", &[]).map(|_| "AMD GPU".into()))
     }
 }
 
@@ -1983,298 +1144,6 @@ async fn ping() -> Result<(), String> {
 }
 
 // ── AI Feature Commands ──
-
-async fn cmd_optimize(
-    arg: &str,
-    sys: &SysInfo,
-    extended: &sentinel_gpu_profiler::vram::ExtendedGpuInfo,
-    agent: &sentinel_core::Agent,
-    thread: &mut sentinel_core::AgentThread,
-) {
-    use futures::StreamExt;
-    use sentinel_protocol::{CompletionRequest, Message};
-
-    let arg = arg.trim();
-    if arg.is_empty() {
-        println!();
-        println!(" {} Usage:", "•".yellow().bold());
-        println!("   /optimize <file>              Auto-optimize kernel");
-        println!("   /optimize <file> --arch=sm_90 Optimize for specific architecture");
-        println!();
-        return;
-    }
-
-    let parts: Vec<&str> = arg.splitn(2, " --").collect();
-    let file_part = parts[0].trim();
-    let flag_part = if parts.len() > 1 {
-        format!("--{}", parts[1])
-    } else {
-        String::new()
-    };
-
-    let path = std::path::Path::new(file_part);
-    if !path.exists() {
-        println!(" {} File not found: {}", "✖".red(), file_part);
-        return;
-    }
-
-    let source = match std::fs::read_to_string(path) {
-        Ok(s) => s,
-        Err(e) => {
-            println!(" {} Failed to read: {}", "✖".red(), e);
-            return;
-        }
-    };
-
-    let fname = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or(file_part);
-    let language = langs::detect_language(fname, &source);
-
-    let target_arch = if flag_part.contains("--arch=sm_90") || flag_part.contains("--arch=h100") {
-        GpuArch::Hopper90
-    } else if flag_part.contains("--arch=sm_89") || flag_part.contains("--arch=4090") {
-        GpuArch::Ada89
-    } else if flag_part.contains("--arch=sm_80") || flag_part.contains("--arch=a100") {
-        GpuArch::Ampere80
-    } else {
-        GpuArch::Ampere86
-    };
-
-    let arch_spec = emulate::arch_by_enum(target_arch);
-
-    println!();
-    println!(
-        " {} Analyzing {} for {}...",
-        "●".cyan().bold(),
-        fname.bold(),
-        arch_spec.name
-    );
-    println!();
-
-    let config = LaunchConfig {
-        block_x: 256,
-        block_y: 1,
-        block_z: 1,
-        grid_x: 100,
-        grid_y: 1,
-        grid_z: 1,
-        shared_mem_bytes: 0,
-        registers_per_thread: 32,
-    };
-
-    // Step 1: Emulate original kernel
-    let before = emulate::emulate(&source, &config, &target_arch);
-
-    // Step 2: Build bottleneck report
-    let bottleneck = optimizer::analyze_bottlenecks(&before);
-
-    // Step 3: Build GPU context string
-    let gpu_ctx = gpu_vram::gpu_context_string(sys.gpu.as_deref(), sys.vram_gb, extended);
-
-    // Step 4: Print analysis before calling LLM
-    println!(
-        " {} {} ({})",
-        "Target:".dimmed(),
-        arch_spec.name,
-        arch_spec.compute_cap
-    );
-    println!(
-        " {} {} | {}",
-        "Language:".dimmed(),
-        language.name().green(),
-        fname
-    );
-    println!();
-    println!(
-        " {} {}",
-        "Bottleneck:".bold(),
-        bottleneck.primary.yellow().bold()
-    );
-    for d in &bottleneck.details {
-        println!("   {} {}", "→".cyan(), d);
-    }
-    println!();
-
-    // Step 5: Build the optimization prompt
-    let prompt = optimizer::build_optimization_prompt(
-        &source,
-        fname,
-        &language,
-        &target_arch,
-        &bottleneck,
-        &gpu_ctx,
-    );
-
-    // Step 6: Stream the LLM response
-    println!(
-        " {} Calling LLM for kernel optimization...",
-        "●".cyan().bold()
-    );
-    println!();
-
-    let req =
-        CompletionRequest::new(agent.effective_model_pub()).with_message(Message::user(&prompt));
-
-    let mut stream = match agent.provider_stream(&req).await {
-        Ok(s) => s,
-        Err(e) => {
-            println!(" {} LLM call failed: {}", "✖".red(), e);
-            println!(
-                "   {} Make sure Ollama is running and a model is loaded.",
-                "ℹ".cyan().bold()
-            );
-            return;
-        }
-    };
-
-    // Stream tokens to stdout in real time
-    print!(" {} ", "✦".green().bold());
-    use std::io::Write;
-    std::io::stdout().flush().ok();
-
-    let mut full_response = String::new();
-    while let Some(chunk) = stream.next().await {
-        match chunk {
-            Ok(c) => {
-                for choice in c.choices {
-                    if let Some(text) = choice.delta.content {
-                        print!("{}", text);
-                        std::io::stdout().flush().ok();
-                        full_response.push_str(&text);
-                    }
-                }
-            }
-            Err(e) => {
-                eprintln!("\n {} Stream error: {}", "✖".red(), e);
-                break;
-            }
-        }
-    }
-    println!();
-    println!();
-
-    // Step 7: Extract the optimized kernel from the LLM response
-    let optimized_source = optimizer::extract_kernel_from_response(&full_response);
-
-    if optimized_source.is_empty() || optimized_source == source {
-        println!(
-            " {} LLM did not return a modified kernel.",
-            "ℹ".yellow().bold()
-        );
-        return;
-    }
-
-    // Step 8: Re-emulate the optimized kernel to measure real speedup
-    println!(" {} Re-emulating optimized kernel...", "●".cyan().bold());
-    let after = emulate::emulate(&optimized_source, &config, &target_arch);
-    let speedup = optimizer::estimate_speedup(&before, &after);
-    let diff = optimizer::compute_diff(&source, &optimized_source);
-
-    // Step 9: Print the final optimization report
-    let llm_notes = full_response
-        .lines()
-        .take(4)
-        .filter(|l| l.starts_with("//") || l.starts_with('#') || l.starts_with("/*"))
-        .collect::<Vec<_>>()
-        .join("\n");
-
-    let opt_output = optimizer::OptimizeOutput {
-        original_source: source.clone(),
-        optimized_source: optimized_source.clone(),
-        diff,
-        bottleneck_report: bottleneck,
-        speedup_estimate: Some(speedup),
-        llm_optimization_notes: if llm_notes.is_empty() {
-            "See streamed output above for optimization notes.".into()
-        } else {
-            llm_notes
-        },
-        compiled_ok: None,
-        correctness_passed: None,
-    };
-
-    println!("{}", optimizer::format_optimize_output(&opt_output));
-
-    // Step 10: Offer to write optimized file
-    let out_path = format!(
-        "{}.optimized.cu",
-        file_part.trim_end_matches(".cu").trim_end_matches(".py")
-    );
-    println!(
-        " {} Save optimized kernel to {}? [y/N] ",
-        "?".yellow().bold(),
-        out_path.cyan()
-    );
-    std::io::stdout().flush().ok();
-
-    let mut answer = String::new();
-    std::io::stdin().read_line(&mut answer).ok();
-    if answer.trim().eq_ignore_ascii_case("y") {
-        match std::fs::write(&out_path, &optimized_source) {
-            Ok(_) => println!(" {} Saved to {}", "✔".green(), out_path.cyan()),
-            Err(e) => println!(" {} Failed to write: {}", "✖".red(), e),
-        }
-    }
-    println!();
-
-    // Record the interaction in the agent thread conversation for context continuity
-    thread
-        .conversation
-        .add_user_message(format!("/optimize {}", arg));
-    thread.conversation.add_assistant_text(format!(
-        "Optimized {} for {}. Bottleneck: {}. Estimated speedup: {:.2}x.",
-        fname,
-        arch_spec.name,
-        opt_output.bottleneck_report.primary,
-        opt_output
-            .speedup_estimate
-            .as_ref()
-            .map(|s| s.speedup_x)
-            .unwrap_or(1.0),
-    ));
-}
-
-async fn cmd_gpu_context(sys: &SysInfo, extended: &sentinel_gpu_profiler::vram::ExtendedGpuInfo) {
-    println!();
-    println!(
-        " {} ",
-        "GPU Context Injected into AI Prompts:".green().bold()
-    );
-    println!();
-
-    let ctx = gpu_vram::gpu_context_string(sys.gpu.as_deref(), sys.vram_gb, extended);
-    for line in ctx.lines() {
-        println!("   {}", line);
-    }
-
-    let cc = extended
-        .compute_capability
-        .clone()
-        .or_else(|| {
-            sys.gpu
-                .as_deref()
-                .and_then(gpu_vram::compute_capability_from_name)
-        })
-        .unwrap_or_else(|| "Unknown".to_string());
-
-    println!();
-    println!("   {}", "Recommended block sizes:".bold().dimmed());
-    let recs = langs::recommended_block_sizes(GpuLanguage::Cuda, Some(&cc));
-    for r in &recs {
-        let dims = format!("{}x{}x{}", r.block_x, r.block_y, r.block_z);
-        println!("     {}  {}", dims.yellow(), r.reason.dimmed());
-    }
-
-    println!();
-    let nvcc_flag = gpu_vram::nvcc_arch_flag(&cc);
-    println!(
-        "   {}",
-        format!("NVCC: nvcc {} -o kernel kernel.cu", nvcc_flag).dimmed()
-    );
-    println!();
-}
 
 fn start_bg() {
     if cfg!(target_os = "windows") {

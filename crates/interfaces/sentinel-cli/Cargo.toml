@@ -34,7 +34,6 @@ sentinel-agent-identity = { workspace = true }
 sentinel-provider-info = { workspace = true }
 sentinel-headroom = { workspace = true }
 sentinel-proxy = { workspace = true }
-sentinel-gpu-profiler = { workspace = true }
 hex.workspace = true
 reqwest.workspace = true
 terminal_size = "0.3"

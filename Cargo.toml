@@ -5,7 +5,6 @@ members = [
     "crates/server/*",
     "crates/interfaces/*",
     "crates/tools-and-exec/*",
-    "crates/integrations/*",
     "crates/platform/*",
 ]
 
@@ -53,18 +52,12 @@ sentinel-ai-core = { path = "crates/core/sentinel-ai-core" }
 sentinel-app-server = { path = "crates/server/sentinel-app-server" }
 sentinel-app-server-protocol = { path = "crates/server/sentinel-app-server-protocol" }
 sentinel-app-server-client = { path = "crates/server/sentinel-app-server-client" }
-sentinel-app-server-daemon = { path = "crates/server/sentinel-app-server-daemon" }
 sentinel-app-server-transport = { path = "crates/server/sentinel-app-server-transport" }
 sentinel-cli = { path = "crates/interfaces/sentinel-cli" }
-sentinel-ai-tui = { path = "crates/interfaces/sentinel-ai-tui" }
 sentinel-exec = { path = "crates/tools-and-exec/sentinel-exec" }
 sentinel-tools = { path = "crates/tools-and-exec/sentinel-tools" }
 sentinel-mcp = { path = "crates/tools-and-exec/sentinel-mcp" }
 sentinel-plugin-system = { path = "crates/tools-and-exec/sentinel-plugin-system" }
-sentinel-ai-exec = { path = "crates/tools-and-exec/sentinel-ai-exec" }
-sentinel-gpu-profiler = { path = "crates/tools-and-exec/sentinel-gpu-profiler" }
-sentinel-ide-companion = { path = "crates/integrations/sentinel-ide-companion" }
-sentinel-lsp = { path = "crates/integrations/sentinel-lsp" }
 sentinel-config = { path = "crates/platform/sentinel-config" }
 sentinel-provider = { path = "crates/platform/sentinel-provider" }
 sentinel-provider-info = { path = "crates/platform/sentinel-provider-info" }
@@ -72,9 +65,7 @@ sentinel-agent-identity = { path = "crates/platform/sentinel-agent-identity" }
 sentinel-agent-graph-store = { path = "crates/platform/sentinel-agent-graph-store" }
 sentinel-analytics = { path = "crates/platform/sentinel-analytics" }
 sentinel-headroom = { path = "crates/platform/sentinel-headroom" }
-sentinel-sdk = { path = "crates/platform/sentinel-sdk" }
 sentinel-proxy = { path = "crates/platform/sentinel-proxy" }
-sentinel-ai-test-support = { path = "crates/platform/sentinel-ai-test-support" }
 
 # Fast dev-loop compilation (issue #47, #50): keep debug builds light and
 # incremental so the feedback cycle stays under ~2 minutes. Release builds
