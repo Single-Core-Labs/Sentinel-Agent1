@@ -143,10 +143,10 @@ LOCAL_LLM_API_KEY=<optional-local-api-key>
 ┌──────────────────────────────────────────────────────────────────┐
 │                      Rust Crates                                 │
 │                                                                  │
-│  21 crates: sentinel-core, sentinel-cli, sentinel-provider,     │
+│  20 crates: sentinel-core, sentinel-cli, sentinel-provider,     │
 │  sentinel-tools, sentinel-mcp, sentinel-config, sentinel-exec,  │
-│  sentinel-analytics, sentinel-headroom, sentinel-gpu-profiler,  │
-│  sentinel-app-server, sentinel-plugin-system, ...               │
+│  sentinel-analytics, sentinel-headroom, sentinel-app-server,    │
+│  sentinel-plugin-system, ...                                    │
 │                                                                  │
 │  Build system: Cargo (single workspace)                          │
 └──────────────────────────────────────────────────────────────────┘
@@ -217,7 +217,7 @@ The agent emits events via `event_queue`:
 │   └── platform/       # Providers, config, infra
 ├── evals/              # Behavioral evals (vitest)
 ├── docs/               # Centralized documentation hub
-└── test-kernels/       # CUDA/Triton test kernels for the GPU profiler
+└── plugins/            # Packaged guard plugins (workspace/web/command)
 ```
 
 ---

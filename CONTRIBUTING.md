@@ -54,14 +54,13 @@ cargo fmt --check         # formatting
 ## Project Structure
 
 ```
-crates/               # Rust workspace (21 crates)
+crates/               # Rust workspace (20 crates)
   sentinel-core/      # Agent runtime, threads, context, budget
   sentinel-provider/  # LLM providers (OpenAI, Anthropic, Local)
   sentinel-tools/     # Tool system
   sentinel-cli/       # CLI binary
   sentinel-analytics/ # Telemetry pipeline
   sentinel-headroom/  # Context compression strategies
-  sentinel-gpu-profiler/ # GPU kernel analysis & emulation
   ...
 ```
 

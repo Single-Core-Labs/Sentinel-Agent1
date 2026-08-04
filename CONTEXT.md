@@ -169,5 +169,5 @@ User Message → [ContextManager]
 | `crates/sentinel-tools/src/` | Tool implementations |
 | `crates/sentinel-provider/src/` | LLM provider abstraction |
 | `crates/sentinel-config/src/` | Configuration loading |
-| `crates/sentinel-gpu-profiler/src/` | GPU kernel profiling & emulation |
+| `plugins/` | Packaged guard plugins (workspace/web/command) |
 | `packages/cli-agent/src/` | OpenTUI agent frontend |

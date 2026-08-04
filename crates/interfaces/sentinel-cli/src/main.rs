@@ -5,7 +5,6 @@ mod completion;
 mod diagnostics;
 mod display;
 mod exec;
-mod gpu_optimize;
 mod handler;
 mod local;
 mod model_selector;

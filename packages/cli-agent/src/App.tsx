@@ -1,6 +1,6 @@
 import { createSignal, createMemo, For, onMount, onCleanup } from 'solid-js'
 import { useKeyboard } from '@opentui/solid'
-import type { ChatMessage, ConnectionState, ToolCallInfo, GpuStats } from './types'
+import type { ChatMessage, ConnectionState, ToolCallInfo } from './types'
 import { BackendClient } from './backend'
 import { CommandRegistry, CommandExpander } from './commands'
 
@@ -18,15 +18,6 @@ const RED = '#EF5350'
 const YELLOW = '#FFC107'
 const GRAY = '#607D8B'
 const WHITE = '#E0E0E0'
-
-function GpuBar({ util }: { util: number | null }) {
-  if (util == null) return null
-  const pct = Math.round(util)
-  const color = pct > 80 ? RED : pct > 40 ? YELLOW : GREEN
-  const barLen = Math.min(Math.floor(pct / 10), 10)
-  const bar = '█'.repeat(barLen) + '░'.repeat(10 - barLen)
-  return <text fg={color}>{` GPU${pct}% ${bar}`}</text>
-}
 
 function App() {
   const [messages, setMessages] = createSignal<ChatMessage[]>([
@@ -48,11 +39,9 @@ function App() {
   const [thinkingSecs, setThinkingSecs] = createSignal(0)
   const [exitArmed, setExitArmed] = createSignal(false)
   const [showHelp, setShowHelp] = createSignal(false)
-  const [gpuStats, setGpuStats] = createSignal<GpuStats | null>(null)
 
   const commandRegistry = new CommandRegistry()
   let client: BackendClient
-  let gpuPollTimer: ReturnType<typeof setInterval> | null = null
 
   onMount(async () => {
     setConn((c) => ({ ...c, status: 'connecting' }))
@@ -62,7 +51,6 @@ function App() {
     }
     client.onClose(() => {
       setConn((c) => ({ ...c, status: 'disconnected' }))
-      if (gpuPollTimer) clearInterval(gpuPollTimer)
     })
     try {
       await client.connect('ws://127.0.0.1:9090/ws')
@@ -73,13 +61,6 @@ function App() {
         sessionId: result.session_id as string,
         model: result.model as string,
       }))
-
-      gpuPollTimer = setInterval(async () => {
-        try {
-          const stats = (await client.call('gpu/query')) as GpuStats
-          setGpuStats(stats)
-        } catch { }
-      }, 5000)
     } catch (err: unknown) {
       setConn((c) => ({
         ...c,
@@ -90,7 +71,6 @@ function App() {
   })
 
   onCleanup(() => {
-    if (gpuPollTimer) clearInterval(gpuPollTimer)
     client?.close()
   })
 
@@ -191,33 +171,6 @@ function App() {
     }
   }
 
-  const runGpuRpc = async (method: string, params: Record<string, unknown>, label: string) => {
-    setMessages((prev) => [...prev, { id: generateId(), role: 'user', content: label }])
-    setIsProcessing(true)
-    try {
-      const result = (await client.call(method, params)) as Record<string, unknown>
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: generateId(),
-          role: 'system',
-          content: `[${method}] ${(result?.report as string) ?? 'No report.'}`,
-        },
-      ])
-    } catch (err: unknown) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: generateId(),
-          role: 'system',
-          content: `Error: ${err instanceof Error ? err.message : 'GPU RPC failed'}`,
-        },
-      ])
-    } finally {
-      setIsProcessing(false)
-    }
-  }
-
   const handleSlashCommand = async (cmd: string) => {
     const parts = cmd.split(/\s+/)
     const command = parts[0].toLowerCase()
@@ -239,9 +192,6 @@ function App() {
   /clear    - Clear the conversation
   /auth     - Authenticate with a provider
   /backends - Show detected local LLM backends
-  /gpu      - Show GPU stats
-  /emulate <file>        - GPU emulation + launch sweep (zero-token)
-  /profile <file>        - Static kernel analysis (zero-token)
   /connect  - Reconnect to backend
   /exit     - Exit the agent (confirms first to protect your session)
 ${commandRegistry.getHelpText()}`,
@@ -453,65 +403,6 @@ ${commandRegistry.getHelpText()}`,
         doChat('list my available local LLM backends (Ollama, vLLM, LM Studio)')
         break
 
-      case '/gpu':
-      case '/nvidia':
-        const stats = gpuStats()
-        if (stats && stats.name) {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: generateId(),
-              role: 'system',
-              content:
-                `GPU: ${stats.name}\n` +
-                `VRAM: ${stats.vramUsedGb?.toFixed(1) ?? '?'} / ${stats.vramTotalGb?.toFixed(1) ?? '?'} GB\n` +
-                `Util: ${stats.utilGpu != null ? `${Math.round(stats.utilGpu)}%` : '?'}\n` +
-                `Temp: ${stats.tempC != null ? `${Math.round(stats.tempC)}°C` : '?'}`,
-            },
-          ])
-        } else {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: generateId(),
-              role: 'system',
-              content: 'No GPU detected or nvidia-smi not available.',
-            },
-          ])
-        }
-        break
-
-      case '/emulate':
-      case '/emulate-sweep':
-        if (!args) {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: generateId(),
-              role: 'system',
-              content: 'Usage: /emulate <path-to-kernel-file>  (CUDA .cu, Triton .py, ...)',
-            },
-          ])
-          break
-        }
-        runGpuRpc('gpu/emulate', { file_path: args, sweep: true }, `/emulate ${args}`)
-        break
-
-      case '/profile':
-        if (!args) {
-          setMessages((prev) => [
-            ...prev,
-            {
-              id: generateId(),
-              role: 'system',
-              content: 'Usage: /profile <path-to-kernel-file>',
-            },
-          ])
-          break
-        }
-        runGpuRpc('gpu/profile', { file_path: args }, `/profile ${args}`)
-        break
-
       case '/connect':
         reconnect()
         break
@@ -587,13 +478,6 @@ ${commandRegistry.getHelpText()}`,
         ...prev,
         { id: generateId(), role: 'system', content: 'Reconnected to backend.' },
       ])
-
-      gpuPollTimer = setInterval(async () => {
-        try {
-          const stats = (await client.call('gpu/query')) as GpuStats
-          setGpuStats(stats)
-        } catch { }
-      }, 5000)
     } catch (err: unknown) {
       setConn((c) => ({
         ...c,
@@ -701,12 +585,6 @@ ${commandRegistry.getHelpText()}`,
       >
         <text fg={statusColor()}>{statusLabel()}</text>
         <box flexGrow={1} />
-        <GpuBar util={gpuStats()?.utilGpu ?? null} />
-        {gpuStats()?.vramUsedGb != null && gpuStats()?.vramTotalGb != null && (
-          <text fg={GRAY}>
-            {` VRAM${gpuStats()!.vramUsedGb!.toFixed(0)}/${gpuStats()!.vramTotalGb!.toFixed(0)}GB`}
-          </text>
-        )}
       </box>
 
       <box
