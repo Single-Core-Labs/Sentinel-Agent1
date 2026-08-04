@@ -169,4 +169,5 @@ User Message → [ContextManager]
 | `crates/sentinel-tools/src/` | Tool implementations |
 | `crates/sentinel-provider/src/` | LLM provider abstraction |
 | `crates/sentinel-config/src/` | Configuration loading |
-| `crates/sentinel-ai-tui/src/` | Terminal UI (ratatui) |
+| `crates/sentinel-gpu-profiler/src/` | GPU kernel profiling & emulation |
+| `packages/cli-agent/src/` | OpenTUI agent frontend |

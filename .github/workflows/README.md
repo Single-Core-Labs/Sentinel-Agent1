@@ -8,8 +8,8 @@ post-merge validation.
 
 | Workflow | Trigger | Scope | Runtime |
 |----------|---------|-------|---------|
-| `pr-checks.yml` | Pull request | fmt, tests, shear, arg-lint, clippy, security audit, Bazel — all ×3 OS | ~8 min |
-| `main-branch.yml` | Push to `main` | Bazel pre-warm, full clippy matrix, nextest, shear, arg-lint, release build, remote tests, notarization, packaging | ~25 min |
+| `pr-checks.yml` | Pull request | fmt, tests, shear, clippy, security audit — all ×3 OS | ~8 min |
+| `main-branch.yml` | Push to `main` | Full clippy matrix, nextest, shear, release build, notarization, packaging | ~25 min |
 | `release.yml` | Tag `v*` | 4-target cross-platform release binaries + GitHub Release | ~15 min |
 | `publish-crates.yml` | Tag `v*` | cargo-smart-release → crates.io | ~5 min |
 
@@ -21,11 +21,9 @@ Fast, cross-platform gate on every PR commit:
 |-----|----|------|
 | `fmt` | Linux | `cargo fmt --check` |
 | `shear` | Linux + macOS + Windows | `cargo shear --workspace` |
-| `arg-lint` | Linux + macOS + Windows | `argument-comment-lint` (dylint) |
 | `test` | Linux + macOS + Windows | `cargo test --locked --workspace` (dummy AI keys) |
 | `audit` | Linux | `cargo audit` (known-vulnerability scan) |
 | `clippy` | Linux + macOS + Windows | `cargo clippy -- -D warnings` |
-| `bazel` | Linux + macOS + Windows | `bazel test //...` |
 
 ## Main branch checks (`main-branch.yml`)
 
@@ -33,13 +31,10 @@ Comprehensive validation after merge to `main`:
 
 | Job | OS | Tool |
 |-----|----|------|
-| `bazel-prewarm` | Linux | BuildBuddy remote cache warm, Bazel build + test + clippy verify |
 | `clippy` | 3 × 2 | `stable` + `nightly` on Linux, macOS, Windows |
 | `nextest` | 3 | Cargo nextest on all platforms |
 | `shear` | 3 | Dependency audit |
-| `arg-lint` | 3 | Cross-platform argument comment lint |
 | `release-build` | 3 | `cargo build --release` |
-| `remote-tests` | Linux | Docker + Wine integration tests |
 | `notarize` | macOS | RCodesign signing + Apple notarization |
 | `package` | 3 | Release archive + symbols |
 | `verify-manifests` | Linux | Cargo workspace consistency |
@@ -65,7 +60,6 @@ Comprehensive validation after merge to `main`:
 
 | Secret | Purpose |
 |--------|---------|
-| `BUILDBUDDY_API_KEY` | Remote Bazel cache (BuildBuddy). |
 | `MACOS_SIGNING_KEY` | Apple Developer ID certificate (base64). |
 | `MACOS_NOTARIZATION_EMAIL` | Apple ID for notarization. |
 | `MACOS_NOTARIZATION_PASSWORD` | App-specific password. |

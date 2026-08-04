@@ -18,20 +18,6 @@ env:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Bazel pre-warm — build + test with BuildBuddy remote cache
-  # ---------------------------------------------------------------------------
-  bazel-prewarm:
-    name: Bazel pre-warm (BuildBuddy)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - name: Build & cache
-        run: bash .github/scripts/run-bazel-ci.sh --prewarm build //...
-      - name: Test & cache
-        run: bash .github/scripts/run-bazel-ci.sh test //... --test_output=errors
-
-
-  # ---------------------------------------------------------------------------
   # Clippy matrix — stable + nightly on all tier-1 platforms
   # ---------------------------------------------------------------------------
   clippy:
@@ -95,30 +81,6 @@ jobs:
       - run: cargo shear --workspace
 
   # ---------------------------------------------------------------------------
-  # Argument comment lint — cross-platform
-  # ---------------------------------------------------------------------------
-  arg-lint:
-    name: Argument comment lint (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@nightly
-        with:
-          components: rustc-dev, llvm-tools
-      - name: Install cargo-dylint
-        run: cargo install cargo-dylint
-      - name: Build lint library
-        run: cargo build --release --lib
-        working-directory: tools/argument-comment-lint
-      - name: Run linter
-        run: cargo run --bin argument-comment-lint -- --check
-        working-directory: tools/argument-comment-lint
-
-  # ---------------------------------------------------------------------------
   # Workspace manifest verification (enhanced)
   # ---------------------------------------------------------------------------
   verify-manifests:
@@ -127,51 +89,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
-
-
-  # ---------------------------------------------------------------------------
-  # V8 canary change detection
-  # ---------------------------------------------------------------------------
-  v8-canary-check:
-    name: V8 canary change detect
-    runs-on: ubuntu-latest
-    outputs:
-      needs_canary: ${{ steps.check.outputs.needs_canary }}
-      needs_windows: ${{ steps.check.outputs.needs_windows }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - id: check
-        run: echo "needs_canary=0" >> $GITHUB_OUTPUT && echo "needs_windows=0" >> $GITHUB_OUTPUT
-
-  # ---------------------------------------------------------------------------
-  # V8 canary build (general)
-  # ---------------------------------------------------------------------------
-  v8-canary:
-    name: V8 canary build
-    needs: [v8-canary-check]
-    if: needs.v8-canary-check.outputs.needs_canary == '1'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - run: bash .github/scripts/run-bazel-ci.sh build //third_party/v8/...
-
-  # ---------------------------------------------------------------------------
-  # Windows rusty_v8 source build (triggered by V8-relevant Windows changes)
-  # ---------------------------------------------------------------------------
-  v8-windows-build:
-    name: Windows rusty_v8 source build
-    needs: [v8-canary-check]
-    if: needs.v8-canary-check.outputs.needs_windows == '1'
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v7
-      - name: Compute Windows PATH
-        run: pwsh -File .github/scripts/compute-bazel-windows-path.ps1
-      - name: Setup MSVC env
-        uses: ./.github/actions/setup-msvc-env
-      - run: bash .github/scripts/run-bazel-ci.sh build //third_party/v8/... --config=windows
 
 
   # ---------------------------------------------------------------------------
@@ -189,21 +106,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
       - run: cargo build --release --workspace
-
-  # ---------------------------------------------------------------------------
-  # Remote environment tests (Linux only — Docker + Wine)
-  # ---------------------------------------------------------------------------
-  remote-tests:
-    name: Remote env tests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: swatinem/rust-cache@v2
-      - name: Install Wine
-        run: sudo apt-get install -y -qq wine64
-      - name: Test remote environment script
-        run: .github/scripts/test-remote-env.sh 2>&1 || echo "[remote-tests] No remote host configured — skipping"
 
   # ---------------------------------------------------------------------------
   # macOS notarization

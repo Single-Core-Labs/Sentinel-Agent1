@@ -28,7 +28,7 @@ ml-intern-main/
 
 - **AI agent (CLI):** `cargo run --bin sentinel -- ai` — full interactive agent with LLM provider
 - **Local REPL (no LLM):** `cargo run --bin sentinel -- ai --local` — GPU/SSH zero-cost slash commands
-- **Test all:** `cargo test -p sentinel-gpu-profiler` (47 tests)
+- **Test all:** `cargo test -p sentinel-gpu-profiler` (58 tests)
 - **Compile check:** `cargo check --workspace`
 
 ## Local REPL Slash Commands (zero-cost, no LLM spend)
@@ -78,7 +78,7 @@ All deterministic GPU/SSH operations. The agent system prompt includes rich GPU 
 
 ## Development Practices
 
-- Run `cargo test -p sentinel-gpu-profiler` (47 tests) and `cargo check --workspace` after any change
+- Run `cargo test -p sentinel-gpu-profiler` (58 tests) and `cargo check --workspace` after any change
 - All GPU operations are checked for conditional compilation (`cfg!(target_os = ...)`)
 - Use `run_shell()` for external command execution (wraps PowerShell on Windows, sh on Linux)
 - New languages for kernel analysis: add enum variant in `GpuLanguage`, detection in `detect_language()`, analyzer in `analyze_*()`, then wire in `cmd_profile`

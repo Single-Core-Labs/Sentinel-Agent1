@@ -14,7 +14,6 @@
         "tamasfe.even-better-toml",
         "ms-python.python",
         "ms-python.black-formatter",
-        "bazelbuild.vscode-bazel",
         "GitHub.vscode-github-actions",
         "vadimcn.vscode-lldb",
         "yzhang.markdown-all-in-one"

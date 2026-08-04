@@ -60,7 +60,8 @@ crates/               # Rust workspace (21 crates)
   sentinel-tools/     # Tool system
   sentinel-cli/       # CLI binary
   sentinel-analytics/ # Telemetry pipeline
-  sentinel-ai-tui/    # Ratatui terminal UI
+  sentinel-headroom/  # Context compression strategies
+  sentinel-gpu-profiler/ # GPU kernel analysis & emulation
   ...
 ```
 
