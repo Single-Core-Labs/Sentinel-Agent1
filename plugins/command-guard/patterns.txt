@@ -1,0 +1,20 @@
+# Command Guard patterns - one regex per line, '#' starts a comment.
+# Matched case-insensitively against the command text. Patterns must be
+# valid in BOTH PowerShell -match and POSIX grep -E.
+rm[[:space:]]+-rf[[:space:]]+(/|~|\*|[a-z]:)
+format[[:space:]]+[a-z]:
+del[[:space:]]+/[fqs]*[[:space:]]*/[sq]
+rd[[:space:]]+/s
+rmdir[[:space:]]+/[sq]
+Remove-Item.*-Recurse
+Format-Volume
+mkfs
+diskpart
+dd[[:space:]]+if=
+shutdown
+init[[:space:]]+0
+reboot
+>[[:space:]]*/dev/sd[a-z]
+:\(\)[[:space:]]*\{.*\|
+git reset --hard
+git push[[:space:]]+(-f|--force)

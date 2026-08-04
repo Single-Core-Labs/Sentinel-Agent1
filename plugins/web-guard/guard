@@ -1,0 +1,44 @@
+#!/bin/sh
+# web-guard (Unix): deny web_fetch/web_search unless the target is allowlisted.
+# Default posture: deny. Contract: `guard <event> <tool_name>` + event JSON on
+# stdin; first stdout line decides: "allow" | "veto <reason>".
+tool="$2"
+case "$tool" in
+  web_fetch|web_search) ;;
+  *) echo "allow"; exit 0 ;;
+esac
+
+json=$(cat)
+url=$(printf '%s' "$json" | sed -n 's/.*"url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+query=$(printf '%s' "$json" | sed -n 's/.*"query"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+list="$SCRIPT_DIR/allowlist.txt"
+[ -f "$list" ] || { echo "veto web-guard allowlist missing (fail-closed)"; exit 0; }
+
+if [ -n "$url" ]; then
+  host=$(printf '%s' "$url" | sed -E 's#https?://([^/?#]*).*#\1#' | sed -E 's/^[^@]+@//; s/:.*$//; s/^www\.//')
+  [ -n "$host" ] || { echo "veto web request without a resolvable host: $url"; exit 0; }
+  while IFS= read -r entry; do
+    entry=$(printf '%s' "$entry" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+    case "$entry" in
+      ''|'#'*) continue ;;
+    esac
+    case "$host" in
+      "$entry"|*".$entry") echo "allow"; exit 0 ;;
+    esac
+  done < "$list"
+  echo "veto domain not allowlisted: $host"
+  exit 0
+fi
+
+if [ -n "$query" ]; then
+  if grep -qx 'search:\*' "$list"; then
+    echo "allow"
+  else
+    echo "veto web_search is not allowlisted (add 'search:*' to the allowlist to enable)"
+  fi
+  exit 0
+fi
+echo "allow"
+exit 0

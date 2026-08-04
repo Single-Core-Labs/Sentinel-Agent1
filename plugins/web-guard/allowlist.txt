@@ -1,0 +1,20 @@
+# Web Guard allowlist - one entry per line, '#' starts a comment.
+# A URL host matches if it equals an entry or is a subdomain of an entry.
+# Uncomment 'search:*' to allow web_search (it has no URL to verify):
+# search:*
+github.com
+docs.rs
+crates.io
+pypi.org
+docs.python.org
+developer.mozilla.org
+en.wikipedia.org
+learn.microsoft.com
+docs.nvidia.com
+pytorch.org
+huggingface.co
+arxiv.org
+rust-lang.org
+nodejs.org
+npmjs.com
+opencode.ai

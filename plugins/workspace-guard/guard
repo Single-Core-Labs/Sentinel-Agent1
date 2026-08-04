@@ -1,0 +1,64 @@
+#!/bin/sh
+# workspace-guard (Unix): veto write/edit/apply_patch when the target path
+# escapes the workspace. Contract: `guard <event> <tool_name>` with the full
+# event JSON on stdin; first stdout line decides: "allow" | "veto <reason>".
+tool="$2"
+case "$tool" in
+  write|edit|apply_patch) ;;
+  *) echo "allow"; exit 0 ;;
+esac
+
+json=$(cat)
+cwd=$(pwd 2>/dev/null)
+[ -n "$cwd" ] || { echo "allow"; exit 0; }
+
+resolve() {
+  case "$1" in
+    /*) p="$1" ;;
+    *) p="$cwd/$1" ;;
+  esac
+  if command -v realpath >/dev/null 2>&1; then
+    realpath "$p" 2>/dev/null || echo "$p"
+  else
+    echo "$p"
+  fi
+}
+
+inside() {
+  case "$(resolve "$1")" in
+    "$cwd"|"$cwd"/*) return 0 ;;
+  esac
+  return 1
+}
+
+case "$tool" in
+  write|edit)
+    path=$(printf '%s' "$json" | sed -n 's/.*"file_path"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+    [ -n "$path" ] || { echo "allow"; exit 0; }
+    if inside "$path"; then
+      echo "allow"
+    else
+      echo "veto file escapes workspace: $path"
+    fi
+    ;;
+  apply_patch)
+    violation=""
+    for p in $(printf '%s' "$json" | grep -o '\+\+\+ [^"\]*' | sed 's/^+++ //' | sort -u); do
+      case "$p" in
+        /dev/null) continue ;;
+        /*)
+          if ! inside "$p"; then
+            violation="$p"
+            break
+          fi
+          ;;
+      esac
+    done
+    if [ -n "$violation" ]; then
+      echo "veto apply_patch target escapes workspace: $violation"
+    else
+      echo "allow"
+    fi
+    ;;
+esac
+exit 0
