@@ -1,8 +1,0 @@
-id = "command-guard"
-name = "Command Guard"
-version = "0.1.0"
-description = "Vetoes run_shell_command calls matching destructive patterns (rm -rf /, format, dd, ...)"
-author = "Sentinel"
-
-[hooks]
-before_tool_call = "guard"
