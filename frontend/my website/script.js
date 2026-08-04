@@ -1,1 +1,0 @@
-// Custom JavaScript for your coffee shop website
