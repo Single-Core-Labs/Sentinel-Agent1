@@ -306,6 +306,11 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     }
 
     let tools = Arc::new(tool_registry);
+    tools.register(Arc::new(sentinel_core::SubAgentTool::new(
+        provider.clone(),
+        Arc::clone(&tools),
+        config.clone(),
+    )));
 
     let plugin_registry = Arc::new(sentinel_plugin_system::PluginRegistry::new());
     let plugin_dir = plugin_dir();

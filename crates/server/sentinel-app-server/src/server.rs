@@ -23,7 +23,7 @@ impl AppServer {
         let config = Arc::new(config);
         let analytics = Arc::new(AnalyticsPipeline::new());
         let tools = {
-            let mut reg = ToolRegistry::new();
+            let reg = ToolRegistry::new();
             let headroom_retrieve = sentinel_headroom::integration::HeadroomRetrieveTool::new(
                 Arc::new(sentinel_headroom::ccr::CcrStore::default()),
             );
