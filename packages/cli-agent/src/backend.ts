@@ -1,4 +1,4 @@
-import { type JsonRpcResponse } from './types'
+import { type ServerEvent } from './types'
 
 export class BackendClient {
   private ws: WebSocket | null = null
@@ -7,6 +7,7 @@ export class BackendClient {
   private _onClose: (() => void) | null = null
 
   onError: ((msg: string) => void) | null = null
+  onEvent: ((evt: ServerEvent) => void) | null = null
 
   connect(url: string): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -16,7 +17,13 @@ export class BackendClient {
 
       this.ws.onmessage = (event) => {
         try {
-          const msg: JsonRpcResponse = JSON.parse(event.data as string)
+          const msg = JSON.parse(event.data as string) as {
+            id?: number
+            method?: string
+            params?: unknown
+            error?: { message: string }
+            result?: unknown
+          }
           if (msg.id != null) {
             const pending = this.pending.get(msg.id)
             if (pending) {
@@ -27,6 +34,8 @@ export class BackendClient {
                 pending.resolve(msg.result)
               }
             }
+          } else if (msg.method === 'event' && this.onEvent) {
+            this.onEvent(msg.params as ServerEvent)
           }
         } catch { }
       }
@@ -68,5 +77,13 @@ export class BackendClient {
       this.ws.close()
       this.ws = null
     }
+  }
+
+  subscribe(sessionId: string): Promise<unknown> {
+    return this.call('event/subscribe', { session_id: sessionId })
+  }
+
+  unsubscribe(sessionId: string): Promise<unknown> {
+    return this.call('event/unsubscribe', { session_id: sessionId })
   }
 }

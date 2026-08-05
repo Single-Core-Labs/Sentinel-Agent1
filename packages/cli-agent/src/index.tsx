@@ -7,7 +7,7 @@ async function main() {
     exitOnCtrlC: true,
     targetFps: 30,
     screenMode: 'alternate-screen',
-    backgroundColor: '#1A1A2E',
+    backgroundColor: '#0E1116',
   })
 
   render(() => <App />, renderer)
