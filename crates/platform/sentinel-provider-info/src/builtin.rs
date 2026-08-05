@@ -35,6 +35,8 @@ pub fn default_providers() -> Vec<ProviderInfo> {
             ],
             timeout_secs: 120,
             extra_headers: HashMap::new(),
+            disabled: false,
+            provider: None,
         },
         ProviderInfo {
             id: "anthropic".into(),
@@ -61,6 +63,8 @@ pub fn default_providers() -> Vec<ProviderInfo> {
             ],
             timeout_secs: 180,
             extra_headers: HashMap::new(),
+            disabled: false,
+            provider: None,
         },
         ProviderInfo {
             id: "google-ai-studio".into(),
@@ -87,6 +91,8 @@ pub fn default_providers() -> Vec<ProviderInfo> {
             ],
             timeout_secs: 120,
             extra_headers: HashMap::new(),
+            disabled: false,
+            provider: None,
         },
         ProviderInfo {
             id: "deepseek".into(),
@@ -113,6 +119,8 @@ pub fn default_providers() -> Vec<ProviderInfo> {
             ],
             timeout_secs: 120,
             extra_headers: HashMap::new(),
+            disabled: false,
+            provider: None,
         },
     ]
 }
@@ -130,6 +138,8 @@ pub fn local_model_providers() -> Vec<(ProviderInfo, LocalModelConfig)> {
                 models: vec![],
                 timeout_secs: 300,
                 extra_headers: HashMap::new(),
+                disabled: false,
+                provider: None,
             },
             LocalModelConfig {
                 prefix: "ollama/".into(),
@@ -149,6 +159,8 @@ pub fn local_model_providers() -> Vec<(ProviderInfo, LocalModelConfig)> {
                 models: vec![],
                 timeout_secs: 300,
                 extra_headers: HashMap::new(),
+                disabled: false,
+                provider: None,
             },
             LocalModelConfig {
                 prefix: "vllm/".into(),
@@ -166,6 +178,8 @@ pub fn local_model_providers() -> Vec<(ProviderInfo, LocalModelConfig)> {
                 models: vec![],
                 timeout_secs: 300,
                 extra_headers: HashMap::new(),
+                disabled: false,
+                provider: None,
             },
             LocalModelConfig {
                 prefix: "lm-studio/".into(),
@@ -183,6 +197,8 @@ pub fn local_model_providers() -> Vec<(ProviderInfo, LocalModelConfig)> {
                 models: vec![],
                 timeout_secs: 300,
                 extra_headers: HashMap::new(),
+                disabled: false,
+                provider: None,
             },
             LocalModelConfig {
                 prefix: "llamacpp/".into(),

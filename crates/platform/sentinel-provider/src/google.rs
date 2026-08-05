@@ -449,6 +449,8 @@ fn test_info() -> ProviderInfo {
         models: vec![],
         timeout_secs: 120,
         extra_headers: std::collections::HashMap::new(),
+        disabled: false,
+        provider: None,
     }
 }
 

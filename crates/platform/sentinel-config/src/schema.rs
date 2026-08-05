@@ -24,6 +24,16 @@ pub fn config_json_schema() -> Value {
                     },
                     "max_turns": { "type": "integer", "minimum": 1, "default": 50 },
                     "max_iterations": { "type": "integer", "minimum": 1, "default": 100 },
+                    "max_tokens": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Per-turn completion token budget. Unset = provider default."
+                    },
+                    "reasoning_effort": {
+                        "type": "string",
+                        "enum": ["low", "medium", "high"],
+                        "description": "Reasoning effort for reasoning models."
+                    },
                     "yolo_mode": { "type": "boolean", "description": "Auto-approve tool actions (dangerous).", "default": false },
                     "verbose": { "type": "boolean", "default": false }
                 }
@@ -34,16 +44,37 @@ pub fn config_json_schema() -> Value {
                 "items": {
                     "type": "object",
                     "properties": {
-                        "id": { "type": "string" },
+                        "id": { "type": "string", "description": "Unique provider id used to reference the provider." },
                         "name": { "type": "string" },
                         "base_url": { "type": "string", "format": "uri" },
+                        "provider": {
+                            "type": "string",
+                            "description": "Provider type",
+                            "enum": [
+                                "openai",
+                                "anthropic",
+                                "google-ai-studio",
+                                "deepseek",
+                                "ollama",
+                                "vllm",
+                                "lm-studio",
+                                "llamacpp",
+                                "openrouter"
+                            ]
+                        },
+                        "disabled": {
+                            "type": "boolean",
+                            "description": "Whether the provider is disabled",
+                            "default": false
+                        },
                         "auth": {
                             "oneOf": [
-                                { "type": "object", "properties": { "var": { "type": "string" } }, "required": ["var"], "additionalProperties": false },
-                                { "type": "object", "properties": { "token": { "type": "string" } }, "required": ["token"], "additionalProperties": false },
+                                { "type": "object", "properties": { "var": { "type": "string" } }, "required": ["var"], "additionalProperties": false, "description": "API key from an environment variable." },
+                                { "type": "object", "properties": { "token": { "type": "string" } }, "required": ["token"], "additionalProperties": false, "description": "Static bearer token." },
+                                { "type": "object", "properties": { "api_key": { "type": "string" } }, "required": ["api_key"], "additionalProperties": false, "description": "API key for the provider, inline." },
                                 { "type": "null" }
                             ],
-                            "description": "How to resolve the API key: env var name, inline token, or none."
+                            "description": "How to resolve the API key: env var name, inline api_key, inline token, or none."
                         },
                         "models": {
                             "type": "array",
@@ -78,17 +109,30 @@ pub fn config_json_schema() -> Value {
                         "id": { "type": "string" },
                         "name": { "type": "string" },
                         "transport": {
-                            "type": "object",
-                            "description": "Transport tagged by type: stdio, http or websocket.",
-                            "properties": {
-                                "type": { "enum": ["stdio", "http", "websocket"] },
-                                "command": { "type": "string" },
-                                "args": { "type": "array", "items": { "type": "string" } },
-                                "env": { "type": "object", "additionalProperties": { "type": "string" } },
-                                "url": { "type": "string", "format": "uri" },
-                                "headers": { "type": "object", "additionalProperties": { "type": "string" } }
-                            },
-                            "required": ["type"]
+                            "oneOf": [
+                                {
+                                    "type": "object",
+                                    "description": "Spawn the MCP server as a subprocess.",
+                                    "properties": {
+                                        "type": { "enum": ["stdio"] },
+                                        "command": { "type": "string", "description": "Command to execute for the MCP server" },
+                                        "args": { "type": "array", "items": { "type": "string" } },
+                                        "env": { "type": "object", "additionalProperties": { "type": "string" } }
+                                    },
+                                    "required": ["type", "command"]
+                                },
+                                {
+                                    "type": "object",
+                                    "description": "Connect to a remote MCP server over http or websocket.",
+                                    "properties": {
+                                        "type": { "enum": ["http", "websocket"] },
+                                        "url": { "type": "string", "format": "uri" },
+                                        "headers": { "type": "object", "additionalProperties": { "type": "string" } }
+                                    },
+                                    "required": ["type", "url"]
+                                }
+                            ],
+                            "description": "Transport tagged by type: stdio, http or websocket."
                         }
                     },
                     "required": ["id", "name", "transport"]
@@ -173,5 +217,73 @@ mod tests {
         ] {
             assert!(props.contains_key(section), "missing section: {section}");
         }
+    }
+
+    #[test]
+    fn providers_have_disabled_kind_and_api_key() {
+        let s = config_json_schema();
+        let p = &s["properties"]["providers"]["items"]["properties"];
+        assert_eq!(p["disabled"]["default"], false);
+        assert_eq!(p["disabled"]["type"], "boolean");
+        assert_eq!(p["provider"]["type"], "string");
+        let kinds: Vec<&str> = p["provider"]["enum"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+        for known in ["openai", "anthropic", "ollama", "vllm"] {
+            assert!(kinds.contains(&known), "missing provider kind: {known}");
+        }
+        let auth_forms: Vec<&str> = p["auth"]["oneOf"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|v| v.get("properties"))
+            .filter_map(|props| props.get("api_key"))
+            .map(|_| "api_key")
+            .collect();
+        assert_eq!(auth_forms, vec!["api_key"], "auth must accept inline api_key");
+    }
+
+    #[test]
+    fn mcp_transport_is_conditional_on_type() {
+        let s = config_json_schema();
+        let forms = s["properties"]["mcp_servers"]["items"]["properties"]["transport"]["oneOf"]
+            .as_array()
+            .unwrap();
+        assert_eq!(forms.len(), 2, "stdio and remote transports");
+
+        let stdio = &forms[0];
+        let stdio_required: Vec<&str> = stdio["required"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+        assert_eq!(stdio_required, vec!["type", "command"]);
+        assert_eq!(stdio["properties"]["command"]["description"], "Command to execute for the MCP server");
+
+        let remote = &forms[1];
+        let remote_required: Vec<&str> = remote["required"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+        assert_eq!(remote_required, vec!["type", "url"]);
+    }
+
+    #[test]
+    fn agent_has_token_limit_and_reasoning_effort() {
+        let s = config_json_schema();
+        let a = &s["properties"]["agent"]["properties"];
+        assert_eq!(a["max_tokens"]["type"], "integer");
+        assert_eq!(a["max_tokens"]["minimum"], 1);
+        assert_eq!(a["reasoning_effort"]["type"], "string");
+        assert_eq!(
+            a["reasoning_effort"]["enum"],
+            serde_json::json!(["low", "medium", "high"])
+        );
     }
 }

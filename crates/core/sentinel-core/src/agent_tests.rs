@@ -47,6 +47,8 @@ mod tests {
                     models: vec![],
                     timeout_secs: 30,
                     extra_headers: Default::default(),
+                    disabled: false,
+                    provider: None,
                 },
                 responses,
                 cursor: AtomicUsize::new(0),

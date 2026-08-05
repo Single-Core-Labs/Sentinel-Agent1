@@ -55,6 +55,8 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         models: vec![],
         timeout_secs: 300,
         extra_headers: std::collections::HashMap::new(),
+        disabled: false,
+        provider: None,
     };
 
     let provider = Arc::new(sentinel_provider::LocalProvider::new(

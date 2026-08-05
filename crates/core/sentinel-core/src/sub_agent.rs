@@ -132,6 +132,8 @@ mod tests {
             models: vec![],
             timeout_secs: 5,
             extra_headers: Default::default(),
+            disabled: false,
+            provider: None,
         })
     }
 

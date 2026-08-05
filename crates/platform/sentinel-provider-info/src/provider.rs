@@ -13,6 +13,13 @@ pub struct ProviderInfo {
     pub timeout_secs: u64,
     #[serde(default)]
     pub extra_headers: HashMap<String, String>,
+    /// When `true` the provider is present in the config but never selected.
+    #[serde(default)]
+    pub disabled: bool,
+    /// Known provider type (e.g. `openai`, `ollama`). Validated against the
+    /// built-in provider ids when set; defaults to `None`.
+    #[serde(default)]
+    pub provider: Option<String>,
 }
 
 fn default_timeout() -> u64 {
@@ -27,6 +34,9 @@ pub enum AuthConfig {
     },
     Bearer {
         token: String,
+    },
+    Inline {
+        api_key: String,
     },
     #[default]
     None,
@@ -49,6 +59,7 @@ impl ProviderInfo {
         match &self.auth {
             AuthConfig::EnvKey { var } => std::env::var(var).ok(),
             AuthConfig::Bearer { token } => Some(token.clone()),
+            AuthConfig::Inline { api_key } => Some(api_key.clone()),
             AuthConfig::None => None,
         }
     }
@@ -73,6 +84,8 @@ mod tests {
             }],
             timeout_secs: 120,
             extra_headers: Default::default(),
+            disabled: false,
+            provider: None,
         }
     }
 
@@ -103,6 +116,14 @@ mod tests {
     }
 
     #[test]
+    fn inline_api_key_auth_returns_key() {
+        let p = provider_with_auth(AuthConfig::Inline {
+            api_key: "sk-inline-9".into(),
+        });
+        assert_eq!(p.resolve_api_key().as_deref(), Some("sk-inline-9"));
+    }
+
+    #[test]
     fn no_auth_returns_none() {
         let p = provider_with_auth(AuthConfig::None);
         assert_eq!(p.resolve_api_key(), None);
@@ -115,6 +136,9 @@ mod tests {
 
         let bearer: AuthConfig = serde_json::from_str(r#"{"token":"abc"}"#).unwrap();
         assert!(matches!(bearer, AuthConfig::Bearer { .. }));
+
+        let inline: AuthConfig = serde_json::from_str(r#"{"api_key":"abc"}"#).unwrap();
+        assert!(matches!(inline, AuthConfig::Inline { .. }));
 
         let none: AuthConfig = serde_json::from_str("null").unwrap();
         assert!(matches!(none, AuthConfig::None));
@@ -135,5 +159,21 @@ mod tests {
                 .unwrap();
         assert_eq!(p.timeout_secs, 120);
         assert!(p.extra_headers.is_empty());
+    }
+
+    #[test]
+    fn disabled_and_provider_kind_default_in_provider() {
+        let p: ProviderInfo =
+            serde_json::from_str(r#"{"id":"p","name":"P","base_url":"http://x","models":[]}"#)
+                .unwrap();
+        assert!(!p.disabled, "providers must default to enabled");
+        assert_eq!(p.provider, None);
+
+        let d: ProviderInfo = serde_json::from_str(
+            r#"{"id":"p","name":"P","base_url":"http://x","models":[],"disabled":true,"provider":"openai"}"#,
+        )
+        .unwrap();
+        assert!(d.disabled);
+        assert_eq!(d.provider.as_deref(), Some("openai"));
     }
 }

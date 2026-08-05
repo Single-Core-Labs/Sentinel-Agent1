@@ -116,11 +116,12 @@ fn provider_id_for_prefix(model_id: &str) -> Option<&'static str> {
         .map(|(id, _)| *id)
 }
 
-/// Formats the config's providers as `(provider_name, [model ids])` for error output.
+/// Formats the config's enabled providers as `(provider_name, [model ids])` for error output.
 fn available_model_map(config: &SentinelConfig) -> Vec<(String, Vec<String>)> {
     config
         .providers()
         .iter()
+        .filter(|p| !p.disabled)
         .map(|p| {
             let models = p.models.iter().map(|m| m.id.clone()).collect();
             (format!("{} ({})", p.name, p.id), models)
@@ -142,10 +143,11 @@ pub fn resolve_model(
         });
     }
 
-    // 1) Exact match: a configured provider lists this model id.
+    // 1) Exact match: an enabled configured provider lists this model id.
     if let Some(provider) = config
         .providers()
         .iter()
+        .filter(|p| !p.disabled)
         .find(|p| p.models.iter().any(|m| m.id == trimmed))
     {
         return finish(trimmed, provider.clone());
@@ -155,7 +157,12 @@ pub fn resolve_model(
     if let Some(pid) = provider_id_for_prefix(trimmed) {
         // Wildcard local backends accept any model id (e.g. ollama/<tag>).
         let is_local = matches!(pid, "ollama" | "vllm" | "lm-studio" | "llamacpp");
-        if let Some(provider) = config.providers().iter().find(|p| p.id == pid) {
+        if let Some(provider) = config
+            .providers()
+            .iter()
+            .filter(|p| !p.disabled)
+            .find(|p| p.id == pid)
+        {
             if provider.models.iter().any(|m| m.id == trimmed)
                 || provider.models.is_empty()
                 || is_local
@@ -274,6 +281,8 @@ mod tests {
                 },
                 models,
                 timeout_secs: 120,
+                disabled: false,
+                provider: None,
                 ..Default::default()
             }],
             ..Default::default()
@@ -303,6 +312,16 @@ mod tests {
     fn unknown_model_returns_no_provider_error() {
         let cfg = test_config(vec![model("gpt-4o")]);
         let err = resolve_model(&cfg, "non-existent-model").unwrap_err();
+        assert!(matches!(err, SelectError::NoProvider { .. }));
+    }
+
+    #[test]
+    fn disabled_provider_is_skipped() {
+        let _g = env_lock().lock().unwrap();
+        let mut cfg = test_config(vec![model("gpt-4o")]);
+        cfg.providers[0].disabled = true;
+        let _key = SetEnv::new("OPENAI_API_KEY", "sk-test");
+        let err = resolve_model(&cfg, "gpt-4o").unwrap_err();
         assert!(matches!(err, SelectError::NoProvider { .. }));
     }
 
@@ -350,6 +369,8 @@ mod tests {
             ],
             timeout_secs: 120,
             extra_headers: Default::default(),
+            disabled: false,
+            provider: None,
         }
     }
 

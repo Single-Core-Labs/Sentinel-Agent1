@@ -3,6 +3,19 @@ use sentinel_mcp::McpServerDef;
 use sentinel_provider_info::{default_providers, ProviderInfo};
 use serde::Deserialize;
 
+/// Known provider types accepted by the `provider` config key (schema enum).
+pub const KNOWN_PROVIDER_KINDS: &[&str] = &[
+    "openai",
+    "anthropic",
+    "google-ai-studio",
+    "deepseek",
+    "ollama",
+    "vllm",
+    "lm-studio",
+    "llamacpp",
+    "openrouter",
+];
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct AgentSettings {
     #[serde(default = "default_model")]
@@ -15,6 +28,12 @@ pub struct AgentSettings {
     pub yolo_mode: bool,
     #[serde(default)]
     pub verbose: bool,
+    /// Per-turn completion token budget for the agent (unset = provider default).
+    #[serde(default)]
+    pub max_tokens: Option<u32>,
+    /// Reasoning effort for reasoning models: low | medium | high.
+    #[serde(default)]
+    pub reasoning_effort: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -94,6 +113,8 @@ impl Default for AgentSettings {
             max_iterations: 100,
             yolo_mode: false,
             verbose: false,
+            max_tokens: None,
+            reasoning_effort: None,
         }
     }
 }
@@ -156,6 +177,12 @@ impl SentinelConfig {
         }
         self.agent.yolo_mode = other.agent.yolo_mode;
         self.agent.verbose = other.agent.verbose;
+        if other.agent.max_tokens.is_some() {
+            self.agent.max_tokens = other.agent.max_tokens;
+        }
+        if other.agent.reasoning_effort.is_some() {
+            self.agent.reasoning_effort = other.agent.reasoning_effort;
+        }
         if !other.providers.is_empty() {
             self.providers = other.providers;
         }
@@ -197,6 +224,14 @@ impl SentinelConfig {
                 self.thread_store
             )));
         }
+        if let Some(effort) = &self.agent.reasoning_effort {
+            if !matches!(effort.as_str(), "low" | "medium" | "high") {
+                return Err(ConfigError::Validation(format!(
+                    "agent.reasoning_effort must be one of low|medium|high, got '{}'",
+                    effort
+                )));
+            }
+        }
         let mut provider_ids = std::collections::HashSet::new();
         let mut model_ids = std::collections::HashSet::new();
         for p in &self.providers {
@@ -204,6 +239,16 @@ impl SentinelConfig {
                 return Err(ConfigError::Validation(
                     "provider id must not be empty".into(),
                 ));
+            }
+            if let Some(kind) = &p.provider {
+                if !KNOWN_PROVIDER_KINDS.contains(&kind.as_str()) {
+                    return Err(ConfigError::Validation(format!(
+                        "provider '{}' has unknown provider type '{}' (expected one of {})",
+                        p.id,
+                        kind,
+                        KNOWN_PROVIDER_KINDS.join(", ")
+                    )));
+                }
             }
             if !provider_ids.insert(p.id.clone()) {
                 return Err(ConfigError::Validation(format!(
@@ -223,6 +268,7 @@ impl SentinelConfig {
         if !self
             .providers
             .iter()
+            .filter(|p| !p.disabled)
             .any(|p| p.models.iter().any(|m| m.id == self.agent.default_model))
         {
             return Err(ConfigError::Validation(format!(
@@ -459,6 +505,112 @@ languages = ["rust"]
         assert_eq!(cfg.lsp_servers.len(), 1);
         assert_eq!(cfg.lsp_servers[0].id, "rust-analyzer");
         assert_eq!(cfg.lsp_servers[0].languages, vec!["rust"]);
+    }
+
+    #[test]
+    fn parses_agent_token_limit_and_reasoning_effort() {
+        let path = temp_toml(
+            "agentlimits",
+            r#"
+[agent]
+default_model = "m"
+max_tokens = 4096
+reasoning_effort = "high"
+
+[[providers]]
+id = "local"
+name = "Local"
+base_url = "http://localhost:9999/v1"
+
+[[providers.models]]
+id = "m"
+name = "M"
+"#,
+        );
+        let cfg = SentinelConfig::load_from(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(cfg.agent.max_tokens, Some(4096));
+        assert_eq!(cfg.agent.reasoning_effort.as_deref(), Some("high"));
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn invalid_reasoning_effort_fails_validation() {
+        let path = temp_toml(
+            "badeffort",
+            "[agent]\nreasoning_effort = \"ultra\"\n",
+        );
+        let cfg = SentinelConfig::load_from(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+        let err = cfg.validate().unwrap_err();
+        assert!(err.to_string().contains("reasoning_effort"));
+    }
+
+    #[test]
+    fn parses_provider_disabled_and_kind() {
+        let path = temp_toml(
+            "provmeta",
+            r#"
+[[providers]]
+id = "openai"
+name = "OpenAI"
+base_url = "https://api.openai.com/v1"
+provider = "openai"
+disabled = true
+models = []
+"#,
+        );
+        let cfg = SentinelConfig::load_from(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+
+        let p = cfg.provider("openai").unwrap();
+        assert!(p.disabled);
+        assert_eq!(p.provider.as_deref(), Some("openai"));
+    }
+
+    #[test]
+    fn unknown_provider_kind_fails_validation() {
+        let path = temp_toml(
+            "badkind",
+            r#"
+[[providers]]
+id = "weird"
+name = "Weird"
+base_url = "http://localhost:9999/v1"
+provider = "not-a-provider"
+models = []
+"#,
+        );
+        let cfg = SentinelConfig::load_from(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+        let err = cfg.validate().unwrap_err();
+        assert!(err.to_string().contains("unknown provider type"));
+    }
+
+    #[test]
+    fn disabled_provider_cannot_host_default_model() {
+        let path = temp_toml(
+            "disableddefault",
+            r#"
+[agent]
+default_model = "m"
+
+[[providers]]
+id = "local"
+name = "Local"
+base_url = "http://localhost:9999/v1"
+disabled = true
+
+[[providers.models]]
+id = "m"
+name = "M"
+"#,
+        );
+        let cfg = SentinelConfig::load_from(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+        let err = cfg.validate().unwrap_err();
+        assert!(err.to_string().contains("not provided"));
     }
 
     #[test]
