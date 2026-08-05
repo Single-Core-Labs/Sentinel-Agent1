@@ -1,11 +1,24 @@
 use crate::approval::CliApprovalGate;
-use crate::display::{print_banner, print_divider};
+use crate::display::{print_banner, print_divider, print_error};
 use crate::handler::CliEventHandler;
 use colored::*;
+use futures::FutureExt;
 use sentinel_core::thread_store::ThreadStore;
 use std::sync::Arc;
 
 const TUI_WS_ADDR: &str = "127.0.0.1:9090";
+
+/// Recover from a panic on the interactive/one-shot paths so the user gets a
+/// friendly message and a non-zero exit instead of a raw unwind.
+fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
+    if let Some(s) = payload.downcast_ref::<&str>() {
+        (*s).to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "unknown internal error".to_string()
+    }
+}
 
 fn port_open(addr: &str) -> bool {
     std::net::TcpStream::connect(addr)
@@ -93,24 +106,36 @@ fn try_spawn_ts_agent(args: &[String]) -> bool {
 
     let bun = if cfg!(windows) { "bun.exe" } else { "bun" };
 
-    let status = std::process::Command::new(bun)
-        .arg("run")
-        .arg("--jsx-import-source=@opentui/solid")
-        .arg(&agent_path)
-        .current_dir(&cwd)
-        .stdin(std::process::Stdio::inherit())
-        .stdout(std::process::Stdio::inherit())
-        .stderr(std::process::Stdio::inherit())
-        .spawn();
+    let status = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        std::process::Command::new(bun)
+            .arg("run")
+            .arg("--jsx-import-source=@opentui/solid")
+            .arg(&agent_path)
+            .current_dir(&cwd)
+            .stdin(std::process::Stdio::inherit())
+            .stdout(std::process::Stdio::inherit())
+            .stderr(std::process::Stdio::inherit())
+            .spawn()
+    }));
     match status {
-        Ok(mut child) => {
-            let _ = child.wait();
+        Ok(Ok(mut child)) => {
+            let wait = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| child.wait()));
             if let Some(mut s) = server_child {
                 let _ = s.kill();
             }
-            true
+            match wait {
+                Ok(_) => true,
+                Err(payload) => {
+                    eprintln!(
+                        "{} TUI crashed: {}",
+                        "✖".red().bold(),
+                        panic_message(payload)
+                    );
+                    false
+                }
+            }
         }
-        Err(e) => {
+        Ok(Err(e)) => {
             eprintln!(
                 "{} Could not start TUI ({}) — OpenTUI is the only interactive UI.",
                 "W".yellow(),
@@ -120,6 +145,17 @@ fn try_spawn_ts_agent(args: &[String]) -> bool {
                 let _ = s.kill();
             }
             false
+        }
+        Err(payload) => {
+            eprintln!(
+                "{} TUI launch crashed: {}",
+                "✖".red().bold(),
+                panic_message(payload)
+            );
+            if let Some(mut s) = server_child {
+                let _ = s.kill();
+            }
+            std::process::exit(1)
         }
     }
 }
@@ -270,33 +306,11 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     };
     let model_id = selected.model_id;
 
-    let mut tool_registry = sentinel_tools::ToolRegistry::new();
+    let tool_registry = sentinel_tools::ToolRegistry::new();
 
-    let mcp_servers = config.mcp_servers();
-    for def in mcp_servers {
-        let client = Arc::new(sentinel_mcp::McpClient::new(&def.id, def.transport.clone()));
-        match sentinel_mcp::register_mcp_tools(&mut tool_registry, client).await {
-            Ok(count) => {
-                if count > 0 {
-                    println!(
-                        "   {} MCP tools registered from '{}'",
-                        format!("{}", count).green(),
-                        def.id.green()
-                    );
-                } else {
-                    eprintln!(
-                        "{} MCP server '{}' is connected but exposes no tools",
-                        "W".yellow(),
-                        def.id
-                    );
-                }
-            }
-            Err(e) => {
-                eprintln!("✖ MCP server '{}' failed to connect: {}", def.id, e);
-                eprintln!("   Tools from this server unavailable");
-            }
-        }
-    }
+    // Background: fetch MCP tools concurrently while the rest of startup
+    // (plugins, headroom, banner) proceeds; joined right before Agent::new.
+    let mcp_fetchers = crate::mcp_setup::spawn_mcp_fetchers(config.mcp_servers());
 
     let (headroom_compressor, headroom_retrieve_tool, headroom_memory_tools) =
         sentinel_headroom::integration::create_headroom_compressor_with_tools().await;
@@ -306,6 +320,11 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     }
 
     let tools = Arc::new(tool_registry);
+    tools.register(Arc::new(sentinel_core::SubAgentTool::new(
+        provider.clone(),
+        Arc::clone(&tools),
+        config.clone(),
+    )));
 
     let plugin_registry = Arc::new(sentinel_plugin_system::PluginRegistry::new());
     let plugin_dir = plugin_dir();
@@ -344,6 +363,10 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
             eprintln!("  {} {}", "•".red(), err);
         }
     }
+
+    // MCP handshakes have been running in the background during plugin and
+    // headroom setup; register their tools right before the agent is built.
+    mcp_fetchers.join(&tools).await;
 
     let agent = sentinel_core::Agent::new(provider, tools, config.clone())
         .with_compressor(headroom_compressor)
@@ -425,9 +448,18 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
 
     // Non-interactive single-shot mode (used by the eval harness)
     if let Some(one_shot) = prompt_arg {
-        let result = agent
-            .run_with_approval(&mut thread, &one_shot, approval.as_ref(), &policy)
-            .await;
+        let result = match std::panic::AssertUnwindSafe(
+            agent.run_with_approval(&mut thread, &one_shot, approval.as_ref(), &policy),
+        )
+        .catch_unwind()
+        .await
+        {
+            Ok(r) => r,
+            Err(payload) => {
+                print_error(&panic_message(payload));
+                std::process::exit(1);
+            }
+        };
         if let Err(e) = store.save_thread(&thread).await {
             eprintln!("{} Failed to save session: {}", "W".yellow(), e);
         }

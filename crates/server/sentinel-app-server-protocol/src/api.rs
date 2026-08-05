@@ -242,4 +242,16 @@ pub enum ServerEvent {
     Error { message: String },
     #[serde(rename = "token_count")]
     TokenCount { prompt: u64, completion: u64 },
+    #[serde(rename = "session_created")]
+    SessionCreated { session_id: String, model: String },
+    #[serde(rename = "session_ended")]
+    SessionEnded { session_id: String, reason: String },
+    #[serde(rename = "log")]
+    Log { level: String, message: String },
+    #[serde(rename = "permission")]
+    Permission {
+        tool: String,
+        action: String,
+        reason: Option<String>,
+    },
 }

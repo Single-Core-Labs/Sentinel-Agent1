@@ -920,6 +920,13 @@ pub(crate) async fn execute_tools_concurrent(
             })
             .await
         {
+            evt_handler
+                .handle_event(AgentEvent::Permission {
+                    tool: name.clone(),
+                    action: PermissionAction::Veto,
+                    reason: Some(reason.clone()),
+                })
+                .await;
             ordered_results.insert(
                 i,
                 ToolResult {
@@ -951,6 +958,13 @@ pub(crate) async fn execute_tools_concurrent(
                             decision: PolicyDecision::Deny(reason.clone()),
                         });
                     }
+                    evt_handler
+                        .handle_event(AgentEvent::Permission {
+                            tool: name.clone(),
+                            action: PermissionAction::Deny,
+                            reason: Some(reason.clone()),
+                        })
+                        .await;
                     ordered_results.insert(
                         i,
                         ToolResult {
@@ -1019,6 +1033,13 @@ pub(crate) async fn execute_tools_concurrent(
             match approval.request_approval(&approval_req).await {
                 ApprovalDecision::Approved => {}
                 ApprovalDecision::Rejected(reason) => {
+                    evt_handler
+                        .handle_event(AgentEvent::Permission {
+                            tool: name.clone(),
+                            action: PermissionAction::Deny,
+                            reason: Some(reason.clone()),
+                        })
+                        .await;
                     ordered_results.insert(
                         i,
                         ToolResult {
@@ -1031,6 +1052,13 @@ pub(crate) async fn execute_tools_concurrent(
                     continue;
                 }
                 ApprovalDecision::Modify { .. } => {
+                    evt_handler
+                        .handle_event(AgentEvent::Permission {
+                            tool: name.clone(),
+                            action: PermissionAction::Deny,
+                            reason: Some("request modified by user".into()),
+                        })
+                        .await;
                     ordered_results.insert(
                         i,
                         ToolResult {
@@ -1044,6 +1072,14 @@ pub(crate) async fn execute_tools_concurrent(
                 }
             }
         }
+
+        evt_handler
+            .handle_event(AgentEvent::Permission {
+                tool: name.clone(),
+                action: PermissionAction::Allow,
+                reason: None,
+            })
+            .await;
 
         let tools = Arc::clone(&tools);
         let tool_call_id = tool_call_id.clone();
@@ -1164,10 +1200,33 @@ pub enum AgentEvent {
     Error {
         message: String,
     },
+    Permission {
+        tool: String,
+        action: PermissionAction,
+        reason: Option<String>,
+    },
     TurnEnd {
         turn: u32,
         iteration: u32,
     },
+}
+
+/// How a policy/approval gate resolved for a tool call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PermissionAction {
+    Allow,
+    Deny,
+    Veto,
+}
+
+impl fmt::Display for PermissionAction {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Allow => write!(f, "allow"),
+            Self::Deny => write!(f, "deny"),
+            Self::Veto => write!(f, "veto"),
+        }
+    }
 }
 
 impl fmt::Display for AgentEvent {
@@ -1184,6 +1243,9 @@ impl fmt::Display for AgentEvent {
             }
             AgentEvent::Completed { .. } => write!(f, "Done"),
             AgentEvent::Error { message } => write!(f, "Error: {}", message),
+            AgentEvent::Permission { tool, action, .. } => {
+                write!(f, "🔒 {} {}", action, tool)
+            }
             AgentEvent::TurnEnd { turn, iteration } => write!(f, "Turn {}/{}", turn, iteration),
         }
     }

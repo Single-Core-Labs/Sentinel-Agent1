@@ -144,6 +144,8 @@ mod tests {
             }],
             timeout_secs: 120,
             extra_headers: Default::default(),
+            disabled: false,
+            provider: None,
         }
     }
 

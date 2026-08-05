@@ -52,9 +52,11 @@ async fn cmd_start(args: &[String]) -> anyhow::Result<()> {
     match maybe_addr {
         Some(addr) => {
             println!(" Starting app server on {} (TCP)...", addr.cyan());
-            if let Err(e) = server.run_tcp(&addr).await {
+            let shutdown = sentinel_app_server::shutdown::install_signal_handler();
+            if let Err(e) = server.run_tcp_with_shutdown(&addr, shutdown).await {
                 eprintln!("{} Server error: {}", "Error:".red().bold(), e);
             }
+            println!(" {} App server stopped.", "◼".yellow().bold());
         }
         None => {
             println!(" Starting app server in stdio mode (pipe JSON-RPC to stdin/stdout) ...");

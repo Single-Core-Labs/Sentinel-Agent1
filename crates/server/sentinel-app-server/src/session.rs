@@ -1,7 +1,7 @@
 use sentinel_analytics::{AnalyticsEvent, AnalyticsPipeline, EventKind};
 use sentinel_app_server_protocol::api::ServerEvent;
 use sentinel_config::SentinelConfig;
-use sentinel_core::{Agent, AgentOutput, AgentThread};
+use sentinel_core::{Agent, AgentEvent, AgentOutput, AgentThread, EventHandler};
 use sentinel_provider::ModelProvider;
 use sentinel_tools::ToolRegistry;
 use std::sync::Arc;
@@ -16,22 +16,64 @@ pub struct AppSession {
     pub events: tokio::sync::broadcast::Sender<ServerEvent>,
 }
 
+/// Forwards agent-loop events (tool calls, results, thinking, completion) to
+/// the session's broadcast channel so WebSocket clients get a live feed.
+struct ServerEventBridge {
+    tx: tokio::sync::broadcast::Sender<ServerEvent>,
+}
+
+#[async_trait::async_trait]
+impl EventHandler for ServerEventBridge {
+    async fn handle_event(&self, event: AgentEvent) {
+        let server_event = match event {
+            AgentEvent::Thinking { text } => ServerEvent::Thinking { text },
+            AgentEvent::ToolCall { name, args } => ServerEvent::ToolCall { name, args },
+            AgentEvent::ToolResult {
+                name,
+                output,
+                is_error,
+                ..
+            } => ServerEvent::ToolResult {
+                name,
+                output,
+                is_error,
+            },
+            AgentEvent::Completed { text } => ServerEvent::Completed { text },
+            AgentEvent::Error { message } => ServerEvent::Error { message },
+            AgentEvent::Permission {
+                tool,
+                action,
+                reason,
+            } => ServerEvent::Permission {
+                tool,
+                action: action.to_string(),
+                reason,
+            },
+            AgentEvent::TurnEnd { .. } => return,
+        };
+        let _ = self.tx.send(server_event);
+    }
+}
+
 impl AppSession {
     pub fn new(
-        _model: Option<String>,
+        model: Option<String>,
         provider: Arc<dyn ModelProvider>,
         tools: Arc<ToolRegistry>,
         config: Arc<SentinelConfig>,
         analytics: Arc<AnalyticsPipeline>,
     ) -> Self {
         let id = Uuid::new_v4().to_string();
-        let agent = Agent::new(provider, tools, config.clone());
+        let (evt_tx, _) = tokio::sync::broadcast::channel(256);
+        let model_id = model.unwrap_or_else(|| config.agent.default_model.clone());
+        let agent = Agent::new(provider, tools, config.clone())
+            .with_model(model_id)
+            .with_event_handler(Arc::new(ServerEventBridge { tx: evt_tx.clone() }));
         let thread = AgentThread::new(
             config.agent.max_turns,
             config.agent.max_iterations,
             config.agent.yolo_mode,
         );
-        let (evt_tx, _) = tokio::sync::broadcast::channel(256);
 
         analytics.emit(AnalyticsEvent::new(
             EventKind::SessionCreated,
@@ -47,7 +89,7 @@ impl AppSession {
     }
 
     pub fn new_with_compressor(
-        _model: Option<String>,
+        model: Option<String>,
         provider: Arc<dyn ModelProvider>,
         tools: Arc<ToolRegistry>,
         config: Arc<SentinelConfig>,
@@ -55,13 +97,17 @@ impl AppSession {
         compressor: Arc<dyn sentinel_core::ContentCompressor>,
     ) -> Self {
         let id = Uuid::new_v4().to_string();
-        let agent = Agent::new(provider, tools, config.clone()).with_compressor(compressor);
+        let (evt_tx, _) = tokio::sync::broadcast::channel(256);
+        let model_id = model.unwrap_or_else(|| config.agent.default_model.clone());
+        let agent = Agent::new(provider, tools, config.clone())
+            .with_compressor(compressor)
+            .with_model(model_id)
+            .with_event_handler(Arc::new(ServerEventBridge { tx: evt_tx.clone() }));
         let thread = AgentThread::new(
             config.agent.max_turns,
             config.agent.max_iterations,
             config.agent.yolo_mode,
         );
-        let (evt_tx, _) = tokio::sync::broadcast::channel(256);
 
         analytics.emit(AnalyticsEvent::new(
             EventKind::SessionCreated,
@@ -85,13 +131,16 @@ impl AppSession {
         analytics: Arc<AnalyticsPipeline>,
         compressor: Option<Arc<dyn sentinel_core::ContentCompressor>>,
     ) -> Self {
+        let (evt_tx, _) = tokio::sync::broadcast::channel(256);
+        let model_id = config.agent.default_model.clone();
         let agent = Agent::new(provider, tools, config.clone());
         let agent = if let Some(c) = compressor {
             agent.with_compressor(c)
         } else {
             agent
-        };
-        let (evt_tx, _) = tokio::sync::broadcast::channel(256);
+        }
+        .with_model(model_id)
+        .with_event_handler(Arc::new(ServerEventBridge { tx: evt_tx.clone() }));
 
         analytics.emit(AnalyticsEvent::new(
             EventKind::SessionCreated,

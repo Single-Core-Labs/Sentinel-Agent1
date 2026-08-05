@@ -10,7 +10,7 @@ use axum::{
 use colored::*;
 use futures_util::SinkExt as FuturesSinkExt;
 use futures_util::StreamExt as FuturesStreamExt;
-use sentinel_app_server_protocol::rpc::{JsonRpcMessage, JsonRpcResponse};
+use sentinel_app_server_protocol::rpc::JsonRpcMessage;
 use serde::Deserialize;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -94,6 +94,15 @@ impl HttpServer {
     }
 
     pub async fn run(&self, addr: &SocketAddr) -> anyhow::Result<()> {
+        let (_tx, rx) = tokio::sync::watch::channel(false);
+        self.run_with_shutdown(addr, rx).await
+    }
+
+    pub async fn run_with_shutdown(
+        &self,
+        addr: &SocketAddr,
+        mut shutdown: tokio::sync::watch::Receiver<bool>,
+    ) -> anyhow::Result<()> {
         let state = AppState {
             handler: self.handler.clone(),
             auth_token: self.auth_token.clone(),
@@ -120,7 +129,13 @@ impl HttpServer {
             );
         }
 
-        axum::serve(listener, app).await?;
+        axum::serve(listener, app)
+            .with_graceful_shutdown(async move {
+                let _ = crate::shutdown::wait_shutdown(&mut shutdown).await;
+                tracing::info!("HTTP server shutting down");
+                println!(" {} Web server shutting down...", "◼".yellow().bold());
+            })
+            .await?;
         Ok(())
     }
 }
@@ -141,6 +156,10 @@ async fn ws_upgrade(
 }
 
 async fn handle_ws(socket: WebSocket, handler: Arc<RequestHandler>) {
+    use sentinel_app_server_protocol::api::methods;
+    use sentinel_app_server_protocol::api::ServerEvent;
+    use sentinel_app_server_protocol::rpc::{JsonRpcNotification, JsonRpcResponse};
+
     let (mut ws_sender, mut ws_receiver) = socket.split();
     let (tx, rx) = mpsc::unbounded_channel::<JsonRpcMessage>();
 
@@ -158,36 +177,145 @@ async fn handle_ws(socket: WebSocket, handler: Arc<RequestHandler>) {
         }
     });
 
-    while let Some(msg) = FuturesStreamExt::next(&mut ws_receiver).await {
-        match msg {
-            Ok(Message::Text(text)) => {
-                match sentinel_app_server_protocol::rpc::parse_message(&text) {
-                    Ok(JsonRpcMessage::Request(req)) => {
-                        let response = handler.handle(req).await;
-                        let _ = tx.send(JsonRpcMessage::Response(response));
+    // (session_id, event receiver) pairs for active event subscriptions.
+    let mut subscriptions: Vec<(String, tokio::sync::broadcast::Receiver<ServerEvent>)> = Vec::new();
+
+    // Slow LLM methods run off this loop so event notifications keep flowing
+    // while an agent run is in progress.
+    const SPAWNED_METHODS: [&str; 2] = [methods::CHAT, methods::CHAT_STREAM];
+
+    let mut pump = tokio::time::interval(std::time::Duration::from_millis(25));
+
+    loop {
+        tokio::select! {
+            maybe = FuturesStreamExt::next(&mut ws_receiver) => {
+                let msg = match maybe {
+                    Some(msg) => msg,
+                    None => break,
+                };
+                match msg {
+                    Ok(Message::Text(text)) => {
+                        match sentinel_app_server_protocol::rpc::parse_message(&text) {
+                            Ok(JsonRpcMessage::Request(req)) => {
+                                if req.method == methods::EVENT_SUBSCRIBE {
+                                    match handler.subscribe_events(req.params).await {
+                                        Ok(session_id) => {
+                                            if let Some(session) = handler.get_session(&session_id).await {
+                                                subscriptions.push((session_id.clone(), session.events.subscribe()));
+                                                let _ = tx.send(JsonRpcMessage::Response(JsonRpcResponse {
+                                                    jsonrpc: "2.0".into(),
+                                                    id: req.id,
+                                                    result: Some(serde_json::json!({
+                                                        "subscribed": true,
+                                                        "session_id": session_id,
+                                                    })),
+                                                    error: None,
+                                                }));
+                                            } else {
+                                                let _ = tx.send(JsonRpcMessage::Response(JsonRpcResponse {
+                                                    jsonrpc: "2.0".into(),
+                                                    id: req.id,
+                                                    result: None,
+                                                    error: Some(sentinel_app_server_protocol::rpc::JsonRpcError::internal_error(
+                                                        "Session vanished after subscribe",
+                                                    )),
+                                                }));
+                                            }
+                                        }
+                                        Err(err) => {
+                                            let _ = tx.send(JsonRpcMessage::Response(JsonRpcResponse {
+                                                jsonrpc: "2.0".into(),
+                                                id: req.id,
+                                                result: None,
+                                                error: Some(err),
+                                            }));
+                                        }
+                                    }
+                                } else if req.method == methods::EVENT_UNSUBSCRIBE {
+                                    let session_id = req
+                                        .params
+                                        .as_ref()
+                                        .and_then(|p| p.get("session_id"))
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("");
+                                    subscriptions.retain(|(sid, _)| sid != session_id);
+                                    let _ = tx.send(JsonRpcMessage::Response(JsonRpcResponse {
+                                        jsonrpc: "2.0".into(),
+                                        id: req.id,
+                                        result: Some(serde_json::json!({ "unsubscribed": true })),
+                                        error: None,
+                                    }));
+                                } else if SPAWNED_METHODS.contains(&req.method.as_str()) {
+                                    let handler = handler.clone();
+                                    let tx = tx.clone();
+                                    tokio::spawn(async move {
+                                        let response = handler.handle(req).await;
+                                        let _ = tx.send(JsonRpcMessage::Response(response));
+                                    });
+                                } else {
+                                    let response = handler.handle(req).await;
+                                    let _ = tx.send(JsonRpcMessage::Response(response));
+                                }
+                            }
+                            Ok(JsonRpcMessage::Notification(notif))
+                                if notif.method == "exit" || notif.method == "shutdown" =>
+                            {
+                                break;
+                            }
+                            Ok(JsonRpcMessage::Notification(_)) => {}
+                            Ok(JsonRpcMessage::Response(resp)) => {
+                                let _ = tx.send(JsonRpcMessage::Response(resp));
+                            }
+                            Err(e) => {
+                                let error_resp = JsonRpcResponse {
+                                    jsonrpc: "2.0".into(),
+                                    id: serde_json::Value::Null,
+                                    result: None,
+                                    error: Some(e),
+                                };
+                                let _ = tx.send(JsonRpcMessage::Response(error_resp));
+                            }
+                        }
                     }
-                    Ok(JsonRpcMessage::Notification(notif))
-                        if notif.method == "exit" || notif.method == "shutdown" =>
-                    {
-                        break;
-                    }
-                    Ok(JsonRpcMessage::Notification(_)) => {}
-                    Ok(JsonRpcMessage::Response(resp)) => {
-                        let _ = tx.send(JsonRpcMessage::Response(resp));
-                    }
-                    Err(e) => {
-                        let error_resp = JsonRpcResponse {
+                    Ok(Message::Close(_)) | Err(_) => break,
+                    _ => {}
+                }
+            }
+            _ = pump.tick() => {}
+        }
+
+        // Forward any pending session events to the client.
+        let mut i = 0;
+        while i < subscriptions.len() {
+            let (session_id, rx) = &mut subscriptions[i];
+            let mut drop_sub = false;
+            loop {
+                match rx.try_recv() {
+                    Ok(evt) => {
+                        let notif = JsonRpcNotification {
                             jsonrpc: "2.0".into(),
-                            id: serde_json::Value::Null,
-                            result: None,
-                            error: Some(e),
+                            method: "event".into(),
+                            params: Some(serde_json::to_value(evt).unwrap_or_default()),
                         };
-                        let _ = tx.send(JsonRpcMessage::Response(error_resp));
+                        if tx.send(JsonRpcMessage::Notification(notif)).is_err() {
+                            drop_sub = true;
+                            break;
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::TryRecvError::Empty) => break,
+                    Err(tokio::sync::broadcast::error::TryRecvError::Lagged(_)) => continue,
+                    Err(tokio::sync::broadcast::error::TryRecvError::Closed) => {
+                        tracing::debug!("event channel closed for session {}", session_id);
+                        drop_sub = true;
+                        break;
                     }
                 }
             }
-            Ok(Message::Close(_)) | Err(_) => break,
-            _ => {}
+            if drop_sub {
+                subscriptions.remove(i);
+            } else {
+                i += 1;
+            }
         }
     }
 

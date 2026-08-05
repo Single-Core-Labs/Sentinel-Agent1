@@ -2,24 +2,29 @@ use crate::builtin;
 use crate::tool::{Tool, ToolContext, ToolOutput};
 use sentinel_protocol::ToolDef;
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 pub struct ToolRegistry {
-    tools: HashMap<String, Arc<dyn Tool>>,
+    tools: Mutex<HashMap<String, Arc<dyn Tool>>>,
 }
 
 impl std::fmt::Debug for ToolRegistry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let names = self
+            .tools
+            .lock()
+            .map(|m| m.keys().cloned().collect::<Vec<_>>())
+            .unwrap_or_default();
         f.debug_struct("ToolRegistry")
-            .field("tools", &self.tools.keys().collect::<Vec<_>>())
+            .field("tools", &names)
             .finish()
     }
 }
 
 impl ToolRegistry {
     pub fn new() -> Self {
-        let mut reg = Self {
-            tools: HashMap::new(),
+        let reg = Self {
+            tools: Mutex::new(HashMap::new()),
         };
         for tool in builtin::builtin_tools() {
             reg.register(tool);
@@ -27,16 +32,21 @@ impl ToolRegistry {
         reg
     }
 
-    pub fn register(&mut self, tool: Arc<dyn Tool>) {
-        self.tools.insert(tool.name().to_string(), tool);
+    pub fn register(&self, tool: Arc<dyn Tool>) {
+        if let Ok(mut tools) = self.tools.lock() {
+            tools.insert(tool.name().to_string(), tool);
+        }
     }
 
-    pub fn get(&self, name: &str) -> Option<&Arc<dyn Tool>> {
-        self.tools.get(name)
+    pub fn get(&self, name: &str) -> Option<Arc<dyn Tool>> {
+        self.tools.lock().ok().and_then(|m| m.get(name).cloned())
     }
 
     pub fn list(&self) -> Vec<ToolDef> {
-        self.tools.values().map(|t| t.to_tool_def()).collect()
+        self.tools
+            .lock()
+            .map(|m| m.values().map(|t| t.to_tool_def()).collect())
+            .unwrap_or_default()
     }
 
     pub async fn execute(

@@ -7,25 +7,32 @@ mod display;
 mod exec;
 mod handler;
 mod local;
+mod mcp_setup;
 mod model_selector;
 mod plugin_cmd;
 mod proxy;
+mod schema;
 mod server;
 mod telemetry;
 mod tui;
 mod web;
 
 use colored::*;
+use tracing_subscriber::layer::{Layer, SubscriberExt};
+use tracing_subscriber::util::SubscriberInitExt;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     dotenv::dotenv().ok();
 
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive(tracing::Level::WARN.into()),
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::fmt::layer().with_filter(
+                tracing_subscriber::EnvFilter::from_default_env()
+                    .add_directive(tracing::Level::WARN.into()),
+            ),
         )
+        .with(sentinel_app_server::logs::LogLayer::new())
         .init();
 
     let args: Vec<String> = std::env::args().collect();
@@ -53,6 +60,7 @@ async fn main() -> anyhow::Result<()> {
         "web" => web::run(sub_args).await?,
         "proxy" => proxy::run(sub_args).await?,
         "diagnostics" => diagnostics::run(sub_args).await?,
+        "schema" => schema::run(sub_args)?,
         "tui" => tui::run(sub_args).await?,
         other => {
             eprintln!("{} Unknown subcommand: '{}'", "Error:".red().bold(), other);
@@ -109,6 +117,7 @@ fn print_help() {
     println!("  web [--port <n>]        Start HTTP server with Web UI");
     println!("  proxy                  Headroom HTTP compression proxy");
     println!("  diagnostics            System diagnostic checks");
+    println!("  schema                 Print JSON Schema for sentinel.toml (IDE validation/autocompletion)");
     println!("  tui [--port <n>]        Terminal UI for app server");
     println!();
     println!("{}", "Common flags:".yellow().bold());

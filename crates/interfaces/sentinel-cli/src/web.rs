@@ -125,7 +125,12 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     });
 
     println!("   Static: {}", dir.yellow());
-    server.run_http_with_dir(&addr, &dir).await?;
+
+    let shutdown = sentinel_app_server::shutdown::install_signal_handler();
+    server
+        .run_http_with_dir_with_shutdown(&addr, &dir, shutdown)
+        .await?;
+    println!(" {} Web server stopped.", "◼".yellow().bold());
 
     Ok(())
 }

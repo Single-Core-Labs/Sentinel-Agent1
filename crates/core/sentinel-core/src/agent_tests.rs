@@ -47,6 +47,8 @@ mod tests {
                     models: vec![],
                     timeout_secs: 30,
                     extra_headers: Default::default(),
+                    disabled: false,
+                    provider: None,
                 },
                 responses,
                 cursor: AtomicUsize::new(0),
@@ -174,7 +176,7 @@ mod tests {
     }
 
     fn make_agent_with_echo(provider: Arc<dyn ModelProvider>) -> Agent {
-        let mut reg = ToolRegistry::new();
+        let reg = ToolRegistry::new();
         reg.register(Arc::new(EchoTool));
         Agent::new(provider, Arc::new(reg), Arc::new(SentinelConfig::default()))
     }
