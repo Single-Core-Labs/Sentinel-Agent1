@@ -38,6 +38,7 @@ tower-http = { version = "0.5", features = ["fs", "cors"] }
 hyper = "1"
 tokio-tungstenite.workspace = true
 dirs.workspace = true
+notify = "8"
 
 [features]
 sqlite = ["sentinel-core/sqlite"]
