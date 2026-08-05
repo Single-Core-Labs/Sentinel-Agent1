@@ -862,13 +862,15 @@ mod tests {
     #[tokio::test]
     async fn crashing_client_is_restarted_then_given_up() {
         let (command, args) = quick_exit_command();
-        let mut config = SentinelConfig::default();
-        config.lsp_servers = vec![sentinel_config::LspServerDef {
-            id: "flaky".into(),
-            command,
-            args,
-            languages: vec!["plaintext".into()],
-        }];
+        let config = SentinelConfig {
+            lsp_servers: vec![sentinel_config::LspServerDef {
+                id: "flaky".into(),
+                command,
+                args,
+                languages: vec!["plaintext".into()],
+            }],
+            ..SentinelConfig::default()
+        };
         let manager = LspManager::from_config(&config);
         assert_eq!(manager.len(), 1);
         manager.start();
@@ -1034,21 +1036,26 @@ mod tests {
             uuid::Uuid::new_v4().simple()
         ));
 
-        let mut config = SentinelConfig::default();
-        config.context.paths = vec![root.to_string_lossy().into_owned()];
-        config.lsp_servers = vec![sentinel_config::LspServerDef {
-            id: "fake".into(),
-            command: std::env::current_exe()
-                .expect("current exe")
-                .to_string_lossy()
-                .into_owned(),
-            args: vec![
-                "--exact".into(),
-                "lsp::tests::fake_lsp_server_main".into(),
-                "--nocapture".into(),
-            ],
-            languages: vec!["rust".into()],
-        }];
+        let config = SentinelConfig {
+            context: sentinel_config::ContextSettings {
+                paths: vec![root.to_string_lossy().into_owned()],
+                ..sentinel_config::ContextSettings::default()
+            },
+            lsp_servers: vec![sentinel_config::LspServerDef {
+                id: "fake".into(),
+                command: std::env::current_exe()
+                    .expect("current exe")
+                    .to_string_lossy()
+                    .into_owned(),
+                args: vec![
+                    "--exact".into(),
+                    "lsp::tests::fake_lsp_server_main".into(),
+                    "--nocapture".into(),
+                ],
+                languages: vec!["rust".into()],
+            }],
+            ..SentinelConfig::default()
+        };
 
         let manager = LspManager::from_config(&config);
         // Point the fake server at its log and enable server mode in the
