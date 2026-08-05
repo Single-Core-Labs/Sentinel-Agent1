@@ -16,10 +16,12 @@ pub struct AppServer {
     handler: Arc<RequestHandler>,
     _analytics: Arc<AnalyticsPipeline>,
     _authenticator: Option<Authenticator>,
+    lsp: crate::lsp::LspManager,
 }
 
 impl AppServer {
     pub fn new(config: SentinelConfig) -> Self {
+        let lsp = crate::lsp::LspManager::from_config(&config);
         let config = Arc::new(config);
         let analytics = Arc::new(AnalyticsPipeline::new());
         let tools = {
@@ -88,6 +90,7 @@ impl AppServer {
             handler,
             _analytics: analytics,
             _authenticator: None,
+            lsp,
         }
     }
 
@@ -97,12 +100,16 @@ impl AppServer {
     }
 
     pub async fn run_stdio(&self) -> Result<(), Box<dyn std::error::Error>> {
+        // LSP clients initialize asynchronously and never block the app flow.
+        self.lsp.start();
         let transport = TransportServer::new(TransportKind::Stdio);
         let (mut stream, sink, _client_id) = transport
             .accept()
             .await
             .map_err(|e| format!("accept error: {}", e))?;
-        Self::handle_stream(self.handler.clone(), &mut stream, sink).await
+        let result = Self::handle_stream(self.handler.clone(), &mut stream, sink).await;
+        self.lsp.shutdown().await;
+        result
     }
 
     pub async fn run_http(&self, addr: &SocketAddr) -> anyhow::Result<()> {
@@ -126,7 +133,10 @@ impl AppServer {
         shutdown: tokio::sync::watch::Receiver<bool>,
     ) -> anyhow::Result<()> {
         let http = HttpServer::new(self.handler.clone()).with_static_dir(static_dir);
-        http.run_with_shutdown(addr, shutdown).await
+        self.lsp.start();
+        let result = http.run_with_shutdown(addr, shutdown).await;
+        self.lsp.shutdown().await;
+        result
     }
 
     pub async fn run_tcp(&self, addr: &str) -> Result<(), Box<dyn std::error::Error>> {
@@ -140,6 +150,7 @@ impl AppServer {
         mut shutdown: tokio::sync::watch::Receiver<bool>,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let transport = TransportServer::new(TransportKind::Tcp { addr: addr.into() });
+        self.lsp.start();
         loop {
             tokio::select! {
                 accept = transport.accept() => {
@@ -156,6 +167,7 @@ impl AppServer {
                 }
             }
         }
+        self.lsp.shutdown().await;
         Ok(())
     }
 

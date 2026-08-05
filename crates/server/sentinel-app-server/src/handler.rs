@@ -853,6 +853,7 @@ impl RequestHandler {
             "max_turns": self.config.agent.max_turns,
             "max_iterations": self.config.agent.max_iterations,
             "yolo_mode": self.config.agent.yolo_mode,
+            "theme": self.config.theme.name,
             "providers": self.config.providers().iter().map(|p| serde_json::json!({
                 "id": p.id,
                 "name": p.name,
@@ -861,6 +862,11 @@ impl RequestHandler {
                     "id": m.id,
                     "name": m.name,
                 })).collect::<Vec<_>>(),
+            })).collect::<Vec<_>>(),
+            "lsp_servers": self.config.lsp_servers.iter().map(|l| serde_json::json!({
+                "id": l.id,
+                "command": l.command,
+                "languages": l.languages,
             })).collect::<Vec<_>>(),
         }))
     }
