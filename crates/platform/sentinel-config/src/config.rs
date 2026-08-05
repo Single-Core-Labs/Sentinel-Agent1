@@ -17,6 +17,64 @@ pub struct AgentSettings {
     pub verbose: bool,
 }
 
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct DebugSettings {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub verbose: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ContextSettings {
+    #[serde(default = "default_context_paths")]
+    pub paths: Vec<String>,
+    #[serde(default)]
+    pub exclude: Vec<String>,
+}
+
+fn default_context_paths() -> Vec<String> {
+    vec![".".into()]
+}
+
+impl Default for ContextSettings {
+    fn default() -> Self {
+        Self {
+            paths: default_context_paths(),
+            exclude: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ThemeSettings {
+    #[serde(default = "default_theme")]
+    pub name: String,
+}
+
+fn default_theme() -> String {
+    "opencode-dark".into()
+}
+
+impl Default for ThemeSettings {
+    fn default() -> Self {
+        Self {
+            name: default_theme(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct LspServerDef {
+    pub id: String,
+    #[serde(default)]
+    pub command: String,
+    #[serde(default)]
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub languages: Vec<String>,
+}
+
 fn default_model() -> String {
     "gpt-4o".into()
 }
@@ -50,6 +108,14 @@ pub struct SentinelConfig {
     pub mcp_servers: Vec<McpServerDef>,
     #[serde(default = "default_thread_store")]
     pub thread_store: String,
+    #[serde(default)]
+    pub debug: DebugSettings,
+    #[serde(default)]
+    pub context: ContextSettings,
+    #[serde(default)]
+    pub theme: ThemeSettings,
+    #[serde(default)]
+    pub lsp_servers: Vec<LspServerDef>,
 }
 
 impl SentinelConfig {
@@ -99,6 +165,100 @@ impl SentinelConfig {
         if other.thread_store != default_thread_store() {
             self.thread_store = other.thread_store;
         }
+        if other.debug.enabled {
+            self.debug.enabled = true;
+        }
+        self.debug.verbose = other.debug.verbose;
+        if !other.context.paths.is_empty() {
+            self.context.paths = other.context.paths;
+        }
+        if !other.context.exclude.is_empty() {
+            self.context.exclude = other.context.exclude;
+        }
+        if other.theme.name != default_theme() {
+            self.theme = other.theme;
+        }
+        if !other.lsp_servers.is_empty() {
+            self.lsp_servers = other.lsp_servers;
+        }
+    }
+
+    /// Validate the config. Returns a `ConfigError::Validation` describing the
+    /// first problem found.
+    pub fn validate(&self) -> Result<(), ConfigError> {
+        if self.agent.default_model.trim().is_empty() {
+            return Err(ConfigError::Validation(
+                "agent.default_model must not be empty".into(),
+            ));
+        }
+        if !matches!(self.thread_store.as_str(), "memory" | "json" | "sqlite") {
+            return Err(ConfigError::Validation(format!(
+                "thread_store must be one of memory|json|sqlite, got '{}'",
+                self.thread_store
+            )));
+        }
+        let mut provider_ids = std::collections::HashSet::new();
+        let mut model_ids = std::collections::HashSet::new();
+        for p in &self.providers {
+            if p.id.trim().is_empty() {
+                return Err(ConfigError::Validation(
+                    "provider id must not be empty".into(),
+                ));
+            }
+            if !provider_ids.insert(p.id.clone()) {
+                return Err(ConfigError::Validation(format!(
+                    "duplicate provider id '{}'",
+                    p.id
+                )));
+            }
+            for m in &p.models {
+                if !model_ids.insert(format!("{}:{}", p.id, m.id)) {
+                    return Err(ConfigError::Validation(format!(
+                        "duplicate model id '{}' under provider '{}'",
+                        m.id, p.id
+                    )));
+                }
+            }
+        }
+        if !self
+            .providers
+            .iter()
+            .any(|p| p.models.iter().any(|m| m.id == self.agent.default_model))
+        {
+            return Err(ConfigError::Validation(format!(
+                "agent.default_model '{}' is not provided by any configured provider",
+                self.agent.default_model
+            )));
+        }
+        let mut mcp_ids = std::collections::HashSet::new();
+        for m in &self.mcp_servers {
+            if m.id.trim().is_empty() {
+                return Err(ConfigError::Validation(
+                    "mcp_servers id must not be empty".into(),
+                ));
+            }
+            if !mcp_ids.insert(m.id.clone()) {
+                return Err(ConfigError::Validation(format!(
+                    "duplicate mcp_servers id '{}'",
+                    m.id
+                )));
+            }
+        }
+        let mut lsp_ids = std::collections::HashSet::new();
+        for l in &self.lsp_servers {
+            if l.id.trim().is_empty() {
+                return Err(ConfigError::Validation(
+                    "lsp_servers id must not be empty".into(),
+                ));
+            }
+            if !lsp_ids.insert(l.id.clone()) {
+                return Err(ConfigError::Validation(format!(
+                    "duplicate lsp_servers id '{}'",
+                    l.id
+                )));
+            }
+        }
+        Ok(())
     }
 
     pub fn provider(&self, id: &str) -> Option<&ProviderInfo> {
@@ -121,6 +281,10 @@ impl Default for SentinelConfig {
             providers: default_providers(),
             mcp_servers: Vec::new(),
             thread_store: default_thread_store(),
+            debug: DebugSettings::default(),
+            context: ContextSettings::default(),
+            theme: ThemeSettings::default(),
+            lsp_servers: Vec::new(),
         }
     }
 }
@@ -229,5 +393,103 @@ name = "M"
         let cfg = SentinelConfig::default();
         assert!(cfg.provider("anthropic").is_some());
         assert!(cfg.provider("does-not-exist").is_none());
+    }
+
+    #[test]
+    fn default_config_validates() {
+        let cfg = SentinelConfig::default();
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn invalid_thread_store_fails_validation() {
+        let path = temp_toml(
+            "badstore",
+            "thread_store = \"bogus\"\n[context]\npaths = [\".\"]\n",
+        );
+        let cfg = SentinelConfig::load_from(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+        let err = cfg.validate().unwrap_err();
+        assert!(err.to_string().contains("thread_store"));
+    }
+
+    #[test]
+    fn unknown_default_model_fails_validation() {
+        let path = temp_toml(
+            "badmodel",
+            "[agent]\ndefault_model = \"nope-42\"\n[context]\npaths = [\".\"]\n",
+        );
+        let cfg = SentinelConfig::load_from(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+        let err = cfg.validate().unwrap_err();
+        assert!(err.to_string().contains("not provided"));
+    }
+
+    #[test]
+    fn parses_debug_context_theme_and_lsp_sections() {
+        let path = temp_toml(
+            "newsecs",
+            r#"
+[debug]
+enabled = true
+verbose = true
+
+[context]
+paths = ["src", "docs"]
+exclude = ["target"]
+
+[theme]
+name = "paper"
+
+[[lsp_servers]]
+id = "rust-analyzer"
+command = "rust-analyzer"
+args = ["--log-file", "ra.log"]
+languages = ["rust"]
+"#,
+        );
+        let cfg = SentinelConfig::load_from(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+
+        assert!(cfg.debug.enabled);
+        assert!(cfg.debug.verbose);
+        assert_eq!(cfg.context.paths, vec!["src", "docs"]);
+        assert_eq!(cfg.context.exclude, vec!["target"]);
+        assert_eq!(cfg.theme.name, "paper");
+        assert_eq!(cfg.lsp_servers.len(), 1);
+        assert_eq!(cfg.lsp_servers[0].id, "rust-analyzer");
+        assert_eq!(cfg.lsp_servers[0].languages, vec!["rust"]);
+    }
+
+    #[test]
+    fn duplicate_lsp_id_fails_validation() {
+        let path = temp_toml(
+            "duplsp",
+            r#"
+[agent]
+default_model = "m"
+
+[[providers]]
+id = "local"
+name = "Local"
+base_url = "http://localhost:9999/v1"
+
+[[providers.models]]
+id = "m"
+name = "M"
+
+[[lsp_servers]]
+id = "ra"
+command = "rust-analyzer"
+
+[[lsp_servers]]
+id = "ra"
+command = "other"
+"#,
+        );
+        let cfg = SentinelConfig::load_from(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+        let err = cfg.validate().unwrap_err();
+        assert!(err.to_string().contains("duplicate lsp_servers id 'ra'"));
     }
 }

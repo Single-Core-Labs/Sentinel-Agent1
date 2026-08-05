@@ -29,6 +29,8 @@ export type ServerEvent =
   | { event: 'completed'; text: string }
   | { event: 'error'; message: string }
   | { event: 'token_count'; prompt: number; completion: number }
+  | { event: 'session_created'; session_id: string; model: string }
+  | { event: 'session_ended'; session_id: string; reason: string }
 
 export interface ChatMessage {
   id: string

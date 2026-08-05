@@ -79,6 +79,19 @@ impl SessionEvent {
             SessionEvent::Error { timestamp, .. } => *timestamp,
         }
     }
+
+    pub fn variant_name(&self) -> &'static str {
+        match self {
+            SessionEvent::SessionCreated { .. } => "session_created",
+            SessionEvent::UserMessage { .. } => "user_message",
+            SessionEvent::AssistantText { .. } => "assistant_text",
+            SessionEvent::ToolCall { .. } => "tool_call",
+            SessionEvent::ToolResult { .. } => "tool_result",
+            SessionEvent::TurnEnd { .. } => "turn_end",
+            SessionEvent::SessionEnded { .. } => "session_ended",
+            SessionEvent::Error { .. } => "error",
+        }
+    }
 }
 
 #[async_trait]
@@ -157,7 +170,11 @@ pub fn create_event_store() -> SharedEventStore {
     if cfg!(feature = "sqlite") {
         #[cfg(feature = "sqlite")]
         {
-            Arc::new(SqliteEventStore::new(":memory:").unwrap_or_else(|_| Arc::new(NullEventStore)))
+            let store: SharedEventStore = match SqliteEventStore::new(":memory:") {
+                Ok(s) => s,
+                Err(_) => Arc::new(NullEventStore),
+            };
+            store
         }
         #[cfg(not(feature = "sqlite"))]
         {
@@ -177,18 +194,8 @@ pub struct SqliteEventStore {
 #[cfg(feature = "sqlite")]
 impl SqliteEventStore {
     pub fn new(path: &str) -> Result<Arc<Self>, rusqlite::Error> {
-        let conn = rusqlite::Connection::open(path)?;
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS session_events (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id TEXT NOT NULL,
-                timestamp TEXT NOT NULL,
-                event_type TEXT NOT NULL,
-                payload TEXT NOT NULL
-            );
-            CREATE INDEX IF NOT EXISTS idx_session_events_session_id
-                ON session_events(session_id);",
-        )?;
+        let mut conn = rusqlite::Connection::open(path)?;
+        crate::sqlite_migrations::run_migrations(&mut conn)?;
         Ok(Arc::new(Self {
             conn: std::sync::Mutex::new(conn),
         }))
@@ -200,9 +207,7 @@ impl SqliteEventStore {
 impl EventStore for SqliteEventStore {
     async fn append(&self, event: SessionEvent) {
         let payload = serde_json::to_string(&event).unwrap_or_default();
-        let event_type = std::mem::discriminant(&event)
-            .variant_name()
-            .unwrap_or("unknown");
+        let event_type = event.variant_name();
         let session_id = event.session_id().to_string();
         let timestamp = event.timestamp().to_rfc3339();
         let conn = self.conn.lock().unwrap();
@@ -323,7 +328,10 @@ mod tests {
             })
             .await;
         let events = store.read("s1").await;
-        // NullEventStore returns empty
+        // NullEventStore returns empty; the sqlite store persists the event.
+        #[cfg(feature = "sqlite")]
+        assert_eq!(events.len(), 1);
+        #[cfg(not(feature = "sqlite"))]
         assert!(events.is_empty());
     }
 }

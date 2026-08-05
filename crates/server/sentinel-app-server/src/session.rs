@@ -48,7 +48,7 @@ impl EventHandler for ServerEventBridge {
 
 impl AppSession {
     pub fn new(
-        _model: Option<String>,
+        model: Option<String>,
         provider: Arc<dyn ModelProvider>,
         tools: Arc<ToolRegistry>,
         config: Arc<SentinelConfig>,
@@ -56,7 +56,9 @@ impl AppSession {
     ) -> Self {
         let id = Uuid::new_v4().to_string();
         let (evt_tx, _) = tokio::sync::broadcast::channel(256);
+        let model_id = model.unwrap_or_else(|| config.agent.default_model.clone());
         let agent = Agent::new(provider, tools, config.clone())
+            .with_model(model_id)
             .with_event_handler(Arc::new(ServerEventBridge { tx: evt_tx.clone() }));
         let thread = AgentThread::new(
             config.agent.max_turns,
@@ -78,7 +80,7 @@ impl AppSession {
     }
 
     pub fn new_with_compressor(
-        _model: Option<String>,
+        model: Option<String>,
         provider: Arc<dyn ModelProvider>,
         tools: Arc<ToolRegistry>,
         config: Arc<SentinelConfig>,
@@ -87,8 +89,10 @@ impl AppSession {
     ) -> Self {
         let id = Uuid::new_v4().to_string();
         let (evt_tx, _) = tokio::sync::broadcast::channel(256);
+        let model_id = model.unwrap_or_else(|| config.agent.default_model.clone());
         let agent = Agent::new(provider, tools, config.clone())
             .with_compressor(compressor)
+            .with_model(model_id)
             .with_event_handler(Arc::new(ServerEventBridge { tx: evt_tx.clone() }));
         let thread = AgentThread::new(
             config.agent.max_turns,
@@ -119,12 +123,14 @@ impl AppSession {
         compressor: Option<Arc<dyn sentinel_core::ContentCompressor>>,
     ) -> Self {
         let (evt_tx, _) = tokio::sync::broadcast::channel(256);
+        let model_id = config.agent.default_model.clone();
         let agent = Agent::new(provider, tools, config.clone());
         let agent = if let Some(c) = compressor {
             agent.with_compressor(c)
         } else {
             agent
         }
+        .with_model(model_id)
         .with_event_handler(Arc::new(ServerEventBridge { tx: evt_tx.clone() }));
 
         analytics.emit(AnalyticsEvent::new(

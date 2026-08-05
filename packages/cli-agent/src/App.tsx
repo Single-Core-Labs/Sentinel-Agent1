@@ -177,6 +177,20 @@ function App() {
       case 'error':
         push({ id: generateId(), kind: 'system', text: `Error: ${evt.message}` })
         break
+      case 'session_created':
+        push({
+          id: generateId(),
+          kind: 'system',
+          text: `Session created: ${evt.session_id} (${evt.model})`,
+        })
+        break
+      case 'session_ended':
+        push({
+          id: generateId(),
+          kind: 'system',
+          text: `Session ended: ${evt.reason}`,
+        })
+        break
     }
   }
 

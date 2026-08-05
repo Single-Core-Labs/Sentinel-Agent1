@@ -10,6 +10,7 @@ mod local;
 mod model_selector;
 mod plugin_cmd;
 mod proxy;
+mod schema;
 mod server;
 mod telemetry;
 mod tui;
@@ -53,6 +54,7 @@ async fn main() -> anyhow::Result<()> {
         "web" => web::run(sub_args).await?,
         "proxy" => proxy::run(sub_args).await?,
         "diagnostics" => diagnostics::run(sub_args).await?,
+        "schema" => schema::run(sub_args)?,
         "tui" => tui::run(sub_args).await?,
         other => {
             eprintln!("{} Unknown subcommand: '{}'", "Error:".red().bold(), other);
@@ -109,6 +111,7 @@ fn print_help() {
     println!("  web [--port <n>]        Start HTTP server with Web UI");
     println!("  proxy                  Headroom HTTP compression proxy");
     println!("  diagnostics            System diagnostic checks");
+    println!("  schema                 Print JSON Schema for sentinel.toml (IDE validation/autocompletion)");
     println!("  tui [--port <n>]        Terminal UI for app server");
     println!();
     println!("{}", "Common flags:".yellow().bold());

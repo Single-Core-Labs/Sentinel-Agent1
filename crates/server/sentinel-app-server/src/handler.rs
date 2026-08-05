@@ -276,6 +276,10 @@ impl RequestHandler {
         };
 
         let session_id = session.id.clone();
+        let _ = session.events.send(ServerEvent::SessionCreated {
+            session_id: session_id.clone(),
+            model: model_id.clone(),
+        });
         self.sessions
             .lock()
             .await
@@ -305,7 +309,14 @@ impl RequestHandler {
             .and_then(|v| v.as_str().map(String::from))
             .ok_or_else(|| JsonRpcError::invalid_params("Missing session_id"))?;
         let mut sessions = self.sessions.lock().await;
-        sessions.remove(&session_id);
+        let removed = sessions.remove(&session_id);
+        if let Some(ref session) = removed {
+            let _ = session.events.send(ServerEvent::SessionEnded {
+                session_id: session_id.clone(),
+                reason: "destroyed".into(),
+            });
+        }
+        drop(removed);
 
         if let Some(ref store) = self.thread_store {
             if let Err(e) = store.delete_thread(&session_id).await {

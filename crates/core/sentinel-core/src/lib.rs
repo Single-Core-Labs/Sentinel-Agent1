@@ -18,6 +18,7 @@ pub mod research_tool;
 pub mod sandbox;
 pub mod sanitize;
 pub mod snapshot;
+pub mod sqlite_migrations;
 pub mod sub_agent;
 pub mod sub_agent_tool;
 pub mod thread;

@@ -11,4 +11,6 @@ pub enum ConfigError {
     ParseError(#[from] toml::de::Error),
     #[error("Config file not found: {0}")]
     NotFound(String),
+    #[error("Invalid config: {0}")]
+    Validation(String),
 }

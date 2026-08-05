@@ -5,8 +5,13 @@ use crate::thread::AgentThread;
 use async_trait::async_trait;
 #[cfg(feature = "sqlite")]
 use rusqlite::{params, Connection};
+#[cfg(feature = "sqlite")]
+use std::sync::{Arc, Mutex};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+
+#[cfg(feature = "sqlite")]
+use chrono::Utc;
 
 /// Thread persisted representation
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -218,26 +223,17 @@ impl SqliteThreadStore {
         let store = Self {
             conn: Arc::new(Mutex::new(conn)),
         };
-        store.init_tables()?;
+        store.run_migrations()?;
         Ok(store)
     }
 
-    fn init_tables(&self) -> Result<(), ThreadStoreError> {
-        let conn = self
+    fn run_migrations(&self) -> Result<(), ThreadStoreError> {
+        let mut conn = self
             .conn
             .lock()
             .map_err(|e| ThreadStoreError::Store(e.to_string()))?;
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS threads (
-                thread_id TEXT PRIMARY KEY,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                data TEXT NOT NULL,
-                schema_version INTEGER NOT NULL
-            );",
-        )
-        .map_err(|e| ThreadStoreError::Store(e.to_string()))?;
-        Ok(())
+        crate::sqlite_migrations::run_migrations(&mut conn)
+            .map_err(|e| ThreadStoreError::Store(e.to_string()))
     }
 }
 
