@@ -306,33 +306,11 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     };
     let model_id = selected.model_id;
 
-    let mut tool_registry = sentinel_tools::ToolRegistry::new();
+    let tool_registry = sentinel_tools::ToolRegistry::new();
 
-    let mcp_servers = config.mcp_servers();
-    for def in mcp_servers {
-        let client = Arc::new(sentinel_mcp::McpClient::new(&def.id, def.transport.clone()));
-        match sentinel_mcp::register_mcp_tools(&mut tool_registry, client).await {
-            Ok(count) => {
-                if count > 0 {
-                    println!(
-                        "   {} MCP tools registered from '{}'",
-                        format!("{}", count).green(),
-                        def.id.green()
-                    );
-                } else {
-                    eprintln!(
-                        "{} MCP server '{}' is connected but exposes no tools",
-                        "W".yellow(),
-                        def.id
-                    );
-                }
-            }
-            Err(e) => {
-                eprintln!("✖ MCP server '{}' failed to connect: {}", def.id, e);
-                eprintln!("   Tools from this server unavailable");
-            }
-        }
-    }
+    // Background: fetch MCP tools concurrently while the rest of startup
+    // (plugins, headroom, banner) proceeds; joined right before Agent::new.
+    let mcp_fetchers = crate::mcp_setup::spawn_mcp_fetchers(config.mcp_servers());
 
     let (headroom_compressor, headroom_retrieve_tool, headroom_memory_tools) =
         sentinel_headroom::integration::create_headroom_compressor_with_tools().await;
@@ -385,6 +363,10 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
             eprintln!("  {} {}", "•".red(), err);
         }
     }
+
+    // MCP handshakes have been running in the background during plugin and
+    // headroom setup; register their tools right before the agent is built.
+    mcp_fetchers.join(&tools).await;
 
     let agent = sentinel_core::Agent::new(provider, tools, config.clone())
         .with_compressor(headroom_compressor)

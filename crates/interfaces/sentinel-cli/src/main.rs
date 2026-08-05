@@ -7,6 +7,7 @@ mod display;
 mod exec;
 mod handler;
 mod local;
+mod mcp_setup;
 mod model_selector;
 mod plugin_cmd;
 mod proxy;

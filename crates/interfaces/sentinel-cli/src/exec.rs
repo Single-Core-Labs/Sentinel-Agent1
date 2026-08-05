@@ -68,7 +68,7 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         selected.provider.clone(),
     )?);
 
-    let mut tool_registry = sentinel_tools::ToolRegistry::new();
+    let tool_registry = sentinel_tools::ToolRegistry::new();
 
     let mcp_servers = config.mcp_servers();
     if !mcp_servers.is_empty() {
@@ -76,31 +76,9 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
             " {} MCP servers configured",
             format!("{}", mcp_servers.len()).yellow()
         );
-        for def in mcp_servers {
-            let client = Arc::new(sentinel_mcp::McpClient::new(&def.id, def.transport.clone()));
-            match sentinel_mcp::register_mcp_tools(&mut tool_registry, client).await {
-                Ok(count) => {
-                    if count > 0 {
-                        println!(
-                            "   {} MCP tools registered from '{}'",
-                            format!("{}", count).green(),
-                            def.id.green()
-                        );
-                    } else {
-                        eprintln!(
-                            "{} MCP server '{}' is connected but exposes no tools",
-                            "W".yellow(),
-                            def.id
-                        );
-                    }
-                }
-                Err(e) => {
-                    eprintln!("✖ MCP server '{}' failed to connect: {}", def.id, e);
-                    eprintln!("   Tools from this server unavailable");
-                }
-            }
-        }
     }
+    let fetchers = crate::mcp_setup::spawn_mcp_fetchers(mcp_servers);
+    fetchers.join(&tool_registry).await;
 
     let (headroom_compressor, headroom_retrieve_tool, headroom_memory_tools) =
         sentinel_headroom::integration::create_headroom_compressor_with_tools().await;

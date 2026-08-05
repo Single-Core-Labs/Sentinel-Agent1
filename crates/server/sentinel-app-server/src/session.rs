@@ -40,6 +40,15 @@ impl EventHandler for ServerEventBridge {
             },
             AgentEvent::Completed { text } => ServerEvent::Completed { text },
             AgentEvent::Error { message } => ServerEvent::Error { message },
+            AgentEvent::Permission {
+                tool,
+                action,
+                reason,
+            } => ServerEvent::Permission {
+                tool,
+                action: action.to_string(),
+                reason,
+            },
             AgentEvent::TurnEnd { .. } => return,
         };
         let _ = self.tx.send(server_event);

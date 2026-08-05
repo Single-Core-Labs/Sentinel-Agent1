@@ -1,6 +1,6 @@
 # CLI & Application Entrypoint — Gap Closure Plan
 
-Status: **implemented** (all gaps closed; verified `cargo check --workspace`, `cargo test --workspace`, `bun run typecheck`)
+Status: **round 1 implemented; round 2 paused after Gap 6** → resume with `docs/design/left-to-do.md`
 Audit basis: comparison of the sentinel CLI entrypoint against the "CLI and Application Entrypoint" spec (config loading, SQLite migrations, TUI vs non-interactive branching, JSON Schema generation, component→TUI event fan-in, panic recovery).
 
 ## What already matches
@@ -62,9 +62,32 @@ command = "rust-analyzer"
 - One-shot `--prompt` path: `AssertUnwindSafe(...).catch_unwind().await` → `print_error` + exit 1 on panic.
 - Telemetry crash hook (crash.rs) still records dumps for all users first.
 
+## Round 2 — gaps found in the second audit (Cobra-style CLI flow)
+
+### Gap 6 — Background async fetch of agent tools ✅ (implemented; see left-to-do.md)
+
+- **Before:** MCP + headroom tools were registered inline and awaited in `ai.rs:276-306`; the user waited on every MCP handshake sequentially.
+- **Now:** `mcp_setup.rs` — `spawn_mcp_fetchers()` kicks off MCP `list_tools()` on background tasks; `McpFetchers::join()` registers them. `ai.rs` spawns early (during headroom/plugin setup) and joins right before `Agent::new`; `exec.rs` spawns then joins immediately.
+
+### Gap 7 — TUI mouse event handling
+
+- **Now:** keyboard only (ESC); no mouse wiring in packages/cli-agent.
+- **Target:** wheel scrolling for the conversation box + click to focus input (subject to OpenTUI mouse API availability).
+
+### Gap 8 — Logging + permission events channeled to TUI
+
+- **8a Logging:** no tracing bridge; WARN+ lines stay in the console. Target: a `ServerEvent::Log` variant fed by a tracing Layer in the web server process, forwarded to active session channels, rendered as dim system lines in the TUI.
+- **8b Permission:** no permission events; only `AskUserDialog` for approvals. Target: emit `ServerEvent::Permission { tool, action }` when a policy hook or approval gate grants/denies a tool call.
+
+### Gap 9 — Cleanup: cancel subscriptions + graceful shutdown
+
+- **Now:** `onCleanup → client.close()` and ESC exits (App.tsx:229); `unsubscribe()` (backend.ts:86) is never called.
+- **Target:** ESC/exit path calls `unsubscribe(sessionId)` before `close()`, then exits cleanly.
+
 ## Verification per fix
 
 1. `cargo check --workspace` clean
 2. `cargo test --workspace` green
 3. Fix 2 additionally: `sentinel schema` output parses as valid JSON Schema (assert `"type": "object"`, required sections present)
 4. Fix 4 additionally: ordering WS test still passes (tool_call before reply)
+5. Round 2: `bun run typecheck` clean; frontend grep shows mouse + unsubscribe wiring present

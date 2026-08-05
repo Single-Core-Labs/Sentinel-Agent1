@@ -102,6 +102,43 @@ impl EventHandler for CliEventHandler {
             AgentEvent::Error { message } => {
                 eprintln!(" {} {}", "✖ Error:".red().bold(), message);
             }
+            AgentEvent::Permission {
+                tool,
+                action,
+                reason,
+            } => {
+                append_activity(&serde_json::json!({
+                    "type": "permission",
+                    "tool": tool,
+                    "action": action.to_string(),
+                    "reason": reason,
+                }));
+                match action {
+                    sentinel_core::PermissionAction::Allow => {
+                        println!(" {} {} {}", "✓".dimmed(), tool.dimmed(), "allowed".dimmed());
+                    }
+                    sentinel_core::PermissionAction::Deny => {
+                        let reason = reason.unwrap_or_default();
+                        println!(
+                            " {} {} {} {}",
+                            "✖".yellow(),
+                            tool.yellow().bold(),
+                            "denied:".yellow(),
+                            reason.dimmed()
+                        );
+                    }
+                    sentinel_core::PermissionAction::Veto => {
+                        let reason = reason.unwrap_or_default();
+                        println!(
+                            " {} {} {} {}",
+                            "✖".red(),
+                            tool.red().bold(),
+                            "vetoed:".red(),
+                            reason.dimmed()
+                        );
+                    }
+                }
+            }
             AgentEvent::TurnEnd { turn, iteration: _ } => {
                 println!("{}", format!(" ─── Turn {} ───", turn).dimmed());
             }
