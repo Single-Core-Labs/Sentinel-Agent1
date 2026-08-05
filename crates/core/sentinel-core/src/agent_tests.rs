@@ -174,7 +174,7 @@ mod tests {
     }
 
     fn make_agent_with_echo(provider: Arc<dyn ModelProvider>) -> Agent {
-        let mut reg = ToolRegistry::new();
+        let reg = ToolRegistry::new();
         reg.register(Arc::new(EchoTool));
         Agent::new(provider, Arc::new(reg), Arc::new(SentinelConfig::default()))
     }

@@ -1,6 +1,6 @@
 # Left To Do — resume context
 
-Status: **paused (round 2 partial)**. Implementation stopped between Gap 6 and Gap 7; this file holds enough context to resume without losing state. Companion doc: `docs/design/cli-entrypoint-gaps.md` (round 1 done, round 2 planned).
+Status: **round 2 complete**. Gaps 7–9 implemented, `cargo test/check --workspace` green, `bun run typecheck` clean. Companion doc: `docs/design/cli-entrypoint-gaps.md` (round 1 done, round 2 done).
 
 ## Done so far (verified, committed to git or on disk — re-check with cargo)
 

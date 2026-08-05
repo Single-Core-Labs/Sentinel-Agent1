@@ -8,7 +8,7 @@
 
 use std::sync::OnceLock;
 use tokio::sync::broadcast;
-use tracing::{field::Visit, Event, Metadata, Subscriber};
+use tracing::{field::Visit, Event, Subscriber};
 use tracing_subscriber::Layer;
 
 #[derive(Debug, Clone)]
@@ -102,7 +102,9 @@ pub fn visible_at_min_level(level: &tracing::Level, debug_enabled: bool) -> bool
     } else {
         tracing::Level::WARN
     };
-    *level >= min
+    // NOTE: tracing's Level ordering puts ERROR below WARN (severity is
+    // inverted), so "at least as severe as min" is `level <= min`.
+    *level <= min
 }
 
 #[cfg(test)]
@@ -124,7 +126,7 @@ mod tests {
         assert!(!visible_at_min_level(&tracing::Level::DEBUG, false));
         assert!(visible_at_min_level(&tracing::Level::DEBUG, true));
         assert!(visible_at_min_level(&tracing::Level::INFO, true));
-        assert!(visible_at_min_level(&tracing::Level::TRACE, true));
+        assert!(!visible_at_min_level(&tracing::Level::TRACE, true));
     }
 
     #[test]

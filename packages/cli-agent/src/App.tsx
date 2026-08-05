@@ -128,11 +128,18 @@ function App() {
   const [exitArmed, setExitArmed] = createSignal(false)
   const [tokenIn, setTokenIn] = createSignal(0)
   const [tokenOut, setTokenOut] = createSignal(0)
+  const [inputFocused, setInputFocused] = createSignal(true)
 
   const commandRegistry = new CommandRegistry()
   let client: BackendClient
 
   const push = (msg: UiMessage) => setMessages((prev) => [...prev, msg])
+
+  const exitApp = async () => {
+    const sid = conn().sessionId
+    await client?.shutdown(sid)
+    process.exit(0)
+  }
 
   const toolKey = (name: string) => `${name}:${generateId()}`
 
@@ -191,6 +198,32 @@ function App() {
           text: `Session ended: ${evt.reason}`,
         })
         break
+      case 'log':
+        push({
+          id: generateId(),
+          kind: 'log',
+          level: evt.level,
+          text: `[${evt.level}] ${evt.message}`,
+        })
+        break
+      case 'permission':
+        if (evt.action === 'allow') {
+          push({
+            id: generateId(),
+            kind: 'permission',
+            action: 'allow',
+            text: `✓ allowed  ${evt.tool}`,
+          })
+        } else {
+          const suffix = evt.reason ? `  (${evt.reason})` : ''
+          push({
+            id: generateId(),
+            kind: 'permission',
+            action: evt.action,
+            text: `${evt.action === 'veto' ? '⛔ vetoed ' : '✖ denied  '} ${evt.tool}${suffix}`,
+          })
+        }
+        break
     }
   }
 
@@ -240,8 +273,7 @@ function App() {
         setExitArmed(false)
         return
       }
-      client?.close()
-      process.exit(0)
+      void exitApp()
     }
   })
 
@@ -479,8 +511,7 @@ ${commandRegistry.getHelpText()}`,
           setExitArmed(true)
           break
         }
-        client?.close()
-        process.exit(0)
+        void exitApp()
         break
 
       default: {
@@ -557,6 +588,7 @@ ${commandRegistry.getHelpText()}`,
         paddingTop={1}
         stickyScroll
         stickyStart="bottom"
+        onMouseDown={() => setInputFocused(false)}
       >
         <For each={messages()}>
           {(m: UiMessage) => (
@@ -572,6 +604,22 @@ ${commandRegistry.getHelpText()}`,
                 <text fg={DIM} wrapMode="word">{m.text}</text>
               )}
               {m.kind === 'tool' && <ToolRow tool={m.tool} />}
+              {m.kind === 'log' && (
+                <text
+                  fg={m.level === 'ERROR' ? RED : m.level === 'WARN' ? YELLOW : DIM}
+                  wrapMode="word"
+                >
+                  {m.text}
+                </text>
+              )}
+              {m.kind === 'permission' && (
+                <text
+                  fg={m.action === 'allow' ? GREEN : m.action === 'veto' ? RED : YELLOW}
+                  wrapMode="word"
+                >
+                  {m.text}
+                </text>
+              )}
               <box width="100%" height={1} />
             </box>
           )}
@@ -600,12 +648,13 @@ ${commandRegistry.getHelpText()}`,
           value={inputText()}
           onInput={(v: string) => setInputText(v)}
           placeholder="  Type a message or /help"
-          focused
+          focused={inputFocused()}
           width="100%"
           textColor={FG}
           backgroundColor={SURFACE}
           cursorColor={ACCENT}
           onSubmit={handleSend as any}
+          onMouseDown={() => setInputFocused(true)}
         />
       </box>
 

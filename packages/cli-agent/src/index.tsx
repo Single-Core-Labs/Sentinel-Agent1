@@ -8,6 +8,7 @@ async function main() {
     targetFps: 30,
     screenMode: 'alternate-screen',
     backgroundColor: '#0E1116',
+    useMouse: true,
   })
 
   render(() => <App />, renderer)

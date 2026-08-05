@@ -18,16 +18,21 @@ mod tui;
 mod web;
 
 use colored::*;
+use tracing_subscriber::layer::{Layer, SubscriberExt};
+use tracing_subscriber::util::SubscriberInitExt;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     dotenv::dotenv().ok();
 
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive(tracing::Level::WARN.into()),
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::fmt::layer().filter(
+                tracing_subscriber::EnvFilter::from_default_env()
+                    .add_directive(tracing::Level::WARN.into()),
+            ),
         )
+        .with(sentinel_app_server::logs::LogLayer::new())
         .init();
 
     let args: Vec<String> = std::env::args().collect();

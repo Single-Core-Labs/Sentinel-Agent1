@@ -86,4 +86,16 @@ export class BackendClient {
   unsubscribe(sessionId: string): Promise<unknown> {
     return this.call('event/unsubscribe', { session_id: sessionId })
   }
+
+  /** Graceful teardown: unsubscribe from session events, then close. */
+  async shutdown(sessionId: string | null): Promise<void> {
+    if (sessionId) {
+      try {
+        await this.unsubscribe(sessionId)
+      } catch {
+        // Server may already be gone — close() below handles it.
+      }
+    }
+    this.close()
+  }
 }

@@ -20,6 +20,8 @@ export type UiMessage =
   | { id: string; kind: 'assistant'; text: string }
   | { id: string; kind: 'system'; text: string }
   | { id: string; kind: 'tool'; tool: ToolCallState }
+  | { id: string; kind: 'log'; level: string; text: string }
+  | { id: string; kind: 'permission'; action: 'allow' | 'deny' | 'veto'; text: string }
 
 /** Server-to-client push notifications (sent as {"method":"event","params":…}) */
 export type ServerEvent =
@@ -31,6 +33,8 @@ export type ServerEvent =
   | { event: 'token_count'; prompt: number; completion: number }
   | { event: 'session_created'; session_id: string; model: string }
   | { event: 'session_ended'; session_id: string; reason: string }
+  | { event: 'log'; level: string; message: string }
+  | { event: 'permission'; tool: string; action: 'allow' | 'deny' | 'veto'; reason?: string | null }
 
 export interface ChatMessage {
   id: string

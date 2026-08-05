@@ -19,7 +19,7 @@ use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
 
 pub struct RequestHandler {
-    sessions: Mutex<HashMap<String, Arc<crate::session::AppSession>>>,
+    sessions: Arc<tokio::sync::Mutex<HashMap<String, Arc<crate::session::AppSession>>>>,
     config: Arc<SentinelConfig>,
     analytics: Arc<AnalyticsPipeline>,
     tools: Arc<ToolRegistry>,
@@ -147,8 +147,8 @@ impl RequestHandler {
             }
             _ => None,
         };
-        Self {
-            sessions: tokio::sync::Mutex::new(std::collections::HashMap::new()),
+        let handler = Self {
+            sessions: Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
             config,
             analytics,
             tools,
@@ -161,7 +161,41 @@ impl RequestHandler {
             started_at: Instant::now(),
             tokens_in: AtomicU64::new(0),
             tokens_out: AtomicU64::new(0),
-        }
+        };
+        handler.spawn_log_pump();
+        handler
+    }
+
+    /// Pump the process-wide log bus (Gap 8a) into every active session's
+    /// event channel. Filters to WARN/ERROR by default, DEBUG+ when the
+    /// `[debug] enabled` flag is set in config.
+    fn spawn_log_pump(&self) {
+        let sessions = self.sessions.clone();
+        let debug_enabled = self.config.debug.enabled;
+        // Subscribe synchronously so events emitted right after construction
+        // are never missed (broadcast receivers do not replay).
+        let mut rx = crate::logs::subscribe_logs();
+        tokio::spawn(async move {
+            loop {
+                match rx.recv().await {
+                    Ok(line) => {
+                        let level = crate::logs::level_from_str(&line.level);
+                        if !crate::logs::visible_at_min_level(&level, debug_enabled) {
+                            continue;
+                        }
+                        let sessions = sessions.lock().await;
+                        for session in sessions.values() {
+                            let _ = session.events.send(ServerEvent::Log {
+                                level: line.level.clone(),
+                                message: line.message.clone(),
+                            });
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                }
+            }
+        });
     }
 
     fn find_provider_for_model(&self, model_id: &str) -> Option<ProviderInfo> {
@@ -986,6 +1020,7 @@ fn parse_params<T: serde::de::DeserializeOwned>(params: Option<Value>) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sentinel_provider::ProviderError;
 
     #[test]
     fn diff_preview_insertion() {
@@ -1065,5 +1100,145 @@ mod tests {
                 p["id"]
             );
         }
+    }
+
+    /// Provider stub used only to construct sessions in tests (never called).
+    struct NeverProvider {
+        info: ProviderInfo,
+    }
+
+    #[async_trait::async_trait]
+    impl ModelProvider for NeverProvider {
+        fn info(&self) -> &sentinel_provider_info::ProviderInfo {
+            &self.info
+        }
+
+        async fn complete(
+            &self,
+            _req: &sentinel_protocol::CompletionRequest,
+        ) -> Result<sentinel_protocol::CompletionResponse, ProviderError> {
+            panic!("NeverProvider must not be called")
+        }
+
+        async fn complete_stream(
+            &self,
+            _req: &sentinel_protocol::CompletionRequest,
+        ) -> Result<
+            Box<
+                dyn tokio_stream::Stream<
+                        Item = Result<sentinel_protocol::StreamChunk, ProviderError>,
+                    > + Send
+                    + Unpin,
+            >,
+            ProviderError,
+        > {
+            panic!("NeverProvider must not be called")
+        }
+    }
+
+    /// Builds a handler with one registered session and a fresh event rx.
+    async fn handler_with_session(
+        debug_enabled: bool,
+    ) -> (
+        Arc<RequestHandler>,
+        tokio::sync::broadcast::Receiver<ServerEvent>,
+    ) {
+        let mut cfg = SentinelConfig::default();
+        cfg.debug.enabled = debug_enabled;
+        let handler = Arc::new(RequestHandler::new(
+            Arc::new(cfg),
+            Arc::new(AnalyticsPipeline::new()),
+            Arc::new(ToolRegistry::new()),
+        ));
+        let session = Arc::new(crate::session::AppSession::new(
+            None,
+            Arc::new(NeverProvider {
+                info: ProviderInfo::default(),
+            }),
+            Arc::new(ToolRegistry::new()),
+            Arc::new(SentinelConfig::default()),
+            Arc::new(AnalyticsPipeline::new()),
+        ));
+        let rx = session.events.subscribe();
+        handler
+            .sessions
+            .lock()
+            .await
+            .insert(session.id.clone(), session);
+        (handler, rx)
+    }
+
+    fn emit_log(level: tracing::Level, message: &str) {
+        use tracing_subscriber::layer::SubscriberExt;
+        let subscriber = tracing_subscriber::registry().with(crate::logs::LogLayer::new());
+        tracing::subscriber::with_default(subscriber, || match level {
+            tracing::Level::ERROR => tracing::error!("{}", message),
+            tracing::Level::WARN => tracing::warn!("{}", message),
+            tracing::Level::INFO => tracing::info!("{}", message),
+            tracing::Level::DEBUG => tracing::debug!("{}", message),
+            tracing::Level::TRACE => tracing::trace!("{}", message),
+        });
+    }
+
+    /// Waits for a Log event whose message matches, ignoring events that
+    /// belong to other concurrently-running tests sharing the log channel.
+    async fn await_log(
+        rx: &mut tokio::sync::broadcast::Receiver<ServerEvent>,
+        marker: &str,
+    ) -> String {
+        let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
+        loop {
+            let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+            let evt = tokio::time::timeout(remaining, rx.recv())
+                .await
+                .expect("log event must arrive");
+            match evt {
+                Ok(ServerEvent::Log { level, message }) if message == marker => return level,
+                Ok(ServerEvent::Log { .. }) => continue,
+                other => panic!("expected Log event, got {:?}", other),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn log_bridge_forwards_warn_to_session_events() {
+        let (_handler, mut rx) = handler_with_session(true).await;
+        emit_log(tracing::Level::WARN, "bridge test warn");
+        assert_eq!(
+            await_log(&mut rx, "bridge test warn").await,
+            "WARN",
+            "debug enabled -> warn visible"
+        );
+    }
+
+    #[tokio::test]
+    async fn log_bridge_filters_quiet_levels_without_debug() {
+        let (_handler, mut rx) = handler_with_session(false).await;
+        emit_log(tracing::Level::INFO, "quiet info line");
+
+        // INFO must never surface (even within a window busy with other
+        // tests' log lines, which are skipped).
+        let quiet_window = tokio::time::Instant::now() + std::time::Duration::from_millis(400);
+        loop {
+            let remaining = quiet_window.saturating_duration_since(tokio::time::Instant::now());
+            if remaining.is_zero() {
+                break;
+            }
+            match tokio::time::timeout(remaining, rx.recv()).await {
+                Ok(Ok(ServerEvent::Log { message, .. })) if message == "quiet info line" => {
+                    panic!("INFO must be filtered when debug is disabled")
+                }
+                Ok(Ok(_)) => continue,
+                Err(_) => break,
+                other => panic!("unexpected channel state: {:?}", other),
+            }
+        }
+
+        emit_log(tracing::Level::WARN, "bridge test warn2");
+        assert_eq!(
+            await_log(&mut rx, "bridge test warn2").await,
+            "WARN",
+            "warn visible without debug"
+        );
     }
 }
