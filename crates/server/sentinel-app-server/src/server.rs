@@ -115,22 +115,48 @@ impl AppServer {
         addr: &SocketAddr,
         static_dir: &str,
     ) -> anyhow::Result<()> {
+        let (_tx, rx) = tokio::sync::watch::channel(false);
+        self.run_http_with_dir_with_shutdown(addr, static_dir, rx).await
+    }
+
+    pub async fn run_http_with_dir_with_shutdown(
+        &self,
+        addr: &SocketAddr,
+        static_dir: &str,
+        shutdown: tokio::sync::watch::Receiver<bool>,
+    ) -> anyhow::Result<()> {
         let http = HttpServer::new(self.handler.clone()).with_static_dir(static_dir);
-        http.run(addr).await
+        http.run_with_shutdown(addr, shutdown).await
     }
 
     pub async fn run_tcp(&self, addr: &str) -> Result<(), Box<dyn std::error::Error>> {
+        let (_tx, rx) = tokio::sync::watch::channel(false);
+        self.run_tcp_with_shutdown(addr, rx).await
+    }
+
+    pub async fn run_tcp_with_shutdown(
+        &self,
+        addr: &str,
+        mut shutdown: tokio::sync::watch::Receiver<bool>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         let transport = TransportServer::new(TransportKind::Tcp { addr: addr.into() });
         loop {
-            let (mut stream, sink, _client_id) = transport
-                .accept()
-                .await
-                .map_err(|e| format!("accept error: {}", e))?;
-            let handler = self.handler.clone();
-            tokio::spawn(async move {
-                let _ = Self::handle_stream(handler, &mut stream, sink).await;
-            });
+            tokio::select! {
+                accept = transport.accept() => {
+                    let (mut stream, sink, _client_id) =
+                        accept.map_err(|e| format!("accept error: {}", e))?;
+                    let handler = self.handler.clone();
+                    tokio::spawn(async move {
+                        let _ = Self::handle_stream(handler, &mut stream, sink).await;
+                    });
+                }
+                _ = crate::shutdown::wait_shutdown(&mut shutdown) => {
+                    tracing::info!("TCP server shutting down");
+                    break;
+                }
+            }
         }
+        Ok(())
     }
 
     async fn handle_stream<S>(

@@ -24,27 +24,27 @@ pub async fn join(self, tool_registry: &sentinel_tools::ToolRegistry)  // prints
 - `mcp_setup.rs` uses `colored::Colorize` + `sentinel_protocol::ToolDef`; module registered in `main.rs`.
 - **Note:** with registry now always `Arc`/`&self`-based, `let tool_registry` no longer needs `mut` in ai.rs/exec.rs (already fixed).
 
+### Round 2 complete — Gaps 7–9 implemented, all verified (`cargo test --workspace` green, `bun run typecheck` clean)
+- **Gap 7 — TUI mouse** — upgraded `@opentui/core` + `@opentui/solid` **0.4.5 → 0.5.1** (pinned in `packages/cli-agent/package.json`; non-breaking, typecheck clean). 0.5.1 exposes `createCliRenderer({ useMouse: true })` (on by default), `onMouseDown/onMouseScroll` element props, native ScrollBox wheel scrolling, `focused` prop (`node.focus()`).
+  - `packages/cli-agent/src/index.tsx`: `useMouse: true` in `createCliRenderer`.
+  - `packages/cli-agent/src/App.tsx`: `inputFocused` signal — scrollbox `onMouseDown={() => setInputFocused(false)}`, input `focused={inputFocused()}` + `onMouseDown={() => setInputFocused(true)}`.
+- **Gap 8a — Log events → TUI** — `ServerEvent::Log { level, message }` (`crates/server/sentinel-app-server-protocol/src/api.rs`).
+  - NEW `crates/server/sentinel-app-server/src/logs.rs`: `LogLine { level, message }`, `LogLayer` (tracing-subscriber `Layer` recording `message` field), module-level `OnceLock<broadcast::Sender<LogLine>>` (cap 512), `subscribe_logs()`/`publish_log()`, `level_from_str()`, `visible_at_min_level(level, debug_enabled)` (WARN default; DEBUG when `config.debug.enabled`; TRACE never — note: tracing `Level` Ord is inverted, so severity check is `*level <= min`). Registered `pub mod logs` in lib.rs.
+  - `handler.rs`: `spawn_log_pump()` (in `new_with_headroom`) — subscribes **synchronously** (inside the function, not the spawned task — broadcast receivers don't replay, so late async subscribe misses early lines) then pumps filtered `ServerEvent::Log` into every live session. `RequestHandler.sessions` became `Arc<tokio::sync::Mutex<…>>` (tokio Mutex isn't Clone).
+  - `main.rs` (CLI): `registry().with(fmt::layer().with_filter(EnvFilter…WARN)).with(LogLayer::new()).init()` — NOTE `with_filter` is an inherent `Layer` method: needs `use tracing_subscriber::layer::Layer;` (a `FilterExt` import does NOT exist).
+  - Root Cargo.toml: tracing-subscriber features now `["env-filter", "registry"]`; `sentinel-app-server` depends on it.
+  - Tests: `log_bridge_forwards_warn_to_session_events`, `log_bridge_filters_quiet_levels_without_debug` (handler.rs tests; marker-based loops because all tests share the global log channel and run in parallel).
+  - E2E verified: `session/destroy` on a bogus id → `{"event":"log","level":"WARN","message":"Failed to delete thread from store: NotFound(…)"}` over WS (`C:\Users\ASUS\AppData\Local\Temp\opencode\log-smoke.mjs`).
+- **Gap 8b — Permission events → TUI** — `ServerEvent::Permission { tool, action, reason }` (serde `"permission"`).
+  - `sentinel-core/src/agent.rs`: `AgentEvent::Permission { tool, action: PermissionAction, reason }`, `pub enum PermissionAction { Allow, Deny, Veto }` (+Display; 🔒 arm in AgentEvent Display). Emitted in `execute_tools_concurrent`: plugin veto → `Veto`, `PolicyDecision::Deny` → `Deny`, `ApprovalDecision::Rejected/Modify` → `Deny`, after approval passes → `Allow`.
+  - `session.rs` `ServerEventBridge` maps it; `handler.rs` CLI prints `✓ allowed` / `✖ denied` / `✖ vetoed` (colored) + activity log.
+  - TS: `types.ts` ServerEvent/UiMessage extensions; `App.tsx` renders allow→GREEN, deny→YELLOW, veto→RED.
+  - E2E verified: chat → `{"event":"permission","tool":"glob","action":"allow"}` over WS (`smoke-events.mjs`).
+- **Gap 9 — Cleanup: unsubscribe + graceful shutdown** — `backend.ts`: `async shutdown(sessionId)` (unsubscribe → close); `App.tsx`: `exitApp()` calls `await client.shutdown(conn().sessionId)` then `process.exit(0)`; wired into ESC + ctrl-d handlers. (Server-side `event/unsubscribe` already existed in `server.rs`/`http.rs` — `subscriptions.retain`.)
+
 ## Left to do — in order
 
-### Gap 7 — TUI mouse event handling  (NOT started)
-- **Finding (blocking decision needed):** installed `@opentui/solid` **0.4.5** has **no mouse API** (only `useKeyboard`, `useTerminalDimensions`). Latest published is **0.5.1** (`@opentui/solid@0.5.1`, core 0.5.1). Upgrade path unknown — verify 0.5.1 exposes mouse (check `node_modules/@opentui/solid/index.d.ts` after upgrade, or the GitHub README at https://github.com/anomalyco/opentui).
-- Target behavior: wheel scrolling for the conversation box + click-to-focus input, wired in `packages/cli-agent/src/App.tsx`.
-- If 0.5.1 still has no mouse: mark Gap 7 as **not feasible with OpenTUI** and either (a) drop it (doc the decision) or (b) hand-roll mouse by enabling terminal mouse tracking (`\x1b[?1000h`/SGR `?1006h`) reading the raw stdin — OpenTUI owns stdin input so this is invasive; prefer (a).
-- Frontend files: `packages/cli-agent/src/App.tsx` (keyboard-only today, ESC handler at ~line 222).
-
-### Gap 8a — Logging events channeled to TUI (NOT started)
-- ServerEvent already live: `thinking | tool_call | tool_result | completed | error | token_count | session_created | session_ended` (`crates/server/sentinel-app-server-protocol/src/api.rs`).
-- Plan: add `ServerEvent::Log { level, message }`; install a `tracing` Layer in the **web server process** (`web.rs`/`server.rs`) that forwards WARN/ERROR (DEBUG when `config.debug.enabled`) to a module-level `OnceLock<broadcast::Sender<LogLine>>`; a pump in the handler re-broadcasts into each active session channel; render as dim system lines in `App.tsx`.
-- Current gap note already in `cli-entrypoint-gaps.md` Gap 4 line: "Logging fan-in deliberately left out of scope (needs a tracing subscriber bridge — follow-up)." — this IS that follow-up.
-
-### Gap 8b — Permission events channeled to TUI (NOT started)
-- Verify what `sentinel_core` already emits: `AgentEvent` variants and the policy/approval decision points (`agent.rs`, `event_bus.rs` `ScriptPolicyEngine → PolicyDecision`, `ApprovalGate`). Only `AskUserDialog` (approval request) reaches the TUI today — no grant/deny notification.
-- Plan: add `ServerEvent::Permission { tool, action }` (action = allow/deny/veto) emitted where policy/approval resolves, map in `ServerEventBridge` (`session.rs`), render in `App.tsx`.
-
-### Gap 9 — Cleanup: unsubscribe + graceful shutdown (NOT started)
-- Today: `App.tsx` `onCleanup(() => client?.close())` + ESC handler closes + `process.exit(0)` (~lines 218-232).
-- `unsubscribe(sessionId)` exists in `backend.ts:86` but is never called.
-- Plan: on ESC/exit call `await client.unsubscribe(sessionId)` before `close()`. Consider an explicit `shutdown()` helper in backend.ts.
+None — round 2 complete (Gaps 6–9 all landed). Future candidates from `standout-roadmap.md`: cost harness, graph-store, `--watch`, installer.
 
 ## Verification commands (run after each gap)
 ```bash
@@ -60,5 +60,5 @@ target\debug\sentinel.exe schema --compact      # Gap 2 smoke test
 - Ollama: `C:\Users\ASUS\AppData\Local\Programs\Ollama\ollama.exe`, `ollama serve`. Models qwen3:8b / qwen3:latest / mistral:7b-instruct-v0.2-q5_0.
 - sentinel.toml `default_model = "gpt-4o-mini"` is NOT configured → always pass `model: 'qwen3:8b'` in session/create.
 - TUI launch: `cargo run --bin sentinel -- ai` (auto-spawns backend PID + TUI) OR `web --no-open --port 9090` + `bun run dev`; WS at ws://127.0.0.1:9090/ws (served by `http.rs`).
-- Backend logs: `C:\Users\ASUS\AppData\Local\Temp\opencode\sentinel-web.log(.err)`. Test harnesses live in `C:\Users\ASUS\AppData\Local\Temp\opencode\` (ws-ordering-test.mjs, ws-event-test.mjs).
+- Backend logs: `C:\Users\ASUS\AppData\Local\Temp\opencode\sentinel-web.log(.err)`. Test harnesses live in `C:\Users\ASUS\AppData\Local\Temp\opencode\` (ws-ordering-test.mjs, ws-event-test.mjs, smoke-events.mjs, log-smoke.mjs).
 - The `mcp_setup.rs` module (`McpFetchers`) is dead-clean in exec.rs (join immediately) — revisit only if exec needs overlap later.

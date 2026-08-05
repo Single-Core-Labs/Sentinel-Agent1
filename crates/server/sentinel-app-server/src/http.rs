@@ -94,6 +94,15 @@ impl HttpServer {
     }
 
     pub async fn run(&self, addr: &SocketAddr) -> anyhow::Result<()> {
+        let (_tx, rx) = tokio::sync::watch::channel(false);
+        self.run_with_shutdown(addr, rx).await
+    }
+
+    pub async fn run_with_shutdown(
+        &self,
+        addr: &SocketAddr,
+        mut shutdown: tokio::sync::watch::Receiver<bool>,
+    ) -> anyhow::Result<()> {
         let state = AppState {
             handler: self.handler.clone(),
             auth_token: self.auth_token.clone(),
@@ -120,7 +129,13 @@ impl HttpServer {
             );
         }
 
-        axum::serve(listener, app).await?;
+        axum::serve(listener, app)
+            .with_graceful_shutdown(async move {
+                let _ = crate::shutdown::wait_shutdown(&mut shutdown).await;
+                tracing::info!("HTTP server shutting down");
+                println!(" {} Web server shutting down...", "◼".yellow().bold());
+            })
+            .await?;
         Ok(())
     }
 }

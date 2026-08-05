@@ -27,7 +27,7 @@ async fn main() -> anyhow::Result<()> {
 
     tracing_subscriber::registry()
         .with(
-            tracing_subscriber::fmt::layer().filter(
+            tracing_subscriber::fmt::layer().with_filter(
                 tracing_subscriber::EnvFilter::from_default_env()
                     .add_directive(tracing::Level::WARN.into()),
             ),

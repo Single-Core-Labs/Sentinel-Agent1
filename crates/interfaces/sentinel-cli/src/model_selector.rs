@@ -228,6 +228,40 @@ fn finish(selected_model: &str, provider: ProviderInfo) -> Result<SelectedModel,
 mod tests {
     use super::*;
     use sentinel_provider_info::{AuthConfig, ModelEntry};
+    use std::sync::OnceLock;
+
+    /// Serializes tests that mutate shared process env vars — cargo runs tests
+    /// in parallel, and concurrent set/remove of `OPENAI_API_KEY` flakes.
+    fn env_lock() -> &'static std::sync::Mutex<()> {
+        static LOCK: OnceLock<std::sync::Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| std::sync::Mutex::new(()))
+    }
+
+    /// Sets an env var for the duration of the test, restoring the previous
+    /// value (or removing it) on drop — even if the test panics.
+    struct SetEnv {
+        key: &'static str,
+        had: bool,
+        prev: Option<String>,
+    }
+
+    impl SetEnv {
+        fn new(key: &'static str, value: &str) -> Self {
+            let had = std::env::var_os(key).is_some();
+            let prev = std::env::var(key).ok();
+            std::env::set_var(key, value);
+            Self { key, had, prev }
+        }
+    }
+
+    impl Drop for SetEnv {
+        fn drop(&mut self) {
+            match (self.had, self.prev.as_deref()) {
+                (true, Some(v)) => std::env::set_var(self.key, v),
+                _ => std::env::remove_var(self.key),
+            }
+        }
+    }
 
     fn test_config(models: Vec<ModelEntry>) -> SentinelConfig {
         SentinelConfig {
@@ -258,11 +292,11 @@ mod tests {
 
     #[test]
     fn exact_model_match_is_selected() {
+        let _g = env_lock().lock().unwrap();
         let cfg = test_config(vec![model("gpt-4o")]);
-        std::env::set_var("OPENAI_API_KEY", "sk-test");
+        let _key = SetEnv::new("OPENAI_API_KEY", "sk-test");
         let sel = resolve_model(&cfg, "gpt-4o").unwrap();
         assert_eq!(sel.model_id, "gpt-4o");
-        std::env::remove_var("OPENAI_API_KEY");
     }
 
     #[test]
@@ -274,8 +308,9 @@ mod tests {
 
     #[test]
     fn known_prefix_but_missing_key_fails_preflight() {
+        let _g = env_lock().lock().unwrap();
         let cfg = test_config(vec![model("gpt-4o")]);
-        std::env::remove_var("OPENAI_API_KEY");
+        let _cleanup = SetEnv::new("OPENAI_API_KEY", "");
         let err = resolve_model(&cfg, "gpt-4o").unwrap_err();
         assert!(matches!(err, SelectError::ApiKeyMissing { .. }));
     }
@@ -320,12 +355,13 @@ mod tests {
 
     #[test]
     fn openrouter_prefix_routes_to_openrouter_not_openai() {
+        let _g = env_lock().lock().unwrap();
         let cfg = test_config_multi(vec![
             openrouter_provider(),
             test_config(vec![model("o4-mini")]).providers.remove(0),
         ]);
-        std::env::set_var("OPENROUTER_API_KEY", "sk-test");
-        std::env::set_var("OPENAI_API_KEY", "sk-test");
+        let _or_key = SetEnv::new("OPENROUTER_API_KEY", "sk-test");
+        let _oa_key = SetEnv::new("OPENAI_API_KEY", "sk-test");
 
         // 1) `openrouter/…` must resolve to OpenRouter, not the OpenAI provider.
         let sel = resolve_model(&cfg, "openrouter/auto").unwrap();
@@ -339,9 +375,6 @@ mod tests {
         // 3) free-tier OpenRouter model resolves too.
         let sel3 = resolve_model(&cfg, "openrouter/google/gemma-4-31b-it:free").unwrap();
         assert_eq!(sel3.provider.id, "openrouter");
-
-        std::env::remove_var("OPENROUTER_API_KEY");
-        std::env::remove_var("OPENAI_API_KEY");
     }
 
     #[test]
