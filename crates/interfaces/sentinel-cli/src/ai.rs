@@ -272,6 +272,24 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     let yolo_mode = parsed.yolo_mode;
     let prompt_arg = parsed.prompt_arg;
     let hook_command = parsed.hook_command;
+    // #4 — LOCAL_ENDPOINT default: an untouched cloud default (>= config
+    // default) is redirected to the auto-discovered local backend, giving a
+    // working `sentinel ai` session offline / in dev without any config.
+    let user_explicit_model = model_id != config.agent.default_model;
+    let local_endpoint = std::env::var("SENTINEL_LOCAL_ENDPOINT")
+        .or_else(|_| std::env::var("LOCAL_ENDPOINT"))
+        .map(|v| !v.trim().is_empty())
+        .unwrap_or(false);
+    let is_local_spec =
+        model_id.starts_with("ollama/")
+            || model_id.starts_with("vllm/")
+            || model_id.starts_with("lm-studio/")
+            || model_id.starts_with("llamacpp/");
+    let model_to_resolve = if local_endpoint && !user_explicit_model && !is_local_spec {
+        "ollama/auto".to_string()
+    } else {
+        model_id.clone()
+    };
 
     // The inline terminal REPL is gone — OpenTUI (bun) is the only interactive UI.
     // Without bun and without --prompt there is nothing to do.
@@ -287,13 +305,24 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
 
     // #49/#52/#53 — centralized model+provider resolution with validation and
     // API-key preflight, instead of a silent fallback to the first provider.
-    let selected = match crate::model_selector::resolve_model(&config, &model_id) {
+    let mut selected = match crate::model_selector::resolve_model(&config, &model_to_resolve) {
         Ok(sel) => sel,
         Err(e) => {
             eprintln!("✖ {}", e);
             return Ok(());
         }
     };
+    // Live local-model discovery (LOCAL_ENDPOINT / local engines).
+    match crate::model_selector::apply_local_discovery(&mut selected, user_explicit_model).await {
+        Ok(Some(adopted)) => {
+            println!(" {} local default model: {} (LOCAL_ENDPOINT)", "·".green(), adopted);
+        }
+        Ok(None) => {}
+        Err(e) => {
+            eprintln!("✖ {}", e);
+            return Ok(());
+        }
+    }
     let provider = match sentinel_provider::ProviderKind::from_info(selected.provider.clone()) {
         Ok(provider) => Arc::new(provider),
         Err(e) => {

@@ -110,13 +110,18 @@ impl CostAwareRouter {
     /// Estimate cost before making the request (for budget checking)
     pub fn estimate_request_cost(&self, req: &CompletionRequest) -> f64 {
         let provider = self.select(req);
-        let model = provider.name();
+        let model = provider
+            .info()
+            .models
+            .first()
+            .map(|m| m.id.clone())
+            .unwrap_or_else(|| provider.name().to_string());
         let prompt_tokens: u32 = req
             .messages
             .iter()
             .map(|m| m.extract_text().len() as u32 / 4)
             .sum();
-        estimate_input_cost(model, prompt_tokens)
+        estimate_input_cost(&model, prompt_tokens)
     }
 
     /// Reset the turn counter on the cost tracker

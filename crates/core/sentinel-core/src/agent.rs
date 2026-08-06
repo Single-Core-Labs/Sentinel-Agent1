@@ -377,7 +377,7 @@ impl Agent {
                 self.total_completion_tokens
                     .fetch_add(usage.completion_tokens as u64, Ordering::Relaxed);
                 let cost = crate::cost::estimate_llm_cost(
-                    self.provider.name(),
+                    &self.effective_model(),
                     &crate::cost::Usage::new(usage.prompt_tokens, usage.completion_tokens),
                 );
                 thread.budget.record_spend(cost);
@@ -610,7 +610,7 @@ impl Agent {
             self.total_completion_tokens
                 .fetch_add(usage.completion_tokens as u64, Ordering::Relaxed);
             let cost = crate::cost::estimate_llm_cost(
-                self.provider.name(),
+                &self.effective_model(),
                 &crate::cost::Usage::new(usage.prompt_tokens, usage.completion_tokens),
             );
             thread.budget.record_spend(cost);

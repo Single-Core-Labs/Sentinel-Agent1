@@ -225,10 +225,113 @@ fn finish(selected_model: &str, provider: ProviderInfo) -> Result<SelectedModel,
         }
     }
 
+    // Local backends get their wire model name from `models[0].id`
+    // (LocalProvider ignores the request's model field), so stamp the chosen
+    // model in — without the engine prefix.
+    let mut provider = provider;
+    if is_local {
+        let plain = strip_local_prefix(selected_model);
+        provider.models = vec![sentinel_provider_info::ModelEntry {
+            id: plain.to_string(),
+            name: selected_model.to_string(),
+            context_window: 0,
+            supports_streaming: true,
+            supports_tools: true,
+        }];
+    }
+
     Ok(SelectedModel {
         model_id: selected_model.to_string(),
         provider,
     })
+}
+
+/// Remove an engine-qualified prefix (`ollama/`, `vllm/`, …) from a model id.
+fn strip_local_prefix(model_id: &str) -> &str {
+    for prefix in ["ollama/", "vllm/", "lm-studio/", "llamacpp/"] {
+        if let Some(rest) = model_id.strip_prefix(prefix) {
+            return rest;
+        }
+    }
+    model_id
+}
+
+/// Live local-model discovery (`local.go` equivalent).
+///
+/// For a resolved local backend (Ollama/vLLM/LM Studio/llama.cpp):
+/// 1. queries `{base_url}/v1/models` and attaches the discovered catalog to
+///    the provider info (single source of truth for `/models`-style UIs);
+/// 2. keeps the chosen model as the wire name (`models[0]`);
+/// 3. when `LOCAL_ENDPOINT`/`SENTINEL_LOCAL_ENDPOINT` is set and the user did
+///    not name a model explicitly, adopts the first discovered model as the
+///    default agent model (dev/offline convenience, mirroring the spec).
+///
+/// Returns `Ok(Some(model_id))` when a local default was adopted.
+pub async fn apply_local_discovery(
+    selected: &mut SelectedModel,
+    user_explicit: bool,
+) -> Result<Option<String>, String> {
+    let is_local = matches!(
+        selected.provider.id.as_str(),
+        "ollama" | "vllm" | "lm-studio" | "llamacpp"
+    );
+    if !is_local || selected.provider.base_url.is_empty() {
+        return Ok(None);
+    }
+
+    let client = reqwest::Client::new();
+    let discovered =
+        sentinel_provider::backend::list_backend_models(&client, &selected.provider.base_url)
+            .await
+            .map_err(|e| {
+                format!(
+                    "Local backend {} is not reachable: {}",
+                    selected.provider.base_url, e
+                )
+            })?;
+    if discovered.is_empty() {
+        return Ok(None);
+    }
+
+    let chosen = strip_local_prefix(&selected.model_id).to_string();
+
+    // Catalog: discovered ids first, chosen model pinned at the front so the
+    // provider's wire name stays the user's pick.
+    let mut catalog: Vec<sentinel_provider_info::ModelEntry> = discovered
+        .iter()
+        .map(|id| sentinel_provider_info::ModelEntry {
+            id: id.clone(),
+            name: id.clone(),
+            context_window: 0,
+            supports_streaming: true,
+            supports_tools: true,
+        })
+        .collect();
+    if !catalog.iter().any(|m| m.id == chosen) {
+        catalog.insert(
+            0,
+            sentinel_provider_info::ModelEntry {
+                id: chosen.clone(),
+                name: selected.model_id.clone(),
+                context_window: 0,
+                supports_streaming: true,
+                supports_tools: true,
+            },
+        );
+    }
+    selected.provider.models = catalog;
+
+    // LOCAL_ENDPOINT opt-in: prefer a discovered local model as the default
+    // agent model unless the user named one explicitly.
+    let local_endpoint = std::env::var("SENTINEL_LOCAL_ENDPOINT")
+        .or_else(|_| std::env::var("LOCAL_ENDPOINT"))
+        .map(|v| !v.trim().is_empty())
+        .unwrap_or(false);
+    if local_endpoint && !user_explicit && !discovered.contains(&chosen) {
+        selected.model_id = discovered[0].clone();
+        return Ok(Some(discovered[0].clone()));
+    }
+    Ok(None)
 }
 
 #[cfg(test)]
@@ -403,5 +506,67 @@ mod tests {
         let cfg = SentinelConfig::default();
         let err = resolve_model(&cfg, "openrouter/auto").unwrap_err();
         assert!(matches!(err, SelectError::NoProvider { .. }));
+    }
+
+    fn local_provider(id: &str, base_url: &str) -> ProviderInfo {
+        ProviderInfo {
+            id: id.into(),
+            name: id.into(),
+            base_url: base_url.into(),
+            auth: AuthConfig::None,
+            models: vec![],
+            timeout_secs: 120,
+            extra_headers: Default::default(),
+            disabled: false,
+            provider: None,
+        }
+    }
+
+    #[test]
+    fn local_selection_requires_configured_backend() {
+        let cfg = SentinelConfig::default();
+        let err = resolve_model(&cfg, "ollama/qwen3:8b").unwrap_err();
+        assert!(
+            matches!(err, SelectError::LocalUnavailable { provider } if provider == "ollama")
+        );
+    }
+
+    #[test]
+    fn local_selection_stamps_wire_model_without_prefix() {
+        let cfg = test_config_multi(vec![local_provider("ollama", "http://localhost:11434")]);
+        let sel = resolve_model(&cfg, "ollama/qwen3:8b").unwrap();
+        assert_eq!(sel.model_id, "ollama/qwen3:8b");
+        assert_eq!(sel.provider.id, "ollama");
+        assert_eq!(
+            sel.provider.models[0].id, "qwen3:8b",
+            "wire model id must drop the engine prefix"
+        );
+        assert_eq!(sel.provider.models[0].name, "ollama/qwen3:8b");
+        assert!(sel.provider.models[0].supports_tools);
+    }
+
+    #[test]
+    fn ollama_auto_wildcard_resolves_to_configured_backend() {
+        let cfg = test_config_multi(vec![local_provider("ollama", "http://localhost:11434")]);
+        let sel = resolve_model(&cfg, "ollama/auto").unwrap();
+        assert_eq!(sel.model_id, "ollama/auto");
+        assert_eq!(sel.provider.models[0].id, "auto");
+    }
+
+    #[test]
+    fn strip_local_prefix_handles_all_engines_and_plain_ids() {
+        assert_eq!(strip_local_prefix("ollama/qwen3:8b"), "qwen3:8b");
+        assert_eq!(strip_local_prefix("vllm/Qwen2.5-14B"), "Qwen2.5-14B");
+        assert_eq!(strip_local_prefix("gpt-4o"), "gpt-4o");
+        assert_eq!(strip_local_prefix("lm-studio/a/b"), "a/b");
+    }
+
+    #[test]
+    fn cloud_model_is_not_treated_as_local() {
+        let _g = env_lock().lock().unwrap();
+        let cfg = test_config(vec![model("gpt-4o")]);
+        let _key = SetEnv::new("OPENAI_API_KEY", "sk-test");
+        let sel = resolve_model(&cfg, "gpt-4o").unwrap();
+        assert_eq!(sel.provider.models[0].id, "gpt-4o");
     }
 }

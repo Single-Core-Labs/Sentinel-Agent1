@@ -172,3 +172,65 @@ Scope basis: the "AI Agent Orchestration and Conversational Flow" spec section.
   (`cancel_aborts_running_agent`, `unknown_tool_fails_fast_and_recovers`,
   `summarize_context_records_cost_and_tokens`) — all pass.
 - Full `cargo test --workspace` green (next section).
+
+## 7. LLM Model & Provider Management (audit + round 3 delta)
+
+Scope basis: the "LLM Model and Provider Management" spec section.
+
+### 7.1 Spec → implementation map
+
+| Spec point (Go) | Rust equivalent | Where |
+|---|---|---|
+| model registry with capabilities/context | `ModelEntry { id, name, context_window, supports_streaming, supports_tools }`; **but costs live separately** (`MODEL_PRICING`), no reasoning/attachment caps (△5) | `sentinel-provider-info/provider.rs`, `sentinel-core/cost.rs:5-71` |
+| provider discovery & auto-detection | `discover_providers(get_env)` (cloud keys) + NEW: bare `LOCAL_ENDPOINT`/`SENTINEL_LOCAL_ENDPOINT` → Ollama-kind provider, per-engine `OLLAMA_BASE_URL`/`VLLM_…`/`LMSTUDIO_…`/`LLAMACPP_…` (+ optional `*_API_KEY`) → empty catalog (live list at construction) | `sentinel-config/config.rs:343-437` |
+| backend selection | `ProviderKind::from_info` factory | `sentinel-provider/backend.rs`, `provider.rs` |
+| local REPL defaults | `model_selector::resolve_model` + NEW `apply_local_discovery` (queries `{base}/v1/models`, pins chosen model as wire id, adopts first discovered when `LOCAL_ENDPOINT` set & user didn't name one) | `sentinel-cli/model_selector.rs:134,270` |
+| cost estimation per model | `price_for` exact-match → longest-containing-key (fixes `gpt-4o-mini`[`gpt-4o` silently, gone); `estimate_llm_cost`/`estimate_input_cost` | `sentinel-core/cost.rs:98-125` |
+
+### 7.2 Implemented this round
+
+1. **Model-level cost pricing.** Rebuilt `MODEL_PRICING` with real price
+   pairs (gpt-4o/mini, o3-mini, claude-sonnet-4/-haiku-3-5, gemini-2.5-pro/
+   -flash, deepseek-chat/-reasoner). Added `price_for()`: exact key first,
+   else the longest *contained* key — so `gpt-4o-mini` can never be billed
+   at `gpt-4o` rates. All 3 cost call-sites now resolve by **model id**
+   (`agent.rs` `effective_model()`, `phase.rs` `models[0].id`) instead of
+   `provider.name()`, which silently fell back to `gpt-4o-mini` every time.
+2. **Local backend registration.** `discover_providers` now registers local
+   OpenAI-compatible backends from env (bare `LOCAL_ENDPOINT`→ollama kind;
+   per-engine URL vars), `auth=None` (no key preflight for locals), starting
+   with an empty model catalog.
+3. **Wire-model correctness for locals.** `finish()` stamps the chosen model
+   into `provider.models[0]` **without** the engine prefix
+   (`ollama/qwen3:8b` → `qwen3:8b`), because `LocalProvider` sends
+   `models[0].id` and ignored the request's model field.
+4. **`supports_tool` default fix.** A provider without an explicit model
+   list is now assumed tool-capable (`models.is_empty() ||
+   any(m.supports_tools)`); previously support was derived by comparing the
+   model id against the tool name — always false for real tools.
+5. **`LOCAL_ENDPOINT` default model.** Untouched cloud defaults redirect to
+   `ollama/auto` during `ai`/`exec` session setup when
+   `LOCAL_ENDPOINT`/`SENTINEL_LOCAL_ENDPOINT` is set; live catalog is
+   attached and first discovered model adopted when the user named none.
+6. **API-key preflight** fails fast before the agent is created when the
+   selected cloud provider's key env var is unset/empty (locals exempt).
+
+### 7.3 Verified
+
+- `cargo check --workspace` clean.
+- New tests (all green): 5 cost tests (`mini_never_resolves_to_gpt4o`,
+  dated-claude matching, reasoner>chat, exact>substring, zero-token); 3
+  config discovery tests (LOCAL_ENDPOINT → ollama provider, per-engine
+  URLs/keys, no cross-registration); 5 `model_selector` tests (local
+  stamping strips prefix, `ollama/auto` wildcard, `strip_local_prefix`,
+  configured- vs unconfigured-local paths, cloud untouched).
+- Full `cargo test --workspace` green.
+
+### 7.4 Remaining gaps (documented, deferred)
+
+- No unified per-model capability struct (cost, context, memory, reasoning,
+  attachments live in different places); agent doesn't declare a reasoning
+  cap.
+- Live-catalog refresh runs once at construction (manual rather than
+  watch-based); no `sentinel models` resolver command wired to discovery.
+- MCP/SSE, role-based tool assembly — carried over from §5 gaps.

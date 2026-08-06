@@ -56,13 +56,36 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
 
     // #49/#52/#53 — centralized model+provider resolution with validation and
     // API-key preflight, instead of a silent fallback to the first provider.
-    let selected = match crate::model_selector::resolve_model(&config, &model_id) {
+    let user_explicit_model = !args.is_empty() && !args[0].starts_with('-');
+    let local_endpoint = std::env::var("SENTINEL_LOCAL_ENDPOINT")
+        .or_else(|_| std::env::var("LOCAL_ENDPOINT"))
+        .map(|v| !v.trim().is_empty())
+        .unwrap_or(false);
+    let is_local_spec =
+        model_id.starts_with("ollama/")
+            || model_id.starts_with("vllm/")
+            || model_id.starts_with("lm-studio/")
+            || model_id.starts_with("llamacpp/");
+    let model_to_resolve = if local_endpoint && !user_explicit_model && !is_local_spec {
+        "ollama/auto".to_string()
+    } else {
+        model_id.clone()
+    };
+    let mut selected = match crate::model_selector::resolve_model(&config, &model_to_resolve) {
         Ok(sel) => sel,
         Err(e) => {
             eprintln!("✖ {}", e);
             std::process::exit(1);
         }
     };
+    match crate::model_selector::apply_local_discovery(&mut selected, user_explicit_model).await {
+        Ok(Some(adopted)) => println!(" · local default model: {} (LOCAL_ENDPOINT)", adopted),
+        Ok(None) => {}
+        Err(e) => {
+            eprintln!("✖ {}", e);
+            std::process::exit(1);
+        }
+    }
     let model_id = selected.model_id;
 
     let provider = Arc::new(sentinel_provider::ProviderKind::from_info(

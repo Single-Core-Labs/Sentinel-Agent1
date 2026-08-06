@@ -384,6 +384,56 @@ impl SentinelConfig {
                 }
             }
         }
+
+        // Local backends: register a provider for an explicit local endpoint.
+        // A bare `LOCAL_ENDPOINT` (or `SENTINEL_LOCAL_ENDPOINT`) points at an
+        // OpenAI-compatible server (Ollama, vLLM, LM Studio); per-engine URL
+        // vars override the well-known defaults. Created providers start with
+        // an empty model catalog — the live model list is discovered at agent
+        // construction time (see `model_selector::apply_local_discovery`).
+        let local_endpoint = get_env("SENTINEL_LOCAL_ENDPOINT")
+            .or_else(|| get_env("LOCAL_ENDPOINT"))
+            .filter(|v| !v.trim().is_empty());
+        const LOCAL_ENGINES: &[(&str, &str, &str, &str)] = &[
+            ("ollama", "Ollama", "OLLAMA_BASE_URL", "OLLAMA_API_KEY"),
+            ("vllm", "vLLM", "VLLM_BASE_URL", "VLLM_API_KEY"),
+            ("lm-studio", "LM Studio", "LMSTUDIO_BASE_URL", "LMSTUDIO_API_KEY"),
+            ("llamacpp", "llama.cpp", "LLAMACPP_BASE_URL", "LLAMACPP_API_KEY"),
+        ];
+        for (kind, name, url_var, key_var) in LOCAL_ENGINES {
+            let named_url = get_env(url_var).filter(|v| !v.trim().is_empty());
+            // LOCAL_ENDPOINT is an OpenAI-compatible generic endpoint → Ollama kind.
+            let base_url = if *kind == "ollama" {
+                named_url.or_else(|| local_endpoint.clone())
+            } else {
+                named_url
+            };
+            let Some(base_url) = base_url else { continue };
+            let has_key = get_env(key_var)
+                .map(|v| !v.trim().is_empty())
+                .unwrap_or(false);
+            match self.providers.iter_mut().find(|p| p.id == *kind) {
+                Some(p) => {
+                    p.disabled = false;
+                    p.base_url = base_url;
+                }
+                None => self.providers.push(ProviderInfo {
+                    id: (*kind).into(),
+                    name: (*name).into(),
+                    base_url,
+                    auth: if has_key {
+                        AuthConfig::EnvKey { var: (*key_var).into() }
+                    } else {
+                        AuthConfig::None
+                    },
+                    models: Vec::new(),
+                    timeout_secs: 120,
+                    extra_headers: std::collections::HashMap::new(),
+                    disabled: false,
+                    provider: None,
+                }),
+            }
+        }
     }
 
     /// Adjust invalid values and drop unusable entries:
@@ -1110,6 +1160,60 @@ command = "other"
             cfg2.provider("copilot").unwrap().disabled,
             "missing GITHUB_TOKEN must disable the declaring provider"
         );
+    }
+
+    #[test]
+    fn local_endpoint_registers_ollama_provider() {
+        let mut cfg = SentinelConfig::default();
+        let env = env_of(&[("LOCAL_ENDPOINT", "http://localhost:11434")]);
+        cfg.discover_providers(&env);
+
+        let ollama = cfg
+            .provider("ollama")
+            .expect("LOCAL_ENDPOINT must register an ollama provider");
+        assert!(!ollama.disabled);
+        assert_eq!(ollama.base_url, "http://localhost:11434");
+        assert!(
+            matches!(ollama.auth, AuthConfig::None),
+            "local backends don't require an API key"
+        );
+        assert!(ollama.models.is_empty(), "catalog discovered at construction");
+    }
+
+    #[test]
+    fn sentinel_local_endpoint_env_also_registers_ollama() {
+        let mut cfg = SentinelConfig::default();
+        let env = env_of(&[("SENTINEL_LOCAL_ENDPOINT", "http://127.0.0.1:8080")]);
+        cfg.discover_providers(&env);
+        assert!(
+            cfg.provider("ollama").is_some(),
+            "SENTINEL_LOCAL_ENDPOINT must register the generic local provider"
+        );
+    }
+
+    #[test]
+    fn per_engine_urls_and_keys_registered_independently() {
+        let mut cfg = SentinelConfig::default();
+        let env = env_of(&[
+            ("VLLM_BASE_URL", "http://localhost:8000"),
+            ("VLLM_API_KEY", "sk-vllm"),
+            ("LMSTUDIO_BASE_URL", "http://localhost:1234"),
+        ]);
+        cfg.discover_providers(&env);
+
+        assert!(
+            cfg.provider("ollama").is_none(),
+            "no LOCAL_ENDPOINT → no generic ollama provider"
+        );
+        let vllm = cfg.provider("vllm").unwrap();
+        assert_eq!(vllm.base_url, "http://localhost:8000");
+        assert!(
+            matches!(&vllm.auth, AuthConfig::EnvKey { var } if var == "VLLM_API_KEY"),
+            "engine-specific key must be attached"
+        );
+        let lm = cfg.provider("lm-studio").unwrap();
+        assert_eq!(lm.base_url, "http://localhost:1234");
+        assert!(matches!(lm.auth, AuthConfig::None));
     }
 
     // ── Mutation, persistence & singleton ──────────────────────────────────

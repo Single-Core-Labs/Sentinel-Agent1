@@ -114,11 +114,11 @@ pub trait ModelProvider: Send + Sync {
         ProviderError,
     >;
 
-    fn supports_tool(&self, tool: &ToolDef) -> bool {
-        self.info()
-            .models
-            .iter()
-            .any(|m| m.supports_tools && m.id == tool.name)
+    /// Whether the request model advertises tool-call support. A provider with
+    /// no declared models (e.g. auto-discovered local backends) is treated as
+    /// tool-capable; otherwise any model with `supports_tools` enables tools.
+    fn supports_tool(&self, _tool: &ToolDef) -> bool {
+        self.info().models.is_empty() || self.info().models.iter().any(|m| m.supports_tools)
     }
 }
 
