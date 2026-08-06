@@ -2,6 +2,7 @@ use crate::error::ConfigError;
 use sentinel_mcp::McpServerDef;
 use sentinel_provider_info::{default_providers, AuthConfig, ProviderInfo};
 use serde::Deserialize;
+use std::sync::{Mutex, OnceLock};
 
 /// Known provider types accepted by the `provider` config key (schema enum).
 pub const KNOWN_PROVIDER_KINDS: &[&str] = &[
@@ -112,6 +113,45 @@ pub fn global_config_path() -> Option<std::path::PathBuf> {
         .or_else(|_| std::env::var("HOME"))
         .ok()
         .map(|h| std::path::PathBuf::from(h).join(".sentinel").join("sentinel.toml"))
+}
+
+/// Target file for in-place updates: `$SENTINEL_CONFIG_FILE` when set, else
+/// the first existing local config file, else `sentinel.toml` (created).
+fn local_config_path() -> std::path::PathBuf {
+    if let Ok(path) = std::env::var("SENTINEL_CONFIG_FILE") {
+        if !path.trim().is_empty() {
+            return std::path::PathBuf::from(path);
+        }
+    }
+    LOCAL_CONFIG_PATHS
+        .iter()
+        .map(std::path::PathBuf::from)
+        .find(|p| p.exists())
+        .unwrap_or_else(|| std::path::PathBuf::from(LOCAL_CONFIG_PATHS[0]))
+}
+
+/// Insert `value` at the dotted `keys` path (e.g. `["agent", "default_model"]`),
+/// creating intermediate tables as needed. Non-table values at intermediate
+/// positions are replaced by tables.
+fn upsert_field(doc: &mut toml::Value, keys: &[&str], value: toml::Value) {
+    debug_assert!(!keys.is_empty());
+    let mut cur = doc;
+    for key in &keys[..keys.len() - 1] {
+        cur = {
+            let table = table_or_insert(cur);
+            table
+                .entry((*key).to_string())
+                .or_insert_with(|| toml::Value::Table(toml::map::Map::new()))
+        };
+    }
+    table_or_insert(cur).insert(keys[keys.len() - 1].to_string(), value);
+}
+
+fn table_or_insert(value: &mut toml::Value) -> &mut toml::map::Map<String, toml::Value> {
+    if !value.is_table() {
+        *value = toml::Value::Table(toml::map::Map::new());
+    }
+    value.as_table_mut().expect("value was just replaced by a table")
 }
 
 /// A minimal cloud provider entry created by env-var discovery (e.g. OpenRouter).
@@ -530,6 +570,53 @@ impl SentinelConfig {
     pub fn mcp_servers(&self) -> &[McpServerDef] {
         &self.mcp_servers
     }
+
+    /// Set `agent.default_model` and persist the change to the local config
+    /// file (`$SENTINEL_CONFIG_FILE`, the first existing local config file,
+    /// or `sentinel.toml`). When the resulting config is invalid the file is
+    /// left unchanged and a validation error is returned.
+    pub fn update_agent_model(&mut self, model: &str) -> Result<(), ConfigError> {
+        let model = model.trim();
+        if model.is_empty() {
+            return Err(ConfigError::Validation(
+                "agent.default_model must not be empty".into(),
+            ));
+        }
+        self.agent.default_model = model.to_string();
+        self.validate()?;
+        self.persist_field(&["agent", "default_model"], toml::Value::String(model.to_string()))
+    }
+
+    /// Set `theme.name` and persist the change to the local config file.
+    pub fn update_theme(&mut self, name: &str) -> Result<(), ConfigError> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(ConfigError::Validation("theme.name must not be empty".into()));
+        }
+        self.theme.name = name.to_string();
+        self.persist_field(&["theme", "name"], toml::Value::String(name.to_string()))
+    }
+
+    /// Merge `value` at the dotted `keys` path into the local config file,
+    /// preserving every other key already present.
+    fn persist_field(&self, keys: &[&str], value: toml::Value) -> Result<(), ConfigError> {
+        let path = local_config_path();
+        let existing = std::fs::read_to_string(&path).unwrap_or_default();
+        let mut doc: toml::Value = if existing.trim().is_empty() {
+            toml::Value::Table(toml::map::Map::new())
+        } else {
+            toml::from_str(&existing).map_err(ConfigError::from)?
+        };
+        upsert_field(&mut doc, keys, value);
+        let out = toml::to_string_pretty(&doc).map_err(|source| ConfigError::SerializeError {
+            path: path.to_string_lossy().into_owned(),
+            source,
+        })?;
+        std::fs::write(&path, out).map_err(|source| ConfigError::WriteError {
+            path: path.to_string_lossy().into_owned(),
+            source,
+        })
+    }
 }
 
 impl Default for SentinelConfig {
@@ -545,6 +632,31 @@ impl Default for SentinelConfig {
             lsp_servers: Vec::new(),
         }
     }
+}
+
+/// Lazily-initialized process-wide configuration singleton ([`get`]).
+static GLOBAL_CONFIG: OnceLock<Mutex<SentinelConfig>> = OnceLock::new();
+
+/// Process-wide configuration singleton, loaded from the layered sources
+/// (defaults → env → global → local files) on first access. The first call
+/// initializes it from [`SentinelConfig::load`] (falling back to defaults);
+/// every call returns the same instance for the lifetime of the process.
+pub fn get() -> &'static Mutex<SentinelConfig> {
+    GLOBAL_CONFIG.get_or_init(|| {
+        Mutex::new(SentinelConfig::load().unwrap_or_default())
+    })
+}
+
+/// Update `agent.default_model` on the global configuration and persist the
+/// change to the local config file.
+pub fn update_agent_model(model: &str) -> Result<(), ConfigError> {
+    get().lock().unwrap().update_agent_model(model)
+}
+
+/// Update the TUI theme on the global configuration and persist the change
+/// to the local config file.
+pub fn update_theme(name: &str) -> Result<(), ConfigError> {
+    get().lock().unwrap().update_theme(name)
 }
 
 #[cfg(test)]
@@ -998,5 +1110,149 @@ command = "other"
             cfg2.provider("copilot").unwrap().disabled,
             "missing GITHUB_TOKEN must disable the declaring provider"
         );
+    }
+
+    // ── Mutation, persistence & singleton ──────────────────────────────────
+
+    /// Serializes tests that redirect the persistence target via
+    /// `SENTINEL_CONFIG_FILE` (process-global env var).
+    static PERSIST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+    fn persist_lock() -> std::sync::MutexGuard<'static, ()> {
+        PERSIST_LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+    }
+
+    fn temp_config_file() -> String {
+        std::env::temp_dir()
+            .join(format!(
+                "sentinel-config-persist-{}-{}.toml",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ))
+            .to_string_lossy()
+            .into_owned()
+    }
+
+    #[test]
+    fn update_agent_model_mutates_and_persists() {
+        let _guard = persist_lock();
+        let path = temp_config_file();
+        let _ = std::fs::remove_file(&path);
+        std::env::set_var("SENTINEL_CONFIG_FILE", &path);
+
+        let mut cfg = SentinelConfig::default();
+        cfg.update_agent_model("gpt-4o-mini").unwrap();
+        assert_eq!(cfg.agent.default_model, "gpt-4o-mini");
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        let reloaded: SentinelConfig = toml::from_str(&content).unwrap();
+        assert_eq!(reloaded.agent.default_model, "gpt-4o-mini");
+
+        let _ = std::fs::remove_file(&path);
+        std::env::remove_var("SENTINEL_CONFIG_FILE");
+    }
+
+    #[test]
+    fn update_theme_persists_and_preserves_existing_keys() {
+        let _guard = persist_lock();
+        let path = temp_config_file();
+        std::fs::write(&path, "[agent]\nmax_turns = 3\n").unwrap();
+        std::env::set_var("SENTINEL_CONFIG_FILE", &path);
+
+        let mut cfg = SentinelConfig::default();
+        cfg.update_theme("paper").unwrap();
+        assert_eq!(cfg.theme.name, "paper");
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.contains("name = \"paper\""));
+        assert!(
+            content.contains("max_turns = 3"),
+            "unrelated keys must be preserved"
+        );
+        let doc: toml::Value = toml::from_str(&content).unwrap();
+        assert_eq!(
+            doc.get("theme").and_then(|t| t.get("name")).and_then(toml::Value::as_str),
+            Some("paper")
+        );
+        assert_eq!(
+            doc.get("agent").and_then(|a| a.get("max_turns")).and_then(toml::Value::as_integer),
+            Some(3)
+        );
+
+        let _ = std::fs::remove_file(&path);
+        std::env::remove_var("SENTINEL_CONFIG_FILE");
+    }
+
+    #[test]
+    fn update_creates_config_file_when_missing() {
+        let _guard = persist_lock();
+        let path = temp_config_file();
+        let _ = std::fs::remove_file(&path);
+        std::env::set_var("SENTINEL_CONFIG_FILE", &path);
+        assert!(!std::path::Path::new(&path).exists());
+
+        let mut cfg = SentinelConfig::default();
+        cfg.update_agent_model("gpt-4o").unwrap();
+        assert!(std::path::Path::new(&path).exists());
+
+        let _ = std::fs::remove_file(&path);
+        std::env::remove_var("SENTINEL_CONFIG_FILE");
+    }
+
+    #[test]
+    fn invalid_model_update_fails_without_persisting() {
+        let _guard = persist_lock();
+        let path = temp_config_file();
+        std::fs::write(&path, "[agent]\ndefault_model = \"gpt-4o\"\n").unwrap();
+        std::env::set_var("SENTINEL_CONFIG_FILE", &path);
+
+        let mut cfg = SentinelConfig::default();
+        let err = cfg.update_agent_model("does-not-exist-99").unwrap_err();
+        assert!(err.to_string().contains("not provided"));
+
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(!content.contains("does-not-exist-99"));
+
+        let _ = std::fs::remove_file(&path);
+        std::env::remove_var("SENTINEL_CONFIG_FILE");
+    }
+
+    #[test]
+    fn empty_model_and_theme_updates_fail() {
+        let mut cfg = SentinelConfig::default();
+        assert!(cfg.update_agent_model("  ").is_err());
+        assert!(cfg.update_theme("").is_err());
+        assert!(!cfg.agent.default_model.is_empty());
+        assert!(!cfg.theme.name.is_empty());
+    }
+
+    #[test]
+    fn get_returns_singleton() {
+        assert!(std::ptr::eq(get(), get()));
+        let cfg = get().lock().unwrap();
+        assert!(!cfg.agent.default_model.is_empty());
+    }
+
+    #[test]
+    fn free_update_functions_operate_on_the_global() {
+        let _guard = persist_lock();
+        let path = temp_config_file();
+        std::fs::write(
+            &path,
+            "[agent]\ndefault_model = \"gpt-4o\"\n[theme]\nname = \"opencode-dark\"\n",
+        )
+        .unwrap();
+        std::env::set_var("SENTINEL_CONFIG_FILE", &path);
+
+        update_theme("paper").unwrap();
+        let name = get().lock().unwrap().theme.name.clone();
+        assert_eq!(name, "paper");
+        assert!(std::fs::read_to_string(&path).unwrap().contains("paper"));
+
+        let _ = std::fs::remove_file(&path);
+        std::env::remove_var("SENTINEL_CONFIG_FILE");
     }
 }

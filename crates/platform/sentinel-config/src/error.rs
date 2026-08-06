@@ -11,6 +11,16 @@ pub enum ConfigError {
     ParseError(#[from] toml::de::Error),
     #[error("Config file not found: {0}")]
     NotFound(String),
+    #[error("Failed to write config file {path}: {source}")]
+    WriteError {
+        path: String,
+        source: std::io::Error,
+    },
+    #[error("Failed to serialize config file {path}: {source}")]
+    SerializeError {
+        path: String,
+        source: toml::ser::Error,
+    },
     #[error("Invalid config: {0}")]
     Validation(String),
 }
