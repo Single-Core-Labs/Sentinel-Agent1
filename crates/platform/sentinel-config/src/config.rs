@@ -287,6 +287,8 @@ impl SentinelConfig {
     /// For every known cloud provider kind a matching API-key variable enables
     /// the provider (creating it when absent, e.g. OpenRouter). When the key
     /// variable is missing, a provider that can resolve no key is disabled.
+    /// Generic tokens (e.g. `GITHUB_TOKEN`) additionally unlock any provider
+    /// that declares `auth = { var = "GITHUB_TOKEN" }`.
     fn discover_providers(&mut self, get_env: &impl Fn(&str) -> Option<String>) {
         const DISCOVERY: &[(&str, &str)] = &[
             ("openai", "OPENAI_API_KEY"),
@@ -310,6 +312,24 @@ impl SentinelConfig {
             } else if let Some(p) = self.providers.iter_mut().find(|p| p.id == *kind) {
                 if p.resolve_api_key().is_none() {
                     p.disabled = true;
+                }
+            }
+        }
+
+        // Generic tokens (e.g. GitHub) enable any provider whose auth key
+        // references them — opencode-style: a GitHub token alone unlocks the
+        // providers that accept it. No provider entry is created here; the
+        // provider must declare `auth = { var = "GITHUB_TOKEN" }`.
+        const GENERIC_TOKENS: &[&str] = &["GITHUB_TOKEN"];
+        for var in GENERIC_TOKENS {
+            let has_token = get_env(var)
+                .map(|v| !v.trim().is_empty())
+                .unwrap_or(false);
+            for p in &mut self.providers {
+                if let AuthConfig::EnvKey { var: pvar } = &p.auth {
+                    if pvar == var {
+                        p.disabled = !has_token;
+                    }
                 }
             }
         }
@@ -935,5 +955,37 @@ command = "other"
             "global layer applies when no local value is set"
         );
         assert_eq!(cfg.agent.max_turns, 3, "local layer overrides global");
+    }
+
+    #[test]
+    fn github_token_enables_provider_that_declares_it() {
+        let mut cfg = SentinelConfig::default();
+        cfg.providers.push(ProviderInfo {
+            id: "copilot".into(),
+            name: "GitHub Copilot".into(),
+            base_url: "https://api.githubcopilot.com/chat/completions".into(),
+            auth: AuthConfig::EnvKey {
+                var: "GITHUB_TOKEN".into(),
+            },
+            models: vec![],
+            timeout_secs: 120,
+            extra_headers: Default::default(),
+            disabled: false,
+            provider: Some("openai".into()),
+        });
+        let mut cfg2 = cfg.clone();
+
+        let with_token = env_of(&[("GITHUB_TOKEN", "ghp_123")]);
+        cfg.discover_providers(&with_token);
+        assert!(
+            !cfg.provider("copilot").unwrap().disabled,
+            "GITHUB_TOKEN must unlock a provider that declares it"
+        );
+
+        cfg2.discover_providers(&empty_env);
+        assert!(
+            cfg2.provider("copilot").unwrap().disabled,
+            "missing GITHUB_TOKEN must disable the declaring provider"
+        );
     }
 }

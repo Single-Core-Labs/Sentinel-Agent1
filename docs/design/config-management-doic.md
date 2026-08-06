@@ -16,9 +16,10 @@
 | - | ------- | ----- | ----- |
 | 1 | Layered config loading (defaults → `SENTINEL_*` env → global file → local file), later sources win | `crates/platform/sentinel-config/src/config.rs` (`load`, `load_with`, `load_from_sources`) | +2 (env overlay, file layering) |
 | 2 | LLM provider discovery from env keys (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `DEEPSEEK_API_KEY`, `OPENROUTER_API_KEY`); key present → enable/create provider, key absent → disable | `config.rs` (`discover_providers`, `cloud_provider`) | +2 |
-| 3 | Validation + dynamic adjustments: `max_tokens` clamped to 1..1_000_000 (0 → unset), providers without base URL disabled, LSP servers without id/command dropped | `config.rs` (`adjust`) | +2 |
-| 4 | Project init status: `init` flag file in data dir (`$SENTINEL_HOME` or `~/.sentinel`), `should_show_init_dialog` / `mark_project_initialized` | `crates/platform/sentinel-config/src/init.rs` | +3 |
-| 5 | First-run hint in the local REPL, then marks the project initialized | `crates/interfaces/sentinel-cli/src/local.rs` | - |
+| 3 | Generic-token discovery: `GITHUB_TOKEN` unlocks any provider declaring `auth = { var = "GITHUB_TOKEN" }` (opencode-style Copilot flow) | `config.rs` (`discover_providers`, `GENERIC_TOKENS`) | +1 |
+| 4 | Validation + dynamic adjustments: `max_tokens` clamped to 1..1_000_000 (0 → unset), providers without base URL disabled, LSP servers without id/command dropped | `config.rs` (`adjust`) | +2 |
+| 5 | Project init status: `init` flag file in data dir (`$SENTINEL_HOME` or `~/.sentinel`), `should_show_init_dialog` / `mark_project_initialized` | `crates/platform/sentinel-config/src/init.rs` | +3 |
+| 6 | First-run hint in the local REPL, then marks the project initialized | `crates/interfaces/sentinel-cli/src/local.rs` | - |
 
 ---
 
@@ -61,11 +62,14 @@ load()
 | `GOOGLE_API_KEY` | google-ai-studio | enabled | disabled |
 | `DEEPSEEK_API_KEY` | deepseek | enabled | disabled |
 | `OPENROUTER_API_KEY` | openrouter | **created** (base URL `https://openrouter.ai/api/v1`) + enabled | disabled if present |
+| `GITHUB_TOKEN` | any provider with `auth = { var = "GITHUB_TOKEN" }` | enabled | disabled |
 
 A provider is only auto-disabled when it can resolve **no** key at all
 (`resolve_api_key() == None`); explicit `AuthConfig::Bearer`/`Inline` keys in
 the config file are respected. Local backends (ollama/vllm/lm-studio/llamacpp)
-are never touched by discovery.
+are never touched by discovery. GitHub tokens are *generic*: they unlock
+providers that declare them (e.g. a Copilot-style endpoint) without Sentinel
+creating a provider entry on its own.
 
 ### 2.3 Validation and dynamic adjustments (`adjust`)
 
