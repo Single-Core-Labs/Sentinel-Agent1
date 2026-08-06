@@ -187,10 +187,21 @@ impl AppSession {
     }
 
     pub async fn chat(&self, message: &str) -> Result<String, String> {
+        self.chat_with_context(message, None).await
+    }
+
+    /// Chat with an optional per-run system-context override (IDE context,
+    /// diagnostics, …). The override only seeds the first system message;
+    /// later turns keep the session's configured prompt manager.
+    pub async fn chat_with_context(
+        &self,
+        message: &str,
+        extra_context: Option<String>,
+    ) -> Result<String, String> {
         let mut thread = self.thread.lock().await;
         let result = self
             .agent
-            .run(&mut thread, message)
+            .run_with_system(&mut thread, message, extra_context.as_deref())
             .await
             .map_err(|e| e.to_string())?;
         match result {
@@ -250,8 +261,23 @@ impl AppSession {
         message: &str,
         event_tx: tokio::sync::mpsc::Sender<Result<sentinel_protocol::StreamChunk, String>>,
     ) {
+        self.chat_stream_with_context(message, event_tx, None).await;
+    }
+
+    /// [`AppSession::chat_stream`] with an optional per-run system-context
+    /// override applied to the first system message.
+    pub async fn chat_stream_with_context(
+        &self,
+        message: &str,
+        event_tx: tokio::sync::mpsc::Sender<Result<sentinel_protocol::StreamChunk, String>>,
+        extra_context: Option<String>,
+    ) {
         let mut thread = self.thread.lock().await;
-        let stream = match self.agent.run_stream(&mut thread, message).await {
+        let stream = match self
+            .agent
+            .run_stream_with_system(&mut thread, message, extra_context.as_deref())
+            .await
+        {
             Ok(s) => s,
             Err(e) => {
                 let _ = event_tx.send(Err(e.to_string())).await;
@@ -536,6 +562,55 @@ mod tests {
         assert!(
             thread.context.messages().len() >= 2,
             "thread must hold user + assistant messages"
+        );
+    }
+
+    #[tokio::test]
+    async fn chat_with_context_seeds_first_system_message() {
+        let (provider, tools, config, analytics) = session_deps();
+        let session = AppSession::new(None, provider, tools, config, analytics);
+
+        let result = session
+            .chat_with_context("hi", Some("## IDE Context\n- active file: x.rs".into()))
+            .await;
+        assert_eq!(result, Ok("hello".to_string()));
+
+        let thread = session.thread.lock().await;
+        let system_msgs: Vec<String> = thread
+            .context
+            .messages()
+            .iter()
+            .filter(|m| m.role == Role::System)
+            .map(|m| m.extract_text())
+            .collect();
+        assert_eq!(system_msgs.len(), 1);
+        assert!(
+            system_msgs[0].contains("IDE Context"),
+            "override must be seeded into the first system message: {}",
+            system_msgs[0]
+        );
+    }
+
+    #[tokio::test]
+    async fn chat_without_context_uses_prompt_manager() {
+        let (provider, tools, config, analytics) = session_deps();
+        let session = AppSession::new(None, provider, tools, config, analytics);
+
+        let result = session.chat("hi").await;
+        assert_eq!(result, Ok("hello".to_string()));
+
+        let thread = session.thread.lock().await;
+        let system_msgs: Vec<String> = thread
+            .context
+            .messages()
+            .iter()
+            .filter(|m| m.role == Role::System)
+            .map(|m| m.extract_text())
+            .collect();
+        assert!(
+            system_msgs[0].contains("You are Sentinel"),
+            "default prompt must be used when no context override given: {}",
+            system_msgs[0]
         );
     }
 

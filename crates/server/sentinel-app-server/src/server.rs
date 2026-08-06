@@ -78,12 +78,15 @@ impl AppServer {
             }
         };
 
-        let handler = Arc::new(RequestHandler::new_with_store(
-            config.clone(),
-            analytics.clone(),
-            tools,
-            thread_store,
-        ));
+        let handler = Arc::new(
+            RequestHandler::new_with_store(
+                config.clone(),
+                analytics.clone(),
+                tools,
+                thread_store,
+            )
+            .with_lsp_diagnostics(lsp.diagnostics()),
+        );
 
         Self {
             _config: config,

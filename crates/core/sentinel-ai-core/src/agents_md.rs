@@ -150,6 +150,7 @@ pub fn discover_agents_md(root: &Path) -> Result<Vec<AgentsMd>, AgentsMdError> {
         let mut subdirs: Vec<PathBuf> = entries
             .filter_map(|e| e.ok())
             .filter(|e| e.path().is_dir())
+            .filter(|e| !is_skip_dir(&e.path()))
             .map(|e| e.path())
             .collect();
         // Pop order → we want shallowest first, so push deepest first.
@@ -198,6 +199,18 @@ pub fn load_rules(root: &Path) -> Result<Vec<AgentsMdRule>, AgentsMdError> {
 }
 
 // ─── Parsing helpers ─────────────────────────────────────────────────────────
+
+/// Directories never descended into when discovering the `AGENTS.md`
+/// hierarchy: hidden entries (`.git`, `.venv`), build output (`target`) and
+/// dependency caches (`node_modules`).
+fn is_skip_dir(path: &Path) -> bool {
+    let name = path.file_name().map(|n| n.to_string_lossy());
+    match name.as_deref() {
+        Some(n) if n.starts_with('.') => true,
+        Some("target") | Some("node_modules") => true,
+        _ => false,
+    }
+}
 
 /// If `line` is a heading (`#{1,6} text`), return (level, text).
 fn heading_of(line: &str) -> Option<(u8, &str)> {
@@ -333,5 +346,29 @@ mod tests {
     fn missing_file_errors() {
         let err = load_agents_md(Path::new("definitely/not/here/AGENTS.md")).unwrap_err();
         assert!(err.to_string().contains("failed to read"));
+    }
+
+    #[test]
+    fn discovery_skips_hidden_and_build_dirs() {
+        let root = std::env::temp_dir().join(format!(
+            "sentinel_agents_md_skip_{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(root.join(".git")).unwrap();
+        fs::create_dir_all(root.join("target")).unwrap();
+        fs::create_dir_all(root.join("node_modules/pkg")).unwrap();
+        fs::create_dir_all(root.join("crates/app")).unwrap();
+        fs::write(root.join("AGENTS.md"), "## Root\n\n- root rule\n").unwrap();
+        fs::write(root.join(".git/AGENTS.md"), "## Git\n\n- hidden\n").unwrap();
+        fs::write(root.join("target/AGENTS.md"), "## Build\n\n- noise\n").unwrap();
+        fs::write(root.join("crates/app/AGENTS.md"), "## App\n\n- real\n").unwrap();
+
+        let found = discover_agents_md(&root).expect("discover");
+        let scopes: Vec<&str> = found.iter().map(|md| md.scope.as_str()).collect();
+        assert_eq!(scopes, vec![".", "crates/app"]);
+        fs::remove_dir_all(&root).unwrap();
     }
 }

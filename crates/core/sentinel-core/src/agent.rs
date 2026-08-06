@@ -228,6 +228,20 @@ impl Agent {
             .await
     }
 
+    /// Run like [`Agent::run`] but with a per-run system-prompt override
+    /// (e.g. a caller-resolved IDE-context or memory block). `None` falls back
+    /// to the agent's configured prompt manager. The override is only applied
+    /// the first time the system message is added to the thread.
+    pub async fn run_with_system(
+        &self,
+        thread: &mut AgentThread,
+        user_input: &str,
+        system: Option<&str>,
+    ) -> AgentResult {
+        self.run_with_approval_inner(thread, user_input, system, &AutoApprovalGate, &None)
+            .await
+    }
+
     pub async fn run_with_approval(
         &self,
         thread: &mut AgentThread,
@@ -235,9 +249,21 @@ impl Agent {
         approval: &dyn ApprovalGate,
         policy: &Option<Arc<dyn PolicyEngine>>,
     ) -> AgentResult {
-        let result = self
-            .run_with_approval_inner(thread, user_input, approval, policy)
-            .await;
+        self.run_with_approval_with_system(thread, user_input, None, approval, policy)
+            .await
+    }
+
+    pub async fn run_with_approval_with_system(
+        &self,
+        thread: &mut AgentThread,
+        user_input: &str,
+        system: Option<&str>,
+        approval: &dyn ApprovalGate,
+        policy: &Option<Arc<dyn PolicyEngine>>,
+    ) -> AgentResult {
+        let result =
+            self.run_with_approval_inner(thread, user_input, system, approval, policy)
+                .await;
         self.dispatch_plugin_event(&PluginEvent::SessionEnded {
             session_id: thread.id.to_string(),
         })
@@ -248,10 +274,12 @@ impl Agent {
         result
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn run_with_approval_inner(
         &self,
         thread: &mut AgentThread,
         user_input: &str,
+        system: Option<&str>,
         approval: &dyn ApprovalGate,
         policy: &Option<Arc<dyn PolicyEngine>>,
     ) -> AgentResult {
@@ -281,7 +309,11 @@ impl Agent {
             .iter()
             .any(|m| m.role == Role::System)
         {
-            thread.add_message(Message::system(self.prompt_manager.render()));
+            let system_text = match system {
+                Some(override_text) => override_text.to_string(),
+                None => self.prompt_manager.render(),
+            };
+            thread.add_message(Message::system(system_text));
         }
 
         loop {
@@ -626,6 +658,17 @@ impl Agent {
         thread: &mut AgentThread,
         user_input: &str,
     ) -> Result<AgentOutputStream, ProviderError> {
+        self.run_stream_with_system(thread, user_input, None).await
+    }
+
+    /// [`Agent::run_stream`] with a per-run system-prompt override; `None`
+    /// falls back to the configured prompt manager.
+    pub async fn run_stream_with_system(
+        &self,
+        thread: &mut AgentThread,
+        user_input: &str,
+        system: Option<&str>,
+    ) -> Result<AgentOutputStream, ProviderError> {
         thread.status = ThreadStatus::Running;
         thread.add_message(Message::user(user_input));
 
@@ -635,7 +678,11 @@ impl Agent {
             .iter()
             .any(|m| m.role == Role::System)
         {
-            thread.add_message(Message::system(self.prompt_manager.render()));
+            let system_text = match system {
+                Some(override_text) => override_text.to_string(),
+                None => self.prompt_manager.render(),
+            };
+            thread.add_message(Message::system(system_text));
         }
 
         let req = self.build_request(thread).await;
@@ -657,6 +704,19 @@ impl Agent {
         user_input: &str,
         approval: &dyn ApprovalGate,
     ) -> AgentResult {
+        self.run_streaming_with_system(thread, user_input, approval, None)
+            .await
+    }
+
+    /// [`Agent::run_streaming`] with a per-run system-prompt override; `None`
+    /// falls back to the configured prompt manager.
+    pub async fn run_streaming_with_system(
+        &self,
+        thread: &mut AgentThread,
+        user_input: &str,
+        approval: &dyn ApprovalGate,
+        system: Option<&str>,
+    ) -> AgentResult {
         thread.status = ThreadStatus::Running;
         thread.add_message(Message::user(user_input));
         if !thread
@@ -665,7 +725,11 @@ impl Agent {
             .iter()
             .any(|m| m.role == Role::System)
         {
-            thread.add_message(Message::system(self.prompt_manager.render()));
+            let system_text = match system {
+                Some(override_text) => override_text.to_string(),
+                None => self.prompt_manager.render(),
+            };
+            thread.add_message(Message::system(system_text));
         }
 
         loop {

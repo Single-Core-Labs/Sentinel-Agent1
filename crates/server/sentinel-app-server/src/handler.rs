@@ -35,6 +35,14 @@ pub struct RequestHandler {
     auth_token: RwLock<Option<String>>,
     /// Latest IDE context per active file.
     ide_context: RwLock<HashMap<String, Value>>,
+    /// Most recent IDE context sync (used to seed a new session's first turn).
+    current_ide: RwLock<Option<api::IdeContextParams>>,
+    /// LSP diagnostics snapshot shared with the LSP clients, injected into
+    /// first-turn prompts and reported by the `diagnostics` method.
+    lsp_diagnostics: Arc<crate::lsp::DiagnosticsStore>,
+    /// Persistent conversation memory (headroom): injects known facts into
+    /// first-turn prompts and extracts `<memory>` blocks from responses.
+    memory: Option<Arc<sentinel_headroom::memory::PersistentMemory>>,
     /// Server start time (for diagnostics uptime).
     started_at: Instant,
     /// Lifetime token counters (approximate, chars/4).
@@ -158,12 +166,25 @@ impl RequestHandler {
             pending_dialogs: Mutex::new(HashMap::new()),
             auth_token: RwLock::new(None),
             ide_context: RwLock::new(HashMap::new()),
+            current_ide: RwLock::new(None),
+            lsp_diagnostics: Arc::new(crate::lsp::DiagnosticsStore::new()),
+            memory: Some(Arc::new(sentinel_headroom::memory::PersistentMemory::new(
+                Arc::new(sentinel_headroom::memory::store::InMemoryStore::new()),
+                sentinel_headroom::memory::MemoryConfig::default(),
+            ))),
             started_at: Instant::now(),
             tokens_in: AtomicU64::new(0),
             tokens_out: AtomicU64::new(0),
         };
         handler.spawn_log_pump();
         handler
+    }
+
+    /// Attach the LSP diagnostics snapshot so captured `publishDiagnostics`
+    /// payloads feed first-turn prompts and the `diagnostics` method.
+    pub fn with_lsp_diagnostics(mut self, store: Arc<crate::lsp::DiagnosticsStore>) -> Self {
+        self.lsp_diagnostics = store;
+        self
     }
 
     /// Pump the process-wide log bus (Gap 8a) into every active session's
@@ -399,7 +420,29 @@ impl RequestHandler {
         );
 
         let is_first_turn = session.thread.lock().await.conversation.turn_count() == 0;
-        let chat_result = session.chat(&p.message).await;
+        let session_id = p.session_id.clone();
+        let first_turn_context = if is_first_turn {
+            let mut ctx = self.build_first_turn_context().await;
+            // Memory consumer: enrich the first system prompt with known
+            // facts plus the inline-extraction instruction (so the model can
+            // emit `<memory>` blocks that the producer below stores).
+            if let Some(memory) = &self.memory {
+                let base = session.agent.prompt_manager().render();
+                let enriched = memory
+                    .inject_memories(&base, &memory.config().user_id, Some(&session_id))
+                    .await;
+                let with_instruction =
+                    sentinel_headroom::memory::extractor::inject_memory_instruction(&enriched);
+                ctx = Some(match ctx {
+                    Some(c) => format!("{}\n\n{}", with_instruction, c),
+                    None => with_instruction,
+                });
+            }
+            ctx
+        } else {
+            None
+        };
+        let chat_result = session.chat_with_context(&p.message, first_turn_context).await;
 
         if let Some(ref store) = self.thread_store {
             let thread = session.thread.lock().await;
@@ -412,6 +455,28 @@ impl RequestHandler {
             Ok(response) => {
                 self.tokens_out
                     .fetch_add(estimate_tokens(&response), Ordering::Relaxed);
+                // Memory producer: store `<memory>` blocks the model emitted
+                // and return the response with those blocks stripped.
+                let response = if let Some(memory) = &self.memory {
+                    let turn = session.thread.lock().await.turn as u32;
+                    let (cleaned, stored) = memory
+                        .process_response(
+                            &response,
+                            &memory.config().user_id,
+                            Some(&session_id),
+                            turn,
+                        )
+                        .await;
+                    if !stored.is_empty() {
+                        tracing::info!(
+                            "headroom memory: stored {} fact(s) from response",
+                            stored.len()
+                        );
+                    }
+                    cleaned
+                } else {
+                    response
+                };
                 self.analytics.emit(
                     AnalyticsEvent::new(EventKind::MessageReceived, Some(p.session_id))
                         .with_metadata(serde_json::json!({ "len": response.len() })),
@@ -437,19 +502,23 @@ impl RequestHandler {
         let (tx, rx) = mpsc::channel(64);
         let msg = p.message.clone();
         let is_first_turn = session.thread.lock().await.conversation.turn_count() == 0;
-        tokio::spawn({
-            let session = session.clone();
-            let store = self.thread_store.clone();
-            async move {
-                session.chat_stream(&msg, tx).await;
-                if is_first_turn {
-                    session.ensure_title(&msg).await;
-                }
-                if let Some(ref store) = store {
-                    let thread = session.thread.lock().await;
-                    if let Err(e) = store.save_thread(&thread).await {
-                        tracing::error!("Failed to save thread to store: {:?}", e);
-                    }
+        let first_turn_context = if is_first_turn {
+            self.build_first_turn_context().await
+        } else {
+            None
+        };
+        let store = self.thread_store.clone();
+        tokio::spawn(async move {
+            session
+                .chat_stream_with_context(&msg, tx, first_turn_context)
+                .await;
+            if is_first_turn {
+                session.ensure_title(&msg).await;
+            }
+            if let Some(ref store) = store {
+                let thread = session.thread.lock().await;
+                if let Err(e) = store.save_thread(&thread).await {
+                    tracing::error!("Failed to save thread to store: {:?}", e);
                 }
             }
         });
@@ -818,11 +887,96 @@ impl RequestHandler {
             .unwrap_or_else(|| "<none>".to_string());
         let value = serde_json::to_value(&p).unwrap_or_default();
         self.ide_context.write().await.insert(key.clone(), value);
+        *self.current_ide.write().await = Some(p.clone());
         Ok(serde_json::json!({
             "synced": true,
             "active_file": p.active_file,
             "open_tabs": p.open_tabs.len(),
         }))
+    }
+
+    /// Render a first-turn system-context block from the latest IDE context
+    /// sync plus LSP diagnostics for the active file. `None` when no IDE
+    /// context has been synced, so non-IDE sessions keep their default prompt.
+    async fn build_first_turn_context(&self) -> Option<String> {
+        let ide = self.current_ide.read().await.clone()?;
+
+        let mut blocks: Vec<String> = Vec::new();
+
+        let mut ide_block = String::from("## IDE Context\n");
+        let mut has_ide = false;
+        if let Some(file) = &ide.active_file {
+            ide_block.push_str(&format!("- Active file: `{}`\n", file));
+            has_ide = true;
+        }
+        if let Some(line) = ide.cursor_line {
+            if let Some(col) = ide.cursor_column {
+                ide_block.push_str(&format!("- Cursor: line {}, column {}\n", line, col));
+                has_ide = true;
+            }
+        }
+        if let Some(selected) = &ide.selected_text {
+            if !selected.trim().is_empty() {
+                ide_block.push_str(&format!(
+                    "- Selected text:\n```text\n{}\n```\n",
+                    selected
+                ));
+                has_ide = true;
+            }
+        }
+        if !ide.open_tabs.is_empty() {
+            ide_block.push_str(&format!(
+                "- Open tabs: {}\n",
+                ide.open_tabs.join(", ")
+            ));
+            has_ide = true;
+        }
+        if has_ide {
+            blocks.push(ide_block);
+        }
+
+        if let Some(file) = &ide.active_file {
+            let diags = self
+                .lsp_diagnostics
+                .snapshot_for_path(std::path::Path::new(file))
+                .await;
+            if !diags.is_empty() {
+                let mut diag_block = String::from("## LSP Diagnostics\n");
+                for d in diags.iter().take(24) {
+                    let level = match d.severity {
+                        Some(1) => "error",
+                        Some(2) => "warning",
+                        Some(3) => "info",
+                        Some(4) => "hint",
+                        _ => "diagnostic",
+                    };
+                    let at = match (d.start_line, d.start_char) {
+                        (Some(l), Some(c)) => format!(" (line {l}:{c})"),
+                        (Some(l), None) => format!(" (line {l})"),
+                        _ => String::new(),
+                    };
+                    let code = d
+                        .code
+                        .as_ref()
+                        .map(|c| format!(" [{c}]"))
+                        .unwrap_or_default();
+                    diag_block.push_str(&format!(
+                        "- {level}{at}{code}: {}\n",
+                        d.message
+                    ));
+                }
+                if diags.len() > 24 {
+                    diag_block.push_str(&format!("- …and {} more\n", diags.len() - 24));
+                }
+                blocks.push(diag_block);
+            }
+        }
+
+        if blocks.is_empty() {
+            None
+        } else {
+            Some(blocks.join("\n"))
+        }
     }
 
     async fn handle_ide_diff_preview(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
@@ -894,12 +1048,18 @@ impl RequestHandler {
 
     async fn handle_diagnostics(&self) -> Result<Value, JsonRpcError> {
         let sessions = self.sessions.lock().await;
+        let per_file = self.lsp_diagnostics.per_file().await;
         Ok(serde_json::json!({
             "version": env!("CARGO_PKG_VERSION"),
             "uptime_secs": self.started_at.elapsed().as_secs(),
             "active_sessions": sessions.len(),
             "total_tokens_in": self.tokens_in.load(Ordering::Relaxed),
             "total_tokens_out": self.tokens_out.load(Ordering::Relaxed),
+            "lsp": {
+                "files_with_diagnostics": per_file.len(),
+                "total_diagnostics": per_file.iter().map(|(_, n)| n).sum::<usize>(),
+                "per_file": per_file,
+            },
             "available_models": self.config.providers().iter()
                 .flat_map(|p| p.models.iter().map(|m| m.id.as_str()))
                 .collect::<Vec<_>>(),
@@ -1266,6 +1426,289 @@ mod tests {
             await_log(&mut rx, "bridge test warn2").await,
             "WARN",
             "warn visible without debug"
+        );
+    }
+
+    #[tokio::test]
+    async fn first_turn_context_includes_ide_and_diagnostics() {
+        let handler = Arc::new(RequestHandler::new(
+            Arc::new(SentinelConfig::default()),
+            Arc::new(AnalyticsPipeline::new()),
+            Arc::new(ToolRegistry::new()),
+        ));
+
+        // No IDE context synced yet → no override.
+        assert!(handler.build_first_turn_context().await.is_none());
+
+        *handler.current_ide.write().await = Some(api::IdeContextParams {
+            active_file: Some("src/main.rs".into()),
+            open_tabs: vec!["src/main.rs".into(), "Cargo.toml".into()],
+            cursor_line: Some(10),
+            cursor_column: Some(4),
+            selected_text: Some("TODO: fix".into()),
+        });
+
+        let cwd = std::env::current_dir().unwrap_or_default();
+        handler
+            .lsp_diagnostics
+            .record(
+                &crate::lsp::path_to_file_uri(&cwd.join("src/main.rs")),
+                vec![crate::lsp::LspDiagnostic {
+                    uri: String::new(),
+                    message: "undefined variable `x`".into(),
+                    severity: Some(1),
+                    code: Some("E0425".into()),
+                    source: Some("rust-analyzer".into()),
+                    start_line: Some(10),
+                    start_char: Some(4),
+                }],
+            )
+            .await;
+
+        let ctx = handler.build_first_turn_context().await.expect("context");
+        assert!(ctx.contains("## IDE Context"), "got: {}", ctx);
+        assert!(ctx.contains("src/main.rs"));
+        assert!(ctx.contains("line 10, column 4"));
+        assert!(ctx.contains("TODO: fix"));
+        assert!(ctx.contains("Cargo.toml"));
+        assert!(ctx.contains("## LSP Diagnostics"), "got: {}", ctx);
+        assert!(ctx.contains("undefined variable `x`"));
+        assert!(ctx.contains("error"));
+        assert!(ctx.contains("E0425"));
+    }
+
+    #[tokio::test]
+    async fn diagnostics_report_includes_lsp_snapshot() {
+        let handler = Arc::new(RequestHandler::new(
+            Arc::new(SentinelConfig::default()),
+            Arc::new(AnalyticsPipeline::new()),
+            Arc::new(ToolRegistry::new()),
+        ));
+        handler
+            .lsp_diagnostics
+            .record(
+                "file:///src/a.rs",
+                vec![crate::lsp::LspDiagnostic {
+                    uri: "file:///src/a.rs".into(),
+                    message: "warn".into(),
+                    severity: Some(2),
+                    code: None,
+                    source: None,
+                    start_line: None,
+                    start_char: None,
+                }],
+            )
+            .await;
+
+        let report = handler.handle_diagnostics().await.expect("diagnostics");
+        assert_eq!(report["lsp"]["total_diagnostics"], serde_json::json!(1));
+        assert_eq!(
+            report["lsp"]["files_with_diagnostics"],
+            serde_json::json!(1)
+        );
+        let per_file = report["lsp"]["per_file"].as_array().unwrap();
+        assert_eq!(per_file.len(), 1);
+        assert_eq!(per_file[0][0], serde_json::json!("file:///src/a.rs"));
+    }
+
+    // ── Memory producer/consumer wiring ───────────────────────────────────────
+
+    struct MemScriptedProvider {
+        info: ProviderInfo,
+        responses: Vec<sentinel_protocol::CompletionResponse>,
+        cursor: std::sync::atomic::AtomicUsize,
+    }
+
+    #[async_trait::async_trait]
+    impl ModelProvider for MemScriptedProvider {
+        fn info(&self) -> &ProviderInfo {
+            &self.info
+        }
+        async fn complete(
+            &self,
+            _req: &sentinel_protocol::CompletionRequest,
+        ) -> Result<sentinel_protocol::CompletionResponse, ProviderError> {
+            let idx = self
+                .cursor
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            let pick = idx.min(self.responses.len().saturating_sub(1));
+            self.responses
+                .get(pick)
+                .cloned()
+                .ok_or_else(|| ProviderError::RequestError("no responses".into()))
+        }
+        async fn complete_stream(
+            &self,
+            _req: &sentinel_protocol::CompletionRequest,
+        ) -> Result<
+            Box<
+                dyn tokio_stream::Stream<
+                        Item = Result<sentinel_protocol::StreamChunk, ProviderError>,
+                    > + Send
+                    + Unpin,
+            >,
+            ProviderError,
+        > {
+            panic!("stream not used in this test")
+        }
+    }
+
+    fn mem_text_response(text: &str) -> sentinel_protocol::CompletionResponse {
+        sentinel_protocol::CompletionResponse {
+            id: "r0".into(),
+            model: "mock-model".into(),
+            choices: vec![sentinel_protocol::Choice {
+                index: 0,
+                message: sentinel_protocol::Message::new(
+                    sentinel_protocol::Role::Assistant,
+                    vec![sentinel_protocol::ContentBlock::Text { text: text.into() }],
+                ),
+                finish_reason: Some("stop".into()),
+            }],
+            usage: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn chat_extracts_and_strips_inline_memory_blocks() {
+        let handler = Arc::new(RequestHandler::new(
+            Arc::new(SentinelConfig::default()),
+            Arc::new(AnalyticsPipeline::new()),
+            Arc::new(ToolRegistry::new()),
+        ));
+
+        let provider = Arc::new(MemScriptedProvider {
+            info: ProviderInfo::default(),
+            responses: vec![mem_text_response(
+                "<memory>user prefers Rust over Go</memory>Handled.",
+            )],
+            cursor: std::sync::atomic::AtomicUsize::new(0),
+        });
+        let session = Arc::new(crate::session::AppSession::new(
+            None,
+            provider,
+            Arc::new(ToolRegistry::new()),
+            Arc::new(SentinelConfig::default()),
+            Arc::new(AnalyticsPipeline::new()),
+        ));
+        handler
+            .sessions
+            .lock()
+            .await
+            .insert(session.id.clone(), session.clone());
+
+        let resp = handler
+            .handle_chat(Some(serde_json::json!({
+                "session_id": session.id,
+                "message": "remember my preference",
+            })))
+            .await
+            .expect("chat");
+
+        let text = resp["response"].as_str().expect("response text");
+        assert!(
+            !text.contains("<memory>"),
+            "memory blocks must be stripped from the returned text: {}",
+            text
+        );
+        assert!(text.contains("Handled."));
+
+        let stored = handler
+            .memory
+            .as_ref()
+            .expect("memory wired")
+            .search("prefers", "default")
+            .await
+            .expect("search");
+        assert_eq!(
+            stored.len(),
+            1,
+            "producer must store the inline memory block"
+        );
+        assert!(stored[0].memory.content.contains("prefers Rust"));
+    }
+
+    #[tokio::test]
+    async fn first_turn_override_seeds_known_facts_instruction() {
+        let handler = Arc::new(RequestHandler::new(
+            Arc::new(SentinelConfig::default()),
+            Arc::new(AnalyticsPipeline::new()),
+            Arc::new(ToolRegistry::new()),
+        ));
+        // Seed one fact so the consumer has something to inject. The injector
+        // filters by session, so the memory must carry the session id that
+        // `handle_chat` will pass (the real session id).
+        let provider = Arc::new(MemScriptedProvider {
+            info: ProviderInfo::default(),
+            responses: vec![mem_text_response("ok")],
+            cursor: std::sync::atomic::AtomicUsize::new(0),
+        });
+        let session = Arc::new(crate::session::AppSession::new(
+            None,
+            provider,
+            Arc::new(ToolRegistry::new()),
+            Arc::new(SentinelConfig::default()),
+            Arc::new(AnalyticsPipeline::new()),
+        ));
+        handler
+            .sessions
+            .lock()
+            .await
+            .insert(session.id.clone(), session.clone());
+
+        let now = sentinel_headroom::memory::now_seconds();
+        handler
+            .memory
+            .as_ref()
+            .unwrap()
+            .store()
+            .add(sentinel_headroom::memory::Memory {
+                id: sentinel_headroom::memory::generate_memory_id(),
+                user_id: "default".into(),
+                session_id: Some(session.id.clone()),
+                agent_id: None,
+                content: "user works at Acme".into(),
+                category: sentinel_headroom::memory::MemoryCategory::Fact,
+                importance: 0.9,
+                scope: sentinel_headroom::memory::MemoryScope::User,
+                supersedes: None,
+                superseded_by: None,
+                supersede_reason: None,
+                source: sentinel_headroom::memory::MemorySource::InlineExtraction,
+                source_turn: 0,
+                created_at: now,
+                updated_at: now,
+                accessed_at: now,
+                access_count: 0,
+            })
+            .await
+            .expect("add memory");
+
+        handler
+            .handle_chat(Some(serde_json::json!({
+                "session_id": session.id,
+                "message": "hi",
+            })))
+            .await
+            .expect("chat");
+
+        let thread = session.thread.lock().await;
+        let system_msgs: Vec<String> = thread
+            .context
+            .messages()
+            .iter()
+            .filter(|m| m.role == sentinel_protocol::Role::System)
+            .map(|m| m.extract_text())
+            .collect();
+        assert_eq!(system_msgs.len(), 1);
+        assert!(
+            system_msgs[0].contains("Known Facts"),
+            "consumer must inject known facts: {}",
+            system_msgs[0]
+        );
+        assert!(
+            system_msgs[0].contains("user works at Acme"),
+            "the seeded fact must appear in the system prompt"
         );
     }
 }

@@ -26,6 +26,7 @@ use colored::Colorize;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use sentinel_config::SentinelConfig;
 use std::io;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
@@ -117,10 +118,85 @@ impl LspClientHandle {
     }
 }
 
+/// One LSP diagnostic, captured from a `textDocument/publishDiagnostics`
+/// notification. Fields that the language server did not send are `None`.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct LspDiagnostic {
+    /// `file://` URI of the file the diagnostic belongs to.
+    pub uri: String,
+    /// Human-readable problem description.
+    pub message: String,
+    /// LSP severity: 1=Error, 2=Warning, 3=Information, 4=Hint.
+    pub severity: Option<u32>,
+    /// Diagnostic code, when the server sends one.
+    pub code: Option<String>,
+    /// Source (e.g. `rust-analyzer`, `pyright`).
+    pub source: Option<String>,
+    /// 0-based start line of the diagnostic range.
+    pub start_line: Option<u32>,
+    /// 0-based start character of the diagnostic range.
+    pub start_char: Option<u32>,
+}
+
+/// Latest `publishDiagnostics` snapshot per file, shared between the LSP
+/// clients (writer) and the JSON-RPC handler (reader, for prompt context and
+/// the `diagnostics` method).
+#[derive(Debug, Default)]
+pub struct DiagnosticsStore {
+    inner: tokio::sync::RwLock<HashMap<String, Vec<LspDiagnostic>>>,
+}
+
+impl DiagnosticsStore {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Replace the diagnostics for `uri` (an empty vec clears the file).
+    pub async fn record(&self, uri: &str, diagnostics: Vec<LspDiagnostic>) {
+        let mut inner = self.inner.write().await;
+        if diagnostics.is_empty() {
+            inner.remove(uri);
+        } else {
+            inner.insert(uri.to_string(), diagnostics);
+        }
+    }
+
+    /// Diagnostics for the given `file://` URI.
+    pub async fn snapshot(&self, uri: &str) -> Vec<LspDiagnostic> {
+        self.inner.read().await.get(uri).cloned().unwrap_or_default()
+    }
+
+    /// Diagnostics for a filesystem path, normalized to the same URI form
+    /// the LSP client writes with.
+    pub async fn snapshot_for_path(&self, path: &std::path::Path) -> Vec<LspDiagnostic> {
+        self.snapshot(&path_to_file_uri(path)).await
+    }
+
+    /// Files with at least one diagnostic, as `(uri, count)` pairs.
+    pub async fn per_file(&self) -> Vec<(String, usize)> {
+        let inner = self.inner.read().await;
+        let mut out: Vec<(String, usize)> = inner
+            .iter()
+            .map(|(uri, diags)| (uri.clone(), diags.len()))
+            .collect();
+        out.sort();
+        out
+    }
+
+    /// Total number of diagnostics across all files.
+    pub async fn total(&self) -> usize {
+        let inner = self.inner.read().await;
+        inner.values().map(|d| d.len()).sum()
+    }
+}
+
 /// Owns the LSP clients for the whole application. Cheap to construct, drives
 /// no I/O until [`start`](Self::start).
 pub struct LspManager {
     clients: Vec<Arc<Mutex<LspClientHandle>>>,
+    /// Shared diagnostics snapshot populated by `serve_client` from
+    /// `textDocument/publishDiagnostics` notifications.
+    diagnostics: Arc<DiagnosticsStore>,
 }
 
 impl LspManager {
@@ -132,7 +208,15 @@ impl LspManager {
             .iter()
             .map(|def| Arc::new(Mutex::new(LspClientHandle::from_def(def, root.clone()))))
             .collect();
-        Self { clients }
+        Self {
+            clients,
+            diagnostics: Arc::new(DiagnosticsStore::new()),
+        }
+    }
+
+    /// The shared diagnostics snapshot, for the JSON-RPC handler.
+    pub fn diagnostics(&self) -> Arc<DiagnosticsStore> {
+        self.diagnostics.clone()
     }
 
     /// Start every configured LSP client on a background task and return
@@ -140,8 +224,9 @@ impl LspManager {
     pub fn start(&self) {
         for handle in &self.clients {
             let handle = Arc::clone(handle);
+            let diagnostics = self.diagnostics.clone();
             tokio::spawn(async move {
-                run_client(handle).await;
+                run_client(handle, diagnostics).await;
             });
         }
     }
@@ -197,7 +282,7 @@ fn workspace_root(config: &SentinelConfig) -> PathBuf {
 }
 
 /// Drive one client's full lifecycle: spawn â†’ handshake â†’ serve â†’ restart.
-async fn run_client(handle: Arc<Mutex<LspClientHandle>>) {
+async fn run_client(handle: Arc<Mutex<LspClientHandle>>, diagnostics: Arc<DiagnosticsStore>) {
     let mut backoff = BACKOFF_BASE;
     loop {
         let guard = handle.lock().await;
@@ -226,7 +311,7 @@ async fn run_client(handle: Arc<Mutex<LspClientHandle>>) {
                     println!("   LSP: {} ({})", id.cyan().bold(), command);
                 }
 
-                serve_client(&handle, reader, mode).await;
+                serve_client(&handle, reader, mode, diagnostics.clone()).await;
 
                 let mut guard = handle.lock().await;
                 if guard.shutdown_requested {
@@ -300,6 +385,7 @@ async fn serve_client(
     handle: &Arc<Mutex<LspClientHandle>>,
     mut reader: BufReader<ChildStdout>,
     mode: WatchMode,
+    diagnostics: Arc<DiagnosticsStore>,
 ) {
     let workspace_root = handle.lock().await.workspace_root.clone();
 
@@ -369,6 +455,37 @@ async fn serve_client(
                             if !send_message(handle, &reply).await {
                                 restart_gracefully(handle, "client unresponsive (reply write failed)").await;
                                 break;
+                            }
+                        } else if message.get("method").and_then(|m| m.as_str())
+                            == Some("textDocument/publishDiagnostics")
+                        {
+                            // Server â†’ Client notification: snapshot the
+                            // latest diagnostics per file so the assistant can
+                            // reference them in the system prompt.
+                            let params = &message["params"];
+                            if let Some(uri) = params["uri"].as_str() {
+                                let mut captured = Vec::new();
+                                if let Some(list) = params["diagnostics"].as_array() {
+                                    for d in list {
+                                        captured.push(LspDiagnostic {
+                                            uri: uri.to_string(),
+                                            message: d["message"].as_str().unwrap_or_default().to_string(),
+                                            severity: d["severity"].as_u64().map(|s| s as u32),
+                                            code: d["code"]
+                                                .as_str()
+                                                .map(|s| s.to_string())
+                                                .or_else(|| d["code"].as_u64().map(|c| c.to_string())),
+                                            source: d["source"].as_str().map(|s| s.to_string()),
+                                            start_line: d["range"]["start"]["line"]
+                                                .as_u64()
+                                                .map(|l| l as u32),
+                                            start_char: d["range"]["start"]["character"]
+                                                .as_u64()
+                                                .map(|c| c as u32),
+                                        });
+                                    }
+                                }
+                                diagnostics.record(uri, captured).await;
                             }
                         }
                     }
@@ -665,7 +782,7 @@ fn change_kind(kind: &EventKind) -> Option<u32> {
 
 /// Convert a filesystem path to a `file://` URI (percent-encoded, forward
 /// slashes), the form LSP `workspace/didChangeWatchedFiles` expects.
-fn path_to_file_uri(path: &Path) -> String {
+pub(crate) fn path_to_file_uri(path: &Path) -> String {
     let absolute = if path.is_absolute() {
         path.to_path_buf()
     } else {
@@ -857,6 +974,61 @@ mod tests {
         manager.start();
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(manager.shutdown());
+    }
+
+    fn diag(uri: &str, message: &str) -> LspDiagnostic {
+        LspDiagnostic {
+            uri: uri.into(),
+            message: message.into(),
+            severity: Some(1),
+            code: None,
+            source: None,
+            start_line: None,
+            start_char: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn diagnostics_store_records_snapshots_and_clears() {
+        let store = DiagnosticsStore::new();
+        assert_eq!(store.total().await, 0);
+        assert!(store.per_file().await.is_empty());
+
+        store.record("file:///a.rs", vec![diag("file:///a.rs", "boom")]).await;
+        store.record("file:///b.rs", vec![diag("file:///b.rs", "warn")]).await;
+        assert_eq!(store.total().await, 2);
+        assert_eq!(store.snapshot("file:///a.rs").await.len(), 1);
+        assert_eq!(store.snapshot("file:///nope.rs").await.len(), 0);
+        assert_eq!(
+            store.per_file().await,
+            vec![
+                ("file:///a.rs".to_string(), 1),
+                ("file:///b.rs".to_string(), 1)
+            ]
+        );
+
+        // Empty payload clears the file.
+        store.record("file:///a.rs", vec![]).await;
+        assert_eq!(store.total().await, 1);
+        assert_eq!(store.snapshot("file:///a.rs").await.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn diagnostics_store_matches_path_via_uri_normalization() {
+        let store = DiagnosticsStore::new();
+        let p = Path::new("src/main.rs");
+        let uri = path_to_file_uri(p);
+        store.record(&uri, vec![diag(&uri, "missing")]).await;
+
+        assert_eq!(
+            store.snapshot_for_path(p).await.len(),
+            1,
+            "path lookup must normalize to the same URI"
+        );
+        assert_eq!(
+            store.snapshot_for_path(Path::new("src/other.rs")).await.len(),
+            0
+        );
     }
 
     #[tokio::test]

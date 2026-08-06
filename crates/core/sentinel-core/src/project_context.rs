@@ -14,6 +14,8 @@ use std::path::{Path, PathBuf};
 const AGENTS_MD_MAX_CHARS: usize = 1200;
 /// Lines of `AGENTS.md` excerpt included in prompts.
 const AGENTS_MD_MAX_LINES: usize = 40;
+/// Upper bound on the `PROJECT.md` memory excerpt included in prompts.
+const PROJECT_MEMORY_MAX_CHARS: usize = 8000;
 /// Maximum top-level directory entries listed in the env info.
 const DIR_LISTING_MAX: usize = 24;
 
@@ -31,8 +33,10 @@ pub struct ProjectContext {
     pub dir_entries: Vec<String>,
     /// Total top-level entries (listing above may be truncated).
     pub dir_total: usize,
-    /// Project `AGENTS.md` excerpt, if present in the working directory.
+    /// Scoped `AGENTS.md` rules (root + per-directory), root-first, capped.
     pub agents_md: Option<String>,
+    /// `PROJECT.md` memory produced by the memory manager, capped.
+    pub project_memory: Option<String>,
 }
 
 impl ProjectContext {
@@ -68,7 +72,8 @@ impl ProjectContext {
             })
             .collect();
         let (dir_entries, dir_total) = list_dir(Path::new(&cwd));
-        let agents_md = read_agents_md(Path::new(&cwd));
+        let agents_md = read_agents_rules(Path::new(&cwd));
+        let project_memory = read_project_memory(Path::new(&cwd));
 
         Self {
             cwd,
@@ -81,6 +86,7 @@ impl ProjectContext {
             dir_entries,
             dir_total,
             agents_md,
+            project_memory,
         }
     }
 
@@ -136,6 +142,12 @@ impl ProjectContext {
                 agents_md
             ));
         }
+        if let Some(project_memory) = &self.project_memory {
+            out.push_str(&format!(
+                "- Project memory (PROJECT.md):\n```text\n{}\n```\n",
+                project_memory
+            ));
+        }
         out
     }
 
@@ -167,6 +179,7 @@ impl Default for ProjectContext {
             dir_entries: Vec::new(),
             dir_total: 0,
             agents_md: None,
+            project_memory: None,
         }
     }
 }
@@ -212,16 +225,50 @@ fn list_dir(cwd: &Path) -> (Vec<String>, usize) {
     (names, total)
 }
 
-fn read_agents_md(cwd: &Path) -> Option<String> {
-    let path = cwd.join("AGENTS.md");
+/// Load the hierarchical `AGENTS.md` rules under `cwd` (root file plus
+/// per-directory files, root-first with deeper scopes taking precedence for
+/// their subtree) and render them as a capped excerpt. `None` when no
+/// `AGENTS.md` exists or the walk fails.
+fn read_agents_rules(cwd: &Path) -> Option<String> {
+    use sentinel_ai_core::agents_md::load_rules;
+
+    let rules = load_rules(cwd).ok()?;
+    if rules.is_empty() {
+        return None;
+    }
+    let mut lines: Vec<String> = Vec::new();
+    for rule in rules {
+        if rule.scope == "." {
+            lines.push(rule.text.clone());
+        } else {
+            lines.push(format!("[{}] {}", rule.scope, rule.text));
+        }
+    }
+    if lines.is_empty() {
+        return None;
+    }
+    let mut text = lines.join("\n");
+    if text.chars().count() > AGENTS_MD_MAX_CHARS {
+        text = text.chars().take(AGENTS_MD_MAX_CHARS).collect();
+        text.push_str("…");
+    }
+    if text.lines().count() > AGENTS_MD_MAX_LINES {
+        text = text.lines().take(AGENTS_MD_MAX_LINES).collect::<Vec<_>>().join("\n");
+    }
+    Some(text)
+}
+
+/// Read the `PROJECT.md` memory file written by the memory manager and cap
+/// it for prompt inclusion. `None` when absent.
+fn read_project_memory(cwd: &Path) -> Option<String> {
+    let path = cwd.join("PROJECT.md");
     let content = std::fs::read_to_string(&path).ok()?;
     if content.trim().is_empty() {
         return None;
     }
-    let excerpt: Vec<&str> = content.lines().take(AGENTS_MD_MAX_LINES).collect();
-    let mut text = excerpt.join("\n");
-    if text.chars().count() > AGENTS_MD_MAX_CHARS {
-        text = text.chars().take(AGENTS_MD_MAX_CHARS).collect();
+    let mut text = content;
+    if text.chars().count() > PROJECT_MEMORY_MAX_CHARS {
+        text = text.chars().take(PROJECT_MEMORY_MAX_CHARS).collect();
         text.push_str("…");
     }
     Some(text)
@@ -248,6 +295,7 @@ mod tests {
             dir_entries: vec!["src/".into(), "Cargo.toml".into(), "README.md".into()],
             dir_total: 25,
             agents_md: Some("## Rules\n- run tests".into()),
+            project_memory: Some("# Project Memory\n\n## Session History\n### Session 1\nfixed parser".into()),
         }
     }
 
@@ -262,6 +310,8 @@ mod tests {
         assert!(text.contains("rust-analyzer, pyright"));
         assert!(text.contains("AGENTS.md"));
         assert!(text.contains("run tests"));
+        assert!(text.contains("PROJECT.md"));
+        assert!(text.contains("fixed parser"));
         assert!(text.contains("Directory"));
         assert!(text.contains("src/"));
     }
@@ -324,17 +374,79 @@ mod tests {
         let _ = std::fs::create_dir_all(&dir);
         let mut content = String::new();
         for i in 0..200 {
-            content.push_str(&format!("line {}\n", i));
+            content.push_str(&format!("- line {}\n", i));
         }
         std::fs::write(dir.join("AGENTS.md"), &content).unwrap();
 
-        let excerpt = read_agents_md(&dir).unwrap();
+        let excerpt = read_agents_rules(&dir).unwrap();
         assert!(
             excerpt.lines().count() <= AGENTS_MD_MAX_LINES,
             "line cap must hold"
         );
         assert!(excerpt.chars().count() <= AGENTS_MD_MAX_CHARS + 1);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn agents_md_hierarchy_is_scoped_and_capped() {
+        let dir = std::env::temp_dir().join(format!(
+            "sentinel-prompt-ctx-{}-hier",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(dir.join("crates/core")).unwrap();
+        std::fs::write(dir.join("AGENTS.md"), "## Root\n\n- run tests\n").unwrap();
+        std::fs::write(
+            dir.join("crates/AGENTS.md"),
+            "## Crates\n\n- use workspace deps\n",
+        )
+        .unwrap();
+
+        let excerpt = read_agents_rules(&dir).unwrap();
+        assert!(
+            excerpt.contains("run tests"),
+            "root rules must be included: {}",
+            excerpt
+        );
+        assert!(
+            excerpt.contains("[crates] use workspace deps"),
+            "scoped rules must carry their scope: {}",
+            excerpt
+        );
+        assert!(
+            excerpt.find("run tests").unwrap() < excerpt.find("[crates]").unwrap(),
+            "root-first ordering must hold"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn project_memory_is_read_back_and_capped() {
+        let dir = std::env::temp_dir().join(format!(
+            "sentinel-prompt-ctx-{}-projmem",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut big = String::new();
+        for i in 0..5000 {
+            big.push_str(&format!("memory line {}\n", i));
+        }
+        std::fs::write(dir.join("PROJECT.md"), &big).unwrap();
+
+        let memory = read_project_memory(&dir).unwrap();
+        assert!(memory.chars().count() <= PROJECT_MEMORY_MAX_CHARS + 1);
+        assert!(memory.ends_with('…'));
+
+        std::fs::write(dir.join("PROJECT.md"), "  ").unwrap();
+        assert!(read_project_memory(&dir).is_none(), "blank memory skipped");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn no_memory_file_renders_nothing() {
+        let mut ctx = sample();
+        ctx.project_memory = None;
+        let text = ctx.render();
+        assert!(!text.contains("PROJECT.md"));
     }
 
     #[test]

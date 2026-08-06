@@ -2145,6 +2145,7 @@ dependencies = [
  "regex",
  "reqwest",
  "rusqlite",
+ "sentinel-ai-core",
  "sentinel-config",
  "sentinel-plugin-system",
  "sentinel-protocol",

@@ -26,6 +26,7 @@ sentinel-provider-info = { workspace = true }
 sentinel-tools = { workspace = true }
 sentinel-config = { workspace = true }
 sentinel-plugin-system = { workspace = true }
+sentinel-ai-core = { workspace = true }
 regex.workspace = true
 
 [features]

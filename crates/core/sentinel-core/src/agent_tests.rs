@@ -443,6 +443,119 @@ mod tests {
         assert!(t.budget.total_spend_usd > 0.0);
     }
 
+    // ── Per-run system override ───────────────────────────────────────────────
+
+    #[tokio::test]
+    async fn run_with_system_injects_override_into_first_system_message() {
+        let provider = ScriptedProvider::new(vec![text_response("ok")]);
+        let agent = make_agent(provider);
+        let mut t = thread();
+        let override_text = "## IDE Context\n- active file: src/main.rs\n- diagnostics: none";
+
+        let out = agent.run_with_system(&mut t, "hi", Some(override_text)).await;
+        assert!(matches!(out, Ok(AgentOutput::Success { .. })));
+
+        let system_msgs: Vec<String> = t
+            .context
+            .messages()
+            .iter()
+            .filter(|m| m.role == Role::System)
+            .map(|m| m.extract_text())
+            .collect();
+        assert_eq!(system_msgs.len(), 1, "exactly one system message");
+        assert!(
+            system_msgs[0].contains("IDE Context"),
+            "override must appear in system prompt: {}",
+            system_msgs[0]
+        );
+        assert!(
+            system_msgs[0].contains("src/main.rs"),
+            "override content must be injected verbatim"
+        );
+        assert!(
+            !system_msgs[0].contains("Project Context"),
+            "default prompt manager must be replaced, not concatenated"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_with_system_none_uses_prompt_manager() {
+        let provider = ScriptedProvider::new(vec![text_response("ok")]);
+        let agent = make_agent(provider).with_prompt_manager(crate::prompt::SystemPromptManager::new()
+            .with_base("## Custom Base\n- rule"));
+        let mut t = thread();
+
+        let _ = agent.run_with_system(&mut t, "hi", None).await;
+        let system_msgs: Vec<String> = t
+            .context
+            .messages()
+            .iter()
+            .filter(|m| m.role == Role::System)
+            .map(|m| m.extract_text())
+            .collect();
+        assert!(
+            system_msgs[0].contains("Custom Base"),
+            "None must fall back to the prompt manager: {}",
+            system_msgs[0]
+        );
+    }
+
+    #[tokio::test]
+    async fn run_with_system_override_applies_once_not_per_turn() {
+        let provider = ScriptedProvider::new(vec![
+            tool_call_response("tc-1", "echo_tool", json!({ "msg": "ping" })),
+            text_response("pong"),
+        ]);
+        let agent = make_agent_with_echo(provider);
+        let mut t = thread();
+
+        let out = agent
+            .run_with_system(&mut t, "hi", Some("## One-off Context"))
+            .await;
+        assert!(matches!(out, Ok(AgentOutput::Success { .. })));
+
+        let system_msgs: Vec<String> = t
+            .context
+            .messages()
+            .iter()
+            .filter(|m| m.role == Role::System)
+            .map(|m| m.extract_text())
+            .collect();
+        assert_eq!(
+            system_msgs.len(),
+            1,
+            "system message added exactly once across iterations"
+        );
+    }
+
+    #[tokio::test]
+    async fn run_stream_with_system_injects_override() {
+        let provider = ScriptedProvider::new(vec![text_response("streamed")]);
+        let agent = make_agent(provider);
+        let mut t = thread();
+
+        let stream = agent
+            .run_stream_with_system(&mut t, "hi", Some("## Stream Context"))
+            .await
+            .expect("stream must open");
+        use tokio_stream::StreamExt;
+        let mut first = stream;
+        while let Some(_chunk) = first.next().await {}
+
+        let system_msgs: Vec<String> = t
+            .context
+            .messages()
+            .iter()
+            .filter(|m| m.role == Role::System)
+            .map(|m| m.extract_text())
+            .collect();
+        assert!(
+            system_msgs[0].contains("Stream Context"),
+            "stream override must be injected: {}",
+            system_msgs[0]
+        );
+    }
+
     // ── Stub echo tool ────────────────────────────────────────────────────────
 
     struct EchoTool;
