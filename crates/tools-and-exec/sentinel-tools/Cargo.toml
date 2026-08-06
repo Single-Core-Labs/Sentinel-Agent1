@@ -14,6 +14,7 @@ async-trait.workspace = true
 reqwest.workspace = true
 glob.workspace = true
 chrono.workspace = true
+regex.workspace = true
 
 sentinel-protocol = { workspace = true }
 sentinel-ai-core = { workspace = true }

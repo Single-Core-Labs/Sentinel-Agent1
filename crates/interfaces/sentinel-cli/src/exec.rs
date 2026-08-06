@@ -96,6 +96,10 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
 
     let agent = sentinel_core::Agent::new(provider, tools, config.clone())
         .with_event_handler(Arc::new(CliEventHandler))
+        .with_prompt_manager(sentinel_core::ProjectContext::inject_into_prompt_manager(&config))
+        .with_event_store(sentinel_core::create_event_store_in(
+            &sentinel_core::default_events_dir(),
+        ))
         .with_compressor(headroom_compressor)
         .with_model(model_id.clone());
 

@@ -2308,6 +2308,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "glob",
+ "regex",
  "reqwest",
  "sentinel-ai-core",
  "sentinel-exec",

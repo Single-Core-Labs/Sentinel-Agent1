@@ -68,6 +68,12 @@ impl AppSession {
         let model_id = model.unwrap_or_else(|| config.agent.default_model.clone());
         let agent = Agent::new(provider, tools, config.clone())
             .with_model(model_id)
+            .with_prompt_manager(sentinel_core::ProjectContext::inject_into_prompt_manager(
+                &config,
+            ))
+            .with_event_store(sentinel_core::create_event_store_in(
+                &sentinel_core::default_events_dir(),
+            ))
             .with_event_handler(Arc::new(ServerEventBridge { tx: evt_tx.clone() }));
         let thread = AgentThread::new(
             config.agent.max_turns,
@@ -102,6 +108,12 @@ impl AppSession {
         let agent = Agent::new(provider, tools, config.clone())
             .with_compressor(compressor)
             .with_model(model_id)
+            .with_prompt_manager(sentinel_core::ProjectContext::inject_into_prompt_manager(
+                &config,
+            ))
+            .with_event_store(sentinel_core::create_event_store_in(
+                &sentinel_core::default_events_dir(),
+            ))
             .with_event_handler(Arc::new(ServerEventBridge { tx: evt_tx.clone() }));
         let thread = AgentThread::new(
             config.agent.max_turns,
@@ -140,6 +152,12 @@ impl AppSession {
             agent
         }
         .with_model(model_id)
+        .with_prompt_manager(sentinel_core::ProjectContext::inject_into_prompt_manager(
+            &config,
+        ))
+        .with_event_store(sentinel_core::create_event_store_in(
+            &sentinel_core::default_events_dir(),
+        ))
         .with_event_handler(Arc::new(ServerEventBridge { tx: evt_tx.clone() }));
 
         analytics.emit(AnalyticsEvent::new(

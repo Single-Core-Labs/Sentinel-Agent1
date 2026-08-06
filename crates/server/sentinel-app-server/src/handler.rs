@@ -545,7 +545,10 @@ impl RequestHandler {
             "workdir": p.cwd.unwrap_or_default(),
             "timeout": 120_000,
         });
-        let output = self.tools.execute("bash", args, &ctx).await;
+        let output = self
+            .tools
+            .execute("run_shell_command", args, &ctx)
+            .await;
         let exit_code = if output.is_error { 1 } else { 0 };
         Ok(serde_json::json!({
             "exit_code": exit_code,

@@ -262,7 +262,8 @@ impl Tool for GlobTool {
             "type": "object",
             "properties": {
                 "pattern": { "type": "string", "description": "Glob pattern (e.g. **/*.rs)" },
-                "path": { "type": "string", "description": "Directory to search in" }
+                "path": { "type": "string", "description": "Directory to search in" },
+                "dot_files": { "type": "boolean", "description": "Include hidden files (default false)" }
             },
             "required": ["pattern"]
         })
@@ -274,15 +275,23 @@ impl Tool for GlobTool {
             return ToolOutput::err("pattern is required");
         }
         let base_dir = args["path"].as_str().map(|p| p.to_string());
-        let full_pattern = match &base_dir {
-            Some(dir) => format!("{}/{}", dir.trim_end_matches('/'), pattern),
-            None => pattern.to_string(),
-        };
+        let dot_files = args["dot_files"].as_bool().unwrap_or(false);
+        let base_dir = base_dir.unwrap_or_else(|| ".".to_string());
+        let full_pattern = format!(
+            "{}/{}",
+            base_dir.trim_end_matches(['/', '\\']),
+            pattern
+        );
+        let base_path = std::path::Path::new(&base_dir);
+        let filter = crate::filter::FileFilter::new(base_path, dot_files);
         match glob::glob(&full_pattern) {
             Ok(entries) => {
-                let results: Vec<String> = entries
-                    .filter_map(|e| e.ok().map(|p| p.display().to_string()))
+                let mut results: Vec<String> = entries
+                    .filter_map(|e| e.ok())
+                    .filter(|p| !filter.should_skip(p))
+                    .map(|p| p.display().to_string())
                     .collect();
+                results.sort();
                 ToolOutput::ok(
                     serde_json::to_string_pretty(&results).unwrap_or_else(|_| "[]".to_string()),
                 )
@@ -322,15 +331,29 @@ impl Tool for GrepTool {
         let path = args["path"].as_str().unwrap_or(".");
         let include = args["include"].as_str();
 
-        // Simple recursive grep without external deps
+        let regex = regex::Regex::new(pattern).ok();
+        let base = std::path::Path::new(path);
+        let filter = crate::filter::FileFilter::new(base, false);
+
         let mut results = Vec::new();
-        if let Ok(entries) = walk_dir(path, include) {
-            for entry in entries {
-                if let Ok(content) = std::fs::read_to_string(&entry) {
-                    for (i, line) in content.lines().enumerate() {
-                        if line.contains(pattern) {
-                            results.push(format!("{}:{}: {}", entry, i + 1, line));
-                        }
+        for entry in walk_filtered(base, &filter) {
+            if let Some(inc) = include {
+                let name = entry
+                    .file_name()
+                    .map(|n| n.to_string_lossy())
+                    .unwrap_or_default();
+                if !match_include(&name, inc) {
+                    continue;
+                }
+            }
+            if let Ok(content) = std::fs::read_to_string(&entry) {
+                for (i, line) in content.lines().enumerate() {
+                    let hit = match &regex {
+                        Some(re) => re.is_match(line),
+                        None => line.contains(pattern),
+                    };
+                    if hit {
+                        results.push(format!("{}:{}: {}", entry.display(), i + 1, line));
                     }
                 }
             }
@@ -339,29 +362,39 @@ impl Tool for GrepTool {
     }
 }
 
-fn walk_dir(dir: &str, include: Option<&str>) -> std::io::Result<Vec<String>> {
-    let mut files = Vec::new();
-    let dir = std::path::Path::new(dir);
-    if !dir.is_dir() {
-        return Ok(vec![dir.to_string_lossy().to_string()]);
-    }
-    for entry in std::fs::read_dir(dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_dir() {
-            files.extend(walk_dir(&path.to_string_lossy(), include)?);
-        } else if let Some(ext) = include {
-            if path
-                .to_string_lossy()
-                .ends_with(ext.trim_start_matches('*'))
-            {
-                files.push(path.to_string_lossy().to_string());
+/// Depth-first walk pruning hidden/ignored directories upfront.
+fn walk_filtered(dir: &std::path::Path, filter: &crate::filter::FileFilter) -> Vec<std::path::PathBuf> {
+    let mut out = Vec::new();
+    let mut stack = vec![dir.to_path_buf()];
+    while let Some(d) = stack.pop() {
+        let Ok(rd) = std::fs::read_dir(&d) else {
+            continue;
+        };
+        for entry in rd.flatten() {
+            let p = entry.path();
+            if p.is_dir() {
+                if !filter.should_skip(&p) {
+                    stack.push(p);
+                }
+            } else if !filter.should_skip(&p) {
+                out.push(p);
             }
-        } else {
-            files.push(path.to_string_lossy().to_string());
         }
     }
-    Ok(files)
+    out
+}
+
+/// Match a file name against an `include` filter (`*.rs` glob or exact name).
+fn match_include(name: &str, include: &str) -> bool {
+    let inc = include.trim();
+    if inc.is_empty() {
+        return true;
+    }
+    if inc.contains('*') || inc.contains('?') {
+        crate::filter::glob_match(inc, name)
+    } else {
+        name == inc
+    }
 }
 
 // ── RunShellCommand (sandboxed) ─────────────────────────────────

@@ -166,6 +166,80 @@ impl EventStore for VecEventStore {
 
 pub type SharedEventStore = Arc<dyn EventStore>;
 
+/// Dependency-free file-backed event store: one JSON Lines file per session
+/// under `dir/{session_id}.jsonl`. Append-only and safe to reopen across
+/// processes; used when the `sqlite` feature is off.
+#[derive(Debug)]
+pub struct JsonFileEventStore {
+    dir: std::path::PathBuf,
+    lock: std::sync::Mutex<()>,
+}
+
+impl JsonFileEventStore {
+    pub fn new(dir: impl AsRef<std::path::Path>) -> Self {
+        let dir = dir.as_ref().to_path_buf();
+        let _ = std::fs::create_dir_all(&dir);
+        Self {
+            dir,
+            lock: std::sync::Mutex::new(()),
+        }
+    }
+
+    fn session_file(&self, session_id: &str) -> std::path::PathBuf {
+        self.dir.join(format!("{}.jsonl", session_id))
+    }
+}
+
+#[async_trait]
+impl EventStore for JsonFileEventStore {
+    async fn append(&self, event: SessionEvent) {
+        use std::io::Write;
+        let line = serde_json::to_string(&event).unwrap_or_default();
+        let path = self.session_file(event.session_id());
+        let _guard = self.lock.lock().unwrap();
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+        {
+            let _ = writeln!(file, "{}", line);
+        }
+    }
+
+    async fn read(&self, session_id: &str) -> Vec<SessionEvent> {
+        let path = self.session_file(session_id);
+        let content = match std::fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(_) => return Vec::new(),
+        };
+        content
+            .lines()
+            .filter_map(|line| serde_json::from_str::<SessionEvent>(line).ok())
+            .collect()
+    }
+
+    async fn stream(
+        &self,
+        session_id: &str,
+    ) -> Box<dyn tokio_stream::Stream<Item = SessionEvent> + Send + Unpin> {
+        Box::new(tokio_stream::iter(self.read(session_id).await))
+    }
+}
+
+/// A durable event store rooted at `dir`: SQLite (`dir/session_events.db`)
+/// when the `sqlite` feature is enabled, else JSON Lines files.
+pub fn create_event_store_in(dir: &std::path::Path) -> SharedEventStore {
+    #[cfg(feature = "sqlite")]
+    {
+        if let Ok(store) = SqliteEventStore::new(
+            &dir.join("session_events.db").to_string_lossy(),
+        ) {
+            return store;
+        }
+    }
+    Arc::new(JsonFileEventStore::new(dir))
+}
+
 pub fn create_event_store() -> SharedEventStore {
     if cfg!(feature = "sqlite") {
         #[cfg(feature = "sqlite")]
@@ -333,5 +407,90 @@ mod tests {
         assert_eq!(events.len(), 1);
         #[cfg(not(feature = "sqlite"))]
         assert!(events.is_empty());
+    }
+
+    fn temp_event_dir(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "sentinel-events-test-{}-{}",
+            std::process::id(),
+            name
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        dir
+    }
+
+    #[tokio::test]
+    async fn test_jsonl_store_append_read() {
+        let dir = temp_event_dir("jsonl");
+        let store = JsonFileEventStore::new(&dir);
+        store
+            .append(SessionEvent::UserMessage {
+                session_id: "s9".into(),
+                timestamp: Utc::now(),
+                content: "hello".into(),
+            })
+            .await;
+        store
+            .append(SessionEvent::AssistantText {
+                session_id: "s9".into(),
+                timestamp: Utc::now(),
+                text: "hi".into(),
+            })
+            .await;
+        let events = store.read("s9").await;
+        assert_eq!(events.len(), 2);
+        assert!(matches!(&events[0], SessionEvent::UserMessage { .. }));
+        assert!(matches!(&events[1], SessionEvent::AssistantText { .. }));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn test_jsonl_store_persists_across_reopen() {
+        let dir = temp_event_dir("jsonl-reopen");
+        {
+            let store = JsonFileEventStore::new(&dir);
+            store
+                .append(SessionEvent::TurnEnd {
+                    session_id: "s10".into(),
+                    timestamp: Utc::now(),
+                    turn: 2,
+                    iteration: 3,
+                })
+                .await;
+        }
+        let reopened = JsonFileEventStore::new(&dir);
+        let events = reopened.read("s10").await;
+        assert_eq!(events.len(), 1);
+        match &events[0] {
+            SessionEvent::TurnEnd { turn, iteration, .. } => {
+                assert_eq!(*turn, 2);
+                assert_eq!(*iteration, 3);
+            }
+            _ => panic!("wrong variant"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn test_create_event_store_in_writes_durable_log() {
+        let dir = temp_event_dir("create-in");
+        let store = create_event_store_in(&dir);
+        store
+            .append(SessionEvent::UserMessage {
+                session_id: "s11".into(),
+                timestamp: Utc::now(),
+                content: "persist me".into(),
+            })
+            .await;
+        // JSONL fallback must leave a file on disk; sqlite feature writes a db.
+        #[cfg(not(feature = "sqlite"))]
+        assert!(dir.join("s11.jsonl").exists());
+        #[cfg(feature = "sqlite")]
+        assert!(dir.join("session_events.db").exists());
+
+        let reopened = create_event_store_in(&dir);
+        let events = reopened.read("s11").await;
+        assert_eq!(events.len(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

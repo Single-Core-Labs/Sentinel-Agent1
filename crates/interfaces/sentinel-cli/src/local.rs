@@ -123,6 +123,7 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         sentinel_core::DEFAULT_SYSTEM_PROMPT
     );
     prompt_mgr.set_base(&base);
+    sentinel_core::ProjectContext::discover(&config).apply_to_manager(&mut prompt_mgr);
 
     let agent =
         sentinel_core::Agent::new(provider, tools, config.clone()).with_prompt_manager(prompt_mgr);
