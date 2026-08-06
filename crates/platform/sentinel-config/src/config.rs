@@ -176,6 +176,8 @@ impl SentinelConfig {
     /// 1. **Defaults** — `SentinelConfig::default()`.
     /// 2. **Environment variables** — `SENTINEL_*` (e.g. `SENTINEL_DEFAULT_MODEL`,
     ///    `SENTINEL_MAX_TURNS`, `SENTINEL_YOLO_MODE`), applied on top of defaults.
+    ///    `GITHUB_TOKEN` additionally falls back to the GitHub Copilot
+    ///    `hosts.json` file (see [`crate::github`]).
     /// 3. **Global config file** — `$SENTINEL_HOME/sentinel.toml`, else
     ///    `~/.sentinel/sentinel.toml`, when present.
     /// 4. **Local config files** — `sentinel.toml`, `config.toml`, `.sentinel.toml`
@@ -186,7 +188,16 @@ impl SentinelConfig {
     /// (invalid values clamped, incomplete providers/LSP servers dropped).
     pub fn load() -> Result<Self, ConfigError> {
         Self::load_from_sources(
-            &|key| std::env::var(key).ok(),
+            &|key| {
+                let direct = std::env::var(key).ok();
+                if key == crate::github::GITHUB_TOKEN_ENV
+                    && direct.as_deref().map(str::trim).unwrap_or("").is_empty()
+                {
+                    crate::github::load_github_token(&|k| std::env::var(k).ok())
+                } else {
+                    direct
+                }
+            },
             global_config_path().as_deref(),
             LOCAL_CONFIG_PATHS,
         )
