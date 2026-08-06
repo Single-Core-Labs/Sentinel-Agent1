@@ -1,6 +1,6 @@
 use crate::error::ConfigError;
 use sentinel_mcp::McpServerDef;
-use sentinel_provider_info::{default_providers, ProviderInfo};
+use sentinel_provider_info::{default_providers, AuthConfig, ProviderInfo};
 use serde::Deserialize;
 
 /// Known provider types accepted by the `provider` config key (schema enum).
@@ -101,6 +101,37 @@ fn default_false() -> bool {
     false
 }
 
+const LOCAL_CONFIG_PATHS: &[&str] = &["sentinel.toml", "config.toml", ".sentinel.toml"];
+
+/// `$SENTINEL_HOME/sentinel.toml`, else `~/.sentinel/sentinel.toml`.
+pub fn global_config_path() -> Option<std::path::PathBuf> {
+    if let Ok(home) = std::env::var("SENTINEL_HOME") {
+        return Some(std::path::PathBuf::from(home).join("sentinel.toml"));
+    }
+    std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .ok()
+        .map(|h| std::path::PathBuf::from(h).join(".sentinel").join("sentinel.toml"))
+}
+
+/// A minimal cloud provider entry created by env-var discovery (e.g. OpenRouter).
+fn cloud_provider(kind: &str, var: &str) -> ProviderInfo {
+    ProviderInfo {
+        id: kind.into(),
+        name: kind.to_string(),
+        base_url: match kind {
+            "openrouter" => "https://openrouter.ai/api/v1".into(),
+            _ => String::new(),
+        },
+        auth: AuthConfig::EnvKey { var: var.into() },
+        models: Vec::new(),
+        timeout_secs: 120,
+        extra_headers: std::collections::HashMap::new(),
+        disabled: false,
+        provider: Some(kind.into()),
+    }
+}
+
 fn default_thread_store() -> String {
     "memory".into()
 }
@@ -140,12 +171,52 @@ pub struct SentinelConfig {
 }
 
 impl SentinelConfig {
+    /// Layered configuration loading (defaults → env → global → local).
+    ///
+    /// 1. **Defaults** — `SentinelConfig::default()`.
+    /// 2. **Environment variables** — `SENTINEL_*` (e.g. `SENTINEL_DEFAULT_MODEL`,
+    ///    `SENTINEL_MAX_TURNS`, `SENTINEL_YOLO_MODE`), applied on top of defaults.
+    /// 3. **Global config file** — `$SENTINEL_HOME/sentinel.toml`, else
+    ///    `~/.sentinel/sentinel.toml`, when present.
+    /// 4. **Local config files** — `sentinel.toml`, `config.toml`, `.sentinel.toml`
+    ///    in the working directory.
+    ///
+    /// Later sources override earlier ones. After loading, LLM providers are
+    /// discovered from environment variables and the result is adjusted
+    /// (invalid values clamped, incomplete providers/LSP servers dropped).
     pub fn load() -> Result<Self, ConfigError> {
+        Self::load_from_sources(
+            &|key| std::env::var(key).ok(),
+            global_config_path().as_deref(),
+            LOCAL_CONFIG_PATHS,
+        )
+    }
+
+    /// [`Self::load`] with an injectable environment and no file layers —
+    /// deterministic for tests (defaults → env → discovery → adjust).
+    pub fn load_with(get_env: impl Fn(&str) -> Option<String>) -> Result<Self, ConfigError> {
+        Self::load_from_sources(&get_env, None, &[])
+    }
+
+    /// Core pipeline: defaults → env → global file → local files → discovery
+    /// → adjust. Later layers override earlier ones.
+    fn load_from_sources(
+        get_env: &impl Fn(&str) -> Option<String>,
+        global: Option<&std::path::Path>,
+        local_paths: &[&str],
+    ) -> Result<Self, ConfigError> {
         let mut config = SentinelConfig::default();
+        config.apply_env(get_env);
 
-        let paths = ["sentinel.toml", "config.toml", ".sentinel.toml"];
+        if let Some(path) = global {
+            if let Ok(content) = std::fs::read_to_string(path) {
+                let file_config: SentinelConfig =
+                    toml::from_str(&content).map_err(ConfigError::from)?;
+                config.merge(file_config);
+            }
+        }
 
-        for path in &paths {
+        for path in local_paths {
             if let Ok(content) = std::fs::read_to_string(path) {
                 let file_config: SentinelConfig =
                     toml::from_str(&content).map_err(ConfigError::from)?;
@@ -154,7 +225,117 @@ impl SentinelConfig {
             }
         }
 
+        config.discover_providers(get_env);
+        config.adjust();
         Ok(config)
+    }
+
+    /// Overlay `SENTINEL_*` environment variables on top of the current values.
+    /// Only non-empty variables override.
+    fn apply_env(&mut self, get_env: &impl Fn(&str) -> Option<String>) {
+        let set = |var: &str, f: &mut dyn FnMut(&str)| {
+            if let Some(v) = get_env(var) {
+                if !v.is_empty() {
+                    f(&v);
+                }
+            }
+        };
+        set("SENTINEL_DEFAULT_MODEL", &mut |v| {
+            self.agent.default_model = v.to_string();
+        });
+        set("SENTINEL_MAX_TURNS", &mut |v| {
+            if let Ok(n) = v.parse::<u32>() {
+                self.agent.max_turns = n;
+            }
+        });
+        set("SENTINEL_MAX_ITERATIONS", &mut |v| {
+            if let Ok(n) = v.parse::<u32>() {
+                self.agent.max_iterations = n;
+            }
+        });
+        set("SENTINEL_MAX_TOKENS", &mut |v| {
+            if let Ok(n) = v.parse::<u32>() {
+                self.agent.max_tokens = Some(n);
+            }
+        });
+        set("SENTINEL_REASONING_EFFORT", &mut |v| {
+            self.agent.reasoning_effort = Some(v.to_string());
+        });
+        set("SENTINEL_YOLO_MODE", &mut |v| {
+            self.agent.yolo_mode = v.eq_ignore_ascii_case("true")
+                || v == "1"
+                || v.eq_ignore_ascii_case("yes");
+        });
+        set("SENTINEL_VERBOSE", &mut |v| {
+            self.agent.verbose =
+                v.eq_ignore_ascii_case("true") || v == "1" || v.eq_ignore_ascii_case("yes");
+        });
+        set("SENTINEL_THREAD_STORE", &mut |v| {
+            self.thread_store = v.to_string();
+        });
+        set("SENTINEL_THEME", &mut |v| {
+            self.theme.name = v.to_string();
+        });
+        set("SENTINEL_DEBUG", &mut |v| {
+            self.debug.enabled =
+                v.eq_ignore_ascii_case("true") || v == "1" || v.eq_ignore_ascii_case("yes");
+        });
+    }
+
+    /// Discover and configure LLM providers from environment variables.
+    ///
+    /// For every known cloud provider kind a matching API-key variable enables
+    /// the provider (creating it when absent, e.g. OpenRouter). When the key
+    /// variable is missing, a provider that can resolve no key is disabled.
+    fn discover_providers(&mut self, get_env: &impl Fn(&str) -> Option<String>) {
+        const DISCOVERY: &[(&str, &str)] = &[
+            ("openai", "OPENAI_API_KEY"),
+            ("anthropic", "ANTHROPIC_API_KEY"),
+            ("google-ai-studio", "GOOGLE_API_KEY"),
+            ("deepseek", "DEEPSEEK_API_KEY"),
+            ("openrouter", "OPENROUTER_API_KEY"),
+        ];
+        for (kind, var) in DISCOVERY {
+            let has_key = get_env(var)
+                .map(|v| !v.trim().is_empty())
+                .unwrap_or(false);
+            if has_key {
+                match self.providers.iter_mut().find(|p| p.id == *kind) {
+                    Some(p) => {
+                        p.disabled = false;
+                        p.auth = AuthConfig::EnvKey { var: var.to_string() };
+                    }
+                    None => self.providers.push(cloud_provider(*kind, var)),
+                }
+            } else if let Some(p) = self.providers.iter_mut().find(|p| p.id == *kind) {
+                if p.resolve_api_key().is_none() {
+                    p.disabled = true;
+                }
+            }
+        }
+    }
+
+    /// Adjust invalid values and drop unusable entries:
+    ///
+    /// - `agent.max_tokens` is clamped to `1..=1_000_000` (`0` → unset);
+    /// - providers without a base URL are disabled (incomplete);
+    /// - LSP servers without an id or command are dropped (invalid).
+    fn adjust(&mut self) {
+        if let Some(tokens) = self.agent.max_tokens {
+            self.agent.max_tokens = if tokens == 0 {
+                None
+            } else {
+                Some(tokens.min(1_000_000))
+            };
+        }
+        for p in &mut self.providers {
+            if p.base_url.trim().is_empty() {
+                p.disabled = true;
+            }
+        }
+        self.lsp_servers.retain(|l| {
+            !l.id.trim().is_empty() && !l.command.trim().is_empty()
+        });
     }
 
     pub fn load_from(path: &str) -> Result<Self, ConfigError> {
@@ -643,5 +824,116 @@ command = "other"
         let _ = std::fs::remove_file(&path);
         let err = cfg.validate().unwrap_err();
         assert!(err.to_string().contains("duplicate lsp_servers id 'ra'"));
+    }
+
+    // ── Layered loading / env overlay / provider discovery ──────────────────
+
+    /// Env map with no variables set.
+    fn empty_env(_: &str) -> Option<String> {
+        None
+    }
+
+    fn env_of(map: &'static [(&'static str, &'static str)]) -> impl Fn(&str) -> Option<String> {
+        move |k| map.iter().find(|(key, _)| *key == k).map(|(_, v)| v.to_string())
+    }
+
+    #[test]
+    fn load_with_defaults_keeps_cloud_providers_disabled_without_keys() {
+        let cfg = SentinelConfig::load_with(empty_env).unwrap();
+        assert!(cfg.provider("openai").is_some());
+        assert!(cfg.provider("openai").unwrap().disabled);
+        // Local providers stay untouched by discovery.
+        assert!(!cfg.provider("openai").unwrap().base_url.is_empty());
+    }
+
+    #[test]
+    fn load_with_key_enables_provider_and_creates_openrouter() {
+        let env = env_of(&[("OPENROUTER_API_KEY", "sk-or-1")]);
+        let cfg = SentinelConfig::load_with(env).unwrap();
+        let or = cfg.provider("openrouter").unwrap();
+        assert!(!or.disabled, "openrouter must be enabled by discovery");
+        assert!(
+            matches!(
+                &or.auth,
+                AuthConfig::EnvKey { var } if var == "OPENROUTER_API_KEY"
+            ),
+            "discovered provider must read the key from OPENROUTER_API_KEY"
+        );
+        assert_eq!(or.base_url, "https://openrouter.ai/api/v1");
+    }
+
+    #[test]
+    fn env_overrides_agent_defaults() {
+        let env = env_of(&[
+            ("SENTINEL_DEFAULT_MODEL", "qwen3:8b"),
+            ("SENTINEL_MAX_TURNS", "9"),
+            ("SENTINEL_YOLO_MODE", "yes"),
+            ("SENTINEL_THREAD_STORE", "sqlite"),
+        ]);
+        let cfg = SentinelConfig::load_with(env).unwrap();
+        assert_eq!(cfg.agent.default_model, "qwen3:8b");
+        assert_eq!(cfg.agent.max_turns, 9);
+        assert!(cfg.agent.yolo_mode);
+        assert_eq!(cfg.thread_store, "sqlite");
+    }
+
+    #[test]
+    fn adjust_clamps_max_tokens_and_drops_invalid_lsp() {
+        let mut cfg = SentinelConfig::default();
+        cfg.agent.max_tokens = Some(50_000_000);
+        cfg.lsp_servers.push(LspServerDef {
+            id: "ra".into(),
+            command: "rust-analyzer".into(),
+            args: vec![],
+            languages: vec!["rust".into()],
+        });
+        cfg.lsp_servers.push(LspServerDef {
+            id: "broken".into(),
+            command: String::new(),
+            args: vec![],
+            languages: vec!["python".into()],
+        });
+        let provider = cfg.providers[0].clone();
+        let mut incomplete = provider.clone();
+        incomplete.id = "no-url".into();
+        incomplete.base_url = String::new();
+        cfg.providers.push(incomplete);
+
+        cfg.adjust();
+
+        assert_eq!(cfg.agent.max_tokens, Some(1_000_000));
+        assert_eq!(cfg.lsp_servers.len(), 1);
+        assert_eq!(cfg.lsp_servers[0].id, "ra");
+        assert!(
+            cfg.providers.iter().any(|p| p.id == "no-url" && p.disabled),
+            "provider without base URL must be disabled"
+        );
+    }
+
+    #[test]
+    fn adjust_zero_max_tokens_unsets() {
+        let mut cfg = SentinelConfig::default();
+        cfg.agent.max_tokens = Some(0);
+        cfg.adjust();
+        assert_eq!(cfg.agent.max_tokens, None);
+    }
+
+    #[test]
+    fn global_then_local_file_layering() {
+        let global = temp_toml("global", "[agent]\ndefault_model = \"gpt-4o-mini\"\n");
+        let local = temp_toml("local", "[agent]\nmax_turns = 3\n");
+        let cfg =
+            SentinelConfig::load_from_sources(&empty_env, Some(std::path::Path::new(&global)), &[
+                &local,
+            ])
+            .unwrap();
+        let _ = std::fs::remove_file(&global);
+        let _ = std::fs::remove_file(&local);
+
+        assert_eq!(
+            cfg.agent.default_model, "gpt-4o-mini",
+            "global layer applies when no local value is set"
+        );
+        assert_eq!(cfg.agent.max_turns, 3, "local layer overrides global");
     }
 }

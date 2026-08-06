@@ -19,6 +19,24 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
 
     banner();
 
+    // First run? Show a one-line hint, then mark the project as initialized
+    // (init flag in the data dir — see sentinel_config::init).
+    let data_dir = sentinel_config::default_data_dir();
+    if sentinel_config::should_show_init_dialog(&data_dir) {
+        println!(
+            " {} First run — welcome! Use /help for zero-cost slash commands.",
+            "✦".cyan().bold()
+        );
+        if let Err(e) = sentinel_config::mark_project_initialized(&data_dir) {
+            eprintln!(
+                "{} Could not write init flag in '{}': {}",
+                "W".yellow(),
+                data_dir.display(),
+                e
+            );
+        }
+    }
+
     // ── Scan device ──
     let info = detect();
     scan_device(&info);
