@@ -327,6 +327,122 @@ mod tests {
         assert!(validate_tool_calls(&[("id".into(), "ping".into(), json!(null))]).is_ok());
     }
 
+    // ── Test 8: cancellation aborts a hung run ───────────────────────────────
+    struct BlockingProvider {
+        info: ProviderInfo,
+    }
+
+    #[async_trait]
+    impl ModelProvider for BlockingProvider {
+        fn info(&self) -> &ProviderInfo {
+            &self.info
+        }
+        async fn complete(
+            &self,
+            _req: &CompletionRequest,
+        ) -> Result<CompletionResponse, ProviderError> {
+            std::future::pending().await
+        }
+        async fn complete_stream(
+            &self,
+            _req: &CompletionRequest,
+        ) -> Result<
+            Box<dyn tokio_stream::Stream<Item = Result<StreamChunk, ProviderError>> + Send + Unpin>,
+            ProviderError,
+        > {
+            std::future::pending().await
+        }
+    }
+
+    #[tokio::test]
+    async fn cancel_aborts_running_agent() {
+        let provider = Arc::new(BlockingProvider {
+            info: ProviderInfo {
+                id: "block".into(),
+                name: "Block".into(),
+                base_url: String::new(),
+                auth: sentinel_provider_info::AuthConfig::None,
+                models: vec![],
+                timeout_secs: 30,
+                extra_headers: Default::default(),
+                disabled: false,
+                provider: None,
+            },
+        });
+        let agent = Arc::new(make_agent(provider));
+        let mut t = thread();
+
+        let handle = tokio::spawn({
+            let agent = agent.clone();
+            async move {
+                let result = agent.run(&mut t, "hi").await;
+                (result, t)
+            }
+        });
+
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        agent.cancel();
+
+        let (result, t) = handle.await.unwrap();
+        let out = result.unwrap();
+        assert!(
+            matches!(&out, AgentOutput::Error { message } if message == "Agent cancelled"),
+            "expected cancelled error, got {:?}",
+            out
+        );
+        assert_eq!(format!("{:?}", t.status), "Cancelled");
+    }
+
+    // ── Test 9: unknown tool fails fast, loop continues ──────────────────────
+    #[tokio::test]
+    async fn unknown_tool_fails_fast_and_recovers() {
+        let provider = ScriptedProvider::new(vec![
+            tool_call_response("tc-u", "no_such_tool", json!({ "x": 1 })),
+            text_response("recovered"),
+        ]);
+        let mut t = thread();
+        let out = make_agent(provider).run(&mut t, "go").await.unwrap();
+        assert!(
+            matches!(out, AgentOutput::Success { ref text } if text == "recovered"),
+            "got {:?}",
+            out
+        );
+        assert_eq!(t.turn, 1);
+    }
+
+    // ── Test 10: summary generation records tokens + budget ──────────────────
+    fn usage_response(prompt: u32, completion: u32) -> CompletionResponse {
+        CompletionResponse {
+            id: "r-sum".into(),
+            model: "mock-model".into(),
+            choices: vec![Choice {
+                index: 0,
+                message: Message::new(
+                    Role::Assistant,
+                    vec![ContentBlock::Text { text: "summary text".into() }],
+                ),
+                finish_reason: Some("stop".into()),
+            }],
+            usage: Some(sentinel_protocol::Usage {
+                prompt_tokens: prompt,
+                completion_tokens: completion,
+                total_tokens: prompt + completion,
+            }),
+        }
+    }
+
+    #[tokio::test]
+    async fn summarize_context_records_cost_and_tokens() {
+        let provider = ScriptedProvider::new(vec![usage_response(100, 25)]);
+        let mut t = thread();
+        let agent = make_agent(provider);
+        let summary = agent.summarize_context(&mut t).await.unwrap();
+        assert_eq!(summary, "summary text");
+        assert_eq!(agent.total_prompt_tokens.load(Ordering::SeqCst), 100);
+        assert_eq!(agent.total_completion_tokens.load(Ordering::SeqCst), 25);
+        assert!(t.budget.total_spend_usd > 0.0);
+    }
+
     // ── Stub echo tool ────────────────────────────────────────────────────────
 
     struct EchoTool;

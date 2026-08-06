@@ -186,6 +186,11 @@ impl AppSession {
         }
     }
 
+    /// Abort an in-flight agent run (LLM call + tool execution) for this session.
+    pub fn cancel(&self) {
+        self.agent.cancel();
+    }
+
     pub async fn chat_stream(
         &self,
         message: &str,
@@ -202,6 +207,9 @@ impl AppSession {
 
         tokio::pin!(stream);
         while let Some(chunk) = stream.next().await {
+            if self.agent.is_cancelled() {
+                break;
+            }
             match chunk {
                 Ok(chunk) => {
                     let _ = event_tx.send(Ok(chunk.clone())).await;

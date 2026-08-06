@@ -123,3 +123,52 @@ entry points; `read`/`stream` reconstruct a session from disk.
 | `server stop` no-op + PID file | `sentinel server stop` prints success without stopping | wire PID file under data dir |
 | `App.shutdown_rx` watch used only by LSP teardown | background tasks don't set it | fold into broader graceful-shutdown sweep |
 | sub-agent event bridging | sub-agents write results back but not their mid-AgentEvents | bridge via shared event store |
+| Session cancellation | existed only as unused per-batch tokens; **now implemented** | `Agent::cancel()` + select in loop, child tokens, server destroy abort (§6.1) |
+| Conversation summaries unpriced & blocking | summary LLM call skipped cost/budget; synchronous | **cost accounted now** (§6.2); true background summary is roadmap |
+| `FinishReasonToolUse` | no such enum; tool-use detected by content-block scan (equivalent) | fine as-is |
+| SSE MCP transport / WebSocket | only stdio + JSON-RPC-over-HTTP (streamable-HTTP style) | needs SSE read loop + endpoint handshake; WebSocket stubbed |
+| Sourcegraph-style remote code search | absent (only local `grep`/`glob`, Wikipedia `web_search`) | needs GraphQL client + auth; candidate plugin/tool |
+| Role-based tool subsets (coder vs task) | single global `ToolRegistry` offered to every agent | `research` tool (read-only registry) exists but unregistered |
+
+## 6. Orchestration & conversational flow — audit + round-2 delta
+
+Scope basis: the "AI Agent Orchestration and Conversational Flow" spec section.
+
+### 6.1 Spec → implementation map
+
+| Spec point (Go) | Rust equivalent | Where |
+|---|---|---|
+| `agent.Run` — message history + continuous LLM interaction | `Agent::run` / `run_with_approval_inner` (build request from `thread.context`, provider retry+backoff, feed results, loop) | `sentinel-core/agent.rs:212,273` |
+| session concurrency, independent, cancellable | per-session `AppSession` (own thread/agent/broadcast); **new** `Agent::cancel()` + `CancellationToken` selected against LLM/tool futures; `AppSession::cancel`; server destroy aborts (§6.2) | `server session.rs:12,199`, `agent.rs:319-360`, `handler.rs:347` |
+| async conversation summaries | `summarize_context` (synchronous today); stores via `ContextManager::insert_summary` (+ compaction) | `agent.rs:556`, `context.rs:40-67` |
+| cost tracking per interaction | `estimate_llm_cost` + `BudgetGuard::record_spend` on every non-streaming response; **now also on summaries** | `cost.rs`, `budget.rs:101`, `agent.rs:345,616` |
+| `streamAndHandleEvents` / `FinishReasonToolUse` tool dispatch | content-block tool-call scan → `execute_tools_concurrent` (budget → plugin veto → policy → diff/cost → ApprovalGate → cancel → after‑hook → compress) → results by `tool_call_id` | `agent.rs:414-516, 992` |
+| toolset: bash, read/write, grep, patch | `run_shell_command`, `read`, `write`, `edit`, `grep`, `apply_patch` (+ 15 more builtins) | `sentinel-tools/builtin.rs` |
+| agent delegate tool (hierarchical) | `fork_sub_agent` — forks fresh `Agent` on a new `AgentThread` (yolo), full registry, returns final text | `sub_agent_tool.rs:84-104`, `sub_agent.rs:41-48` |
+| MCP tools (stdio/SSE) | `McpClient` stdio + HTTP; dynamic `tools/list` → `McpToolAdapter`; **SSE not implemented** (§5) | `sentinel-mcp/{transport,client,mcp_tool}.rs` |
+| permission service gating sensitive ops | plugin veto → `PolicyEngine` → `ApprovalGate` chain; `is_mutating` routes MCP calls through it | `agent.rs:1020-1104`, `mcp_tool.rs:32` |
+| role-based tool assembly | absent (documented gap §5) | — |
+
+### 6.2 Implemented this round
+
+1. **Session cancellation.** `Agent` now owns a `CancellationToken` (`cancel()` /
+   `is_cancelled()`). The run loop races `provider.complete` and
+   `summarize_context` against it (`tokio::select!`), tool batches use
+   `cancellation.child_token()`, and on fire it sets
+   `ThreadStatus::Cancelled` and returns `AgentOutput::Error("Agent
+   cancelled")`. `AppSession::cancel()` on the web server aborts server-bound
+   in-flight runs, wired into `handle_destroy_session` and the stream drain.
+   `ProviderError::Cancelled` added.
+2. **Summary cost accounting.** `summarize_context` now accumulates
+   prompt/completion tokens and records spend against `thread.budget`
+   (previously summaries were free in the ledger) and is cancellable.
+3. **Unknown-tool fast-fail.** `execute_tools_concurrent` short-circuits
+   names not present in the registry into an error `ToolResult` before any
+   approval/plugin/diff cycles; the LLM gets the error and the loop recovers.
+
+### 6.3 Verified
+
+- `cargo check --workspace` clean; 3 new `sentinel-core` integration tests
+  (`cancel_aborts_running_agent`, `unknown_tool_fails_fast_and_recovers`,
+  `summarize_context_records_cost_and_tokens`) — all pass.
+- Full `cargo test --workspace` green (next section).

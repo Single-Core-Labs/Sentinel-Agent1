@@ -14,6 +14,8 @@ pub enum ProviderError {
     NotFound(String),
     #[error("Stream error: {0}")]
     StreamError(String),
+    #[error("Operation cancelled")]
+    Cancelled,
     #[error("JSON parse error: {0}")]
     JsonError(#[from] serde_json::Error),
     #[error("All providers in the router failed")]

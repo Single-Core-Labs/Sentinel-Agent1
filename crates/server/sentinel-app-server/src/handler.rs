@@ -345,6 +345,7 @@ impl RequestHandler {
         let mut sessions = self.sessions.lock().await;
         let removed = sessions.remove(&session_id);
         if let Some(ref session) = removed {
+            session.cancel();
             let _ = session.events.send(ServerEvent::SessionEnded {
                 session_id: session_id.clone(),
                 reason: "destroyed".into(),

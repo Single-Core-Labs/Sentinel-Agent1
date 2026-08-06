@@ -73,6 +73,7 @@ pub struct Agent {
     pub(crate) uploader: Box<dyn SessionUploader>,
     pub(crate) plugin_registry: Arc<PluginRegistry>,
     pub(crate) compressor: Arc<dyn ContentCompressor>,
+    cancellation: CancellationToken,
 }
 
 impl std::fmt::Debug for Agent {
@@ -111,7 +112,20 @@ impl Agent {
             uploader: Box::new(NullUploader),
             plugin_registry: Arc::new(PluginRegistry::new()),
             compressor: Arc::new(NullCompressor::new()),
+            cancellation: CancellationToken::new(),
         }
+    }
+
+    /// Request cancellation of the current run. In-flight LLM calls and tool
+    /// executions are aborted at the next cancellation point; the run loop
+    /// returns an `AgentOutput::error("Agent cancelled")`.
+    pub fn cancel(&self) {
+        self.cancellation.cancel();
+    }
+
+    /// `true` once `cancel()` has been called.
+    pub fn is_cancelled(&self) -> bool {
+        self.cancellation.is_cancelled()
     }
 
     pub fn with_phase_callback(
@@ -275,6 +289,11 @@ impl Agent {
                 return Ok(AgentOutput::error("Max iterations reached"));
             }
 
+            if self.cancellation.is_cancelled() {
+                thread.status = ThreadStatus::Cancelled;
+                return Ok(AgentOutput::error("Agent cancelled"));
+            }
+
             // Notify phase callback (for PlanActRouter support)
             if let Some(ref cb) = self.phase_callback {
                 cb(thread.phase);
@@ -297,7 +316,17 @@ impl Agent {
 
             let mut attempts = 0;
             let response = loop {
-                match self.provider.complete(&req).await {
+                let complete = self.provider.complete(&req);
+                tokio::pin!(complete);
+                let result = tokio::select! {
+                    biased;
+                    _ = self.cancellation.cancelled() => {
+                        thread.status = ThreadStatus::Cancelled;
+                        return Ok(AgentOutput::error("Agent cancelled"));
+                    }
+                    r = &mut complete => r,
+                };
+                match result {
                     Ok(r) => break r,
                     Err(e) => {
                         attempts += 1;
@@ -450,7 +479,7 @@ impl Agent {
                 }
             }
 
-            let cancel = CancellationToken::new();
+            let cancel = self.cancellation.child_token();
             let ctx = ToolContext::new();
             let tool_results = execute_tools_concurrent(
                 &tool_calls,
@@ -560,12 +589,32 @@ impl Agent {
                 "You are a conversation summarizer. Produce a concise 2-3 paragraph summary.",
             );
 
-        let response = self.provider.complete(&req).await?;
+        let complete = self.provider.complete(&req);
+        tokio::pin!(complete);
+        let response = tokio::select! {
+            biased;
+            _ = self.cancellation.cancelled() => {
+                return Err(ProviderError::Cancelled);
+            }
+            r = &mut complete => r?,
+        };
         let summary = response
             .choices
             .first()
             .map(|c| c.message.extract_text())
             .unwrap_or_default();
+
+        if let Some(ref usage) = response.usage {
+            self.total_prompt_tokens
+                .fetch_add(usage.prompt_tokens as u64, Ordering::Relaxed);
+            self.total_completion_tokens
+                .fetch_add(usage.completion_tokens as u64, Ordering::Relaxed);
+            let cost = crate::cost::estimate_llm_cost(
+                self.provider.name(),
+                &crate::cost::Usage::new(usage.prompt_tokens, usage.completion_tokens),
+            );
+            thread.budget.record_spend(cost);
+        }
 
         Ok(summary)
     }
@@ -906,6 +955,20 @@ pub(crate) async fn execute_tools_concurrent(
                     tool_call_id: tool_call_id.clone(),
                     name: name.clone(),
                     output: "Budget exhausted — tool execution skipped".into(),
+                    is_error: true,
+                },
+            );
+            continue;
+        }
+
+        // Unknown tool: fail fast without spending approval/plugin cycles.
+        if tools.get(name).is_none() {
+            ordered_results.insert(
+                i,
+                ToolResult {
+                    tool_call_id: tool_call_id.clone(),
+                    name: name.clone(),
+                    output: format!("Tool not found: {}", name),
                     is_error: true,
                 },
             );
