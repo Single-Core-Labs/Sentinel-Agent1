@@ -234,3 +234,71 @@ Scope basis: the "LLM Model and Provider Management" spec section.
 - Live-catalog refresh runs once at construction (manual rather than
   watch-based); no `sentinel models` resolver command wired to discovery.
 - MCP/SSE, role-based tool assembly — carried over from §5 gaps.
+
+## 8. Prompt Generation and Context Integration (audit + round 4 delta)
+
+Scope basis: the "Prompt Generation and Context Integration" spec section.
+
+### 8.1 Spec → implementation map
+
+| Spec point (Go) | Rust equivalent | Where |
+|---|---|---|
+| centralized prompt dispatch per role (coder/summarizer/task/title) | one `SystemPromptManager` (`{{var}}` substitution) + role-flavored prompts: `DEFAULT_SYSTEM_PROMPT` (coder/agent), pipeline stage prompts (task), `summarize_context` (summarizer), `TITLE_SYSTEM_PROMPT` (title, NEW); no enum-keyed dispatcher (△8.4) | `sentinel-core/{prompt,title}.rs`, `agent.rs:559-590`, `pipeline.rs:166-181` |
+| `getEnvironmentInfo` (cwd, git, OS, dir listing) | `ProjectContext::discover`: cwd, OS/arch/cores, git root+branch, directory listing (NEW, top 24 entries, hidden/build noise skipped), `AGENTS.md` excerpt | `sentinel-core/project_context.rs:34-69` |
+| `getContextFromPaths` (load file contents, avoid redundant reads) | NEW `FileContext::load`: reads `config.context.paths` files, exclude filters, canonical dedup, per-file 16k / total 48k char caps, binary skip; directories (incl. default `.`) never dumped | `sentinel-core/file_context.rs` |
+| summarizer prompt | `summarize_context` inline (2-3 paragraph summary system prompt + wrapped context) | `agent.rs:559-590` |
+| title generation | NEW `title_prompt` + `TITLE_SYSTEM_PROMPT`; server `AppSession::ensure_title` (best-effort, first turn, fallback heuristic) | `sentinel-core/title.rs`, `server/session.rs:205-246`, `handler.rs:425,455` |
+| LSP config refines prompts | LSP server ids + commands rendered into the prompt + diagnostics-capability note (NEW); no diagnostics *content* in prompts (△8.4) | `project_context.rs:52-60,104-110` |
+| sub-agents operate with project understanding | research + fork_sub_agent children now carry project context (NEW) | `research_tool.rs:73-78`, `sub_agent.rs:36-41,90-94` |
+
+### 8.2 Implemented this round
+
+1. **FileContext (`getContextFromPaths`).** New `sentinel-core/file_context.rs`:
+   reads every `context.paths` entry that resolves to a readable file;
+   applies `context.exclude` substring filters on the display path;
+   deduplicates by canonical path (one read per file); skips empty and
+   binary (NUL-containing) files; enforces 16k char/file and 48k total caps;
+   renders as `## File Context (configured paths)` and is appended by
+   `ProjectContext::inject_into_prompt_manager` (all CLI + server sessions).
+   Directories — including the default `.` — are never dumped into the
+   prompt; the repo *listing* lives in the env context instead.
+2. **Environment info: directory listing.** `ProjectContext` now includes a
+   sorted top-24 top-level listing of the working directory (dirs marked `/`,
+   hidden/`target`/`node_modules` skipped) with an `(and N more)` overflow
+   note; `dir_total` tracks the full count.
+3. **LSP refinement.** The LSP line now renders `id (command)` per
+   configured server plus a diagnostics-capability note telling the agent
+   how to use the workspace integration.
+4. **TitlePrompt.** `sentinel-core/title.rs` (`TITLE_SYSTEM_PROMPT` +
+   `title_prompt`). The app server generates a title on the first turn
+   (fire-and-forget `ensure_title`, single-flight, max 32 tokens, `tokio`
+   RwLock): on success it surfaces in the session browser / session-get
+   responses; on any failure the existing first-message heuristic remains
+   (`title = None`).
+5. **Sub-agent project context.** `fork_sub_agent` children and the
+   research sub-agent now inherit project context: forked agents get a
+   pre-built `SystemPromptManager` (discovered once per team run, cloned
+   per fork); the research thread appends the rendered `ProjectContext` to
+   its dedicated role prompt.
+
+### 8.3 Verified
+
+- `cargo check --workspace` clean; `cargo test --workspace` green (51 suites).
+- 8 new `file_context` tests (dirs skipped, `.` not dumped, excludes,
+  canonical dedup, binary/empty skip, per-file+total caps, empty render,
+  missing path); 3 new `project_context` tests (dir listing, truncation
+  note, LSP diagnostics line); 3 `title` tests; 4 new server
+  `ensure_title` tests (LLM capture, single-flight, provider-failure
+  fallback, blank-output rejection).
+
+### 8.4 Remaining gaps (documented, deferred)
+
+- No role-dispatch enum (Go `prompt` package); role prompts remain distinct
+  functions/constants rather than a registry.
+- LSP diagnostics *content* is not fed into prompts (only config/names and
+  a capability note); `ide_context_sync` active-file state is stored but
+  not yet injected into session prompts.
+- Title generation is per-first-turn best-effort; no dedicated small-model
+  selection or re-generation on rename.
+- `sentinel-ai-core/agents_md.rs` (hierarchical AGENTS.md parser) and
+  headroom memory injection remain unwired into the production prompt path.

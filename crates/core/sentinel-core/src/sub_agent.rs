@@ -33,15 +33,21 @@ pub async fn run_sub_agent_team(
     config: Arc<SentinelConfig>,
 ) -> Vec<SubTaskResult> {
     let mut set: JoinSet<SubTaskResult> = JoinSet::new();
+    // Discover once, share across forks: forked threads carry no system
+    // message, so each sub-agent's manager must inject project context.
+    let prompt_manager = crate::project_context::ProjectContext::inject_into_prompt_manager(
+        &config,
+    );
 
     for task in sub_tasks {
         let provider = Arc::clone(&provider);
         let tools = Arc::clone(&tools);
         let config = Arc::clone(&config);
+        let prompt_manager = prompt_manager.clone();
         let forked = parent_thread.fork();
 
         set.spawn(async move {
-            let agent = Agent::new(provider, tools, config);
+            let agent = Agent::new(provider, tools, config).with_prompt_manager(prompt_manager);
             let mut thread = forked;
             let instruction = format!("[Sub-task: {}]\n{}", task.description, task.instruction,);
             let output = agent
@@ -78,16 +84,20 @@ pub async fn run_sub_agent_team_with_approval(
     approval: Arc<dyn ApprovalGate>,
 ) -> Vec<SubTaskResult> {
     let mut set: JoinSet<SubTaskResult> = JoinSet::new();
+    let prompt_manager = crate::project_context::ProjectContext::inject_into_prompt_manager(
+        &config,
+    );
 
     for task in sub_tasks {
         let provider = Arc::clone(&provider);
         let tools = Arc::clone(&tools);
         let config = Arc::clone(&config);
         let approval = Arc::clone(&approval);
+        let prompt_manager = prompt_manager.clone();
         let forked = parent_thread.fork();
 
         set.spawn(async move {
-            let agent = Agent::new(provider, tools, config);
+            let agent = Agent::new(provider, tools, config).with_prompt_manager(prompt_manager);
             let mut thread = forked;
             let instruction = format!("[Sub-task: {}]\n{}", task.description, task.instruction,);
             let output = agent

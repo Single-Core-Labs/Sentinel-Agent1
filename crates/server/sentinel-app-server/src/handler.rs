@@ -378,6 +378,7 @@ impl RequestHandler {
         let thread = session.thread.lock().await;
         Ok(serde_json::json!({
             "session_id": session_id,
+            "title": session.title.read().await.clone().unwrap_or_default(),
             "turn": thread.turn,
             "iterations": thread.iterations,
             "status": format!("{:?}", thread.status),
@@ -397,6 +398,7 @@ impl RequestHandler {
                 .with_metadata(serde_json::json!({ "len": p.message.len() })),
         );
 
+        let is_first_turn = session.thread.lock().await.conversation.turn_count() == 0;
         let chat_result = session.chat(&p.message).await;
 
         if let Some(ref store) = self.thread_store {
@@ -414,6 +416,14 @@ impl RequestHandler {
                     AnalyticsEvent::new(EventKind::MessageReceived, Some(p.session_id))
                         .with_metadata(serde_json::json!({ "len": response.len() })),
                 );
+                // TitlePrompt: kick off a best-effort LLM title on the first
+                // turn; the session keeps the first-message heuristic as a
+                // fallback while it runs (or if it fails).
+                if is_first_turn {
+                    let session = session.clone();
+                    let msg = p.message.clone();
+                    tokio::spawn(async move { session.ensure_title(&msg).await });
+                }
                 Ok(serde_json::json!({ "response": response }))
             }
             Err(e) => Err(JsonRpcError::internal_error(e)),
@@ -426,11 +436,15 @@ impl RequestHandler {
 
         let (tx, rx) = mpsc::channel(64);
         let msg = p.message.clone();
+        let is_first_turn = session.thread.lock().await.conversation.turn_count() == 0;
         tokio::spawn({
             let session = session.clone();
             let store = self.thread_store.clone();
             async move {
                 session.chat_stream(&msg, tx).await;
+                if is_first_turn {
+                    session.ensure_title(&msg).await;
+                }
                 if let Some(ref store) = store {
                     let thread = session.thread.lock().await;
                     if let Err(e) = store.save_thread(&thread).await {
@@ -755,10 +769,13 @@ impl RequestHandler {
             let sessions = self.sessions.lock().await;
             for session in sessions.values() {
                 let thread = session.thread.lock().await;
-                let title = conversation_title(&thread.conversation);
+                let llm_title = session.title.read().await.clone();
+                let title = llm_title
+                    .or_else(|| conversation_title(&thread.conversation))
+                    .unwrap_or_else(|| "(empty session)".to_string());
                 summaries.push(SessionSummary {
                     id: session.id.clone(),
-                    title: title.unwrap_or_else(|| "(empty session)".to_string()),
+                    title,
                     created_at: 0,
                     last_active_at: 0,
                     total_tokens: thread.context.estimated_tokens() as u64,

@@ -14,6 +14,8 @@ use std::path::{Path, PathBuf};
 const AGENTS_MD_MAX_CHARS: usize = 1200;
 /// Lines of `AGENTS.md` excerpt included in prompts.
 const AGENTS_MD_MAX_LINES: usize = 40;
+/// Maximum top-level directory entries listed in the env info.
+const DIR_LISTING_MAX: usize = 24;
 
 #[derive(Debug, Clone)]
 pub struct ProjectContext {
@@ -23,7 +25,12 @@ pub struct ProjectContext {
     pub cpu_cores: usize,
     pub git_root: Option<String>,
     pub git_branch: Option<String>,
+    /// LSP servers as `"id (command)"` (command omitted when empty).
     pub lsp_servers: Vec<String>,
+    /// Top-level directory listing of the working directory.
+    pub dir_entries: Vec<String>,
+    /// Total top-level entries (listing above may be truncated).
+    pub dir_total: usize,
     /// Project `AGENTS.md` excerpt, if present in the working directory.
     pub agents_md: Option<String>,
 }
@@ -52,8 +59,15 @@ impl ProjectContext {
         let lsp_servers: Vec<String> = config
             .lsp_servers
             .iter()
-            .map(|l| l.id.clone())
+            .map(|l| {
+                if l.command.trim().is_empty() {
+                    l.id.clone()
+                } else {
+                    format!("{} ({})", l.id, l.command)
+                }
+            })
             .collect();
+        let (dir_entries, dir_total) = list_dir(Path::new(&cwd));
         let agents_md = read_agents_md(Path::new(&cwd));
 
         Self {
@@ -64,6 +78,8 @@ impl ProjectContext {
             git_root,
             git_branch,
             lsp_servers,
+            dir_entries,
+            dir_total,
             agents_md,
         }
     }
@@ -89,6 +105,19 @@ impl ProjectContext {
             }
             _ => out.push_str("- Git: not a git repository\n"),
         }
+        if !self.dir_entries.is_empty() {
+            let shown = self.dir_entries.len();
+            let more = if shown < self.dir_total {
+                format!(" (and {} more)", self.dir_total - shown)
+            } else {
+                String::new()
+            };
+            out.push_str(&format!(
+                "- Directory: `{}`{}\n",
+                self.dir_entries.join(", "),
+                more
+            ));
+        }
         if self.lsp_servers.is_empty() {
             out.push_str("- LSP servers: none\n");
         } else {
@@ -96,6 +125,10 @@ impl ProjectContext {
                 "- LSP servers: {}\n",
                 self.lsp_servers.join(", ")
             ));
+            out.push_str(
+                "- LSP diagnostics: these servers index the project; diagnostics and \
+                 definitions are served to the assistant through the workspace integration.\n",
+            );
         }
         if let Some(agents_md) = &self.agents_md {
             out.push_str(&format!(
@@ -116,6 +149,7 @@ impl ProjectContext {
     pub fn inject_into_prompt_manager(config: &SentinelConfig) -> SystemPromptManager {
         let mut manager = SystemPromptManager::new();
         Self::discover(config).apply_to_manager(&mut manager);
+        crate::file_context::FileContext::load(config).apply_to_manager(&mut manager);
         manager
     }
 }
@@ -130,6 +164,8 @@ impl Default for ProjectContext {
             git_root: None,
             git_branch: None,
             lsp_servers: Vec::new(),
+            dir_entries: Vec::new(),
+            dir_total: 0,
             agents_md: None,
         }
     }
@@ -150,6 +186,30 @@ fn git_cmd(args: &[&str]) -> Option<String> {
     } else {
         Some(trimmed.to_string())
     }
+}
+
+fn list_dir(cwd: &Path) -> (Vec<String>, usize) {
+    let Ok(read) = std::fs::read_dir(cwd) else {
+        return (Vec::new(), 0);
+    };
+    let mut names = Vec::new();
+    for entry in read.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        // Skip hidden entries and common build-noise to keep the listing tight.
+        if name.starts_with('.') || name == "target" || name == "node_modules" {
+            continue;
+        }
+        let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+        names.push(if is_dir {
+            format!("{name}/")
+        } else {
+            name
+        });
+    }
+    names.sort();
+    let total = names.len();
+    names.truncate(DIR_LISTING_MAX);
+    (names, total)
 }
 
 fn read_agents_md(cwd: &Path) -> Option<String> {
@@ -185,6 +245,8 @@ mod tests {
             git_root: Some("C:\\repo\\app".into()),
             git_branch: Some("main".into()),
             lsp_servers: vec!["rust-analyzer".into(), "pyright".into()],
+            dir_entries: vec!["src/".into(), "Cargo.toml".into(), "README.md".into()],
+            dir_total: 25,
             agents_md: Some("## Rules\n- run tests".into()),
         }
     }
@@ -200,6 +262,25 @@ mod tests {
         assert!(text.contains("rust-analyzer, pyright"));
         assert!(text.contains("AGENTS.md"));
         assert!(text.contains("run tests"));
+        assert!(text.contains("Directory"));
+        assert!(text.contains("src/"));
+    }
+
+    #[test]
+    fn directory_listing_reports_truncation() {
+        let text = sample().render();
+        assert!(
+            text.contains("and 22 more"),
+            "listing must note remaining entries: {}",
+            text
+        );
+    }
+
+    #[test]
+    fn lsp_section_notes_diagnostics_capability() {
+        let text = sample().render();
+        assert!(text.contains("LSP diagnostics"));
+        assert!(text.contains("workspace integration"));
     }
 
     #[test]

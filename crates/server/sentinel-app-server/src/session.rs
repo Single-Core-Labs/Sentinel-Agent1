@@ -14,6 +14,10 @@ pub struct AppSession {
     pub thread: Mutex<AgentThread>,
     pub agent: Arc<Agent>,
     pub events: tokio::sync::broadcast::Sender<ServerEvent>,
+    /// LLM-generated title (best-effort, filled on first turn).
+    pub title: Arc<tokio::sync::RwLock<Option<String>>>,
+    provider: Arc<dyn ModelProvider>,
+    model_id: String,
 }
 
 /// Forwards agent-loop events (tool calls, results, thinking, completion) to
@@ -66,8 +70,8 @@ impl AppSession {
         let id = Uuid::new_v4().to_string();
         let (evt_tx, _) = tokio::sync::broadcast::channel(256);
         let model_id = model.unwrap_or_else(|| config.agent.default_model.clone());
-        let agent = Agent::new(provider, tools, config.clone())
-            .with_model(model_id)
+        let agent = Agent::new(provider.clone(), tools, config.clone())
+            .with_model(model_id.clone())
             .with_prompt_manager(sentinel_core::ProjectContext::inject_into_prompt_manager(
                 &config,
             ))
@@ -91,6 +95,9 @@ impl AppSession {
             thread: Mutex::new(thread),
             agent: Arc::new(agent),
             events: evt_tx,
+            title: Arc::new(tokio::sync::RwLock::new(None)),
+            provider,
+            model_id,
         }
     }
 
@@ -105,9 +112,9 @@ impl AppSession {
         let id = Uuid::new_v4().to_string();
         let (evt_tx, _) = tokio::sync::broadcast::channel(256);
         let model_id = model.unwrap_or_else(|| config.agent.default_model.clone());
-        let agent = Agent::new(provider, tools, config.clone())
+        let agent = Agent::new(provider.clone(), tools, config.clone())
             .with_compressor(compressor)
-            .with_model(model_id)
+            .with_model(model_id.clone())
             .with_prompt_manager(sentinel_core::ProjectContext::inject_into_prompt_manager(
                 &config,
             ))
@@ -131,6 +138,9 @@ impl AppSession {
             thread: Mutex::new(thread),
             agent: Arc::new(agent),
             events: evt_tx,
+            title: Arc::new(tokio::sync::RwLock::new(None)),
+            provider,
+            model_id,
         }
     }
 
@@ -145,13 +155,13 @@ impl AppSession {
     ) -> Self {
         let (evt_tx, _) = tokio::sync::broadcast::channel(256);
         let model_id = config.agent.default_model.clone();
-        let agent = Agent::new(provider, tools, config.clone());
+        let agent = Agent::new(provider.clone(), tools, config.clone());
         let agent = if let Some(c) = compressor {
             agent.with_compressor(c)
         } else {
             agent
         }
-        .with_model(model_id)
+        .with_model(model_id.clone())
         .with_prompt_manager(sentinel_core::ProjectContext::inject_into_prompt_manager(
             &config,
         ))
@@ -170,6 +180,9 @@ impl AppSession {
             thread: Mutex::new(thread),
             agent: Arc::new(agent),
             events: evt_tx,
+            title: Arc::new(tokio::sync::RwLock::new(None)),
+            provider,
+            model_id,
         }
     }
 
@@ -189,6 +202,47 @@ impl AppSession {
     /// Abort an in-flight agent run (LLM call + tool execution) for this session.
     pub fn cancel(&self) {
         self.agent.cancel();
+    }
+
+    /// Best-effort LLM title generation (TitlePrompt). Runs once for the
+    /// session; a failed provider call keeps `title = None` so callers fall
+    /// back to the first-message heuristic.
+    pub async fn ensure_title(&self, first_message: &str) {
+        {
+            let guard = self.title.read().await;
+            if guard.is_some() {
+                return;
+            }
+        }
+        let title = self.try_generate_title(first_message).await;
+        let mut guard = self.title.write().await;
+        if guard.is_none() {
+            *guard = title;
+        }
+    }
+
+    async fn try_generate_title(&self, first_message: &str) -> Option<String> {
+        let mut req = sentinel_protocol::CompletionRequest::new(&self.model_id)
+            .with_message(sentinel_protocol::Message::user(
+                sentinel_core::title_prompt(first_message),
+            ))
+            .with_system(sentinel_core::TITLE_SYSTEM_PROMPT);
+        req.max_tokens = Some(32);
+        req.temperature = Some(0.0);
+
+        let response = self.provider.complete(&req).await.ok()?;
+        let title = response
+            .choices
+            .into_iter()
+            .next()?
+            .message
+            .extract_text()
+            .trim()
+            .to_string();
+        if title.is_empty() || title.len() > 80 {
+            return None;
+        }
+        Some(title)
     }
 
     pub async fn chat_stream(
@@ -398,13 +452,13 @@ mod tests {
         let receivers = session
             .events
             .send(ServerEvent::Thinking {
-                text: "thinking…".into(),
+                text: "thinkingâ€¦".into(),
             })
             .expect("subscriber must exist");
         assert_eq!(receivers, 1);
 
         match rx.try_recv() {
-            Ok(ServerEvent::Thinking { text }) => assert_eq!(text, "thinking…"),
+            Ok(ServerEvent::Thinking { text }) => assert_eq!(text, "thinkingâ€¦"),
             other => panic!("expected Thinking event, got {:?}", other),
         }
     }
@@ -555,5 +609,68 @@ mod tests {
             Ok(Err(e)) => assert!(e.contains("boom"), "unexpected error text: {}", e),
             other => panic!("expected Err chunk, got {:?}", other),
         }
+    }
+
+    #[tokio::test]
+    async fn ensure_title_captures_llm_output() {
+        let (provider, tools, config, analytics) = session_deps();
+        let session = AppSession::new(None, provider, tools, config, analytics);
+
+        assert!(session.title.read().await.is_none());
+        session.ensure_title("Fix the login bug").await;
+
+        let title = session.title.read().await.clone().unwrap();
+        assert_eq!(title, "hello", "title should come from the provider response");
+    }
+
+    #[tokio::test]
+    async fn ensure_title_is_single_flight() {
+        let (provider, tools, config, analytics) = session_deps();
+        let session = AppSession::new(None, provider, tools, config, analytics);
+
+        session.ensure_title("first").await;
+        session.ensure_title("second").await;
+        assert_eq!(
+            session.title.read().await.as_deref(),
+            Some("hello"),
+            "second call must not overwrite or re-run"
+        );
+    }
+
+    #[tokio::test]
+    async fn ensure_title_keeps_none_when_provider_fails() {
+        let session = AppSession::new(
+            None,
+            Arc::new(FailingProvider {
+                info: ProviderInfo::default(),
+            }),
+            Arc::new(ToolRegistry::new()),
+            Arc::new(SentinelConfig::default()),
+            Arc::new(AnalyticsPipeline::new()),
+        );
+
+        session.ensure_title("anything").await;
+        assert!(
+            session.title.read().await.is_none(),
+            "failed provider must keep the heuristic fallback (None)"
+        );
+    }
+
+    #[tokio::test]
+    async fn ensure_title_rejects_blank_output() {
+        let blank = scripted_provider(vec![text_response("   ")]);
+        let session = AppSession::new(
+            None,
+            blank,
+            Arc::new(ToolRegistry::new()),
+            Arc::new(SentinelConfig::default()),
+            Arc::new(AnalyticsPipeline::new()),
+        );
+
+        session.ensure_title("x").await;
+        assert!(
+            session.title.read().await.is_none(),
+            "blank titles must be discarded"
+        );
     }
 }

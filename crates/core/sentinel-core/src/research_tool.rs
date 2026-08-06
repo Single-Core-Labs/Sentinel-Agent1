@@ -71,7 +71,13 @@ impl Tool for ResearchTool {
         }
 
         let mut thread = AgentThread::new(5, 50, false);
-        thread.add_message(sentinel_protocol::Message::system(RESEARCH_SYSTEM_PROMPT));
+        let ctx = crate::project_context::ProjectContext::discover(&self.config).render();
+        let system = if ctx.is_empty() {
+            RESEARCH_SYSTEM_PROMPT.to_string()
+        } else {
+            format!("{}\n\n{}", RESEARCH_SYSTEM_PROMPT, ctx)
+        };
+        thread.add_message(sentinel_protocol::Message::system(&system));
         thread.add_message(sentinel_protocol::Message::user(&instruction));
 
         let agent = Agent::new(
