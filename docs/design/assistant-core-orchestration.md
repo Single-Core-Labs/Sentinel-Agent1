@@ -302,3 +302,101 @@ Scope basis: the "Prompt Generation and Context Integration" spec section.
   selection or re-generation on rename.
 - `sentinel-ai-core/agents_md.rs` (hierarchical AGENTS.md parser) and
   headroom memory injection remain unwired into the production prompt path.
+
+## 9. Prompt integration round 5: wiring the deferred §8.4 gaps
+
+Round 5 closes the five §8.4 deferrals (role dispatch, LSP diagnostics in
+prompts, IDE active-file injection, hierarchical AGENTS.md, headroom memory
+injection) — all verified with `cargo check --workspace` and
+`cargo test --workspace` (51 suites green at end of round).
+
+### 9.1 Spec → implementation map
+
+| Spec target | Deferred gap | Where implemented |
+|---|---|---|
+| Role-dispatched prompt assembly | §8.4 no role-dispatch enum | `sentinel-core/src/prompt.rs` — `PromptRole`, `PromptSection`, `PromptRegistry` |
+| Per-run system prompt (project / IDE / context) | §8.4 prompt fixed at construction | `sentinel-core/src/agent.rs` `run_with_system` / `run_with_approval_with_system` / `run_stream_with_system` / `run_streaming_with_system`; `AppSession::chat_with_context` |
+| LSP diagnostics content in prompts | §8.4 diagnostics never fed in | `sentinel-app-server/src/lsp.rs` `DiagnosticsStore` (from `textDocument/publishDiagnostics`) + `handler.rs build_first_turn_context` |
+| IDE active-file context, first turn | §8.4 `ide_context` stored but not injected | `handler.rs` `current_ide` set by `handle_ide_context_sync`; first-turn override |
+| Hierarchical AGENTS.md | §8.4 `agents_md.rs` no production callers | `project_context.rs` `read_agent_rules` via `sentinel-ai-core::agents_md::load_rules` (root-first, scoped, capped) |
+| Memory: producer + consumer | §8.4 headroom injector unwired; `PROJECT.md` write-only | `project_memory` reads `PROJECT.md` back into context (8k cap); handler `PersistentMemory` inline-extraction + first-turn `## Known Facts` |
+
+### 9.2 Implemented this round
+
+**Prompt role dispatch (`sentinel-core/src/prompt.rs`).** Added `PromptRole`
+`{ System, User, ToolContext }`, `PromptSection { id, role, content }`, and
+`PromptRegistry` (register, `role_of`, `get`, `contains`, `sections_by_role`,
+`render_system`, `render_user`, `render_tool_context`) plus the standalone
+`render_system_prompt(base_prompt, registry)`. Builders now attach a role at
+registration; renderers dispatch by role instead of at the call site, so a
+section can safely be routed to a different role later without changing the
+registration site. 4 unit tests added.
+
+**Agent system-override seam (`sentinel-core/src/agent.rs`).** The thread's
+system message is emitted exactly once, on the first turn. New entry points
+`run_with_system` / `run_with_approval_with_system` / `run_stream_with_system`
+/ `run_streaming_with_system` accept `Option<&str>`; `Some` overrides the very
+first system message, `None` falls back to the configured
+`SystemPromptManager`. Composed server flows can therefore inject per-turn
+IDE/diag context without rebuilding the whole prompt. 4 new agent tests.
+
+**LSP diagnostics capture (`sentinel-app-server/src/lsp.rs`).**
+`serve_client` now decodes server→client `textDocument/publishDiagnostics`
+notifications (uri + `{code, source, severity, range, message}` → an
+`LspDiagnostic`) and records them in a shared `DiagnosticsStore`
+(`record`, `snapshot`, `snapshot_for_path`, `per_file`, `total`; empty
+diagnostic sets clear the key). `LspManager` exposes the store; the
+`RequestHandler` holds it via `RequestHandler::with_lsp_diagnostics`
+(`server.rs` wires `lsp.diagnostics()`); `diagnostics` RPC reports
+`lsp.per_file` + `total_diagnostics`; first-turn context renders at most 24
+problems for the active file.
+
+**IDE context + first-turn injection (`handler.rs`).** `handle_ide_context_sync`
+persists the last `IdeContextParams` in `current_ide`. `build_first_turn_context`
+renders an `## IDE Context` block (active file, cursor, selection, open tabs)
+plus `## LSP Diagnostics`, and the block is only built when
+`conversation.turn_count() == 0`. It flows through `AppSession::chat_with_context`
+/ `chat_stream_with_context` into the new agent override seam.
+
+**Hierarchical AGENTS.md (`project_context.rs`).** `read_agent_rules` uses
+`sentinel_ai_core::agents_md::load_rules` (workspace root + per-directory files,
+scoped to their subtree; hidden / `target` / `node_modules` dirs skipped) and
+renders entries as `[scope] rule` + root rules unprefixed, capped at 1200 chars
+/ 40 lines. `sentinel-core` gained a `sentinel-ai-core` dependency. The old
+single-file `read_agents_md` excerpt path is superseded.
+
+**Memory two halves.**
+- *Producer:* `ProjectContext` `read_project_memory` reads `PROJECT.md` back
+  into the prompt (so the `MemoryFileManager` writer has a consumer),
+  capped at 8000 chars, blank→None.
+- *Consumer:* `RequestHandler::memory` (in-memory store) injects
+  `## Known Facts` remembered by the user + the `<memory>` extraction
+  instruction into the first-turn system prompt; and after each chat turn
+  `process_response` strips `<memory>` blocks and stores them, returning the
+  cleaned reply text. 2 handler wiring tests.
+
+### 9.3 Verified
+
+- `cargo check --workspace` clean.
+- `cargo test --workspace` → 51 suites, 0 failures.
+- New/updated tests: prompt registry 4, agent override 4, project context 5
+  (hierarchy, memory file, caps, default), agents_md skip 1, DiagnosticsStore
+  2, handler IDE/diag first-turn 2, session chat-with-context 2, handler
+  memory wiring 2.
+- Build note: occasional `LNK1104` link fatalities on test binaries are the
+  known loudlocker/AV scanner lock; transient reruns of the same command
+  finish clean (noted in AGENTS.md).
+
+### 9.4 Remaining deviations / follow-ups
+
+- Streaming chat path does not yet run the memory *producer*
+  (`process_response`); only the non-stream `chat_with_context` does. The
+  stream's final chunk could feed it later.
+- Title generation remains first-turn best-effort (round-3 deferral); no
+  dedicated small model / rename re-gen.
+- Memory scope semantics: `add_memory` stores without a session id and the
+  injector filters by session when one is supplied — full cross-session
+  injection between equally-catchable facts is not yet settled (test pins the
+  session-scoped behavior).
+- `PROJECT.md` producer summary is `flush`-driven; compaction-side memory in
+  `sentinel-headroom`'s own `CompressionPipeline` is unchanged.
