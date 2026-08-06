@@ -2112,6 +2112,7 @@ dependencies = [
  "serde_json",
  "terminal_size",
  "tokio",
+ "tokio-stream",
  "tracing",
  "tracing-subscriber",
  "webbrowser",

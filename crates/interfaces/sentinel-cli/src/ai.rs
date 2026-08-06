@@ -1,9 +1,7 @@
 use crate::approval::CliApprovalGate;
-use crate::display::{print_banner, print_divider, print_error};
+use crate::display::{print_banner, print_divider};
 use crate::handler::CliEventHandler;
 use colored::*;
-use futures::FutureExt;
-use sentinel_core::thread_store::ThreadStore;
 use std::sync::Arc;
 
 const TUI_WS_ADDR: &str = "127.0.0.1:9090";
@@ -372,11 +370,18 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         .with_compressor(headroom_compressor)
         .with_model(model_id.clone())
         .with_plugin_registry(plugin_registry.clone());
+    agent.set_event_handler(Arc::new(CliEventHandler));
 
-    let store = sentinel_core::JsonFileThreadStore::new(session_dir());
+    let mut app = crate::app::App::new((*config).clone());
+    app.attach_agent(agent);
+    app.set_permissions(if yolo_mode {
+        Box::new(sentinel_core::AutoApprovalGate)
+    } else {
+        Box::new(CliApprovalGate)
+    });
 
     let mut thread = match resume_id {
-        Some(id) => match store.load_thread(&id).await {
+        Some(id) => match app.resume_session(&id).await {
             Ok(t) => {
                 println!(" Resumed session {}", id.green().bold());
                 t
@@ -391,14 +396,8 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
                 return Ok(());
             }
         },
-        None => sentinel_core::AgentThread::new(
-            config.agent.max_turns,
-            config.agent.max_iterations,
-            yolo_mode,
-        ),
+        None => app.new_session(yolo_mode),
     };
-
-    agent.set_event_handler(Arc::new(CliEventHandler));
 
     print_banner();
     println!(" Model:  {}", model_id.green().bold());
@@ -417,12 +416,6 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         "→".cyan().bold(),
         thread.id.to_string().dimmed()
     );
-
-    let approval: Box<dyn sentinel_core::ApprovalGate> = if yolo_mode {
-        Box::new(sentinel_core::AutoApprovalGate)
-    } else {
-        Box::new(CliApprovalGate)
-    };
 
     let policy: Option<std::sync::Arc<dyn sentinel_core::PolicyEngine>> = match hook_command {
         Some(cmd) => {
@@ -448,62 +441,14 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
 
     // Non-interactive single-shot mode (used by the eval harness)
     if let Some(one_shot) = prompt_arg {
-        let result = match std::panic::AssertUnwindSafe(
-            agent.run_with_approval(&mut thread, &one_shot, approval.as_ref(), &policy),
-        )
-        .catch_unwind()
-        .await
-        {
-            Ok(r) => r,
-            Err(payload) => {
-                print_error(&panic_message(payload));
-                std::process::exit(1);
-            }
-        };
-        if let Err(e) = store.save_thread(&thread).await {
-            eprintln!("{} Failed to save session: {}", "W".yellow(), e);
+        app.start_background();
+        let result = app.run_non_interactive(&mut thread, &one_shot, policy).await;
+        app.shutdown().await;
+        if result.is_err() {
+            std::process::exit(1);
         }
-        match result {
-            Ok(output) => match output {
-                sentinel_core::AgentOutput::Success { text } => {
-                    if !text.is_empty() {
-                        println!("\n{}", text);
-                    }
-                }
-                sentinel_core::AgentOutput::Error { message } => {
-                    crate::display::print_error(&message);
-                    std::process::exit(1);
-                }
-            },
-            Err(e) => {
-                crate::display::print_error(&e.to_string());
-                std::process::exit(1);
-            }
-        }
-        let (p, c) = (agent.prompt_tokens(), agent.completion_tokens());
-        println!(
-            "\n[sentinel] session summary: prompt_tokens={} completion_tokens={} total_tokens={}",
-            p,
-            c,
-            p + c
-        );
-        println!();
     }
     Ok(())
-}
-
-fn session_dir() -> std::path::PathBuf {
-    if let Ok(home) = std::env::var("SENTINEL_HOME") {
-        return std::path::PathBuf::from(home).join("threads");
-    }
-    std::env::var("USERPROFILE")
-        .or_else(|_| std::env::var("HOME"))
-        .map(|h| {
-            std::path::PathBuf::from(h)
-                .join(".sentinel")
-                .join("threads")
-        })
-        .unwrap_or_else(|_| std::path::PathBuf::from("sentinel_threads"))
 }
 
 fn plugin_dir() -> std::path::PathBuf {

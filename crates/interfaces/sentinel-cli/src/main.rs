@@ -1,4 +1,5 @@
 mod ai;
+mod app;
 mod approval;
 mod auth;
 mod completion;

@@ -1,3 +1,4 @@
+use crate::app::App;
 use crate::approval::CliApprovalGate;
 use crate::display::{print_banner, print_divider};
 use crate::handler::CliEventHandler;
@@ -92,10 +93,27 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         Arc::clone(&tools),
         config.clone(),
     )));
+
     let agent = sentinel_core::Agent::new(provider, tools, config.clone())
         .with_event_handler(Arc::new(CliEventHandler))
         .with_compressor(headroom_compressor)
         .with_model(model_id.clone());
+
+    // Central app: owns the session store, permission gate, theme, LSP clients
+    // and the agent; LSP clients start asynchronously and never block startup.
+    let mut app = App::new((*config).clone());
+    app.attach_agent(agent);
+    app.set_permissions(if config.agent.yolo_mode {
+        Box::new(sentinel_core::AutoApprovalGate)
+    } else {
+        Box::new(CliApprovalGate)
+    });
+    app.start_background();
+
+    // The pipeline wraps the central agent with staged execution.
+    let pipeline_agent = sentinel_core::pipeline::PipelineAgent::new(
+        app.take_agent().expect("agent attached to app"),
+    );
 
     // Optional: Create sandbox for tool isolation
     let _sandbox = None::<std::sync::Arc<sentinel_core::sandbox::LocalSandbox>>;
@@ -106,18 +124,14 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     let mfm = sentinel_core::memory_file::MemoryFileManager::new(
         &std::env::current_dir().unwrap_or_default(),
     );
-    let pipeline_agent = sentinel_core::pipeline::PipelineAgent::new(agent).with_memory_file(mfm);
+    let pipeline_agent = pipeline_agent.with_memory_file(mfm);
 
     // Optional: Set up worktree manager for parallel agents
     let _wtm =
         sentinel_core::worktree::WorktreeManager::new(&std::env::current_dir().unwrap_or_default());
     // Use wtm.create_worktree("agent-1").await for parallel agent isolation
 
-    let mut thread = sentinel_core::AgentThread::new(
-        config.agent.max_turns,
-        config.agent.max_iterations,
-        config.agent.yolo_mode,
-    );
+    let mut thread = app.new_session(config.agent.yolo_mode);
 
     print_banner();
     println!(" Model:  {}", model_id.green().bold());
@@ -132,14 +146,8 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     println!(" Pipeline: {}", "read → triage → draft → QA → send".cyan());
     print_divider();
 
-    let approval: Box<dyn sentinel_core::ApprovalGate> = if config.agent.yolo_mode {
-        Box::new(sentinel_core::AutoApprovalGate)
-    } else {
-        Box::new(CliApprovalGate)
-    };
-
     let result = pipeline_agent
-        .run_pipeline(&mut thread, &prompt, approval.as_ref())
+        .run_pipeline(&mut thread, &prompt, app.permissions())
         .await;
 
     match result {
@@ -154,6 +162,10 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
             crate::display::print_error(&e.to_string());
             std::process::exit(1);
         }
+    }
+
+    if let Err(e) = app.save_session(&thread).await {
+        eprintln!("{} Failed to save session: {}", "W".yellow(), e);
     }
 
     let (prompt_tok, completion_tok) = (
@@ -173,6 +185,9 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         format!("{}, {} tokens", stats, token_info)
     };
     println!("\n{} {}", "Done.".green().bold(), summary.dimmed());
+
+    // Graceful shutdown: terminate LSP clients and background watchers.
+    app.shutdown().await;
 
     Ok(())
 }
