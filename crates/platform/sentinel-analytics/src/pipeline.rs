@@ -4,7 +4,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 
 pub struct AnalyticsPipeline {
-    sender: mpsc::UnboundedSender<AnalyticsEvent>,
+    sender: mpsc::Sender<AnalyticsEvent>,
 }
 
 pub struct AnalyticsConfig {
@@ -30,18 +30,29 @@ impl AnalyticsPipeline {
         Self::with_config(AnalyticsConfig::default())
     }
 
+    /// Bound on the inbound event queue. Telemetry is loss-tolerant: when the
+    /// queue is full, events are dropped (with a warning) instead of letting
+    /// memory grow without bound.
+    const CHANNEL_CAPACITY: usize = 8192;
+
     pub fn with_config(config: AnalyticsConfig) -> Self {
-        let (tx, rx) = mpsc::unbounded_channel();
+        let (tx, rx) = mpsc::channel(Self::CHANNEL_CAPACITY);
         tokio::spawn(Self::dispatch_loop(rx, Arc::new(config)));
         Self { sender: tx }
     }
 
     pub fn emit(&self, event: AnalyticsEvent) {
-        let _ = self.sender.send(event);
+        if let Err(e) = self.sender.try_send(event) {
+            tracing::warn!(
+                error = %e,
+                "analytics pipeline queue full ({}); dropping event",
+                Self::CHANNEL_CAPACITY
+            );
+        }
     }
 
     async fn dispatch_loop(
-        mut rx: mpsc::UnboundedReceiver<AnalyticsEvent>,
+        mut rx: mpsc::Receiver<AnalyticsEvent>,
         config: Arc<AnalyticsConfig>,
     ) {
         let mut batch: Vec<AnalyticsEvent> = Vec::new();

@@ -232,6 +232,7 @@ async fn run_slash(
         "/show" => cmd_show(model).await,
         "/recommend" => cmd_recommend(sys),
         "/ssh" => cmd_ssh(arg).await,
+        "/ai" => cmd_ai(arg, model).await,
         "/backends" | "/engines" => cmd_backends().await,
         _ => eprintln!(" {} Unknown command. Type /help.", "✖".red().bold()),
     }
@@ -249,6 +250,7 @@ fn help() {
     println!("  /info             Show system, model, and token info");
     println!("  /stats            Show conversation statistics");
     println!("  /ssh <host> <cmd>  Run command on remote machine (zero-cost)");
+    println!("  /ai [model]        Switch to full agent mode (plugins, MCP, TUI)");
     println!("  /backends         List detected local LLM backends (Ollama, vLLM, LM Studio)");
     println!("  /clear            Clear screen");
     println!("  /exit, /quit      Exit");
@@ -632,6 +634,40 @@ fn print_ssh_help() {
     println!(" {} Usage:", "•".yellow().bold());
     println!("   /ssh <user@host> <command>               Run command remotely");
     println!("   {}", "Example: /ssh ubuntu@10.0.0.1 'ls -la'".dimmed());
+    println!();
+}
+
+/// Hand off to the full agent mode (`sentinel ai`) as a child process.
+/// The child inherits stdio, so the TUI/interactive agent takes over the
+/// terminal; when it exits, control returns to this REPL.
+async fn cmd_ai(arg: &str, model: &str) {
+    let exe = std::env::current_exe().unwrap_or_else(|_| std::path::PathBuf::from("sentinel"));
+    let mut cmd = tokio::process::Command::new(exe);
+    cmd.arg("ai");
+    if !arg.is_empty() {
+        cmd.arg(arg);
+    } else if !model.is_empty() {
+        cmd.arg(model);
+    }
+    cmd.stdin(std::process::Stdio::inherit())
+        .stdout(std::process::Stdio::inherit())
+        .stderr(std::process::Stdio::inherit());
+
+    println!(
+        "\n {} Full agent mode — plugins, MCP, TUI. Exit it to return here.\n",
+        "◉".cyan().bold()
+    );
+    match cmd.status().await {
+        Ok(st) if st.success() => {
+            println!("\n {} Back to local REPL.", "◉".cyan().bold());
+        }
+        Ok(st) => {
+            println!("\n   {} agent mode exited with status {}", "✖".red(), st);
+        }
+        Err(e) => {
+            println!("\n   {} could not start agent mode: {}", "✖".red(), e);
+        }
+    }
     println!();
 }
 

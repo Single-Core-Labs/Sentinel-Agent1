@@ -177,6 +177,21 @@ impl AppServer {
         Ok(())
     }
 
+    /// Send a message on the shared sink; a failure means the client is gone,
+    /// which is a normal disconnect, not a server error.
+    async fn send_ok(
+        sink: &Arc<tokio::sync::Mutex<BoxedSink>>,
+        msg: &JsonRpcMessage,
+    ) -> bool {
+        match sink.lock().await.send(msg).await {
+            Ok(()) => true,
+            Err(e) => {
+                tracing::debug!("sink send failed (client disconnected?): {}", e);
+                false
+            }
+        }
+    }
+
     async fn handle_stream<S>(
         handler: Arc<RequestHandler>,
         stream: &mut S,
@@ -223,7 +238,7 @@ impl AppServer {
                                         if let Some(session) = handler.get_session(&session_id).await {
                                             subscriptions
                                                 .push((session_id.clone(), session.events.subscribe()));
-                                            sink.lock().await.send(&JsonRpcMessage::Response(JsonRpcResponse {
+                                            if !Self::send_ok(&sink, &JsonRpcMessage::Response(JsonRpcResponse {
                                                 jsonrpc: "2.0".into(),
                                                 id: req.id,
                                                 result: Some(serde_json::json!({
@@ -231,25 +246,31 @@ impl AppServer {
                                                     "session_id": session_id,
                                                 })),
                                                 error: None,
-                                            })).await?;
+                                            })).await {
+                                                break;
+                                            }
                                         } else {
-                                            sink.lock().await.send(&JsonRpcMessage::Response(JsonRpcResponse {
+                                            if !Self::send_ok(&sink, &JsonRpcMessage::Response(JsonRpcResponse {
                                                 jsonrpc: "2.0".into(),
                                                 id: req.id,
                                                 result: None,
                                                 error: Some(sentinel_app_server_protocol::rpc::JsonRpcError::internal_error(
                                                     "Session vanished after subscribe",
                                                 )),
-                                            })).await?;
+                                            })).await {
+                                                break;
+                                            }
                                         }
                                     }
                                     Err(err) => {
-                                        sink.lock().await.send(&JsonRpcMessage::Response(JsonRpcResponse {
+                                        if !Self::send_ok(&sink, &JsonRpcMessage::Response(JsonRpcResponse {
                                             jsonrpc: "2.0".into(),
                                             id: req.id,
                                             result: None,
                                             error: Some(err),
-                                        })).await?;
+                                        })).await {
+                                            break;
+                                        }
                                     }
                                 }
                             } else if req.method == methods::EVENT_UNSUBSCRIBE {
@@ -260,12 +281,14 @@ impl AppServer {
                                     .and_then(|v| v.as_str())
                                     .unwrap_or("");
                                 subscriptions.retain(|(sid, _)| sid != session_id);
-                                sink.lock().await.send(&JsonRpcMessage::Response(JsonRpcResponse {
+                                if !Self::send_ok(&sink, &JsonRpcMessage::Response(JsonRpcResponse {
                                     jsonrpc: "2.0".into(),
                                     id: req.id,
                                     result: Some(serde_json::json!({ "unsubscribed": true })),
                                     error: None,
-                                })).await?;
+                                })).await {
+                                    break;
+                                }
                             } else if SPAWNED_METHODS.contains(&req.method.as_str()) {
                                 // Long-running LLM request: handle off-loop so
                                 // event notifications are not blocked behind it.
@@ -277,7 +300,9 @@ impl AppServer {
                                 });
                             } else {
                                 let resp = handler.handle(req).await;
-                                sink.lock().await.send(&JsonRpcMessage::Response(resp)).await?;
+                                if !Self::send_ok(&sink, &JsonRpcMessage::Response(resp)).await {
+                                    break;
+                                }
                             }
                         }
                         TransportEvent::Message(JsonRpcMessage::Notification(notif))
@@ -297,7 +322,9 @@ impl AppServer {
                 reply = reply_rx.recv() => {
                     match reply {
                         Some(reply) => {
-                            sink.lock().await.send(&reply).await?;
+                            // The client may have disconnected while the reply
+                            // was being produced — drop it rather than erroring.
+                            let _ = Self::send_ok(&sink, &reply).await;
                         }
                         None => break,
                     }

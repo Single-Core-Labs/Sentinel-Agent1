@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
 use tokio::sync::{mpsc, Mutex};
 use tokio::time::{interval, Duration};
@@ -34,12 +34,16 @@ impl Default for AnalyticsQueueConfig {
 /// and then dispatched to the configured `AnalyticsDestination`.
 #[derive(Debug, Clone)]
 pub struct AnalyticsEventsQueue {
-    sender: mpsc::UnboundedSender<AnalyticsFact>,
+    sender: mpsc::Sender<AnalyticsFact>,
     /// Handle for awaiting graceful shutdown.
     shutdown: Arc<Mutex<Option<tokio::sync::oneshot::Sender<()>>>>,
 }
 
 impl AnalyticsEventsQueue {
+    /// Bound on the inbound fact queue. Telemetry is loss-tolerant: when the
+    /// queue is full, events are dropped (with a warning) instead of letting
+    /// memory grow without bound.
+    const CHANNEL_CAPACITY: usize = 8192;
     /// Create a new queue with the given destination and config.
     ///
     /// Spawns a background task that:
@@ -48,7 +52,7 @@ impl AnalyticsEventsQueue {
     /// 3. Reduces facts into `TrackEventRequest` via `AnalyticsReducer`
     /// 4. Dispatches the events to the configured destination
     pub fn new(destination: AnalyticsDestination, config: AnalyticsQueueConfig) -> Self {
-        let (tx, rx) = mpsc::unbounded_channel();
+        let (tx, rx) = mpsc::channel(Self::CHANNEL_CAPACITY);
         let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
 
         tokio::spawn(Self::process_loop(rx, destination, config, shutdown_rx));
@@ -66,13 +70,19 @@ impl AnalyticsEventsQueue {
 
     /// Enqueue a single analytics fact for processing.
     pub fn enqueue(&self, fact: AnalyticsFact) {
-        let _ = self.sender.send(fact);
+        if let Err(e) = self.sender.try_send(fact) {
+            tracing::warn!(
+                error = %e,
+                "analytics queue full ({}); dropping event",
+                Self::CHANNEL_CAPACITY
+            );
+        }
     }
 
     /// Enqueue a batch of facts.
     pub fn enqueue_batch(&self, facts: Vec<AnalyticsFact>) {
         for fact in facts {
-            let _ = self.sender.send(fact);
+            self.enqueue(fact);
         }
     }
 
@@ -84,14 +94,14 @@ impl AnalyticsEventsQueue {
     }
 
     async fn process_loop(
-        mut rx: mpsc::UnboundedReceiver<AnalyticsFact>,
+        mut rx: mpsc::Receiver<AnalyticsFact>,
         destination: AnalyticsDestination,
         config: AnalyticsQueueConfig,
         mut shutdown_rx: tokio::sync::oneshot::Receiver<()>,
     ) {
         let mut reducer = AnalyticsReducer::new();
         let mut buffer: Vec<AnalyticsFact> = Vec::new();
-        let mut seen_fingerprints: HashSet<String> = HashSet::new();
+        let mut dedup_window = FingerprintWindow::new(10_000);
 
         let mut flush_timer = interval(Duration::from_millis(config.flush_interval_ms));
 
@@ -100,7 +110,7 @@ impl AnalyticsEventsQueue {
                 _ = flush_timer.tick() => {
                     if !buffer.is_empty() {
                         let events = reducer.apply_batch(std::mem::take(&mut buffer));
-                        seen_fingerprints.clear();
+                        dedup_window.clear();
                         if !events.is_empty() {
                             if let Err(e) = destination.dispatch(&events).await {
                                 tracing::warn!(error = %e, "analytics dispatch failed");
@@ -111,23 +121,14 @@ impl AnalyticsEventsQueue {
                 fact = rx.recv() => {
                     match fact {
                         Some(fact) => {
-                            if config.deduplicate {
-                                let fp = dedup_fingerprint(&fact);
-                                if seen_fingerprints.contains(&fp) {
-                                    continue;
-                                }
-                                seen_fingerprints.insert(fp);
-
-                                // Prune fingerprints set to avoid unbounded growth
-                                if seen_fingerprints.len() > 10_000 {
-                                    seen_fingerprints.clear();
-                                }
+                            if config.deduplicate && !dedup_window.check_and_insert(dedup_fingerprint(&fact)) {
+                                continue;
                             }
                             buffer.push(fact);
 
                             if buffer.len() >= config.batch_size {
                                 let events = reducer.apply_batch(std::mem::take(&mut buffer));
-                                seen_fingerprints.clear();
+                                dedup_window.clear();
                                 if !events.is_empty() {
                                     if let Err(e) = destination.dispatch(&events).await {
                                         tracing::warn!(error = %e, "analytics dispatch failed");
@@ -181,4 +182,104 @@ fn dedup_fingerprint(fact: &AnalyticsFact) -> String {
     }
 
     hasher.finish().to_string()
+}
+
+/// Bounded dedup window: tracks recently seen fingerprints and prunes the
+/// oldest once the cap is reached, so dedup keeps working for recent facts
+/// instead of resetting wholesale.
+struct FingerprintWindow {
+    seen: HashSet<String>,
+    order: VecDeque<String>,
+    cap: usize,
+}
+
+impl FingerprintWindow {
+    fn new(cap: usize) -> Self {
+        Self {
+            seen: HashSet::new(),
+            order: VecDeque::new(),
+            cap,
+        }
+    }
+
+    /// Returns `true` if `fp` is new (and records it), `false` if it was
+    /// already seen within the window.
+    fn check_and_insert(&mut self, fp: String) -> bool {
+        if self.seen.contains(&fp) {
+            return false;
+        }
+        self.seen.insert(fp.clone());
+        self.order.push_back(fp);
+        while self.order.len() > self.cap {
+            if let Some(oldest) = self.order.pop_front() {
+                self.seen.remove(&oldest);
+            }
+        }
+        true
+    }
+
+    /// Forget all fingerprints (dedup is scoped per flush cycle).
+    fn clear(&mut self) {
+        self.seen.clear();
+        self.order.clear();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn window_dedups_within_cap() {
+        let mut w = FingerprintWindow::new(10);
+        assert!(w.check_and_insert("a".into()));
+        assert!(!w.check_and_insert("a".into()));
+        assert!(w.check_and_insert("b".into()));
+        assert_eq!(w.order.len(), 2);
+    }
+
+    #[test]
+    fn window_prunes_oldest_keeps_recent() {
+        let mut w = FingerprintWindow::new(10);
+        for i in 0..12 {
+            assert!(w.check_and_insert(format!("fp-{}", i)));
+        }
+        assert_eq!(w.order.len(), 10);
+
+        // The two oldest were pruned: they are accepted again.
+        assert!(w.check_and_insert("fp-0".into()));
+        // Recent fingerprints are still deduplicated.
+        assert!(!w.check_and_insert("fp-11".into()));
+    }
+
+    #[test]
+    fn window_clear_forgets_everything() {
+        let mut w = FingerprintWindow::new(10);
+        assert!(w.check_and_insert("a".into()));
+        assert!(w.check_and_insert("b".into()));
+        w.clear();
+        assert!(w.seen.is_empty() && w.order.is_empty());
+        assert!(w.check_and_insert("a".into()));
+        assert!(!w.check_and_insert("a".into()));
+    }
+
+    #[test]
+    fn dedup_fingerprint_differs_by_turn_and_tool() {
+        let tool = |turn: &str, name: &str| {
+            AnalyticsFact::new(crate::fact::FactKind::ToolCall {
+                tool_id: "t1".into(),
+                tool_name: name.into(),
+                duration_ms: 1,
+                success: true,
+            })
+            .with_turn(turn)
+        };
+        let a = dedup_fingerprint(&tool("t-1", "glob"));
+        let b = dedup_fingerprint(&tool("t-1", "glob"));
+        let c = dedup_fingerprint(&tool("t-2", "glob"));
+        let d = dedup_fingerprint(&tool("t-1", "edit"));
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+        assert_ne!(a, d);
+    }
 }
