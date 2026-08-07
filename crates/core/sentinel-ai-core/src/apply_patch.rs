@@ -18,6 +18,14 @@
 //! [`apply_patch_multi`]); [`apply_patch`] applies a single target file.
 //! `--- /dev/null` creates a new file; `+++ /dev/null` deletes a file.
 //!
+//! # Fuzzy matching
+//! Context lines are matched with tolerance for line-ending and
+//! trailing-whitespace drift, and a hunk whose recorded position no longer
+//! matches is searched for (first in a small window around it, then forward in
+//! the file).  This mirrors the fuzzy-context behaviour of the reference
+//! implementation: a patch still applies when the target file has drifted
+//! slightly from what generated the diff.
+//!
 //! # Atomicity
 //! Each file is written to a sibling temp file first.  Only on complete
 //! success is the temp file renamed over the original.  Any failure leaves
@@ -269,22 +277,152 @@ fn parse_hunk_header(header: &str, diff_line_idx: usize) -> Result<usize, PatchE
 
 // ─── Applier ─────────────────────────────────────────────────────────────────
 
+/// Compare a file line against an expected patch line.  Line endings and
+/// trailing whitespace are ignored so a patch applies cleanly to a target
+/// file whose whitespace has drifted (trailing spaces, CRLF vs LF, a tabbed
+/// file re-spaced, etc.).
+fn lines_fuzzy_equal(actual: &str, expected: &str) -> bool {
+    let actual = actual.trim_end_matches(['\r', '\n']).trim_end_matches([' ', '\t']);
+    let expected = expected.trim_end_matches(['\r', '\n']).trim_end_matches([' ', '\t']);
+    actual == expected
+}
+
+/// How many file lines a hunk consumes: its context + removed lines.
+/// Added lines do not consume anything.
+fn hunk_anchor_len(hunk: &Hunk) -> usize {
+    hunk.lines
+        .iter()
+        .filter(|l| !matches!(l, HunkLine::Added(_)))
+        .count()
+}
+
+/// Do the hunk's context/removed lines match the file starting at `start`?
+fn hunk_anchors_at(file_lines: &[&str], hunk: &Hunk, start: usize) -> bool {
+    let mut pos = start;
+    for line in &hunk.lines {
+        match line {
+            HunkLine::Context(c) | HunkLine::Removed(c) => {
+                let actual = file_lines.get(pos).copied().unwrap_or("");
+                if !lines_fuzzy_equal(actual, c) {
+                    return false;
+                }
+                pos += 1;
+            }
+            HunkLine::Added(_) => {}
+        }
+    }
+    true
+}
+
+/// Locate where a hunk should be applied.
+///
+/// The recorded `orig_start` coordinate is preferred (and is what the vast
+/// majority of patches hit exactly).  If the strict lookup fails we search a
+/// small window around it, then forward through the file, which lets a patch
+/// apply even when the surrounding content has drifted.  `min_pos` is the
+/// first line still available (after earlier hunks were consumed); a hunk is
+/// never matched against lines already applied.
+fn locate_hunk(file_lines: &[&str], hunk: &Hunk, min_pos: usize) -> Option<usize> {
+    let anchors = hunk_anchor_len(hunk);
+    let recorded = hunk.orig_start.saturating_sub(1);
+    if anchors == 0 {
+        // Pure insertion: there is no anchor line to locate; use the recorded
+        // offset (but never before already-consumed lines).
+        return Some(recorded.max(min_pos).min(file_lines.len()));
+    }
+
+    let max_start = file_lines.len().saturating_sub(anchors);
+
+    // 1. Exact recorded position (coordinates match the patch).
+    if recorded >= min_pos
+        && recorded <= max_start
+        && hunk_anchors_at(file_lines, hunk, recorded)
+    {
+        return Some(recorded);
+    }
+
+    // 2. A small window around the recorded position (a one-off line shift).
+    let low = if recorded >= min_pos && recorded > 2 {
+        recorded - 2
+    } else {
+        min_pos
+    };
+    let high = (recorded + 2).min(max_start);
+    for cand in low..=high {
+        if cand != recorded && hunk_anchors_at(file_lines, hunk, cand) {
+            return Some(cand);
+        }
+    }
+
+    // 3. Forward scan — the patch was generated against an older revision and
+    //    the chunk now appears further down the file.
+    let start = if recorded >= min_pos {
+        recorded + 1
+    } else {
+        min_pos
+    };
+    let mut cand = start;
+    while cand <= max_start {
+        if hunk_anchors_at(file_lines, hunk, cand) {
+            return Some(cand);
+        }
+        cand += 1;
+    }
+
+    None
+}
+
+/// Build a [`PatchError::StaleContext`] for a hunk we could not locate,
+/// reporting the first anchor mismatch at the recorded position.
+fn stale_context_error(file_lines: &[&str], hunk: &Hunk) -> PatchError {
+    let mut pos = hunk.orig_start.saturating_sub(1);
+    for line in &hunk.lines {
+        match line {
+            HunkLine::Context(c) | HunkLine::Removed(c) => {
+                let actual = file_lines.get(pos).copied().unwrap_or("");
+                let actual_trimmed = actual.trim_end_matches(['\r', '\n']);
+                if actual_trimmed != c.as_str() {
+                    return PatchError::StaleContext {
+                        hunk_start: hunk.diff_line,
+                        file_line: pos + 1,
+                        expected: c.clone(),
+                        found: actual_trimmed.to_string(),
+                    };
+                }
+                pos += 1;
+            }
+            HunkLine::Added(_) => {}
+        }
+    }
+    PatchError::StaleContext {
+        hunk_start: hunk.diff_line,
+        file_line: hunk.orig_start,
+        expected: String::new(),
+        found: String::new(),
+    }
+}
+
 /// Apply the hunks to the original file lines, returning the new content.
 ///
 /// `file_lines` is split from the file **without** the final newline stripped,
-/// i.e. each entry may or may not contain `\n`.  We work with trimmed content
-/// for comparison but preserve original endings in the output where unchanged.
+/// i.e. each entry may or may not contain `\n`.  We work with trim-tolerant
+/// content for comparison but preserve original endings in the output where
+/// unchanged.
 fn apply_hunks(file_lines: &[&str], hunks: &[Hunk]) -> Result<String, PatchError> {
     let mut output: Vec<String> = Vec::with_capacity(file_lines.len() + 64);
     // Tracks our position in the original file (0-based index into `file_lines`).
     let mut file_pos: usize = 0;
 
     for hunk in hunks {
-        // `orig_start` is 1-based; convert to 0-based.
-        let hunk_orig_start = hunk.orig_start.saturating_sub(1);
+        // Find where this hunk lives in the current file content, tolerating
+        // stale coordinates and whitespace drift.
+        let hunk_start = match locate_hunk(file_lines, hunk, file_pos) {
+            Some(start) => start,
+            None => return Err(stale_context_error(file_lines, hunk)),
+        };
 
         // Emit any unchanged file lines before this hunk.
-        while file_pos < hunk_orig_start {
+        while file_pos < hunk_start {
             if file_pos >= file_lines.len() {
                 break;
             }
@@ -296,16 +434,14 @@ fn apply_hunks(file_lines: &[&str], hunks: &[Hunk]) -> Result<String, PatchError
         for hunk_line in &hunk.lines {
             match hunk_line {
                 HunkLine::Context(expected) => {
-                    // The next original line must match (trimming trailing CR/LF
-                    // for comparison so Windows line endings don't cause failures).
+                    // The next original line must fuzzy-match the expected one.
                     let actual = file_lines.get(file_pos).copied().unwrap_or("");
-                    let actual_trimmed = actual.trim_end_matches(['\r', '\n']);
-                    if actual_trimmed != expected.as_str() {
+                    if !lines_fuzzy_equal(actual, expected) {
                         return Err(PatchError::StaleContext {
                             hunk_start: hunk.diff_line,
                             file_line: file_pos + 1,
                             expected: expected.clone(),
-                            found: actual_trimmed.to_string(),
+                            found: actual.trim_end_matches(['\r', '\n']).to_string(),
                         });
                     }
                     output.push(actual.to_string());
@@ -314,13 +450,12 @@ fn apply_hunks(file_lines: &[&str], hunks: &[Hunk]) -> Result<String, PatchError
                 HunkLine::Removed(expected) => {
                     // This line should exist in the original and be consumed.
                     let actual = file_lines.get(file_pos).copied().unwrap_or("");
-                    let actual_trimmed = actual.trim_end_matches(['\r', '\n']);
-                    if actual_trimmed != expected.as_str() {
+                    if !lines_fuzzy_equal(actual, expected) {
                         return Err(PatchError::StaleContext {
                             hunk_start: hunk.diff_line,
                             file_line: file_pos + 1,
                             expected: expected.clone(),
-                            found: actual_trimmed.to_string(),
+                            found: actual.trim_end_matches(['\r', '\n']).to_string(),
                         });
                     }
                     // Do NOT push to output — this line is deleted.
@@ -734,6 +869,111 @@ mod tests {
         // Original file must be untouched.
         let result = fs::read_to_string(root.join("stale.txt")).unwrap();
         assert_eq!(result, "line one\nline MODIFIED\nline three\n");
+    }
+
+    // ── Test 3b: Whitespace drift is tolerated (fuzzy matching) ─────────────
+
+    #[test]
+    fn test_whitespace_drift_context_tolerated() {
+        let root = tmp_dir();
+        // The target file has trailing whitespace the diff doesn't know about.
+        write_file(&root, "ws.txt", "alpha\nbeta  \ngamma\t\t\n");
+
+        let patch = "\
+--- a/ws.txt
++++ b/ws.txt
+@@ -1,3 +1,3 @@
+ alpha
+-beta
++BETA
+ gamma
+";
+        apply_patch(&root, Path::new("ws.txt"), patch)
+            .expect("trailing whitespace drift should be tolerated");
+
+        // Removed lines are dropped; the surviving lines keep their spacing.
+        let result = fs::read_to_string(root.join("ws.txt")).unwrap();
+        assert_eq!(result, "alpha\nBETA\ngamma\t\t\n");
+    }
+
+    // ── Test 3b: Stale coordinates are found forward (fuzzy matching) ───────
+
+    #[test]
+    fn test_shifted_hunk_relocated_forward() {
+        let root = tmp_dir();
+        // The patch is generated against an older revision: the content it
+        // targets now lives further down the file behind three added lines.
+        write_file(
+            &root,
+            "drift.txt",
+            "divider\ndivider\ndivider\nalpha\ntarget line\nbeta\n",
+        );
+
+        let patch = "\
+--- a/drift.txt
++++ b/drift.txt
+@@ -1,3 +1,3 @@
+ alpha
+-target line
++replaced
+ beta
+";
+        apply_patch(&root, Path::new("drift.txt"), patch)
+            .expect("hunk should be located forward in the file");
+
+        let result = fs::read_to_string(root.join("drift.txt")).unwrap();
+        assert_eq!(
+            result,
+            "divider\ndivider\ndivider\nalpha\nreplaced\nbeta\n"
+        );
+    }
+
+    // ── Test 3c: Stale diff must not apply to a distant unique line ──────────
+
+    #[test]
+    fn test_stale_context_not_found_anywhere() {
+        let root = tmp_dir();
+        write_file(&root, "gone.txt", "alpha\nbeta\nunrelated\ngamma\n");
+
+        let patch = "\
+--- a/gone.txt
++++ b/gone.txt
+@@ -1,3 +1,3 @@
+ alpha
+-something-absent
++replacement
+ unrelated
+";
+        let err = apply_patch(&root, Path::new("gone.txt"), patch)
+            .expect_err("absent anchor line must fail, not silently apply");
+
+        assert!(matches!(err, PatchError::StaleContext { .. }));
+        let result = fs::read_to_string(root.join("gone.txt")).unwrap();
+        assert_eq!(result, "alpha\nbeta\nunrelated\ngamma\n");
+    }
+
+    // ── Test 3d: BOM and CRLF files still apply ──────────────────────────────
+
+    #[test]
+    fn test_crlf_file_applies() {
+        let root = tmp_dir();
+        // A CRLF file patched with an LF diff must apply cleanly.
+        write_file(&root, "crlf.txt", "one\r\nline two\r\nthree\r\n");
+
+        let patch = "\
+--- a/crlf.txt
++++ b/crlf.txt
+@@ -1,3 +1,3 @@
+ one
+-line two
++line TWO
+ three
+";
+        apply_patch(&root, Path::new("crlf.txt"), patch).expect("CRLF file should apply");
+
+        // Output keeps CRLF on the untouched surrounding lines.
+        let result = fs::read_to_string(root.join("crlf.txt")).unwrap();
+        assert_eq!(result, "one\r\nline TWO\nthree\r\n");
     }
 
     // ── Test 4: Path traversal attempt ──────────────────────────────────────
