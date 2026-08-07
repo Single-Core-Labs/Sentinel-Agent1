@@ -238,10 +238,6 @@ impl PipelineAgent {
                 return Ok(AgentOutput::error("Max iterations reached in stage"));
             }
 
-            if let Some(ref cb) = self.agent.phase_callback {
-                cb(thread.phase);
-            }
-
             let req = self.build_request(thread).await;
             let tool_defs = self.agent.tools.tool_defs_for_model(true);
             let req = if let Some(tools) = tool_defs {
@@ -343,9 +339,6 @@ impl PipelineAgent {
 
             if thread.phase.is_plan() {
                 thread.enter_act_phase();
-                if let Some(ref cb) = self.agent.phase_callback {
-                    cb(thread.phase);
-                }
             }
 
             let cancel = CancellationToken::new();

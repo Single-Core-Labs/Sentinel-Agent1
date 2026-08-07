@@ -67,7 +67,6 @@ pub struct Agent {
     pub(crate) events: RwLock<Arc<dyn EventHandler>>,
     pub(crate) event_store: SharedEventStore,
     pub(crate) prompt_manager: SystemPromptManager,
-    pub(crate) phase_callback: Option<Arc<dyn Fn(crate::thread::Phase) + Send + Sync>>,
     pub total_prompt_tokens: AtomicU64,
     pub total_completion_tokens: AtomicU64,
     pub(crate) uploader: Box<dyn SessionUploader>,
@@ -83,7 +82,6 @@ impl std::fmt::Debug for Agent {
             .field("config", &self.config)
             .field("total_prompt_tokens", &self.total_prompt_tokens)
             .field("total_completion_tokens", &self.total_completion_tokens)
-            .field("has_phase_callback", &self.phase_callback.is_some())
             .field(
                 "has_compressor",
                 &format_args!("{}", self.compressor.name()),
@@ -106,7 +104,6 @@ impl Agent {
             events: RwLock::new(Arc::new(NullEventHandler)),
             event_store: crate::event::create_event_store(),
             prompt_manager: SystemPromptManager::new(),
-            phase_callback: None,
             total_prompt_tokens: AtomicU64::new(0),
             total_completion_tokens: AtomicU64::new(0),
             uploader: Box::new(NullUploader),
@@ -126,14 +123,6 @@ impl Agent {
     /// `true` once `cancel()` has been called.
     pub fn is_cancelled(&self) -> bool {
         self.cancellation.is_cancelled()
-    }
-
-    pub fn with_phase_callback(
-        mut self,
-        cb: Arc<dyn Fn(crate::thread::Phase) + Send + Sync>,
-    ) -> Self {
-        self.phase_callback = Some(cb);
-        self
     }
 
     /// Override the model used for LLM requests (defaults to `config.agent.default_model`).
@@ -326,11 +315,6 @@ impl Agent {
                 return Ok(AgentOutput::error("Agent cancelled"));
             }
 
-            // Notify phase callback (for PlanActRouter support)
-            if let Some(ref cb) = self.phase_callback {
-                cb(thread.phase);
-            }
-
             let req = self.build_request(thread).await;
             let tool_defs = self.tools.tool_defs_for_model(true);
 
@@ -510,9 +494,6 @@ impl Agent {
             // Switch to Act phase after first tool call execution
             if thread.phase.is_plan() {
                 thread.enter_act_phase();
-                if let Some(ref cb) = self.phase_callback {
-                    cb(thread.phase);
-                }
             }
 
             let cancel = self.cancellation.child_token();
@@ -745,11 +726,6 @@ impl Agent {
                 return Ok(AgentOutput::error("Max iterations reached"));
             }
 
-            // Notify phase callback
-            if let Some(ref cb) = self.phase_callback {
-                cb(thread.phase);
-            }
-
             let req = self.build_request(thread).await;
             let tool_defs = self.tools.tool_defs_for_model(true);
             let req = if let Some(tools) = tool_defs {
@@ -871,9 +847,6 @@ impl Agent {
             // Switch to Act phase after first tool call execution
             if thread.phase.is_plan() {
                 thread.enter_act_phase();
-                if let Some(ref cb) = self.phase_callback {
-                    cb(thread.phase);
-                }
             }
 
             // Execute tool calls concurrently
