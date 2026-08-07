@@ -1,7 +1,9 @@
 use sentinel_analytics::{AnalyticsEvent, AnalyticsPipeline, EventKind};
 use sentinel_app_server_protocol::api::ServerEvent;
 use sentinel_config::SentinelConfig;
-use sentinel_core::{Agent, AgentEvent, AgentOutput, AgentThread, EventHandler};
+use sentinel_core::{
+    Agent, AgentEvent, AgentOutput, AgentThread, EventHandler, MessageKind, SessionLogger,
+};
 use sentinel_provider::ModelProvider;
 use sentinel_tools::ToolRegistry;
 use std::sync::Arc;
@@ -18,12 +20,17 @@ pub struct AppSession {
     pub title: Arc<tokio::sync::RwLock<Option<String>>>,
     provider: Arc<dyn ModelProvider>,
     model_id: String,
+    /// Per-request message logger, set at the start of each chat turn and
+    /// cleared when it finishes. Bridges read it to persist tool results.
+    request_logs: Arc<tokio::sync::Mutex<Option<SessionLogger>>>,
 }
 
 /// Forwards agent-loop events (tool calls, results, thinking, completion) to
-/// the session's broadcast channel so WebSocket clients get a live feed.
+/// the session's broadcast channel so WebSocket clients get a live feed, and
+/// persists tool results into the active request's message logs.
 struct ServerEventBridge {
     tx: tokio::sync::broadcast::Sender<ServerEvent>,
+    request_logs: Arc<tokio::sync::Mutex<Option<SessionLogger>>>,
 }
 
 #[async_trait::async_trait]
@@ -37,11 +44,19 @@ impl EventHandler for ServerEventBridge {
                 output,
                 is_error,
                 ..
-            } => ServerEvent::ToolResult {
-                name,
-                output,
-                is_error,
-            },
+            } => {
+                if let Some(log) = self.request_logs.lock().await.as_ref() {
+                    let _ = log.append(
+                        MessageKind::ToolResult,
+                        &format!("tool={name} is_error={is_error}\n{output}"),
+                    );
+                }
+                ServerEvent::ToolResult {
+                    name,
+                    output,
+                    is_error,
+                }
+            }
             AgentEvent::Completed { text } => ServerEvent::Completed { text },
             AgentEvent::Error { message } => ServerEvent::Error { message },
             AgentEvent::Permission {
@@ -70,6 +85,7 @@ impl AppSession {
         let id = Uuid::new_v4().to_string();
         let (evt_tx, _) = tokio::sync::broadcast::channel(256);
         let model_id = model.unwrap_or_else(|| config.agent.default_model.clone());
+        let request_logs = Arc::new(tokio::sync::Mutex::new(None));
         let agent = Agent::new(provider.clone(), tools, config.clone())
             .with_model(model_id.clone())
             .with_prompt_manager(sentinel_core::ProjectContext::inject_into_prompt_manager(
@@ -78,7 +94,10 @@ impl AppSession {
             .with_event_store(sentinel_core::create_event_store_in(
                 &sentinel_core::default_events_dir(),
             ))
-            .with_event_handler(Arc::new(ServerEventBridge { tx: evt_tx.clone() }));
+            .with_event_handler(Arc::new(ServerEventBridge {
+                tx: evt_tx.clone(),
+                request_logs: Arc::clone(&request_logs),
+            }));
         let thread = AgentThread::new(
             config.agent.max_turns,
             config.agent.max_iterations,
@@ -98,6 +117,7 @@ impl AppSession {
             title: Arc::new(tokio::sync::RwLock::new(None)),
             provider,
             model_id,
+            request_logs,
         }
     }
 
@@ -112,6 +132,7 @@ impl AppSession {
         let id = Uuid::new_v4().to_string();
         let (evt_tx, _) = tokio::sync::broadcast::channel(256);
         let model_id = model.unwrap_or_else(|| config.agent.default_model.clone());
+        let request_logs = Arc::new(tokio::sync::Mutex::new(None));
         let agent = Agent::new(provider.clone(), tools, config.clone())
             .with_compressor(compressor)
             .with_model(model_id.clone())
@@ -121,7 +142,10 @@ impl AppSession {
             .with_event_store(sentinel_core::create_event_store_in(
                 &sentinel_core::default_events_dir(),
             ))
-            .with_event_handler(Arc::new(ServerEventBridge { tx: evt_tx.clone() }));
+            .with_event_handler(Arc::new(ServerEventBridge {
+                tx: evt_tx.clone(),
+                request_logs: Arc::clone(&request_logs),
+            }));
         let thread = AgentThread::new(
             config.agent.max_turns,
             config.agent.max_iterations,
@@ -141,6 +165,7 @@ impl AppSession {
             title: Arc::new(tokio::sync::RwLock::new(None)),
             provider,
             model_id,
+            request_logs,
         }
     }
 
@@ -155,6 +180,7 @@ impl AppSession {
     ) -> Self {
         let (evt_tx, _) = tokio::sync::broadcast::channel(256);
         let model_id = config.agent.default_model.clone();
+        let request_logs = Arc::new(tokio::sync::Mutex::new(None));
         let agent = Agent::new(provider.clone(), tools, config.clone());
         let agent = if let Some(c) = compressor {
             agent.with_compressor(c)
@@ -168,7 +194,10 @@ impl AppSession {
         .with_event_store(sentinel_core::create_event_store_in(
             &sentinel_core::default_events_dir(),
         ))
-        .with_event_handler(Arc::new(ServerEventBridge { tx: evt_tx.clone() }));
+        .with_event_handler(Arc::new(ServerEventBridge {
+            tx: evt_tx.clone(),
+            request_logs: Arc::clone(&request_logs),
+        }));
 
         analytics.emit(AnalyticsEvent::new(
             EventKind::SessionCreated,
@@ -183,6 +212,7 @@ impl AppSession {
             title: Arc::new(tokio::sync::RwLock::new(None)),
             provider,
             model_id,
+            request_logs,
         }
     }
 
@@ -272,6 +302,16 @@ impl AppSession {
         event_tx: tokio::sync::mpsc::Sender<Result<sentinel_protocol::StreamChunk, String>>,
         extra_context: Option<String>,
     ) {
+        // Per-request message logging (opt-in via `SENTINEL_SESSION_LOGS`).
+        let request_log = sentinel_core::session_logger_for(&self.id);
+        {
+            let mut slot = self.request_logs.lock().await;
+            *slot = request_log.clone();
+        }
+        if let Some(log) = &request_log {
+            let _ = log.append(MessageKind::Request, message);
+        }
+
         let mut thread = self.thread.lock().await;
         let stream = match self
             .agent
@@ -280,6 +320,7 @@ impl AppSession {
         {
             Ok(s) => s,
             Err(e) => {
+                self.request_logs.lock().await.take();
                 let _ = event_tx.send(Err(e.to_string())).await;
                 return;
             }
@@ -299,6 +340,9 @@ impl AppSession {
                     for choice in &chunk.choices {
                         if let Some(ref text) = choice.delta.content {
                             accumulated_text.push_str(text);
+                            if let Some(log) = &request_log {
+                                let _ = log.append(MessageKind::Stream, text);
+                            }
                             let _ = self.events.send(ServerEvent::Thinking {
                                 text: accumulated_text.clone(),
                             });
@@ -311,6 +355,13 @@ impl AppSession {
                 }
             }
         }
+
+        if let Some(log) = &request_log {
+            let _ = log.append(MessageKind::Response, &accumulated_text);
+        }
+        // The request is finished: releases the current slot so tool results
+        // from a subsequent turn are not attributed to it.
+        self.request_logs.lock().await.take();
     }
 }
 
@@ -667,6 +718,48 @@ mod tests {
             Ok(ServerEvent::Thinking { text }) => assert_eq!(text, "hello"),
             other => panic!("expected Thinking event, got {:?}", other),
         }
+    }
+
+#[tokio::test]
+    async fn chat_stream_persists_request_and_response_when_enabled() {
+        // Opt-in session message logging into a temp dir.
+        let logs_root = std::env::temp_dir().join(format!("sentinel-sess-rw-{}", Uuid::new_v4()));
+        std::env::set_var("SENTINEL_SESSION_LOGS", "1");
+        std::env::set_var("SENTINEL_SESSION_LOGS_DIR", &logs_root);
+
+        let (provider, tools, config, analytics) = session_deps();
+        let session = AppSession::new(None, provider, tools, config, analytics);
+        let (chunk_tx, _chunk_rx) = tokio::sync::mpsc::channel(16);
+        session.chat_stream("hi", chunk_tx).await;
+
+        // Layout: logs_root/<session_id>/<request_id>/{request,response,stream}.txt
+        let session_dir = logs_root.join(&session.id);
+        let request_id = std::fs::read_dir(&session_dir)
+            .expect("session dir must exist")
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .next()
+            .expect("one request dir per chat turn");
+        let request_dir = session_dir.join(request_id);
+        assert_eq!(
+            std::fs::read_to_string(request_dir.join("request.txt")).unwrap(),
+            "hi\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(request_dir.join("stream.txt")).unwrap(),
+            "hello\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(request_dir.join("response.txt")).unwrap(),
+            "hello\n"
+        );
+        assert!(
+            !request_dir.join("tool_result.txt").exists(),
+            "no tool calls in the scripted turn"
+        );
+
+        std::env::remove_var("SENTINEL_SESSION_LOGS");
+        std::env::remove_var("SENTINEL_SESSION_LOGS_DIR");
+        let _ = std::fs::remove_dir_all(&logs_root);
     }
 
     #[tokio::test]
