@@ -10,6 +10,7 @@ pub fn builtin_tools() -> Vec<Arc<dyn Tool>> {
         Arc::new(WriteTool),
         Arc::new(EditTool),
         Arc::new(ApplyPatchTool),
+        Arc::new(PatchTool),
         Arc::new(LsTool),
         Arc::new(GlobTool),
         Arc::new(GrepTool),
@@ -227,26 +228,63 @@ impl Tool for ApplyPatchTool {
     }
 
     async fn execute(&self, args: serde_json::Value, ctx: &ToolContext) -> ToolOutput {
-        let diff = args["diff"].as_str().unwrap_or("");
-        if diff.is_empty() {
-            return ToolOutput::err("diff is required");
-        }
-        let base = args["base_path"]
-            .as_str()
-            .filter(|s| !s.is_empty())
-            .or(ctx.workspace_dir.as_deref())
-            .unwrap_or(".");
-        let base_path = std::path::Path::new(base);
-        match sentinel_ai_core::apply_patch::apply_patch_multi(base_path, diff) {
-            Ok(changed) => {
-                let mut out = format!("Applied patch to {} file(s):", changed.len());
-                for path in changed {
-                    out.push_str(&format!("\n- {}", path));
-                }
-                ToolOutput::ok(out)
+        execute_patch(args, ctx).await
+    }
+}
+
+/// `patch` is an alias for `apply_patch`, exposed under the name models trained on
+/// Claude Code / opencode tool definitions expect. Both share the same executor.
+pub struct PatchTool;
+#[async_trait]
+impl Tool for PatchTool {
+    fn name(&self) -> &str {
+        "patch"
+    }
+    fn description(&self) -> &str {
+        "Alias of `apply_patch`. Apply a git-style unified diff to one or more files. Supports \
+         multi-file diffs, new-file creation (--- /dev/null) and file deletion (+++ /dev/null). \
+         All paths must resolve inside the workspace root. The whole diff is validated before \
+         any file is written."
+    }
+    fn is_mutating(&self) -> bool {
+        true
+    }
+    fn input_schema(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "diff": { "type": "string", "description": "Unified diff text (git diff format)" },
+                "base_path": { "type": "string", "description": "Workspace root to apply within (defaults to the agent workspace)" }
+            },
+            "required": ["diff"]
+        })
+    }
+
+    async fn execute(&self, args: serde_json::Value, ctx: &ToolContext) -> ToolOutput {
+        execute_patch(args, ctx).await
+    }
+}
+
+async fn execute_patch(args: serde_json::Value, ctx: &ToolContext) -> ToolOutput {
+    let diff = args["diff"].as_str().unwrap_or("");
+    if diff.is_empty() {
+        return ToolOutput::err("diff is required");
+    }
+    let base = args["base_path"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .or(ctx.workspace_dir.as_deref())
+        .unwrap_or(".");
+    let base_path = std::path::Path::new(base);
+    match sentinel_ai_core::apply_patch::apply_patch_multi(base_path, diff) {
+        Ok(changed) => {
+            let mut out = format!("Applied patch to {} file(s):", changed.len());
+            for path in changed {
+                out.push_str(&format!("\n- {}", path));
             }
-            Err(e) => ToolOutput::err(format!("Patch failed: {}", e)),
+            ToolOutput::ok(out)
         }
+        Err(e) => ToolOutput::err(format!("Patch failed: {}", e)),
     }
 }
 

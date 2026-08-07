@@ -178,6 +178,35 @@ async fn test_apply_patch_tool() {
 }
 
 #[tokio::test]
+async fn test_patch_tool_is_alias_of_apply_patch() {
+    let registry = ToolRegistry::new();
+    let ctx = ToolContext::new();
+    let tmp_dir = std::env::temp_dir().join("sentinel-patch-alias-test");
+    let _ = std::fs::create_dir_all(&tmp_dir);
+    std::fs::write(tmp_dir.join("c.txt"), "old\n").unwrap();
+
+    let diff = "\
+--- a/c.txt
++++ b/c.txt
+@@ -1 +1 @@
+-old
++new
+";
+    let args = serde_json::json!({
+        "diff": diff,
+        "base_path": tmp_dir.to_str().unwrap()
+    });
+    let result = registry.execute("patch", args, &ctx).await;
+    assert!(!result.is_error, "patch failed: {}", result.text);
+    assert_eq!(
+        std::fs::read_to_string(tmp_dir.join("c.txt")).unwrap(),
+        "new\n"
+    );
+
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+}
+
+#[tokio::test]
 async fn test_apply_patch_tool_rejects_traversal() {
     let registry = ToolRegistry::new();
     let ctx = ToolContext::new();
@@ -215,6 +244,7 @@ async fn test_tool_defs() {
     assert!(names.contains(&"write"), "write tool missing");
     assert!(names.contains(&"edit"), "edit tool missing");
     assert!(names.contains(&"apply_patch"), "apply_patch tool missing");
+    assert!(names.contains(&"patch"), "patch tool missing");
     assert!(
         names.contains(&"run_shell_command"),
         "run_shell_command tool missing"
@@ -226,8 +256,8 @@ async fn test_tool_defs() {
     assert!(names.contains(&"sourcegraph"), "sourcegraph tool missing");
     assert_eq!(
         defs.len(),
-        22,
-        "expected 22 built-in tools, got {}",
+        23,
+        "expected 23 built-in tools, got {}",
         defs.len()
     );
 }
