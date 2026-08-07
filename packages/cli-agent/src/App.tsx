@@ -27,7 +27,7 @@ function anchor(str: string, max = 90): string {
   return one.slice(0, max - 1) + '…'
 }
 
-/** Lightweight opencode-style inline markdown: **bold**, `code`, # headings, ``` blocks. */
+/** Lightweight inline markdown: **bold**, `code`, # headings, ``` blocks. */
 function RichText(props: { text: string }) {
   const blocks = props.text.split(/```/)
   return (
@@ -111,7 +111,7 @@ function App() {
     {
       id: 'system-1',
       kind: 'system',
-      text: '◆ sentinel · opencode-style agent UI — type /help for commands',
+      text: '◆ sentinel — type /help for commands',
     },
   ])
   const [inputText, setInputText] = createSignal('')
