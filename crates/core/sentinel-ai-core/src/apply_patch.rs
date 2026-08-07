@@ -66,6 +66,11 @@ pub enum PatchError {
         found: String,
     },
 
+    /// The patch only applied after relaxing the match (fuzzy matching), which
+    /// strict validation disallows.
+    #[error("fuzzy validation required (fuzz level {0}); exact matching was required")]
+    FuzzyValidation(u8),
+
     /// An I/O error occurred while reading or writing the file.
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
@@ -82,8 +87,8 @@ enum HunkLine {
 }
 
 /// A parsed hunk from the diff header `@@ -L,S +L,S @@`.
-#[derive(Debug)]
-struct Hunk {
+#[derive(Debug, Clone)]
+pub struct Hunk {
     /// 1-based line number in the **original** file where this hunk starts.
     orig_start: usize,
     /// Lines (context, added, removed) in order.
@@ -277,14 +282,55 @@ fn parse_hunk_header(header: &str, diff_line_idx: usize) -> Result<usize, PatchE
 
 // ─── Applier ─────────────────────────────────────────────────────────────────
 
-/// Compare a file line against an expected patch line.  Line endings and
-/// trailing whitespace are ignored so a patch applies cleanly to a target
-/// file whose whitespace has drifted (trailing spaces, CRLF vs LF, a tabbed
-/// file re-spaced, etc.).
-fn lines_fuzzy_equal(actual: &str, expected: &str) -> bool {
-    let actual = actual.trim_end_matches(['\r', '\n']).trim_end_matches([' ', '\t']);
-    let expected = expected.trim_end_matches(['\r', '\n']).trim_end_matches([' ', '\t']);
-    actual == expected
+/// How much "fuzz" was needed to match a patch line against a file line.
+///
+/// Mirrors the reference fuzzy-matching cascade: an exact match is tried
+/// first, then a match after trimming trailing whitespace, then a match after
+/// removing all whitespace. The deeper into the cascade a match needed to go,
+/// the higher the fuzz level — and the less "true" the match.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum FuzzLevel {
+    /// The file lines matched the patch lines exactly.
+    Exact = 0,
+    /// Lines matched only after trimming trailing whitespace / line endings.
+    TrimRight = 1,
+    /// Lines matched only after removing all whitespace.
+    TrimAll = 2,
+}
+
+impl FuzzLevel {
+    /// The numeric severity of this level (`Exact` == 0 … `TrimAll` == 2).
+    pub fn level(self) -> u8 {
+        self as u8
+    }
+
+    /// Raise `self` to at least `other` (the max fuzzy match observed so far).
+    fn raise(&mut self, other: FuzzLevel) {
+        if other > *self {
+            *self = other;
+        }
+    }
+}
+
+/// Compare a file line against an expected patch line, returning the minimum
+/// [`FuzzLevel`] needed for them to match — or `None` if they match at no
+/// level. This is the `tryFindMatch` cascade: exact → trim right → trim all.
+fn fuzz_compare(actual: &str, expected: &str) -> Option<FuzzLevel> {
+    let a = actual.trim_end_matches(['\r', '\n']);
+    let e = expected.trim_end_matches(['\r', '\n']);
+    if a == e {
+        return Some(FuzzLevel::Exact);
+    }
+    let a = a.trim_end_matches([' ', '\t']);
+    let e = e.trim_end_matches([' ', '\t']);
+    if a == e {
+        return Some(FuzzLevel::TrimRight);
+    }
+    let strip = |l: &str| l.chars().filter(|c| !c.is_whitespace()).collect::<String>();
+    if strip(a) == strip(e) {
+        return Some(FuzzLevel::TrimAll);
+    }
+    None
 }
 
 /// How many file lines a hunk consumes: its context + removed lines.
@@ -296,49 +342,60 @@ fn hunk_anchor_len(hunk: &Hunk) -> usize {
         .count()
 }
 
-/// Do the hunk's context/removed lines match the file starting at `start`?
-fn hunk_anchors_at(file_lines: &[&str], hunk: &Hunk, start: usize) -> bool {
+/// Check whether the hunk's context/removed lines match the file starting at
+/// `start`, returning the fuzz level the negotiation required, or `None` if it
+/// does not match at any level.
+fn hunk_anchors_level(file_lines: &[&str], hunk: &Hunk, start: usize) -> Option<FuzzLevel> {
+    let mut worst = FuzzLevel::Exact;
     let mut pos = start;
     for line in &hunk.lines {
         match line {
             HunkLine::Context(c) | HunkLine::Removed(c) => {
                 let actual = file_lines.get(pos).copied().unwrap_or("");
-                if !lines_fuzzy_equal(actual, c) {
-                    return false;
+                match fuzz_compare(actual, c) {
+                    Some(lvl) => worst.raise(lvl),
+                    None => return None,
                 }
                 pos += 1;
             }
             HunkLine::Added(_) => {}
         }
     }
-    true
+    Some(worst)
 }
 
-/// Locate where a hunk should be applied.
+/// Locate where a hunk should be applied, returning both its position and the
+/// fuzz level its anchors required.
 ///
 /// The recorded `orig_start` coordinate is preferred (and is what the vast
-/// majority of patches hit exactly).  If the strict lookup fails we search a
+/// majority of patches hit exactly). If the exact lookup fails we search a
 /// small window around it, then forward through the file, which lets a patch
-/// apply even when the surrounding content has drifted.  `min_pos` is the
+/// apply even when the surrounding content has drifted. `min_pos` is the
 /// first line still available (after earlier hunks were consumed); a hunk is
 /// never matched against lines already applied.
-fn locate_hunk(file_lines: &[&str], hunk: &Hunk, min_pos: usize) -> Option<usize> {
+fn locate_hunk(
+    file_lines: &[&str],
+    hunk: &Hunk,
+    min_pos: usize,
+) -> Option<(usize, FuzzLevel)> {
     let anchors = hunk_anchor_len(hunk);
     let recorded = hunk.orig_start.saturating_sub(1);
     if anchors == 0 {
         // Pure insertion: there is no anchor line to locate; use the recorded
         // offset (but never before already-consumed lines).
-        return Some(recorded.max(min_pos).min(file_lines.len()));
+        return Some((
+            recorded.max(min_pos).min(file_lines.len()),
+            FuzzLevel::Exact,
+        ));
     }
 
     let max_start = file_lines.len().saturating_sub(anchors);
 
     // 1. Exact recorded position (coordinates match the patch).
-    if recorded >= min_pos
-        && recorded <= max_start
-        && hunk_anchors_at(file_lines, hunk, recorded)
-    {
-        return Some(recorded);
+    if recorded >= min_pos && recorded <= max_start {
+        if let Some(lvl) = hunk_anchors_level(file_lines, hunk, recorded) {
+            return Some((recorded, lvl));
+        }
     }
 
     // 2. A small window around the recorded position (a one-off line shift).
@@ -349,8 +406,10 @@ fn locate_hunk(file_lines: &[&str], hunk: &Hunk, min_pos: usize) -> Option<usize
     };
     let high = (recorded + 2).min(max_start);
     for cand in low..=high {
-        if cand != recorded && hunk_anchors_at(file_lines, hunk, cand) {
-            return Some(cand);
+        if cand != recorded {
+            if let Some(lvl) = hunk_anchors_level(file_lines, hunk, cand) {
+                return Some((cand, lvl));
+            }
         }
     }
 
@@ -363,8 +422,8 @@ fn locate_hunk(file_lines: &[&str], hunk: &Hunk, min_pos: usize) -> Option<usize
     };
     let mut cand = start;
     while cand <= max_start {
-        if hunk_anchors_at(file_lines, hunk, cand) {
-            return Some(cand);
+        if let Some(lvl) = hunk_anchors_level(file_lines, hunk, cand) {
+            return Some((cand, lvl));
         }
         cand += 1;
     }
@@ -405,10 +464,14 @@ fn stale_context_error(file_lines: &[&str], hunk: &Hunk) -> PatchError {
 /// Apply the hunks to the original file lines, returning the new content.
 ///
 /// `file_lines` is split from the file **without** the final newline stripped,
-/// i.e. each entry may or may not contain `\n`.  We work with trim-tolerant
+/// i.e. each entry may or may not contain `\n`. We work with trim-tolerant
 /// content for comparison but preserve original endings in the output where
-/// unchanged.
-fn apply_hunks(file_lines: &[&str], hunks: &[Hunk]) -> Result<String, PatchError> {
+/// unchanged. `fuzz` receives the highest fuzz level the application needed.
+fn apply_hunks(
+    file_lines: &[&str],
+    hunks: &[Hunk],
+    fuzz: &mut FuzzLevel,
+) -> Result<String, PatchError> {
     let mut output: Vec<String> = Vec::with_capacity(file_lines.len() + 64);
     // Tracks our position in the original file (0-based index into `file_lines`).
     let mut file_pos: usize = 0;
@@ -416,10 +479,11 @@ fn apply_hunks(file_lines: &[&str], hunks: &[Hunk]) -> Result<String, PatchError
     for hunk in hunks {
         // Find where this hunk lives in the current file content, tolerating
         // stale coordinates and whitespace drift.
-        let hunk_start = match locate_hunk(file_lines, hunk, file_pos) {
-            Some(start) => start,
+        let (hunk_start, hunk_fuzz) = match locate_hunk(file_lines, hunk, file_pos) {
+            Some(found) => found,
             None => return Err(stale_context_error(file_lines, hunk)),
         };
+        fuzz.raise(hunk_fuzz);
 
         // Emit any unchanged file lines before this hunk.
         while file_pos < hunk_start {
@@ -434,15 +498,18 @@ fn apply_hunks(file_lines: &[&str], hunks: &[Hunk]) -> Result<String, PatchError
         for hunk_line in &hunk.lines {
             match hunk_line {
                 HunkLine::Context(expected) => {
-                    // The next original line must fuzzy-match the expected one.
+                    // The next original line must match at some fuzz level.
                     let actual = file_lines.get(file_pos).copied().unwrap_or("");
-                    if !lines_fuzzy_equal(actual, expected) {
-                        return Err(PatchError::StaleContext {
-                            hunk_start: hunk.diff_line,
-                            file_line: file_pos + 1,
-                            expected: expected.clone(),
-                            found: actual.trim_end_matches(['\r', '\n']).to_string(),
-                        });
+                    match fuzz_compare(actual, expected) {
+                        Some(lvl) => fuzz.raise(lvl),
+                        None => {
+                            return Err(PatchError::StaleContext {
+                                hunk_start: hunk.diff_line,
+                                file_line: file_pos + 1,
+                                expected: expected.clone(),
+                                found: actual.trim_end_matches(['\r', '\n']).to_string(),
+                            });
+                        }
                     }
                     output.push(actual.to_string());
                     file_pos += 1;
@@ -450,13 +517,16 @@ fn apply_hunks(file_lines: &[&str], hunks: &[Hunk]) -> Result<String, PatchError
                 HunkLine::Removed(expected) => {
                     // This line should exist in the original and be consumed.
                     let actual = file_lines.get(file_pos).copied().unwrap_or("");
-                    if !lines_fuzzy_equal(actual, expected) {
-                        return Err(PatchError::StaleContext {
-                            hunk_start: hunk.diff_line,
-                            file_line: file_pos + 1,
-                            expected: expected.clone(),
-                            found: actual.trim_end_matches(['\r', '\n']).to_string(),
-                        });
+                    match fuzz_compare(actual, expected) {
+                        Some(lvl) => fuzz.raise(lvl),
+                        None => {
+                            return Err(PatchError::StaleContext {
+                                hunk_start: hunk.diff_line,
+                                file_line: file_pos + 1,
+                                expected: expected.clone(),
+                                found: actual.trim_end_matches(['\r', '\n']).to_string(),
+                            });
+                        }
                     }
                     // Do NOT push to output — this line is deleted.
                     file_pos += 1;
@@ -549,73 +619,208 @@ fn strip_diff_prefix(path: &str) -> &str {
     }
 }
 
-/// Apply a multi-file unified diff inside `workspace_root`.
-///
-/// Returns the list of paths (relative) that were modified, created, or
-/// deleted.  The diff is fully validated and rendered **before any file is
-/// written**, so a stale hunk anywhere in the patch leaves every file
-/// untouched.  Each file is then applied atomically (temp file + rename).
-/// As with [`apply_patch`], all paths must resolve within `workspace_root`.
-///
-/// A `--- /dev/null` section creates a new file; a `+++ /dev/null` section
-/// deletes the file.
-pub fn apply_patch_multi(workspace_root: &Path, diff: &str) -> Result<Vec<String>, PatchError> {
-    let files = parse_files(diff)?;
-    let mut applied = Vec::with_capacity(files.len());
+// ─── Structured patch model (Patch → Commit → apply) ─────────────────────────
 
-    // ── Phase 1: validate & render every target (no writes) ────────────────
+/// The file operation a [`FileChange`] performs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Action {
+    /// Create a new file from the hunks' added lines (`--- /dev/null`).
+    Add,
+    /// Modify an existing file in place.
+    Update,
+    /// Remove a file (`+++ /dev/null`).
+    Delete,
+    /// Move a file to a new path, applying hunks along the way.
+    Move,
+}
+
+/// A single planned file operation, mirroring the reference `FileChange`.
+///
+/// `hunks` holds the parsed `@@` chunks; [`apply_commit`] fills `content` and
+/// `fuzz` while rendering the new file bytes.
+#[derive(Debug, Clone)]
+pub struct FileChange {
+    pub action: Action,
+    /// Destination (relative) path — the file that exists afterwards.
+    pub path: String,
+    /// Source (relative) path the hunks were generated against; for
+    /// [`Action::Delete`] and [`Action::Move`] it differs from `path`.
+    pub source: String,
+    pub hunks: Vec<Hunk>,
+    /// New content, computed at application/validation time.
+    pub content: Option<String>,
+    /// Highest fuzz level required to match this file's hunks.
+    pub fuzz: FuzzLevel,
+}
+
+/// A complete, ready-to-apply set of changes (the reference `Commit`).
+pub type Commit = Vec<FileChange>;
+
+/// Files a [`Commit`] needs from the file system (the reference
+/// `IdentifyFilesNeeded` / `IdentifyFilesAdded`).
+#[derive(Debug, Default, Clone)]
+pub struct CommitInputs {
+    /// Paths that must exist and be read (Update/Move sources).
+    pub to_read: Vec<String>,
+    /// Paths that will be created (Add).
+    pub to_add: Vec<String>,
+    /// Paths that will be removed (Delete).
+    pub to_delete: Vec<String>,
+}
+
+/// Result of applying a patch via [`process_patch`] / [`apply_commit`].
+#[derive(Debug, Clone)]
+pub struct ApplyOutcome {
+    /// Relative paths that were created, updated, moved, or deleted.
+    pub files: Vec<String>,
+    /// Highest fuzz level observed across all files (Exact if none).
+    pub fuzz: FuzzLevel,
+}
+
+/// Parse raw patch text into a [`Commit`] (the reference `TextToPatch` step).
+///
+/// No filesystem access happens here: actions are derived from the `---` /
+/// `+++` headers (`/dev/null` ⇒ add/delete; differing names ⇒ move).
+pub fn parse_commit(diff: &str) -> Result<Commit, PatchError> {
+    let files = parse_files(diff)?;
+    let mut commit = Vec::with_capacity(files.len());
+    for f in files {
+        let old = strip_diff_prefix(f.old_path.trim()).to_string();
+        let new = strip_diff_prefix(f.new_path.trim()).to_string();
+        let (action, path, source) = if new == "/dev/null" {
+            (Action::Delete, old.clone(), old)
+        } else if old == "/dev/null" {
+            (Action::Add, new, String::new())
+        } else if old != new {
+            (Action::Move, new, old)
+        } else {
+            (Action::Update, new.clone(), new)
+        };
+        commit.push(FileChange {
+            action,
+            path,
+            source,
+            hunks: f.hunks,
+            content: None,
+            fuzz: FuzzLevel::Exact,
+        });
+    }
+    Ok(commit)
+}
+
+/// Enumerate the files an application pass will need from the file system.
+pub fn commit_required_inputs(commit: &Commit) -> CommitInputs {
+    fn dedup(v: &mut Vec<String>) {
+        v.sort();
+        v.dedup();
+    }
+    let mut inputs = CommitInputs {
+        to_read: Vec::new(),
+        to_add: Vec::new(),
+        to_delete: Vec::new(),
+    };
+    for fc in commit {
+        match fc.action {
+            Action::Add => inputs.to_add.push(fc.path.clone()),
+            Action::Delete => inputs.to_delete.push(fc.source.clone()),
+            Action::Update => inputs.to_read.push(fc.source.clone()),
+            Action::Move => inputs.to_read.push(fc.source.clone()),
+        }
+    }
+    dedup(&mut inputs.to_read);
+    dedup(&mut inputs.to_add);
+    dedup(&mut inputs.to_delete);
+    inputs
+}
+
+/// Reconstruct the updated content of a file by applying its chunks to the
+/// original source text (the reference `getUpdatedFile`), reporting the fuzz
+/// level the match required.
+pub fn get_updated_file(source: &str, hunks: &[Hunk]) -> Result<(String, FuzzLevel), PatchError> {
+    let lines = split_lines_keep_endings(source);
+    let mut fuzz = FuzzLevel::Exact;
+    let content = apply_hunks(&lines, hunks, &mut fuzz)?;
+    Ok((content, fuzz))
+}
+
+/// Apply a commit to the workspace: add, update, delete, and move files.
+///
+/// All operations are validated and rendered **before anything is written**
+/// (a stale hunk anywhere leaves every file untouched), then each write is
+/// atomic (sibling temp file + rename). Move removes the source only after
+/// its destination was written successfully.
+pub fn apply_commit(workspace_root: &Path, commit: &mut Commit) -> Result<ApplyOutcome, PatchError> {
     struct PlannedWrite {
         target: PathBuf,
-        content: Option<String>, // None => delete
+        content: Option<String>,
         rel: String,
+        remove_source: Option<PathBuf>,
     }
-    let mut plan: Vec<PlannedWrite> = Vec::with_capacity(files.len());
 
-    for file in &files {
-        let is_delete = file.new_path.trim() == "/dev/null";
-        let rel = strip_diff_prefix(&file.new_path);
-        if !is_delete && rel.is_empty() {
-            return Err(PatchError::MalformedDiff(format!(
-                "empty target path for file section '{}'",
-                file.old_path
-            )));
+    // ── Phase 1: validate & render every target (no writes) ────────────────
+    let mut plan: Vec<PlannedWrite> = Vec::with_capacity(commit.len());
+    let mut max_fuzz = FuzzLevel::Exact;
+
+    for fc in commit.iter_mut() {
+        match fc.action {
+            Action::Delete => {
+                let rel = fc.source.as_str();
+                let target = resolve_target(workspace_root, Path::new(rel))?;
+                plan.push(PlannedWrite {
+                    target,
+                    content: None,
+                    rel: rel.to_string(),
+                    remove_source: None,
+                });
+            }
+            Action::Add | Action::Update | Action::Move => {
+                let rel = fc.path.as_str();
+                if rel.is_empty() {
+                    return Err(PatchError::MalformedDiff(format!(
+                        "empty target path for file section '{}'",
+                        fc.source
+                    )));
+                }
+                let target = resolve_target(workspace_root, Path::new(rel))?;
+                let src_rel = if fc.action == Action::Move {
+                    fc.source.as_str()
+                } else {
+                    rel
+                };
+                let src_target = resolve_target(workspace_root, Path::new(src_rel))?;
+
+                // Read the source content (empty string for new files).
+                let original = if src_target.exists() {
+                    fs::read_to_string(&src_target).map_err(PatchError::Io)?
+                } else {
+                    String::new()
+                };
+
+                // Apply hunks (pure; nothing written yet).
+                let new_content = apply_hunks(
+                    &split_lines_keep_endings(&original),
+                    &fc.hunks,
+                    &mut fc.fuzz,
+                )?;
+                max_fuzz.raise(fc.fuzz);
+                fc.content = Some(new_content.clone());
+
+                let mut write = PlannedWrite {
+                    target,
+                    content: Some(new_content),
+                    rel: rel.to_string(),
+                    remove_source: None,
+                };
+                if fc.action == Action::Move && write.target != src_target {
+                    write.remove_source = Some(src_target);
+                }
+                plan.push(write);
+            }
         }
-
-        if is_delete {
-            let old_rel = strip_diff_prefix(&file.old_path);
-            let target = resolve_target(workspace_root, Path::new(old_rel))?;
-            plan.push(PlannedWrite {
-                target,
-                content: None,
-                rel: old_rel.to_string(),
-            });
-            continue;
-        }
-
-        let abs_target = resolve_target(workspace_root, Path::new(rel))?;
-
-        // ── Read original file (empty string if creating a new file) ──────────
-        let original = if abs_target.exists() {
-            fs::read_to_string(&abs_target).map_err(PatchError::Io)?
-        } else {
-            String::new()
-        };
-
-        // Split preserving line endings so we can faithfully reconstruct the
-        // file.
-        let file_lines: Vec<&str> = split_lines_keep_endings(&original);
-
-        // ── Apply hunks (pure; nothing written yet) ───────────────────────────
-        let new_content = apply_hunks(&file_lines, &file.hunks)?;
-
-        plan.push(PlannedWrite {
-            target: abs_target,
-            content: Some(new_content),
-            rel: rel.to_string(),
-        });
     }
 
     // ── Phase 2: commit every planned write (temp file + atomic rename) ────
+    let mut files = Vec::with_capacity(plan.len());
     for entry in &plan {
         match &entry.content {
             None => {
@@ -628,9 +833,8 @@ pub fn apply_patch_multi(workspace_root: &Path, diff: &str) -> Result<Vec<String
                 let parent = entry.target.parent().unwrap_or(Path::new("."));
                 fs::create_dir_all(parent).map_err(PatchError::Io)?;
 
-                // Use a sibling temp file so the rename is guaranteed to be
-                // on the same filesystem (otherwise it would be a copy+delete,
-                // not atomic).
+                // Use a sibling temp file so the rename is guaranteed to be on
+                // the same filesystem (otherwise it would be a copy+delete).
                 let tmp_path = entry.target.with_extension(format!(
                     "patch_{}.tmp",
                     std::time::SystemTime::now()
@@ -654,10 +858,75 @@ pub fn apply_patch_multi(workspace_root: &Path, diff: &str) -> Result<Vec<String
                 })?;
             }
         }
-        applied.push(entry.rel.clone());
+        if let Some(src) = &entry.remove_source {
+            if src.exists() {
+                fs::remove_file(src).map_err(PatchError::Io)?;
+            }
+        }
+        files.push(entry.rel.clone());
     }
 
-    Ok(applied)
+    Ok(ApplyOutcome { files, fuzz: max_fuzz })
+}
+
+/// Validate a patch against the workspace **without applying it**, returning
+/// the highest fuzz level the patch would need (Exact for a clean patch).
+pub fn validate_patch(workspace_root: &Path, diff: &str) -> Result<FuzzLevel, PatchError> {
+    let commit = parse_commit(diff)?;
+    let mut max_fuzz = FuzzLevel::Exact;
+    for fc in &commit {
+        let fuzz = match fc.action {
+            Action::Delete => FuzzLevel::Exact,
+            Action::Add | Action::Update | Action::Move => {
+                let src_rel = if fc.action == Action::Move {
+                    fc.source.as_str()
+                } else {
+                    fc.path.as_str()
+                };
+                let target = resolve_target(workspace_root, Path::new(src_rel))?;
+                let original = if target.exists() {
+                    fs::read_to_string(&target).map_err(PatchError::Io)?
+                } else {
+                    String::new()
+                };
+                get_updated_file(&original, &fc.hunks)?.1
+            }
+        };
+        max_fuzz.raise(fuzz);
+    }
+    Ok(max_fuzz)
+}
+
+/// Validate a patch requiring **exact** context matches: any fuzzy match
+/// (whitespace drift) fails with [`PatchError::FuzzyValidation`].
+pub fn validate_patch_strict(workspace_root: &Path, diff: &str) -> Result<FuzzLevel, PatchError> {
+    let fuzz = validate_patch(workspace_root, diff)?;
+    if fuzz != FuzzLevel::Exact {
+        return Err(PatchError::FuzzyValidation(fuzz.level()));
+    }
+    Ok(fuzz)
+}
+
+/// Orchestrate the full patch workflow: parse → validate → apply (the
+/// reference `ProcessPatch`). The returned [`ApplyOutcome`] lists every file
+/// touched and the fuzz level the patch needed.
+pub fn process_patch(workspace_root: &Path, diff: &str) -> Result<ApplyOutcome, PatchError> {
+    let mut commit = parse_commit(diff)?;
+    apply_commit(workspace_root, &mut commit)
+}
+
+/// Apply a multi-file unified diff inside `workspace_root`.
+///
+/// Returns the list of paths (relative) that were modified, created, or
+/// deleted. The diff is fully validated and rendered **before any file is
+/// written**, so a stale hunk anywhere in the patch leaves every file
+/// untouched. Each file is then applied atomically (temp file + rename).
+/// As with [`apply_patch`], all paths must resolve within `workspace_root`.
+///
+/// A `--- /dev/null` section creates a new file; a `+++ /dev/null` section
+/// deletes the file; differing old/new names move the file.
+pub fn apply_patch_multi(workspace_root: &Path, diff: &str) -> Result<Vec<String>, PatchError> {
+    process_patch(workspace_root, diff).map(|outcome| outcome.files)
 }
 
 /// Apply a unified diff `patch` to the file at `path`.
@@ -711,7 +980,8 @@ pub fn apply_patch(workspace_root: &Path, path: &Path, patch: &str) -> Result<()
     let file_lines: Vec<&str> = split_lines_keep_endings(&original);
 
     // ── 4. Apply hunks ───────────────────────────────────────────────────────
-    let new_content = apply_hunks(&file_lines, hunks)?;
+    let mut fuzz = FuzzLevel::Exact;
+    let new_content = apply_hunks(&file_lines, hunks, &mut fuzz)?;
 
     // ── 5. Atomic write: temp file → rename ─────────────────────────────────
     let parent = abs_target.parent().unwrap_or(Path::new("."));
@@ -1279,5 +1549,215 @@ mod tests {
 ";
         let err = apply_patch_multi(&root, patch).expect_err("traversal should be rejected");
         assert!(matches!(err, PatchError::PathEscape(_)));
+    }
+
+    // ── Test 16: structured patch model ─────────────────────────────────────
+
+    fn hunks_of(diff: &str) -> Vec<Hunk> {
+        parse_files(diff).unwrap()[0].hunks.clone()
+    }
+
+    #[test]
+    fn test_parse_commit_derives_actions() {
+        let diff = "\
+--- /dev/null
++++ b/new.txt
+@@ -0,0 +1,1 @@
++hello
+--- a/old.txt
++++ b/moved.txt
+@@ -1,1 +1,1 @@
+-known
++known
+--- a/del.txt
++++ /dev/null
+@@ -1,1 +0,0 @@
+-gone
+--- a/upd.txt
++++ b/upd.txt
+@@ -1,1 +1,1 @@
+-before
++after
+";
+        let commit = parse_commit(diff).unwrap();
+        assert_eq!(commit.len(), 4);
+        assert_eq!(commit[0].action, Action::Add);
+        assert_eq!(commit[0].path, "new.txt");
+        assert_eq!(commit[1].action, Action::Move);
+        assert_eq!(commit[1].source, "old.txt");
+        assert_eq!(commit[1].path, "moved.txt");
+        assert_eq!(commit[2].action, Action::Delete);
+        assert_eq!(commit[2].source, "del.txt");
+        assert_eq!(commit[3].action, Action::Update);
+        assert_eq!(commit[3].path, "upd.txt");
+    }
+
+    #[test]
+    fn test_commit_required_inputs() {
+        let diff = "\
+--- /dev/null
++++ b/a.txt
+@@ -0,0 +1,1 @@
++a
+--- a/b.txt
++++ b/c.txt
+@@ -1,1 +1,1 @@
+-b
++b
+--- a/d.txt
++++ /dev/null
+@@ -1,1 +0,0 @@
+-d
+--- a/e.txt
++++ b/e.txt
+@@ -1,1 +1,1 @@
+-e
++E
+";
+        let commit = parse_commit(diff).unwrap();
+        let inputs = commit_required_inputs(&commit);
+        assert_eq!(inputs.to_add, vec!["a.txt"]);
+        assert_eq!(inputs.to_read, vec!["b.txt", "e.txt"]);
+        assert_eq!(inputs.to_delete, vec!["d.txt"]);
+    }
+
+    #[test]
+    fn test_get_updated_file_fuzz_levels() {
+        // Exact match.
+        let (out, fuzz) = get_updated_file(
+            "one\ntwo\n",
+            &hunks_of("--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n one\n-two\n+TWO\n"),
+        )
+        .unwrap();
+        assert_eq!(out, "one\nTWO\n");
+        assert_eq!(fuzz, FuzzLevel::Exact);
+
+        // Trailing whitespace drift → TrimRight.
+        let (_, fuzz) = get_updated_file(
+            "one\ntwo  \t\n",
+            &hunks_of("--- a/x\n+++ b/x\n@@ -1,2 +1,2 @@\n one\n-two\n+TWO\n"),
+        )
+        .unwrap();
+        assert_eq!(fuzz, FuzzLevel::TrimRight);
+
+        // Inner whitespace drift → TrimAll.
+        let (_, fuzz) = get_updated_file(
+            "foo  bar\n",
+            &hunks_of("--- a/x\n+++ b/x\n@@ -1,1 +1,1 @@\n-foo bar\n+baz\n"),
+        )
+        .unwrap();
+        assert_eq!(fuzz, FuzzLevel::TrimAll);
+    }
+
+    #[test]
+    fn test_apply_commit_add_update_delete_move() {
+        let root = tmp_dir();
+        write_file(&root, "old.txt", "known\nname\n");
+        write_file(&root, "upd.txt", "before\n");
+        write_file(&root, "del.txt", "gone\n");
+
+        let diff = "\
+--- /dev/null
++++ b/new.txt
+@@ -0,0 +1,1 @@
++created
+--- a/old.txt
++++ b/moved.txt
+@@ -1,2 +1,2 @@
+ known
+-name
++NAME
+--- a/del.txt
++++ /dev/null
+@@ -1,1 +0,0 @@
+-gone
+--- a/upd.txt
++++ b/upd.txt
+@@ -1,1 +1,1 @@
+-before
++after
+";
+        let mut commit = parse_commit(diff).unwrap();
+        let outcome = apply_commit(&root, &mut commit).expect("commit must apply");
+        assert_eq!(outcome.files.len(), 4);
+        assert_eq!(outcome.fuzz, FuzzLevel::Exact);
+
+        // Add.
+        assert_eq!(fs::read_to_string(root.join("new.txt")).unwrap(), "created\n");
+        // Move with content change: source removed, target written.
+        assert!(!root.join("old.txt").exists());
+        assert_eq!(fs::read_to_string(root.join("moved.txt")).unwrap(), "known\nNAME\n");
+        // Delete.
+        assert!(!root.join("del.txt").exists());
+        // Update.
+        assert_eq!(fs::read_to_string(root.join("upd.txt")).unwrap(), "after\n");
+    }
+
+    #[test]
+    fn test_process_patch_orchestrates() {
+        let root = tmp_dir();
+        write_file(&root, "a.txt", "one\ntwo\nthree\n");
+        let diff = "\
+--- a/a.txt
++++ b/a.txt
+@@ -1,3 +1,3 @@
+ one
+-two
++TWO
+ three
+";
+        let outcome = process_patch(&root, diff).expect("process patch");
+        assert_eq!(outcome.files, vec!["a.txt"]);
+        assert_eq!(outcome.fuzz, FuzzLevel::Exact);
+        assert_eq!(fs::read_to_string(root.join("a.txt")).unwrap(), "one\nTWO\nthree\n");
+    }
+
+    #[test]
+    fn test_validate_patch_reports_fuzz_and_strict_fails() {
+        let root = tmp_dir();
+        // File has trailing whitespace; patch was generated without it.
+        write_file(&root, "ws.txt", "alpha\nbeta  \n");
+        let diff = "\
+--- a/ws.txt
++++ b/ws.txt
+@@ -1,2 +1,2 @@
+ alpha
+-beta
++BETA
+";
+        let fuzz = validate_patch(&root, diff).expect("tolerant validation");
+        assert_eq!(fuzz, FuzzLevel::TrimRight);
+
+        let err = validate_patch_strict(&root, diff)
+            .expect_err("strict validation rejects fuzzy matches");
+        assert!(matches!(err, PatchError::FuzzyValidation(1)));
+
+        // An exact patch validates cleanly and strictly.
+        write_file(&root, "exact.txt", "alpha\nbeta\n");
+        let clean = "\
+--- a/exact.txt
++++ b/exact.txt
+@@ -1,2 +1,2 @@
+ alpha
+-beta
++BETA
+";
+        assert_eq!(validate_patch(&root, clean).unwrap(), FuzzLevel::Exact);
+        assert_eq!(validate_patch_strict(&root, clean).unwrap(), FuzzLevel::Exact);
+    }
+
+    #[test]
+    fn test_hunk_anchors_level_on_insert_only_hunk() {
+        // A pure insertion has no removal anchors and locates exactly.
+        let diff = "\
+--- a/x.txt
++++ b/x.txt
+@@ -1,1 +2,1 @@
+ one
++middle
+";
+        let (out, fuzz) = get_updated_file("one\n", &hunks_of(diff)).unwrap();
+        assert_eq!(out, "one\nmiddle\n");
+        assert_eq!(fuzz, FuzzLevel::Exact);
     }
 }
