@@ -107,7 +107,7 @@ fn print_help() {
     println!("  sentinel <command> [args]");
     println!();
     println!("{}", "Subcommands:".yellow().bold());
-    println!("  ai [model]            Interactive agent session (Rust native)");
+    println!("  ai [model]            Interactive agent session (requires bun; use --prompt for one-shot mode without it)");
     println!("  local [model]         Run a local model via Ollama");
     println!("  exec <model> <prompt>  Run the agent with a prompt (Rust native)");
     println!("  completion [--model <id>] [--system-prompt <text>] <prompt>  One-shot completion (LLM judge)");
