@@ -1,5 +1,4 @@
 mod ai;
-mod app;
 mod approval;
 mod auth;
 mod completion;
@@ -8,19 +7,16 @@ mod display;
 mod exec;
 mod handler;
 mod local;
-mod mcp_setup;
-mod model_selector;
 mod plugin_cmd;
 mod proxy;
-mod schema;
 mod server;
-mod telemetry;
 mod tui;
 mod web;
 mod setup;
 mod interactive;
 mod config_storage;
 mod commands_handler;
+mod prompt;
 
 use colored::*;
 

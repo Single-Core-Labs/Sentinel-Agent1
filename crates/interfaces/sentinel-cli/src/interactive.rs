@@ -12,7 +12,13 @@ pub async fn run_interactive(mut config: SentinelConfig) -> anyhow::Result<()> {
         io::stdout().flush()?;
 
         let mut input = String::new();
-        io::stdin().read_line(&mut input)?;
+        let bytes = io::stdin().read_line(&mut input)?;
+        if bytes == 0 {
+            // EOF (closed/redirected stdin): exit cleanly instead of
+            // spinning forever re-reading an empty line.
+            println!("\n{}", "Goodbye! 👋".cyan());
+            break;
+        }
         let input = input.trim();
 
         if input.is_empty() {
@@ -43,18 +49,20 @@ pub async fn run_interactive(mut config: SentinelConfig) -> anyhow::Result<()> {
 }
 
 fn print_interactive_header(config: &SentinelConfig) {
+    let active = config.active();
+
     println!("\n{}", "╭─────────────────────────────────────────╮".cyan());
     println!("{}", "│  🤖 Sentinel AI Agent                  │".cyan());
     println!("{}", "╰─────────────────────────────────────────╯".cyan());
     println!();
     println!("  {}: {} {}",
-        "Primary".dimmed(),
-        config.provider_name.cyan().bold(),
-        format!("/ {}", config.model_name).green()
+        "Active".dimmed(),
+        active.name.cyan().bold(),
+        format!("/ {}", active.model_name).green()
     );
 
-    if !config.other_providers.is_empty() {
-        println!("  {}: {} other provider(s)", "Additional".dimmed(), config.other_providers.len().to_string().yellow());
+    if config.providers.len() > 1 {
+        println!("  {}: {} total provider(s) configured", "Also available".dimmed(), config.providers.len().to_string().yellow());
     }
 
     println!();
@@ -67,7 +75,7 @@ fn print_interactive_header(config: &SentinelConfig) {
 async fn handle_command(config: &mut SentinelConfig, input: &str) -> anyhow::Result<bool> {
     let parts: Vec<&str> = input.split_whitespace().collect();
 
-    match parts.get(0).copied() {
+    match parts.first().copied() {
         Some("/help") => {
             print_help();
             Ok(false)
@@ -103,7 +111,7 @@ fn print_help() {
     println!("\n{}", "Available Commands:".cyan().bold());
     println!("{}", "─".repeat(45));
     println!("  {} - Change AI model", "/model".cyan());
-    println!("  {} - Change AI provider", "/provider".cyan());
+    println!("  {} - Switch or add a provider", "/provider".cyan());
     println!("  {} - View current settings", "/settings".cyan());
     println!("  {} - Exit Sentinel", "/exit".cyan());
     println!("  {} - Show this help", "/help".cyan());
