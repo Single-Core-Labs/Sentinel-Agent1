@@ -38,23 +38,23 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Build binaries
-        run: cargo build --release --locked --target ${{ matrix.target }} -p sentinel-cli -p sentinel-app-server
+      - name: Build binary
+        run: cargo build --release --locked --target ${{ matrix.target }} -p sentinel-cli
 
       - name: Package (tar)
         if: matrix.archive == 'tar'
         shell: bash
         run: |
           mkdir -p dist
-          cp target/${{ matrix.target }}/release/sentinel target/${{ matrix.target }}/release/sentinel-app-server dist/
-          tar -czf sentinel-${{ env.RELEASE_VERSION }}-${{ matrix.target }}.tar.gz -C dist sentinel sentinel-app-server
+          cp target/${{ matrix.target }}/release/sentinel dist/
+          tar -czf sentinel-${{ env.RELEASE_VERSION }}-${{ matrix.target }}.tar.gz -C dist sentinel
 
       - name: Package (zip)
         if: matrix.archive == 'zip'
         shell: powershell
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Copy-Item "target/${{ matrix.target }}/release/sentinel.exe", "target/${{ matrix.target }}/release/sentinel-app-server.exe" dist/
+          Copy-Item "target/${{ matrix.target }}/release/sentinel.exe" dist/
           Compress-Archive -Path dist/* -DestinationPath "sentinel-${{ env.RELEASE_VERSION }}-${{ matrix.target }}.zip"
 
       - name: Upload artifacts
