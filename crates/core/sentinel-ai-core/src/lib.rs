@@ -10,4 +10,5 @@
 pub mod agent;
 pub mod agents_md;
 pub mod apply_patch;
+pub mod diff;
 pub mod compact;
