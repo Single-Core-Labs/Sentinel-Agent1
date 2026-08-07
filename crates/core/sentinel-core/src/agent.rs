@@ -82,6 +82,10 @@ pub struct Agent {
     pub(crate) compressor: Arc<dyn ContentCompressor>,
     pub(crate) checkpoints: Arc<dyn CheckpointStore>,
     cancellation: CancellationToken,
+    /// When set, tool execution (write/edit/run_shell) is confined to the
+    /// sandbox root: paths are re-rooted under it and shell commands run
+    /// inside it, so the agent cannot touch the real workspace.
+    pub(crate) sandbox: Option<crate::sandbox::SharedSandbox>,
 }
 
 impl std::fmt::Debug for Agent {
@@ -120,7 +124,14 @@ impl Agent {
             compressor: Arc::new(NullCompressor::new()),
             checkpoints: Arc::new(CheckpointManager::new()),
             cancellation: CancellationToken::new(),
+            sandbox: None,
         }
+    }
+
+    /// Confine tool execution (write/edit/run_shell) to `sandbox`.
+    pub fn with_sandbox(mut self, sandbox: crate::sandbox::SharedSandbox) -> Self {
+        self.sandbox = Some(sandbox);
+        self
     }
 
     /// Replace the checkpoint store backing the `undo` tool (used in tests).
@@ -531,7 +542,7 @@ impl Agent {
                 &ctx,
                 &cancel,
                 &self.compressor,
-                &None,
+                &self.sandbox,
                 &None,
                 policy,
                 &self.plugin_registry,
@@ -904,7 +915,7 @@ impl Agent {
                 &ctx,
                 &cancel,
                 &self.compressor,
-                &None,
+                &self.sandbox,
                 &None,
                 &None,
                 &self.plugin_registry,
@@ -1082,6 +1093,9 @@ impl Agent {
             .await;
 
         let mut req = CompletionRequest::new(self.effective_model());
+        if let Some(max_tokens) = self.config.agent.max_tokens {
+            req.max_tokens = Some(max_tokens);
+        }
         for msg in compressed {
             req = req.with_message(msg);
         }

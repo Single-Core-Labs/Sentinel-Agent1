@@ -197,12 +197,17 @@ pub fn resolve_model(
 /// Validates the resolved provider (model present + API key set) and returns.
 fn finish(selected_model: &str, provider: ProviderInfo) -> Result<SelectedModel, SelectError> {
     // #52 — model validation: reject the model if the provider doesn't list it,
-    // unless it's a wildcard local backend (ollama/vllm/lm-studio/llamacpp).
+    // unless it's a wildcard local backend (ollama/vllm/lm-studio/llamacpp) or
+    // the provider has no model list at all ("any model via API", e.g. an
+    // env-discovered provider like OpenRouter).
     let is_local = matches!(
         provider.id.as_str(),
         "ollama" | "vllm" | "lm-studio" | "llamacpp"
     );
-    if !is_local && !provider.models.iter().any(|m| m.id == selected_model) {
+    if !is_local
+        && !provider.models.is_empty()
+        && !provider.models.iter().any(|m| m.id == selected_model)
+    {
         return Err(SelectError::ModelNotInProvider {
             model: selected_model.to_string(),
             provider: provider.id.clone(),
@@ -506,6 +511,34 @@ mod tests {
         let cfg = SentinelConfig::default();
         let err = resolve_model(&cfg, "openrouter/auto").unwrap_err();
         assert!(matches!(err, SelectError::NoProvider { .. }));
+    }
+
+    #[test]
+    fn env_discovered_openrouter_with_empty_models_accepts_any_model() {
+        // Discovery creates the OpenRouter provider with an EMPTY model list
+        // (see sentinel-config cloud_provider) — any `openrouter/…` id must
+        // resolve, not be rejected as "not offered by provider".
+        let cfg = test_config_multi(vec![openrouter_provider_empty()]);
+        let _or_key = SetEnv::new("OPENROUTER_API_KEY", "sk-test");
+        let sel = resolve_model(&cfg, "openrouter/anthropic/claude-sonnet-4").unwrap();
+        assert_eq!(sel.provider.id, "openrouter");
+        assert_eq!(sel.model_id, "openrouter/anthropic/claude-sonnet-4");
+    }
+
+    fn openrouter_provider_empty() -> ProviderInfo {
+        ProviderInfo {
+            id: "openrouter".into(),
+            name: "OpenRouter".into(),
+            base_url: "https://openrouter.ai/api/v1".into(),
+            auth: AuthConfig::EnvKey {
+                var: "OPENROUTER_API_KEY".into(),
+            },
+            models: vec![],
+            timeout_secs: 120,
+            extra_headers: Default::default(),
+            disabled: false,
+            provider: None,
+        }
     }
 
     fn local_provider(id: &str, base_url: &str) -> ProviderInfo {

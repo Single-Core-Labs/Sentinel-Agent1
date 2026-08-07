@@ -151,9 +151,8 @@ impl Tool for RecallTool {
                 },
                 "category": {
                     "type": "string",
-                    "enum": ["preference", "fact", "context", "entity", "decision", "insight", ""],
-                    "description": "Filter by category (optional)",
-                    "default": ""
+                    "enum": ["preference", "fact", "context", "entity", "decision", "insight"],
+                    "description": "Filter by category (omit for all categories)"
                 },
                 "top_k": {
                     "type": "integer",

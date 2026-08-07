@@ -55,8 +55,19 @@ impl OpenAIProvider {
     }
 
     fn build_body(&self, req: &CompletionRequest) -> serde_json::Value {
+        // OpenRouter model ids use the `openrouter/` selection prefix (e.g.
+        // `openrouter/auto`), but the API expects the bare vendor id
+        // (`auto`, `google/gemma-4-31b-it:free`) in the request body.
+        let model = if self.info.id == "openrouter" {
+            req.model
+                .strip_prefix("openrouter/")
+                .unwrap_or(&req.model)
+                .to_string()
+        } else {
+            req.model.clone()
+        };
         let mut body = serde_json::json!({
-            "model": req.model,
+            "model": model,
             "messages": req.messages.iter().map(|m| self.serialize_message(m)).collect::<Vec<_>>(),
         });
 
@@ -181,10 +192,7 @@ impl ModelProvider for OpenAIProvider {
         let status = resp.status();
         if !status.is_success() {
             let body_text = resp.text().await.unwrap_or_default();
-            return Err(ProviderError::ApiError {
-                status: status.as_u16(),
-                body: body_text,
-            });
+            return Err(map_api_error(status.as_u16(), body_text));
         }
 
         let data: serde_json::Value = resp.json().await.map_err(ProviderError::Reqwest)?;
@@ -214,10 +222,7 @@ impl ModelProvider for OpenAIProvider {
         let status = resp.status();
         if !status.is_success() {
             let body_text = resp.text().await.unwrap_or_default();
-            return Err(ProviderError::ApiError {
-                status: status.as_u16(),
-                body: body_text,
-            });
+            return Err(map_api_error(status.as_u16(), body_text));
         }
 
         use futures::StreamExt;
@@ -341,5 +346,55 @@ impl OpenAIProvider {
             choices,
             usage,
         })
+    }
+}
+
+/// Map a non-success HTTP status to a typed [`ProviderError`] so retry logic
+/// in the agent can distinguish transient failures (429/5xx) from hard errors.
+fn map_api_error(status: u16, body: String) -> ProviderError {
+    match status {
+        401 => ProviderError::Unauthorized { detail: body },
+        403 => ProviderError::Forbidden { detail: body },
+        408 | 429 => ProviderError::RateLimited { retry_after: 0 },
+        502 | 503 | 504 => ProviderError::ServiceUnavailable { retry_after: None },
+        500..=599 => ProviderError::ServerError { status },
+        _ => ProviderError::ApiError { status, body },
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn maps_429_to_rate_limited() {
+        assert!(matches!(
+            map_api_error(429, "slow down".into()),
+            ProviderError::RateLimited { .. }
+        ));
+    }
+
+    #[test]
+    fn maps_503_to_service_unavailable() {
+        assert!(matches!(
+            map_api_error(503, "down".into()),
+            ProviderError::ServiceUnavailable { .. }
+        ));
+    }
+
+    #[test]
+    fn maps_500_to_server_error() {
+        assert!(matches!(
+            map_api_error(500, "boom".into()),
+            ProviderError::ServerError { .. }
+        ));
+    }
+
+    #[test]
+    fn maps_400_to_api_error() {
+        assert!(matches!(
+            map_api_error(400, "bad".into()),
+            ProviderError::ApiError { .. }
+        ));
     }
 }

@@ -104,13 +104,16 @@ impl AgentThread {
 
         let is_repeated_tool = if msgs.len() >= 6 {
             let recent: Vec<&sentinel_protocol::Message> = msgs.iter().rev().take(6).collect();
-            let tool_names: Vec<&str> = recent
+            // Signatures = (name, canonical args) so three consecutive calls
+            // of the SAME tool with DIFFERENT arguments (progress) are not a
+            // doom loop — only true repetition (same name + same args).
+            let signatures: Vec<String> = recent
                 .iter()
                 .filter_map(|m| {
                     if m.is_tool_call() {
                         m.content.iter().find_map(|b| {
-                            if let sentinel_protocol::ContentBlock::ToolCall { name, .. } = b {
-                                Some(name.as_str())
+                            if let sentinel_protocol::ContentBlock::ToolCall { name, arguments, .. } = b {
+                                Some(format!("{}|{:?}", name, arguments))
                             } else {
                                 None
                             }
@@ -120,7 +123,8 @@ impl AgentThread {
                     }
                 })
                 .collect();
-            tool_names.len() >= 3 && tool_names.windows(3).all(|w| w[0] == w[1] && w[1] == w[2])
+            signatures.len() >= 3
+                && signatures.windows(3).all(|w| w[0] == w[1] && w[1] == w[2])
         } else {
             false
         };

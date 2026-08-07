@@ -1,0 +1,10 @@
+{"UserMessage":{"session_id":"0b558bfa-4bcc-4f59-8856-5183a3ded424","timestamp":"2026-08-07T14:56:59.734729500Z","content":"Report the current machine's OS, CPU cores, and RAM by using your tools."}}
+{"AssistantText":{"session_id":"0b558bfa-4bcc-4f59-8856-5183a3ded424","timestamp":"2026-08-07T14:57:10.048789100Z","text":""}}
+{"ToolResult":{"session_id":"0b558bfa-4bcc-4f59-8856-5183a3ded424","timestamp":"2026-08-07T14:57:10.048789100Z","tool_call_id":"call_CA48EBAE8208414789E32A16","name":"run_shell_command","output":"exit code 1: 'uname' is not recognized as an internal or external command,\r\noperable program or batch file.\r\n","is_error":true}}
+{"TurnEnd":{"session_id":"0b558bfa-4bcc-4f59-8856-5183a3ded424","timestamp":"2026-08-07T14:57:10.048789100Z","turn":1,"iteration":1}}
+{"AssistantText":{"session_id":"0b558bfa-4bcc-4f59-8856-5183a3ded424","timestamp":"2026-08-07T14:57:41.308955700Z","text":""}}
+{"ToolResult":{"session_id":"0b558bfa-4bcc-4f59-8856-5183a3ded424","timestamp":"2026-08-07T14:57:41.308955700Z","tool_call_id":"call_E4B6BF0FE8384B91AF6C5148","name":"run_shell_command","output":"\r\nMicrosoft Windows [Version 10.0.26200.8875]\r\n","is_error":false}}
+{"TurnEnd":{"session_id":"0b558bfa-4bcc-4f59-8856-5183a3ded424","timestamp":"2026-08-07T14:57:41.308955700Z","turn":2,"iteration":2}}
+{"AssistantText":{"session_id":"0b558bfa-4bcc-4f59-8856-5183a3ded424","timestamp":"2026-08-07T14:57:50.224116300Z","text":""}}
+{"ToolResult":{"session_id":"0b558bfa-4bcc-4f59-8856-5183a3ded424","timestamp":"2026-08-07T14:57:50.224116300Z","tool_call_id":"call_BC4E1C37D3224B7E8CBB6FA4","name":"run_shell_command","output":"exit code 1: FINDSTR: Cannot open Name\"\r\nFINDSTR: Cannot open /C:\"OS\r\nFINDSTR: Cannot open Version\"\r\nFINDSTR: Cannot open /C:\"System\r\nFINDSTR: Cannot open Manufacturer\"\r\nFINDSTR: Cannot open /C:\"Processor(s)\"\r\nFINDSTR: Cannot open /C:\"Total\r\nFINDSTR: Cannot open Physical\r\nFINDSTR: Cannot open Memory\"\r\n","is_error":true}}
+{"TurnEnd":{"session_id":"0b558bfa-4bcc-4f59-8856-5183a3ded424","timestamp":"2026-08-07T14:57:50.224116300Z","turn":3,"iteration":3}}

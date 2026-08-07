@@ -399,6 +399,9 @@ impl PipelineAgent {
 
         let mut req =
             sentinel_protocol::CompletionRequest::new(&self.agent.config.agent.default_model);
+        if let Some(max_tokens) = self.agent.config.agent.max_tokens {
+            req.max_tokens = Some(max_tokens);
+        }
         for msg in compressed {
             req = req.with_message(msg);
         }

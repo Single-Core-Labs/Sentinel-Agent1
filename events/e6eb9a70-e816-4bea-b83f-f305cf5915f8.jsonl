@@ -1,0 +1,2 @@
+{"UserMessage":{"session_id":"e6eb9a70-e816-4bea-b83f-f305cf5915f8","timestamp":"2026-08-07T14:38:03.510244200Z","content":"Say hi."}}
+{"Error":{"session_id":"e6eb9a70-e816-4bea-b83f-f305cf5915f8","timestamp":"2026-08-07T14:38:03.933253500Z","message":"LLM call failed after 1 attempt(s): API returned error: 404 - {\"error\":{\"message\":\"This model is unavailable for free. The paid version is available now - use this slug instead: meta-llama/llama-3.3-70b-instruct\",\"code\":404},\"user_id\":\"user_30Bf9ZeSoyPEqqYAraFP0d1tXbP\"}"}}

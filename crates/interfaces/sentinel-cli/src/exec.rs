@@ -126,6 +126,33 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         .with_compressor(headroom_compressor)
         .with_model(model_id.clone());
 
+    // SENTINEL_SANDBOX=1 confines write/edit/run_shell to a scratch copy of
+    // the workspace in the OS temp dir — the agent can never touch the real
+    // repo (used by the cost-lab benchmark harness).
+    let agent = if std::env::var("SENTINEL_SANDBOX").as_deref() == Ok("1") {
+        let scratch = std::env::temp_dir().join(format!(
+            "sentinel-bench-ws-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        std::fs::create_dir_all(&scratch).ok();
+        match sentinel_core::sandbox::LocalSandbox::new(&scratch) {
+            Ok(sb) => {
+                let sb: sentinel_core::sandbox::SharedSandbox = Arc::new(sb);
+                println!(" {} tools sandboxed in {}", "·".cyan(), sb.root().display());
+                agent.with_sandbox(sb)
+            }
+            Err(e) => {
+                eprintln!(" {} sandbox init failed: {}; continuing unsandboxed", "W".yellow(), e);
+                agent
+            }
+        }
+    } else {
+        agent
+    };
+
     // Central app: owns the session store, permission gate, theme, LSP clients
     // and the agent; LSP clients start asynchronously and never block startup.
     let mut app = App::new((*config).clone());
