@@ -1,6 +1,6 @@
 use crate::error::ConfigError;
 use sentinel_mcp::McpServerDef;
-use sentinel_provider_info::{default_providers, AuthConfig, ProviderInfo};
+use sentinel_provider_info::{default_providers, AuthConfig, ModelEntry, ProviderInfo};
 use serde::Deserialize;
 use std::sync::{Mutex, OnceLock};
 
@@ -206,6 +206,26 @@ fn cloud_provider(kind: &str, var: &str) -> ProviderInfo {
         extra_headers: std::collections::HashMap::new(),
         disabled: false,
         provider: Some(kind.into()),
+    }
+}
+
+impl SentinelConfig {
+    /// Build a provider that a discovered API key just unlocked. Prefers the
+    /// builtin catalog (base URL + model list) so the provider is fully
+    /// usable for model resolution; only kinds without a builtin entry (e.g.
+    /// OpenRouter) fall back to the bare shell.
+    fn discovered_provider(kind: &str, var: &str) -> ProviderInfo {
+        if let Some(builtin) = sentinel_provider_info::builtin::default_providers()
+            .into_iter()
+            .find(|p| p.id == kind)
+        {
+            return ProviderInfo {
+                auth: AuthConfig::EnvKey { var: var.into() },
+                disabled: false,
+                ..builtin
+            };
+        }
+        cloud_provider(kind, var)
     }
 }
 
@@ -440,28 +460,38 @@ impl SentinelConfig {
     /// Generic tokens (e.g. `GITHUB_TOKEN`) additionally unlock any provider
     /// that declares `auth = { var = "GITHUB_TOKEN" }`.
     fn discover_providers(&mut self, get_env: &impl Fn(&str) -> Option<String>) {
-        const DISCOVERY: &[(&str, &str)] = &[
-            ("openai", "OPENAI_API_KEY"),
-            ("anthropic", "ANTHROPIC_API_KEY"),
-            ("google-ai-studio", "GOOGLE_API_KEY"),
-            ("deepseek", "DEEPSEEK_API_KEY"),
-            ("openrouter", "OPENROUTER_API_KEY"),
+        const DISCOVERY: &[(&str, &[&str])] = &[
+            ("openai", &["OPENAI_API_KEY"]),
+            ("anthropic", &["ANTHROPIC_API_KEY"]),
+            // The docs and .env template advertise GOOGLE_AI_STUDIO_API_KEY
+            // while the builtin default names GOOGLE_API_KEY; accept both,
+            // preferring the canonical name when both are set.
+            (
+                "google-ai-studio",
+                &["GOOGLE_API_KEY", "GOOGLE_AI_STUDIO_API_KEY"],
+            ),
+            ("deepseek", &["DEEPSEEK_API_KEY"]),
+            ("openrouter", &["OPENROUTER_API_KEY"]),
         ];
-        for (kind, var) in DISCOVERY {
-            let has_key = get_env(var)
-                .map(|v| !v.trim().is_empty())
-                .unwrap_or(false);
-            if has_key {
-                match self.providers.iter_mut().find(|p| p.id == *kind) {
+        for (kind, vars) in DISCOVERY {
+            let var = vars
+                .iter()
+                .copied()
+                .find(|v| get_env(v).map(|s| !s.trim().is_empty()).unwrap_or(false));
+            match var {
+                Some(var) => match self.providers.iter_mut().find(|p| p.id == *kind) {
                     Some(p) => {
                         p.disabled = false;
                         p.auth = AuthConfig::EnvKey { var: var.to_string() };
                     }
-                    None => self.providers.push(cloud_provider(*kind, var)),
-                }
-            } else if let Some(p) = self.providers.iter_mut().find(|p| p.id == *kind) {
-                if p.resolve_api_key().is_none() {
-                    p.disabled = true;
+                    None => self.providers.push(Self::discovered_provider(kind, var)),
+                },
+                None => {
+                    if let Some(p) = self.providers.iter_mut().find(|p| p.id == *kind) {
+                        if p.resolve_api_key().is_none() {
+                            p.disabled = true;
+                        }
+                    }
                 }
             }
         }
@@ -1431,6 +1461,88 @@ command = "other"
         assert!(
             cfg2.provider("copilot").unwrap().disabled,
             "missing GITHUB_TOKEN must disable the declaring provider"
+        );
+    }
+
+    #[test]
+    fn discovered_provider_keeps_builtin_catalog_after_file_providers_override() {
+        // A local config that defines its own [[providers]] replaces the
+        // builtin list; an env key discovered afterwards must still produce a
+        // provider with the builtin base_url and model catalog, otherwise
+        // session/create can never resolve a cloud model.
+        let mut cfg = SentinelConfig::default();
+        cfg.providers = vec![ProviderInfo {
+            id: "ollama-local".into(),
+            name: "Ollama Local".into(),
+            base_url: "http://localhost:11434/v1".into(),
+            auth: AuthConfig::None,
+            models: vec![ModelEntry {
+                id: "qwen3:8b".into(),
+                name: "Qwen3 8B".into(),
+                context_window: 32768,
+                supports_streaming: true,
+                supports_tools: true,
+            }],
+            timeout_secs: 120,
+            extra_headers: Default::default(),
+            disabled: false,
+            provider: None,
+        }];
+        let env = env_of(&[("GOOGLE_AI_STUDIO_API_KEY", "sk-google")]);
+        cfg.discover_providers(&env);
+
+        let google = cfg
+            .provider("google-ai-studio")
+            .expect("key must re-create the google provider");
+        assert!(!google.disabled, "recreated provider must stay enabled");
+        assert!(
+            !google.base_url.is_empty(),
+            "recreated provider must keep the builtin base_url"
+        );
+        assert!(
+            google.models.iter().any(|m| m.id == "gemini-2.5-flash"),
+            "recreated provider must keep the builtin model catalog"
+        );
+    }
+
+    #[test]
+    fn google_provider_enables_via_documented_env_alias() {
+        let mut cfg = SentinelConfig::default();
+        let env = env_of(&[("GOOGLE_AI_STUDIO_API_KEY", "sk-google")]);
+        cfg.discover_providers(&env);
+
+        let google = cfg
+            .provider("google-ai-studio")
+            .expect("google-ai-studio must be registered");
+        assert!(
+            !google.disabled,
+            "GOOGLE_AI_STUDIO_API_KEY must enable google-ai-studio"
+        );
+        assert!(
+            matches!(
+                &google.auth,
+                AuthConfig::EnvKey { var } if var == "GOOGLE_AI_STUDIO_API_KEY"
+            ),
+            "the alias must be used as the provider's env key"
+        );
+    }
+
+    #[test]
+    fn google_provider_prefers_canonical_env_name() {
+        let mut cfg = SentinelConfig::default();
+        let env = env_of(&[
+            ("GOOGLE_API_KEY", "sk-canonical"),
+            ("GOOGLE_AI_STUDIO_API_KEY", "sk-alias"),
+        ]);
+        cfg.discover_providers(&env);
+
+        let google = cfg.provider("google-ai-studio").unwrap();
+        assert!(
+            matches!(
+                &google.auth,
+                AuthConfig::EnvKey { var } if var == "GOOGLE_API_KEY"
+            ),
+            "GOOGLE_API_KEY wins when both are set"
         );
     }
 

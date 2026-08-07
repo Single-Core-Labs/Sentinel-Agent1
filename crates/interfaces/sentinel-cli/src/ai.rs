@@ -59,6 +59,15 @@ fn try_spawn_ts_agent(args: &[String]) -> bool {
         return false;
     }
 
+    // #67 — an explicitly requested model (`sentinel ai <model>` / --model)
+    // must reach the OpenTUI frontend, which otherwise always asks the server
+    // for the config default model. Exported via env so the bun child sees it.
+    if let Ok(parsed) = CliArgs::parse(args, "") {
+        if !parsed.model_id.is_empty() {
+            std::env::set_var("SENTINEL_REQUESTED_MODEL", &parsed.model_id);
+        }
+    }
+
     let (agent_path, cwd) = match resolve_ts_agent() {
         Some(x) => x,
         None => return false,

@@ -269,7 +269,8 @@ function App() {
     client.onEvent = onEvent
     try {
       await client.connect('ws://127.0.0.1:9090/ws')
-      const result = (await client.call('session/create', { model: null })) as Record<string, unknown>
+      const requestedModel = (Bun.env.SENTINEL_REQUESTED_MODEL as string | undefined) || null
+      const result = (await client.call('session/create', { model: requestedModel })) as Record<string, unknown>
       const sessionId = result.session_id as string
       setConn((c) => ({
         ...c,
@@ -279,11 +280,17 @@ function App() {
       }))
       await client.subscribe(sessionId).catch(() => {})
     } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Connection failed'
       setConn((c) => ({
         ...c,
         status: 'disconnected',
-        error: err instanceof Error ? err.message : 'Connection failed',
+        error: msg,
       }))
+      push({
+        id: generateId(),
+        kind: 'system',
+        text: `✖ Connection failed: ${msg}. Check your model/api key config, then /connect.`,
+      })
     }
   }
 
