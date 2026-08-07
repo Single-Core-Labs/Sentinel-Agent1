@@ -1,2 +1,0 @@
-{"UserMessage":{"session_id":"ef18d2da-22c0-4042-8077-dec749424504","timestamp":"2026-08-07T14:30:49.993335200Z","content":"Say hi."}}
-{"Error":{"session_id":"ef18d2da-22c0-4042-8077-dec749424504","timestamp":"2026-08-07T14:30:50.402379500Z","message":"LLM call failed after 1 attempt(s): API returned error: 400 - {\"error\":{\"message\":\"openrouter/google/gemma-4-31b-it:free is not a valid model ID\",\"code\":400},\"user_id\":\"user_30Bf9ZeSoyPEqqYAraFP0d1tXbP\"}"}}

@@ -1,2 +1,0 @@
-{"UserMessage":{"session_id":"c51d55ea-afe2-45a9-8db4-56439f365dc1","timestamp":"2026-08-07T14:38:04.423827800Z","content":"Say hi."}}
-{"Error":{"session_id":"c51d55ea-afe2-45a9-8db4-56439f365dc1","timestamp":"2026-08-07T14:38:04.770904300Z","message":"LLM call failed after 1 attempt(s): API returned error: 404 - {\"error\":{\"message\":\"This model is unavailable for free. The paid version is available now - use this slug instead: qwen/qwen3-235b-a22b\",\"code\":404},\"user_id\":\"user_30Bf9ZeSoyPEqqYAraFP0d1tXbP\"}"}}

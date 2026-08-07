@@ -1,2 +1,0 @@
-{"UserMessage":{"session_id":"79d4cb00-8d8f-4157-a3e2-62364bbf91cd","timestamp":"2026-08-07T14:21:10.839844Z","content":"Report the current machine's OS, CPU cores, and RAM by using your tools."}}
-{"Error":{"session_id":"79d4cb00-8d8f-4157-a3e2-62364bbf91cd","timestamp":"2026-08-07T14:21:19.444716400Z","message":"LLM call failed after 3 attempt(s): HTTP client error: error sending request for url (http://localhost:11434/v1/chat/completions)"}}
