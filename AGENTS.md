@@ -29,7 +29,7 @@ ml-intern-main/
 ## Running
 
 - **AI agent (CLI):** `cargo run --bin sentinel -- ai` — full interactive agent with LLM provider
-- **Local REPL (no LLM):** `cargo run --bin sentinel -- ai --local` — zero-cost slash commands
+- **Local REPL (no LLM):** `cargo run --bin sentinel -- local` — zero-cost slash commands
 - **Test all:** `cargo test --workspace` (all suites must stay green)
 - **Compile check:** `cargo check --workspace`
 - **Frontend typecheck:** `bun run typecheck` in `packages/cli-agent`

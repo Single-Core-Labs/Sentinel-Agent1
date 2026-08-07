@@ -1,9 +1,8 @@
 <p align="center">
-  <!-- TODO: Update logo to a Sentinel-AI logo -->
-</p>
-
-<p align="center">
-    <a href="https://github.com/Single-Core-Labs/Sentinel-Agent1/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/License-Apache_2.0-blue.svg"></a>
+  <a href="https://github.com/Single-Core-Labs/Sentinel-Agent1/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/License-Apache_2.0-blue.svg"></a>
+  <a href="https://github.com/Single-Core-Labs/Sentinel-Agent1/releases/latest"><img alt="Release" src="https://img.shields.io/github/v/release/Single-Core-Labs/Sentinel-Agent1"></a>
+  <a href="https://github.com/Single-Core-Labs/Sentinel-Agent1/actions/workflows/release.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Single-Core-Labs/Sentinel-Agent1/release.yml?branch=master"></a>
+  <a href="https://github.com/Single-Core-Labs/Sentinel-Agent1/pkgs/container/sentinel-agent1%2Fsentinel"><img alt="GHCR" src="https://img.shields.io/badge/GHCR-container--image-0B5ED7"></a>
 </p>
 
 # Sentinel-AI
@@ -13,7 +12,18 @@ An autonomous coding agent for platform engineering, AIOps, and MLOps — with d
 Describe a problem in plain English, and the agent investigates with real tools (code, cloud, logs, dashboards), then fixes it — asking for human approval before touching production.
 
 **Repository:** `Single-Core-Labs/Sentinel-Agent1`  
-**CLI command:** `sentinel` (Rust)
+**CLI command:** `sentinel` (Rust)  
+**Packages:** [GitHub Container Registry](https://github.com/Single-Core-Labs/Sentinel-Agent1/pkgs/container/sentinel-agent1%2Fsentinel) (Docker) · releases with Windows/Linux/macOS binaries
+
+---
+
+## Screenshots
+
+### Local REPL (`sentinel local`)
+
+Runs the agent against a local Ollama model — zero cloud spend, with built-in slash commands:
+
+![Sentinel local REPL](docs/images/sentinel-local.png)
 
 ---
 
@@ -40,6 +50,24 @@ sentinel ai
 ```
 
 To pin a version: `install.ps1 -Version v0.1.0` / `install.sh --version v0.1.0`.
+
+### Run with Docker
+
+A prebuilt image is published to GHCR on every `master` push (`latest`) and on version tags:
+
+```bash
+docker pull ghcr.io/single-core-labs/sentinel-agent1/sentinel:latest
+docker run --rm -it -e ANTHROPIC_API_KEY=sk-ant-... \
+  ghcr.io/single-core-labs/sentinel-agent1/sentinel:latest
+```
+
+Mount your config and session store to keep them across runs:
+
+```bash
+docker run --rm -it -v $HOME/.sentinel:/root/.sentinel \
+  -e ANTHROPIC_API_KEY=sk-ant-... \
+  ghcr.io/single-core-labs/sentinel-agent1/sentinel:latest
+```
 
 ### Build from source (developers only)
 
