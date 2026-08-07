@@ -9,6 +9,7 @@ use sentinel_core::thread_store::ThreadStore;
 use sentinel_provider::{ModelProvider, ProviderKind};
 use sentinel_provider_info::ProviderInfo;
 use sentinel_tools::ToolRegistry;
+use sentinel_ai_core::diff::{change_count, generate_unified_diff_file, parse_unified_diff};
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -981,11 +982,15 @@ impl RequestHandler {
 
     async fn handle_ide_diff_preview(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
         let p: api::IdeDiffParams = parse_params(params)?;
-        let diff = diff_lines(&p.original_content, &p.modified_content);
+        let diff =
+            generate_unified_diff_file(&p.file_path, &p.file_path, &p.original_content, &p.modified_content);
+        let changes = parse_unified_diff(&diff)
+            .map(|d| change_count(&d))
+            .unwrap_or(0);
         Ok(serde_json::json!({
             "file_path": p.file_path,
             "diff": diff,
-            "changes": diff.lines().filter(|l| l.starts_with('+') || l.starts_with('-')).count(),
+            "changes": changes,
         }))
     }
 
@@ -1100,100 +1105,6 @@ fn conversation_title(conversation: &sentinel_core::conversation::Conversation) 
         })
 }
 
-/// Produce a unified-diff-style preview between two strings (line based,
-/// longest-common-subsequence alignment).
-fn diff_lines(original: &str, modified: &str) -> String {
-    if original == modified {
-        return String::new();
-    }
-    let a: Vec<&str> = original.lines().collect();
-    let b: Vec<&str> = modified.lines().collect();
-    if a.is_empty() && b.is_empty() {
-        return String::new();
-    }
-    if a.is_empty() {
-        let mut out = format!("@@ -0,0 +1,{} @@\n", b.len());
-        for line in &b {
-            out.push('+');
-            out.push_str(line);
-            out.push('\n');
-        }
-        return out;
-    }
-    if b.is_empty() {
-        let mut out = format!("@@ -1,{} +0,0 @@\n", a.len());
-        for line in &a {
-            out.push('-');
-            out.push_str(line);
-            out.push('\n');
-        }
-        return out;
-    }
-
-    // LCS dynamic programming table.
-    let n = a.len();
-    let m = b.len();
-    let mut dp = vec![vec![0u32; m + 1]; n + 1];
-    for i in (0..n).rev() {
-        for j in (0..m).rev() {
-            dp[i][j] = if a[i] == b[j] {
-                dp[i + 1][j + 1] + 1
-            } else {
-                dp[i + 1][j].max(dp[i][j + 1])
-            };
-        }
-    }
-
-    let mut out = String::new();
-    let (mut i, mut j) = (0usize, 0usize);
-    let mut removed: Vec<&str> = Vec::new();
-    let mut added: Vec<&str> = Vec::new();
-
-    let flush = |removed: &mut Vec<&str>, added: &mut Vec<&str>, out: &mut String| {
-        if removed.is_empty() && added.is_empty() {
-            return;
-        }
-        out.push_str(&format!("@@ -1,{} +1,{} @@\n", removed.len(), added.len()));
-        for l in removed.drain(..) {
-            out.push('-');
-            out.push_str(l);
-            out.push('\n');
-        }
-        for l in added.drain(..) {
-            out.push('+');
-            out.push_str(l);
-            out.push('\n');
-        }
-    };
-
-    while i < n && j < m {
-        if a[i] == b[j] {
-            flush(&mut removed, &mut added, &mut out);
-            out.push(' ');
-            out.push_str(a[i]);
-            out.push('\n');
-            i += 1;
-            j += 1;
-        } else if dp[i + 1][j] >= dp[i][j + 1] {
-            removed.push(a[i]);
-            i += 1;
-        } else {
-            added.push(b[j]);
-            j += 1;
-        }
-    }
-    while i < n {
-        removed.push(a[i]);
-        i += 1;
-    }
-    while j < m {
-        added.push(b[j]);
-        j += 1;
-    }
-    flush(&mut removed, &mut added, &mut out);
-    out
-}
-
 fn parse_params<T: serde::de::DeserializeOwned>(params: Option<Value>) -> Result<T, JsonRpcError> {
     params
         .ok_or_else(|| JsonRpcError::invalid_params("Missing params"))
@@ -1211,7 +1122,7 @@ mod tests {
 
     #[test]
     fn diff_preview_insertion() {
-        let diff = diff_lines("one\ntwo\nthree\n", "one\ntwo\nTWO\nthree\n");
+        let diff = generate_unified_diff_file("", "", "one\ntwo\nthree\n", "one\ntwo\nTWO\nthree\n");
         assert!(diff.contains("+TWO"), "diff: {}", diff);
         // Pure insertion: the aligned line "two" is kept, not removed.
         assert!(!diff.contains("-two"), "diff: {}", diff);
@@ -1219,17 +1130,19 @@ mod tests {
 
     #[test]
     fn diff_preview_replacement() {
-        let diff = diff_lines("alpha\nbeta\n", "alpha\nBETA\n");
+        let diff = generate_unified_diff_file("", "", "alpha\nbeta\n", "alpha\nBETA\n");
         assert!(diff.contains("-beta"), "diff: {}", diff);
         assert!(diff.contains("+BETA"), "diff: {}", diff);
     }
 
     #[test]
     fn diff_preview_new_and_empty() {
-        assert!(diff_lines("", "hello\nworld\n").starts_with("@@"));
-        assert!(diff_lines("bye\n", "").starts_with("@@"));
-        assert!(diff_lines("", "").is_empty());
-        assert!(diff_lines("same\n", "same\n").is_empty());
+        let new = generate_unified_diff_file("", "", "", "hello\nworld\n");
+        assert!(new.contains("@@ -0,0 +1,2 @@"), "new file: {new}");
+        let gone = generate_unified_diff_file("", "", "bye\n", "");
+        assert!(gone.contains("@@ -1,1 +0,0 @@"), "deletion: {gone}");
+        assert!(generate_unified_diff_file("", "", "", "").is_empty());
+        assert!(generate_unified_diff_file("", "", "same\n", "same\n").is_empty());
     }
 
     #[test]

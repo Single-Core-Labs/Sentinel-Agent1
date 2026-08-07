@@ -2009,6 +2009,7 @@ dependencies = [
  "notify",
  "sentinel-agent-graph-store",
  "sentinel-agent-identity",
+ "sentinel-ai-core",
  "sentinel-analytics",
  "sentinel-app-server-protocol",
  "sentinel-app-server-transport",

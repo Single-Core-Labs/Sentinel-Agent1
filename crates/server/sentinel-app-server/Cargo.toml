@@ -20,6 +20,7 @@ colored.workspace = true
 
 sentinel-protocol = { workspace = true }
 sentinel-core = { workspace = true }
+sentinel-ai-core = { workspace = true }
 sentinel-tools = { workspace = true }
 sentinel-provider = { workspace = true }
 sentinel-provider-info = { workspace = true }
