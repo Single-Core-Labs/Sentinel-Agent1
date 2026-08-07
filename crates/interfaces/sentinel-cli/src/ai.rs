@@ -42,12 +42,6 @@ fn resolve_ts_agent() -> Option<(std::path::PathBuf, std::path::PathBuf)> {
         }
     }
 
-    let fallback = std::path::PathBuf::from(r"d:\ml-intern-main\ml-intern-main");
-    let fallback_ap = fallback.join(agent_relative);
-    if fallback_ap.exists() {
-        return Some((fallback_ap, fallback));
-    }
-
     None
 }
 
@@ -70,7 +64,14 @@ fn try_spawn_ts_agent(args: &[String]) -> bool {
 
     let (agent_path, cwd) = match resolve_ts_agent() {
         Some(x) => x,
-        None => return false,
+        None => {
+            eprintln!(
+                "{} TypeScript agent UI not found (expected at packages/cli-agent/src/index.tsx under $SENTINEL_HOME or the current directory).",
+                "W".yellow()
+            );
+            eprintln!("   This is expected if you only checked out the Rust crates.");
+            return false;
+        }
     };
 
     let mut server_child: Option<std::process::Child> = None;
@@ -143,11 +144,9 @@ fn try_spawn_ts_agent(args: &[String]) -> bool {
             }
         }
         Ok(Err(e)) => {
-            eprintln!(
-                "{} Could not start TUI ({}) — OpenTUI is the only interactive UI.",
-                "W".yellow(),
-                e
-            );
+            eprintln!("{} Could not start bun ({}).", "W".yellow(), e);
+            eprintln!("   Install it: https://bun.sh, or use one-shot mode:");
+            eprintln!("       sentinel ai <model> --prompt \"<text>\"");
             if let Some(mut s) = server_child {
                 let _ = s.kill();
             }
@@ -300,14 +299,16 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         model_id.clone()
     };
 
-    // The inline terminal REPL is gone — OpenTUI (bun) is the only interactive UI.
-    // Without bun and without --prompt there is nothing to do.
+    // The inline terminal REPL is gone — OpenTUI (bun) is the only interactive
+    // UI. try_spawn_ts_agent() already printed the specific reason it
+    // couldn't run (TS agent not found vs. bun not found vs. crashed) when
+    // interactive mode was requested; without --prompt there's nothing left
+    // to do but point at one-shot mode.
     if prompt_arg.is_none() {
         eprintln!(
-            "{} No interactive TUI available (bun required).",
+            "{} No interactive session available; use one-shot mode instead:",
             "W".yellow()
         );
-        eprintln!("   Install bun (https://bun.sh) and rerun, or use one-shot mode:");
         eprintln!("       sentinel ai <model> --prompt \"<text>\"");
         return Ok(());
     }
