@@ -12,5 +12,5 @@
 pub mod broker;
 pub mod events;
 
-pub use broker::{Broker, Subscription};
-pub use events::{CreatedEvent, DeletedEvent, LifecycleEvent, UpdatedEvent};
+pub use broker::{Broker, Publisher, Subscriber, Subscription};
+pub use events::{CreatedEvent, DeletedEvent, Event, EventType, LifecycleEvent, UpdatedEvent};

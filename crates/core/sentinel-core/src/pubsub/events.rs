@@ -4,6 +4,83 @@
 //! carries to signal that a resource was created, updated, or deleted. Any
 //! component can subscribe to a broker typed to one of these and react to
 //! state changes in real time.
+//!
+//! [`EventType`] is the machine-readable category string and [`Event`] is a
+//! generic, type-plus-payload carrier for strong typing across producers and
+//! consumers.
+
+/// The machine-readable type of an event (the reference `EventType` string).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum EventType {
+    Created,
+    Updated,
+    Deleted,
+}
+
+impl EventType {
+    /// Stable lowercase category string: `"created"`, `"updated"`, `"deleted"`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            EventType::Created => "created",
+            EventType::Updated => "updated",
+            EventType::Deleted => "deleted",
+        }
+    }
+
+    /// Parse a category string (case-insensitive). Unknown names → `None`.
+    pub fn from_str(s: &str) -> Option<EventType> {
+        match s.to_ascii_lowercase().as_str() {
+            "created" => Some(EventType::Created),
+            "updated" => Some(EventType::Updated),
+            "deleted" => Some(EventType::Deleted),
+            _ => None,
+        }
+    }
+}
+
+/// A generic event: a category [`EventType`] paired with a typed payload
+/// (the reference generic `Event` struct). Use it for brokers where the
+/// category must be carried alongside the value — the wide counterpart to
+/// [`CreatedEvent`]/[`UpdatedEvent`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Event<T> {
+    event_type: EventType,
+    payload: T,
+}
+
+impl<T> Event<T> {
+    /// Build an event of `event_type` carrying `payload`.
+    pub fn new(event_type: EventType, payload: T) -> Self {
+        Self { event_type, payload }
+    }
+
+    /// The event's category.
+    pub fn event_type(&self) -> EventType {
+        self.event_type
+    }
+
+    /// The typed payload.
+    pub fn payload(&self) -> &T {
+        &self.payload
+    }
+
+    /// Consume the event, returning the payload.
+    pub fn into_payload(self) -> T {
+        self.payload
+    }
+}
+
+impl<T> From<CreatedEvent<T>> for Event<T> {
+    fn from(e: CreatedEvent<T>) -> Self {
+        Event::new(EventType::Created, e.into_value())
+    }
+}
+
+impl<T> From<UpdatedEvent<T>> for Event<T> {
+    fn from(e: UpdatedEvent<T>) -> Self {
+        Event::new(EventType::Updated, e.into_value())
+    }
+}
 
 /// A resource was created, carrying its id and current value.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -120,5 +197,31 @@ impl<T> From<UpdatedEvent<T>> for LifecycleEvent<T> {
 impl<T> From<DeletedEvent<T>> for LifecycleEvent<T> {
     fn from(e: DeletedEvent<T>) -> Self {
         LifecycleEvent::Deleted(e)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn event_type_strings_roundtrip() {
+        assert_eq!(EventType::Created.as_str(), "created");
+        assert_eq!(EventType::Updated.as_str(), "updated");
+        assert_eq!(EventType::Deleted.as_str(), "deleted");
+        assert_eq!(EventType::from_str("CREATED"), Some(EventType::Created));
+        assert_eq!(EventType::from_str("bogus"), None);
+    }
+
+    #[test]
+    fn generic_event_carries_type_and_payload() {
+        let created = Event::new(EventType::Created, 42u32);
+        assert_eq!(created.event_type(), EventType::Created);
+        assert_eq!(created.payload(), &42);
+        assert_eq!(created.into_payload(), 42);
+
+        let event = Event::from(UpdatedEvent::new("file-1", "new-content"));
+        assert_eq!(event.event_type(), EventType::Updated);
+        assert_eq!(event.into_payload(), "new-content");
     }
 }
