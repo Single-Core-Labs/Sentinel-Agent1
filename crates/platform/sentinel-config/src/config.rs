@@ -35,6 +35,16 @@ pub struct AgentSettings {
     /// Reasoning effort for reasoning models: low | medium | high.
     #[serde(default)]
     pub reasoning_effort: Option<String>,
+    /// Command run after a batch of file edits to check the result
+    /// (e.g. `cargo check`). When set and the command exits non-zero, the
+    /// errors are fed back to the model so it can fix them, capped at
+    /// `max_fix_cycles` consecutive cycles.
+    #[serde(default)]
+    pub verify_command: Option<String>,
+    /// Consecutive failed verification cycles before the loop stops feeding
+    /// errors back to the model.
+    #[serde(default = "default_max_fix_cycles")]
+    pub max_fix_cycles: u32,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -176,6 +186,10 @@ fn default_thread_store() -> String {
     "memory".into()
 }
 
+fn default_max_fix_cycles() -> u32 {
+    3
+}
+
 impl Default for AgentSettings {
     fn default() -> Self {
         Self {
@@ -186,6 +200,8 @@ impl Default for AgentSettings {
             verbose: false,
             max_tokens: None,
             reasoning_effort: None,
+            verify_command: None,
+            max_fix_cycles: default_max_fix_cycles(),
         }
     }
 }
@@ -320,6 +336,14 @@ impl SentinelConfig {
         set("SENTINEL_VERBOSE", &mut |v| {
             self.agent.verbose =
                 v.eq_ignore_ascii_case("true") || v == "1" || v.eq_ignore_ascii_case("yes");
+        });
+        set("SENTINEL_VERIFY_COMMAND", &mut |v| {
+            self.agent.verify_command = Some(v.to_string());
+        });
+        set("SENTINEL_MAX_FIX_CYCLES", &mut |v| {
+            if let Ok(n) = v.parse::<u32>() {
+                self.agent.max_fix_cycles = n;
+            }
         });
         set("SENTINEL_THREAD_STORE", &mut |v| {
             self.thread_store = v.to_string();
@@ -484,6 +508,12 @@ impl SentinelConfig {
         }
         if other.agent.reasoning_effort.is_some() {
             self.agent.reasoning_effort = other.agent.reasoning_effort;
+        }
+        if other.agent.verify_command.is_some() {
+            self.agent.verify_command = other.agent.verify_command;
+        }
+        if other.agent.max_fix_cycles > 0 {
+            self.agent.max_fix_cycles = other.agent.max_fix_cycles;
         }
         if !other.providers.is_empty() {
             self.providers = other.providers;

@@ -1,6 +1,7 @@
 pub mod agent;
 pub mod approval;
 pub mod budget;
+pub mod checkpoint;
 pub mod compression;
 pub mod context;
 pub mod conversation;

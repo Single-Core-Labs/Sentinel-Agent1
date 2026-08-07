@@ -5,17 +5,20 @@ use crate::event_bus::{BusEvent, EventBus, PolicyDecision, PolicyEngine};
 use crate::prompt::SystemPromptManager;
 use crate::thread::{AgentThread, ApprovalRequest, ThreadStatus};
 use crate::uploader::{create_uploader, NullUploader, SessionPayload, SessionUploader};
+use crate::checkpoint::CheckpointManager;
 use futures::StreamExt;
 use sentinel_config::SentinelConfig;
 use sentinel_plugin_system::{PluginAction, PluginEvent, PluginRegistry};
 use sentinel_protocol::{CompletionRequest, ContentBlock, Message, Role, ToolResult};
 use sentinel_provider::{ModelProvider, ProviderError};
-use sentinel_tools::{ToolContext, ToolRegistry};
+use sentinel_tools::{CheckpointStore, ToolContext, ToolRegistry};
 use std::collections::BTreeMap;
 use std::fmt;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::sync::RwLock;
+use std::time::Duration;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
 
@@ -32,6 +35,11 @@ Issues found: \
 - Empty or missing tool name \
 - Invalid JSON in tool call arguments (must be valid JSON object) \
 Please correct the tool calls and retry. Do NOT repeat the same malformed calls.";
+
+/// Tool calls that count as "edits" for the verify-and-fix cycle: when a batch
+/// containing any of these succeeds and `agent.verify_command` is configured,
+/// the verify command is run and its output is fed back to the model on failure.
+const VERIFY_TRIGGER_TOOLS: &[&str] = &["write", "edit", "patch", "apply_patch"];
 
 /// Validate tool calls and return OK or describe the malformation.
 pub(crate) fn validate_tool_calls(
@@ -72,6 +80,7 @@ pub struct Agent {
     pub(crate) uploader: Box<dyn SessionUploader>,
     pub(crate) plugin_registry: Arc<PluginRegistry>,
     pub(crate) compressor: Arc<dyn ContentCompressor>,
+    pub(crate) checkpoints: Arc<dyn CheckpointStore>,
     cancellation: CancellationToken,
 }
 
@@ -109,8 +118,15 @@ impl Agent {
             uploader: Box::new(NullUploader),
             plugin_registry: Arc::new(PluginRegistry::new()),
             compressor: Arc::new(NullCompressor::new()),
+            checkpoints: Arc::new(CheckpointManager::new()),
             cancellation: CancellationToken::new(),
         }
+    }
+
+    /// Replace the checkpoint store backing the `undo` tool (used in tests).
+    pub fn with_checkpoints(mut self, checkpoints: Arc<dyn CheckpointStore>) -> Self {
+        self.checkpoints = checkpoints;
+        self
     }
 
     /// Request cancellation of the current run. In-flight LLM calls and tool
@@ -305,6 +321,9 @@ impl Agent {
             thread.add_message(Message::system(system_text));
         }
 
+        // Consecutive failed verify-and-fix cycles (reset on a passing verify).
+        let mut fix_cycles: u32 = 0;
+
         loop {
             if !thread.increment_iteration() {
                 return Ok(AgentOutput::error("Max iterations reached"));
@@ -497,7 +516,12 @@ impl Agent {
             }
 
             let cancel = self.cancellation.child_token();
-            let ctx = ToolContext::new();
+            let ctx = self.tool_context();
+            let workspace = self.workspace_dir().to_string_lossy().into_owned();
+            let mutating_batch = self.batch_mutates(&tool_calls);
+            if mutating_batch {
+                self.checkpoints.begin_batch(&workspace, thread.turn);
+            }
             let tool_results = execute_tools_concurrent(
                 &tool_calls,
                 Arc::clone(&self.tools),
@@ -534,6 +558,17 @@ impl Agent {
                         is_error: Some(result.is_error),
                     }],
                 ));
+            }
+
+            if mutating_batch {
+                self.checkpoints.end_batch(&workspace, thread.turn);
+            }
+
+            if self
+                .maybe_run_verify(thread, &tool_results, &mut fix_cycles)
+                .await
+            {
+                continue;
             }
 
             if !thread.increment_turn() {
@@ -721,6 +756,9 @@ impl Agent {
             thread.add_message(Message::system(system_text));
         }
 
+        // Consecutive failed verify-and-fix cycles (reset on a passing verify).
+        let mut fix_cycles: u32 = 0;
+
         loop {
             if !thread.increment_iteration() {
                 return Ok(AgentOutput::error("Max iterations reached"));
@@ -851,7 +889,12 @@ impl Agent {
 
             // Execute tool calls concurrently
             let cancel = CancellationToken::new();
-            let ctx = ToolContext::new();
+            let ctx = self.tool_context();
+            let workspace = self.workspace_dir().to_string_lossy().into_owned();
+            let mutating_batch = self.batch_mutates(&tool_calls);
+            if mutating_batch {
+                self.checkpoints.begin_batch(&workspace, thread.turn);
+            }
             let tool_results = execute_tools_concurrent(
                 &tool_calls,
                 Arc::clone(&self.tools),
@@ -877,6 +920,17 @@ impl Agent {
                         is_error: Some(result.is_error),
                     }],
                 ));
+            }
+
+            if mutating_batch {
+                self.checkpoints.end_batch(&workspace, thread.turn);
+            }
+
+            if self
+                .maybe_run_verify(thread, &tool_results, &mut fix_cycles)
+                .await
+            {
+                continue;
             }
 
             if !thread.increment_turn() {
@@ -927,6 +981,99 @@ impl Agent {
         self.plugin_registry.dispatch(event).await
     }
 
+    /// Verify-and-fix cycle: when a tool batch edited project files and
+    /// `agent.verify_command` is configured, run the verify command (e.g.
+    /// `cargo check`). On failure, feed the output back to the model as a
+    /// user message and return `true` (caller should `continue` the loop
+    /// without advancing the turn). Returns `false` when verification is not
+    /// configured, no edits happened, the fix-cycle cap is exhausted, or the
+    /// verify command passed.
+    async fn maybe_run_verify(
+        &self,
+        thread: &mut AgentThread,
+        tool_results: &[ToolResult],
+        fix_cycles: &mut u32,
+    ) -> bool {
+        let verify_cmd = match &self.config.agent.verify_command {
+            Some(c) if !c.trim().is_empty() => c.clone(),
+            _ => return false,
+        };
+        let edited = tool_results
+            .iter()
+            .any(|r| !r.is_error && VERIFY_TRIGGER_TOOLS.contains(&r.name.as_str()));
+        if !edited {
+            return false;
+        }
+        if *fix_cycles >= self.config.agent.max_fix_cycles {
+            tracing::warn!(
+                verify = %verify_cmd,
+                fix_cycles = *fix_cycles,
+                "verify-and-fix cap reached; running verify from here on out"
+            );
+            return false;
+        }
+        let dir = self.workspace_dir();
+        match run_verify_command(&verify_cmd, &dir).await {
+            VerifyOutcome::Pass => {
+                *fix_cycles = 0;
+                false
+            }
+            VerifyOutcome::Fail(output) => {
+                *fix_cycles += 1;
+                let excerpt = truncate_verify_output(&output);
+                let hint = Message::user(format!(
+                    "[SYSTEM: Verification failed after your edits — `{verify_cmd}` exited non-zero:\n\
+                     ```\n{excerpt}\n```\n\
+                     \n\
+                     Fix the errors above, then retry. Do NOT repeat the same edit without fixing it.]"
+                ));
+                thread.add_message(hint);
+                true
+            }
+            VerifyOutcome::Error(e) => {
+                tracing::warn!(verify = %verify_cmd, error = %e, "verify command could not run");
+                false
+            }
+        }
+    }
+
+    /// The directory the agent operates in: first entry of `context.paths`
+    /// resolved against the process CWD (defaults to CWD).
+    fn workspace_dir(&self) -> PathBuf {
+        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        self.config
+            .context
+            .paths
+            .first()
+            .map(|p| {
+                let p = PathBuf::from(p);
+                if p.is_absolute() {
+                    p
+                } else {
+                    cwd.join(p)
+                }
+            })
+            .unwrap_or(cwd)
+    }
+
+    /// Per-iteration tool context: workspace dir + checkpoint store backing
+    /// the `undo` tool.
+    fn tool_context(&self) -> ToolContext {
+        let mut ctx = ToolContext::new();
+        ctx.workspace_dir = Some(self.workspace_dir().to_string_lossy().into_owned());
+        ctx.checkpoints = Some(Arc::clone(&self.checkpoints));
+        ctx
+    }
+
+    /// Whether a batch contains a mutating tool other than `undo` (undo is a
+    /// meta-tool — its own batch must not be snapshotted, or it would undo
+    /// itself).
+    fn batch_mutates(&self, tool_calls: &[(String, String, serde_json::Value)]) -> bool {
+        tool_calls.iter().any(|(_, name, _)| {
+            name != "undo" && self.tools.get(name).map(|t| t.is_mutating()).unwrap_or(false)
+        })
+    }
+
     async fn build_request(&self, thread: &AgentThread) -> CompletionRequest {
         let messages = thread.context.messages().to_vec();
         let compressed = self
@@ -939,6 +1086,57 @@ impl Agent {
             req = req.with_message(msg);
         }
         req
+    }
+}
+
+enum VerifyOutcome {
+    Pass,
+    Fail(String),
+    Error(String),
+}
+
+async fn run_verify_command(command: &str, dir: &Path) -> VerifyOutcome {
+    #[cfg(target_os = "windows")]
+    let (shell, shell_arg) = ("cmd", "/C");
+    #[cfg(not(target_os = "windows"))]
+    let (shell, shell_arg) = ("sh", "-c");
+
+    let cmd = tokio::process::Command::new(shell)
+        .arg(shell_arg)
+        .arg(command)
+        .current_dir(dir)
+        .output();
+
+    match tokio::time::timeout(Duration::from_secs(180), cmd).await {
+        Ok(Ok(out)) => {
+            let mut text = String::new();
+            if !out.stdout.is_empty() {
+                text.push_str(&String::from_utf8_lossy(&out.stdout));
+            }
+            if !out.stderr.is_empty() {
+                if !text.is_empty() {
+                    text.push('\n');
+                }
+                text.push_str(&String::from_utf8_lossy(&out.stderr));
+            }
+            if out.status.success() {
+                VerifyOutcome::Pass
+            } else {
+                VerifyOutcome::Fail(text)
+            }
+        }
+        Ok(Err(e)) => VerifyOutcome::Error(format!("failed to start: {e}")),
+        Err(_) => VerifyOutcome::Error("timed out after 180s".to_string()),
+    }
+}
+
+fn truncate_verify_output(output: &str) -> String {
+    const MAX: usize = 6000;
+    if output.len() <= MAX {
+        output.to_string()
+    } else {
+        let excerpt: String = output.chars().take(MAX).collect();
+        format!("{excerpt}...\n[output truncated after {MAX} chars]")
     }
 }
 

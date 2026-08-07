@@ -1,0 +1,2 @@
+{"UserMessage":{"session_id":"aa97f6ba-8e15-434c-818c-bad892bd4d0c","timestamp":"2026-08-07T13:00:42.524262Z","content":"remember my preference"}}
+{"AssistantText":{"session_id":"aa97f6ba-8e15-434c-818c-bad892bd4d0c","timestamp":"2026-08-07T13:00:42.524819500Z","text":"<memory>user prefers Rust over Go</memory>Handled."}}

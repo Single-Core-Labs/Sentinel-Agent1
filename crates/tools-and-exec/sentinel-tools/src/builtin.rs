@@ -1,4 +1,5 @@
 use crate::tool::{Tool, ToolContext, ToolOutput};
+use crate::undo::UndoTool;
 use async_trait::async_trait;
 use serde_json::json;
 use std::sync::Arc;
@@ -11,6 +12,7 @@ pub fn builtin_tools() -> Vec<Arc<dyn Tool>> {
         Arc::new(EditTool),
         Arc::new(ApplyPatchTool),
         Arc::new(PatchTool),
+        Arc::new(UndoTool),
         Arc::new(LsTool),
         Arc::new(GlobTool),
         Arc::new(GrepTool),

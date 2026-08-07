@@ -410,6 +410,254 @@ mod tests {
         assert_eq!(t.turn, 1);
     }
 
+    // ── Verify-and-fix loop ──────────────────────────────────────────────────
+
+    struct FakeWriteTool;
+
+    #[async_trait]
+    impl Tool for FakeWriteTool {
+        fn name(&self) -> &str {
+            "write"
+        }
+        fn description(&self) -> &str {
+            "Fake file write"
+        }
+        fn input_schema(&self) -> serde_json::Value {
+            json!({ "type": "object" })
+        }
+        async fn execute(&self, _: serde_json::Value, _: &ToolContext) -> ToolOutput {
+            ToolOutput::ok("file written")
+        }
+    }
+
+    fn make_agent_with_verify(
+        provider: Arc<dyn ModelProvider>,
+        verify_command: &str,
+        max_fix_cycles: u32,
+    ) -> Agent {
+        let reg = ToolRegistry::new();
+        reg.register(Arc::new(FakeWriteTool));
+        let mut config = SentinelConfig::default();
+        config.agent.verify_command = Some(verify_command.to_string());
+        config.agent.max_fix_cycles = max_fix_cycles;
+        Agent::new(provider, Arc::new(reg), Arc::new(config))
+    }
+
+    fn verify_hints(t: &AgentThread) -> usize {
+        t.context
+            .messages()
+            .iter()
+            .filter(|m| m.role == Role::User && m.extract_text().contains("Verification failed"))
+            .count()
+    }
+
+    #[tokio::test]
+    async fn verify_failure_feeds_back_hint_and_continues() {
+        let provider = ScriptedProvider::new(vec![
+            tool_call_response("v-1", "write", json!({ "path": "a.rs" })),
+            tool_call_response("v-2", "write", json!({ "path": "b.rs" })),
+            text_response("done"),
+        ]);
+        let mut t = thread();
+        let out = make_agent_with_verify(provider, "exit 1", 2)
+            .run(&mut t, "fix it")
+            .await
+            .unwrap();
+        assert!(
+            matches!(out, AgentOutput::Success { ref text } if text == "done"),
+            "got {:?}",
+            out
+        );
+        assert_eq!(verify_hints(&t), 2, "each failed cycle feeds back a hint");
+        assert_eq!(t.turn, 0, "fix cycles must not advance the turn counter");
+    }
+
+    #[tokio::test]
+    async fn verify_feedback_capped_at_max_fix_cycles() {
+        let provider = ScriptedProvider::new(vec![
+            tool_call_response("v-1", "write", json!({ "path": "a.rs" })),
+            tool_call_response("v-2", "write", json!({ "path": "b.rs" })),
+            text_response("done"),
+        ]);
+        let mut t = thread();
+        let out = make_agent_with_verify(provider, "exit 1", 1)
+            .run(&mut t, "fix it")
+            .await
+            .unwrap();
+        assert!(
+            matches!(out, AgentOutput::Success { ref text } if text == "done"),
+            "got {:?}",
+            out
+        );
+        assert_eq!(verify_hints(&t), 1, "feedback capped at max_fix_cycles");
+    }
+
+    #[tokio::test]
+    async fn verify_pass_resets_counter_and_advances_turns() {
+        let provider = ScriptedProvider::new(vec![
+            tool_call_response("v-1", "write", json!({ "path": "a.rs" })),
+            tool_call_response("v-2", "write", json!({ "path": "b.rs" })),
+            text_response("done"),
+        ]);
+        let mut t = thread();
+        let out = make_agent_with_verify(provider, "exit 0", 2)
+            .run(&mut t, "fix it")
+            .await
+            .unwrap();
+        assert!(
+            matches!(out, AgentOutput::Success { ref text } if text == "done"),
+            "got {:?}",
+            out
+        );
+        assert_eq!(verify_hints(&t), 0, "passing verify produces no feedback");
+        assert_eq!(t.turn, 2);
+    }
+
+    #[tokio::test]
+    async fn non_edit_tools_do_not_trigger_verify() {
+        let provider = ScriptedProvider::new(vec![
+            tool_call_response("v-3", "echo_tool", json!({ "msg": "ping" })),
+            text_response("done"),
+        ]);
+        let reg = ToolRegistry::new();
+        reg.register(Arc::new(EchoTool));
+        let mut config = SentinelConfig::default();
+        config.agent.verify_command = Some("exit 1".to_string());
+        config.agent.max_fix_cycles = 3;
+        let agent = Agent::new(provider, Arc::new(reg), Arc::new(config));
+        let mut t = thread();
+        let out = agent.run(&mut t, "go").await.unwrap();
+        assert!(
+            matches!(out, AgentOutput::Success { ref text } if text == "done"),
+            "got {:?}",
+            out
+        );
+        assert_eq!(verify_hints(&t), 0, "echo is not an edit tool");
+        assert_eq!(t.turn, 1);
+    }
+
+    // ── Undo tool (checkpoint/rollback) ──────────────────────────────────────
+
+    fn temp_workspace(name: &str) -> (std::path::PathBuf, String) {
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("sentinel_agent_undo_{name}_{unique}"));
+        std::fs::create_dir_all(&dir).unwrap();
+        let dir_str = dir.to_string_lossy().into_owned();
+        (dir, dir_str)
+    }
+
+    #[tokio::test]
+    async fn undo_tool_reverts_previous_edit_batch() {
+        let (dir, dir_str) = temp_workspace("one");
+        let file = dir.join("a.txt");
+        std::fs::write(&file, "v1").unwrap();
+
+        let provider = ScriptedProvider::new(vec![
+            tool_call_response(
+                "u-1",
+                "write",
+                json!({ "file_path": file.to_string_lossy(), "content": "v2" }),
+            ),
+            tool_call_response("u-2", "undo", json!({})),
+            text_response("done"),
+        ]);
+        let mut config = SentinelConfig::default();
+        config.context.paths = vec![dir_str];
+        let agent = Agent::new(provider, Arc::new(ToolRegistry::new()), Arc::new(config));
+        let mut t = thread();
+        let out = agent.run(&mut t, "go").await.unwrap();
+        assert!(
+            matches!(out, AgentOutput::Success { ref text } if text == "done"),
+            "got {:?}",
+            out
+        );
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "v1",
+            "undo must restore the pre-edit content"
+        );
+        assert_eq!(t.turn, 2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn undo_tool_chains_across_multiple_batches() {
+        let (dir, dir_str) = temp_workspace("chain");
+        let file = dir.join("a.txt");
+        std::fs::write(&file, "v1").unwrap();
+
+        let provider = ScriptedProvider::new(vec![
+            tool_call_response(
+                "u-1",
+                "write",
+                json!({ "file_path": file.to_string_lossy(), "content": "v2" }),
+            ),
+            tool_call_response(
+                "u-2",
+                "write",
+                json!({ "file_path": file.to_string_lossy(), "content": "v3" }),
+            ),
+            tool_call_response("u-3", "undo", json!({})),
+            tool_call_response("u-4", "undo", json!({})),
+            text_response("done"),
+        ]);
+        let mut config = SentinelConfig::default();
+        config.context.paths = vec![dir_str];
+        let agent = Agent::new(provider, Arc::new(ToolRegistry::new()), Arc::new(config));
+        let mut t = thread();
+        let out = agent.run(&mut t, "go").await.unwrap();
+        assert!(
+            matches!(out, AgentOutput::Success { ref text } if text == "done"),
+            "got {:?}",
+            out
+        );
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "v1",
+            "two undos must walk back two batches"
+        );
+        assert_eq!(t.turn, 4);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn undo_with_nothing_to_undo_returns_error_result() {
+        let (dir, dir_str) = temp_workspace("empty");
+        let provider = ScriptedProvider::new(vec![
+            tool_call_response("u-5", "undo", json!({})),
+            text_response("acknowledged"),
+        ]);
+        let mut config = SentinelConfig::default();
+        config.context.paths = vec![dir_str];
+        let agent = Agent::new(provider, Arc::new(ToolRegistry::new()), Arc::new(config));
+        let mut t = thread();
+        let out = agent.run(&mut t, "go").await.unwrap();
+        assert!(
+            matches!(out, AgentOutput::Success { ref text } if text == "acknowledged"),
+            "got {:?}",
+            out
+        );
+        let error_results = t
+            .context
+            .messages()
+            .iter()
+            .filter_map(|m| {
+                if let Some(ContentBlock::ToolResult { content, is_error, .. }) =
+                    m.content.first()
+                {
+                    (is_error == &Some(true) && content.contains("nothing to undo")).then_some(())
+                } else {
+                    None
+                }
+            })
+            .count();
+        assert_eq!(error_results, 1, "undo error must surface as tool error");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     // ── Test 10: summary generation records tokens + budget ──────────────────
     fn usage_response(prompt: u32, completion: u32) -> CompletionResponse {
         CompletionResponse {

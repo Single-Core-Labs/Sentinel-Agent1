@@ -1,11 +1,31 @@
 use async_trait::async_trait;
 use sentinel_protocol::ToolDef;
+use std::fmt::Debug;
+use std::sync::Arc;
+
+/// Backing store for the `undo` tool: keeps pre-batch snapshots of the
+/// workspace and can restore the most recent one (LIFO).
+pub trait CheckpointStore: Debug + Send + Sync {
+    /// Record a snapshot of `workspace_dir` *before* a tool batch runs.
+    fn begin_batch(&self, workspace_dir: &str, turn: u32);
+
+    /// Record the workspace state *after* the batch ran (used to detect
+    /// created files so undo can delete them).
+    fn end_batch(&self, workspace_dir: &str, turn: u32);
+
+    /// Restore the most recent snapshot and return a list of touched paths.
+    fn restore_latest(&self, workspace_dir: &str) -> Result<Vec<String>, String>;
+
+    /// Number of snapshots currently held.
+    fn snapshot_count(&self) -> usize;
+}
 
 #[derive(Debug, Clone)]
 pub struct ToolContext {
     pub workspace_dir: Option<String>,
     pub sandbox_dir: Option<String>,
     pub env_vars: std::collections::HashMap<String, String>,
+    pub checkpoints: Option<Arc<dyn CheckpointStore>>,
 }
 
 impl Default for ToolContext {
@@ -20,6 +40,7 @@ impl ToolContext {
             workspace_dir: None,
             sandbox_dir: None,
             env_vars: std::collections::HashMap::new(),
+            checkpoints: None,
         }
     }
 }

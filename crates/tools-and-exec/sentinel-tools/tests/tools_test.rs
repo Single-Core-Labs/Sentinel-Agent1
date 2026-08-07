@@ -374,10 +374,61 @@ async fn test_tool_defs() {
     assert!(names.contains(&"ls"), "ls tool missing");
     assert!(names.contains(&"view"), "view tool missing");
     assert!(names.contains(&"sourcegraph"), "sourcegraph tool missing");
+    assert!(names.contains(&"undo"), "undo tool missing");
     assert_eq!(
         defs.len(),
-        23,
-        "expected 23 built-in tools, got {}",
+        24,
+        "expected 24 built-in tools, got {}",
         defs.len()
     );
+}
+
+#[tokio::test]
+async fn test_undo_without_checkpoint_store_errors() {
+    let registry = ToolRegistry::new();
+    let ctx = ToolContext::new();
+    let result = registry.execute("undo", serde_json::json!({}), &ctx).await;
+    assert!(
+        result.is_error,
+        "undo without a store must fail: {}",
+        result.text
+    );
+}
+
+#[tokio::test]
+async fn test_undo_restores_from_checkpoint_store() {
+    use std::sync::Arc;
+    use std::sync::Mutex;
+
+    #[derive(Debug, Default)]
+    struct FakeStore(Mutex<usize>);
+
+    impl sentinel_tools::CheckpointStore for FakeStore {
+        fn begin_batch(&self, _dir: &str, _turn: u32) {}
+        fn end_batch(&self, _dir: &str, _turn: u32) {}
+        fn restore_latest(&self, _dir: &str) -> Result<Vec<String>, String> {
+            let mut n = self.0.lock().unwrap();
+            *n += 1;
+            if *n == 1 {
+                Ok(vec!["restored src/a.rs".into(), "deleted tmp/b.rs".into()])
+            } else {
+                Err("nothing to undo".into())
+            }
+        }
+        fn snapshot_count(&self) -> usize {
+            0
+        }
+    }
+
+    let registry = ToolRegistry::new();
+    let mut ctx = ToolContext::new();
+    ctx.checkpoints = Some(Arc::new(FakeStore::default()));
+    let result = registry.execute("undo", serde_json::json!({}), &ctx).await;
+    assert!(!result.is_error, "undo failed: {}", result.text);
+    assert!(result.text.contains("src/a.rs"), "got {}", result.text);
+
+    // Second call hits the exhausted store → error surfaced.
+    let result = registry.execute("undo", serde_json::json!({}), &ctx).await;
+    assert!(result.is_error, "second undo should fail: {}", result.text);
+    assert!(result.text.contains("nothing to undo"), "got {}", result.text);
 }
