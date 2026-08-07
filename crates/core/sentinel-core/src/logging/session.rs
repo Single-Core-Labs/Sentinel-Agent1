@@ -244,6 +244,27 @@ pub fn write_chat_response_json<T: ?Sized + Serialize>(
     logger.append_json(MessageKind::Response, response)
 }
 
+/// The core session file append (the `AppendToSessionLogFile` parity helper):
+/// creates the session/request directories on first use and appends `content`
+/// to the per-kind file, serialized by the logger's mutex so concurrent
+/// appends cannot interleave.
+pub fn append_to_session_log_file(
+    logger: &SessionLogger,
+    kind: MessageKind,
+    content: &str,
+) -> std::io::Result<()> {
+    logger.append(kind, content)
+}
+
+/// Serialize and store a streaming delta (the `AppendToStreamSessionLogJson`
+/// parity helper): one JSON object per delta appended to `stream.jsonl`.
+pub fn append_to_stream_session_log_json<T: ?Sized + Serialize>(
+    logger: &SessionLogger,
+    payload: &T,
+) -> std::io::Result<()> {
+    logger.append_json(MessageKind::Stream, payload)
+}
+
 /// Serialize and store a single tool result (the `WriteToolResultsJson` parity
 /// helper; one JSON object per tool invocation).
 pub fn write_tool_results_json(
@@ -365,6 +386,25 @@ mod tests {
 
         std::env::remove_var("SENTINEL_SESSION_LOGS_DIR");
         std::env::remove_var(SESSION_LOGS_ENV);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn stream_json_and_plain_file_helpers_append_correctly() {
+        let root = tmp_root();
+        let logger = SessionLogger::new(&root, "sess-stream", "7");
+
+        append_to_session_log_file(&logger, MessageKind::Request, "hi").unwrap();
+        append_to_stream_session_log_json(&logger, &"he").unwrap();
+        append_to_stream_session_log_json(&logger, &"llo").unwrap();
+
+        assert_eq!(logger.read(MessageKind::Request).unwrap(), "hi\n");
+        let stream = logger.read_json(MessageKind::Stream).unwrap();
+        assert_eq!(stream.len(), 2);
+        assert_eq!(stream[0]["kind"], "stream");
+        assert_eq!(stream[0]["payload"], "he");
+        assert_eq!(stream[1]["payload"], "llo");
+        assert_eq!(stream[0]["seq"], 7);
         let _ = fs::remove_dir_all(root);
     }
 }

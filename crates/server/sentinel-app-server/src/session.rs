@@ -2,7 +2,7 @@ use sentinel_analytics::{AnalyticsEvent, AnalyticsPipeline, EventKind};
 use sentinel_app_server_protocol::api::ServerEvent;
 use sentinel_config::SentinelConfig;
 use sentinel_core::{
-    Agent, AgentEvent, AgentOutput, AgentThread, EventHandler, MessageKind, SessionLogger,
+    Agent, AgentEvent, AgentOutput, AgentThread, EventHandler, SessionLogger,
 };
 use sentinel_provider::ModelProvider;
 use sentinel_tools::ToolRegistry;
@@ -338,7 +338,9 @@ impl AppSession {
                         if let Some(ref text) = choice.delta.content {
                             accumulated_text.push_str(text);
                             if let Some(log) = &request_log {
-                                let _ = log.append(MessageKind::Stream, text);
+                                let _ = sentinel_core::append_to_stream_session_log_json(
+                                    log, text,
+                                );
                             }
                             let _ = self.events.send(ServerEvent::Thinking {
                                 text: accumulated_text.clone(),
@@ -729,7 +731,7 @@ mod tests {
         let (chunk_tx, _chunk_rx) = tokio::sync::mpsc::channel(16);
         session.chat_stream("hi", chunk_tx).await;
 
-        // Layout: logs_root/<session_id>/<request_seq>/{request,response}.jsonl + stream.txt
+        // Layout: logs_root/<session_id>/<request_seq>/{request,response,stream}.jsonl
         let session_dir = logs_root.join(&session.id);
         let request_id = std::fs::read_dir(&session_dir)
             .expect("session dir must exist")
@@ -747,10 +749,12 @@ mod tests {
             "request must carry a sequence number"
         );
 
-        assert_eq!(
-            std::fs::read_to_string(request_dir.join("stream.txt")).unwrap(),
-            "hello\n"
-        );
+        let stream_json: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(request_dir.join("stream.jsonl")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(stream_json["kind"], "stream");
+        assert_eq!(stream_json["payload"], "hello");
 
         let response_json: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(request_dir.join("response.jsonl")).unwrap(),
