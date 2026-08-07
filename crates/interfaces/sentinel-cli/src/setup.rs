@@ -1,6 +1,5 @@
 use std::io::{self, Write};
 use colored::*;
-use std::collections::HashMap;
 
 #[derive(Clone, Debug)]
 pub struct ProviderConfig {
@@ -239,7 +238,7 @@ fn ask_add_more_providers(
             io::stdin().read_line(&mut input)?;
 
             if input.trim().to_lowercase() != "n" {
-                print!("  API Key (or skip): ");
+                print!("  API Key for {}: ", provider.name.cyan());
                 io::stdout().flush()?;
 
                 let mut key = String::new();
@@ -247,7 +246,10 @@ fn ask_add_more_providers(
                 let key = key.trim().to_string();
 
                 if !key.is_empty() && key.len() > 10 {
-                    additional.push(provider.clone());
+                    let mut provider_with_key = provider.clone();
+                    additional.push(provider_with_key);
+                } else if !key.is_empty() {
+                    println!("{} API key too short, skipping.", "⚠️".yellow());
                 }
             }
         }

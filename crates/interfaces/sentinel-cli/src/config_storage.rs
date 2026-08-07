@@ -27,14 +27,14 @@ impl From<SentinelConfig> for StoredConfig {
             provider_name: config.provider_name,
             model_id: config.model_id,
             model_name: config.model_name,
-            api_key: config.api_key,  // ✅ Store locally
+            api_key: config.api_key,  // ✅ Store primary provider API key locally
             other_providers: config
                 .other_providers
                 .iter()
                 .map(|p| StoredProvider {
                     id: p.id.clone(),
                     name: p.name.clone(),
-                    api_key: String::new(),  // Will be added when user adds provider
+                    api_key: String::new(),  // Additional providers must re-authenticate when switching
                 })
                 .collect(),
         }

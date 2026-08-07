@@ -73,6 +73,25 @@ pub async fn handle_provider_switch(config: &mut SentinelConfig) -> anyhow::Resu
     if let Ok(idx) = input.trim().parse::<usize>() {
         if idx > 0 && idx <= provider_list.len() {
             let (new_id, new_name) = provider_list[idx - 1].clone();
+
+            // If switching to an additional provider, prompt for API key
+            if new_id != config.provider_id {
+                if let Some(other) = config.other_providers.iter().find(|p| p.id == new_id) {
+                    println!("\n{} Enter API key for {}:", "→".cyan(), new_name.cyan());
+                    print!("API Key: ");
+                    io::stdout().flush()?;
+
+                    let mut key = String::new();
+                    io::stdin().read_line(&mut key)?;
+                    let key = key.trim().to_string();
+
+                    if key.is_empty() || key.len() < 10 {
+                        println!("{}", "Invalid API key.".red());
+                        return Ok(());
+                    }
+                }
+            }
+
             config.provider_id = new_id.clone();
             config.provider_name = new_name.clone();
 
