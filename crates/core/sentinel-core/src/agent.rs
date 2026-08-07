@@ -1329,53 +1329,56 @@ pub(crate) async fn execute_tools_concurrent(
 
         if !thread.yolo_mode {
             thread.status = ThreadStatus::AwaitingApproval;
-            let approval_req = ApprovalRequest {
-                tool_name: name.clone(),
-                args: args.clone(),
-                prompt: format!("Execute {} with the given arguments?", name),
-                diff: captured_diff,
-                estimated_cost: estimated,
-            };
-            match approval.request_approval(&approval_req).await {
-                ApprovalDecision::Approved => {}
-                ApprovalDecision::Rejected(reason) => {
-                    evt_handler
-                        .handle_event(AgentEvent::Permission {
-                            tool: name.clone(),
-                            action: PermissionAction::Deny,
-                            reason: Some(reason.clone()),
-                        })
-                        .await;
-                    ordered_results.insert(
-                        i,
-                        ToolResult {
-                            tool_call_id: tool_call_id.clone(),
-                            name: name.clone(),
-                            output: format!("User rejected: {}", reason),
-                            is_error: true,
-                        },
-                    );
-                    continue;
-                }
-                ApprovalDecision::Modify { .. } => {
-                    evt_handler
-                        .handle_event(AgentEvent::Permission {
-                            tool: name.clone(),
-                            action: PermissionAction::Deny,
-                            reason: Some("request modified by user".into()),
-                        })
-                        .await;
-                    ordered_results.insert(
-                        i,
-                        ToolResult {
-                            tool_call_id: tool_call_id.clone(),
-                            name: name.clone(),
-                            output: "User modified the request".into(),
-                            is_error: true,
-                        },
-                    );
-                    continue;
-                }
+        }
+        let approval_req = ApprovalRequest {
+            tool_name: name.clone(),
+            args: args.clone(),
+            prompt: format!("Execute {} with the given arguments?", name),
+            diff: captured_diff,
+            estimated_cost: estimated,
+        };
+        // The gate is consulted even in yolo mode so permission rulesets can
+        // deny specific tools regardless of auto-approval. Auto-approving
+        // gates short-circuit immediately, so this never stalls a yolo run.
+        match approval.request_approval(&approval_req).await {
+            ApprovalDecision::Approved => {}
+            ApprovalDecision::Rejected(reason) => {
+                evt_handler
+                    .handle_event(AgentEvent::Permission {
+                        tool: name.clone(),
+                        action: PermissionAction::Deny,
+                        reason: Some(reason.clone()),
+                    })
+                    .await;
+                ordered_results.insert(
+                    i,
+                    ToolResult {
+                        tool_call_id: tool_call_id.clone(),
+                        name: name.clone(),
+                        output: format!("User rejected: {}", reason),
+                        is_error: true,
+                    },
+                );
+                continue;
+            }
+            ApprovalDecision::Modify { .. } => {
+                evt_handler
+                    .handle_event(AgentEvent::Permission {
+                        tool: name.clone(),
+                        action: PermissionAction::Deny,
+                        reason: Some("request modified by user".into()),
+                    })
+                    .await;
+                ordered_results.insert(
+                    i,
+                    ToolResult {
+                        tool_call_id: tool_call_id.clone(),
+                        name: name.clone(),
+                        output: "User modified the request".into(),
+                        is_error: true,
+                    },
+                );
+                continue;
             }
         }
 

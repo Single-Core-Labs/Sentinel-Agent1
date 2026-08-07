@@ -407,11 +407,14 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
 
     let mut app = crate::app::App::new((*config).clone());
     app.attach_agent(agent);
-    app.set_permissions(if yolo_mode {
-        Box::new(sentinel_core::AutoApprovalGate)
-    } else {
-        Box::new(CliApprovalGate)
-    });
+    app.set_permissions(sentinel_core::permissions_gate_for(
+        &config,
+        if yolo_mode {
+            Box::new(sentinel_core::AutoApprovalGate)
+        } else {
+            Box::new(CliApprovalGate)
+        },
+    ));
 
     let mut thread = match resume_id {
         Some(id) => match app.resume_session(&id).await {

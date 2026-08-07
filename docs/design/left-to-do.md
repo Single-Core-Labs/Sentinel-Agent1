@@ -1,6 +1,6 @@
 # Left To Do — resume context
 
-Status: **round 2 complete**. Gaps 7–9 implemented, `cargo test/check --workspace` green, `bun run typecheck` clean. Companion doc: `docs/design/cli-entrypoint-gaps.md` (round 1 done, round 2 done).
+Status: **round 3 complete**. Gap A (per-tool permission allowlists) implemented, `cargo test/check --workspace` green. Companion doc: `docs/design/cli-entrypoint-gaps.md` (rounds 1–2 done), round 3 below.
 
 ## Done so far (verified, committed to git or on disk — re-check with cargo)
 
@@ -42,9 +42,16 @@ pub async fn join(self, tool_registry: &sentinel_tools::ToolRegistry)  // prints
   - E2E verified: chat → `{"event":"permission","tool":"glob","action":"allow"}` over WS (`smoke-events.mjs`).
 - **Gap 9 — Cleanup: unsubscribe + graceful shutdown** — `backend.ts`: `async shutdown(sessionId)` (unsubscribe → close); `App.tsx`: `exitApp()` calls `await client.shutdown(conn().sessionId)` then `process.exit(0)`; wired into ESC + ctrl-d handlers. (Server-side `event/unsubscribe` already existed in `server.rs`/`http.rs` — `subscriptions.retain`.)
 
+### Round 3 complete — per-tool permission allowlists, verified (`cargo test --workspace` green)
+- **Gap A — `[permissions]` config** — `crates/platform/sentinel-config/src/config.rs`: `PermissionRuleConfig { pattern, level: allow|ask|deny, reason }`, `PermissionSettings { default_level, rules }`, `SentinelConfig.permissions` field. Env `SENTINEL_PERMISSIONS=level:pattern[,level:pattern...]` — applied AFTER file merges so it always wins. `validate()` rejects unknown levels. Schema + 50 config tests updated.
+- **Gap A — ruleset gate** — `crates/core/sentinel-core/src/approval.rs`: `PermissionLevel` (default `Ask`), `PermissionRuleset { rules, default_level }` with `rule_for()` (first-match-wins glob: exact, `*`, `prefix*`, `*suffix`), `evaluate()`, `from_config()`. `RulesetApprovalGate` wraps an inner gate: allow→Approved (never prompts), deny→Rejected (always, with optional reason), ask/unmatched→delegates to inner. Free fn `permissions_gate_for(config, inner)` — returns inner unchanged when nothing configured.
+- **Gap A — yolo still blocked** — `crates/core/sentinel-core/src/agent.rs` `execute_tools_concurrent`: the approval gate is now consulted **even in yolo mode** (`AwaitingApproval` status still only set when `!yolo_mode`) so deny rules fire in `--yolo`. Auto gates short-circuit so yolo runs never stall.
+- **Gap A — CLI wiring** — `ai.rs` + `exec.rs`: `app.set_permissions(sentinel_core::permissions_gate_for(&config, if yolo { AutoApprovalGate } else { CliApprovalGate }))`.
+- **Tests** — 189 sentinel-core tests: `deny_rule_blocks_tool_even_in_yolo_mode`, `allow_rule_bypasses_inner_gate_without_prompting`, `ask_rule_delegates_to_inner_gate`, `deny_default_level_blocks_unmatched_tools`, `from_config` (incl. unknown level→Ask), `permissions_gate_for` passthrough/wrap.
+
 ## Left to do — in order
 
-None — round 2 complete (Gaps 6–9 all landed). Future candidates from `standout-roadmap.md`: cost harness, graph-store, `--watch`, installer.
+None — round 3 complete (Gap A landed). Future candidates from `standout-roadmap.md`: cost harness, graph-store, `--watch`, installer.
 
 ## Verification commands (run after each gap)
 ```bash

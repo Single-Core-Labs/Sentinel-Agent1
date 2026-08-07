@@ -26,6 +26,7 @@ mod tests {
     use sentinel_tools::{Tool, ToolContext, ToolOutput, ToolRegistry};
 
     use crate::agent::{validate_tool_calls, Agent, AgentOutput, ApprovalDecision, ApprovalGate};
+    use crate::approval::{PermissionLevel, PermissionRule, PermissionRuleset, RulesetApprovalGate};
     use crate::thread::{AgentThread, ApprovalRequest};
 
     // ── Mock provider ──────────────────────────────────────────────────────────
@@ -656,6 +657,150 @@ mod tests {
             .count();
         assert_eq!(error_results, 1, "undo error must surface as tool error");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ── Per-tool permission allowlists ───────────────────────────────────────
+
+    #[derive(Debug)]
+    struct RejectAllGate;
+
+    #[async_trait]
+    impl ApprovalGate for RejectAllGate {
+        async fn request_approval(&self, _: &ApprovalRequest) -> ApprovalDecision {
+            ApprovalDecision::Rejected("gate blocked".into())
+        }
+    }
+
+    fn deny_write_rule() -> PermissionRule {
+        PermissionRule {
+            pattern: "write".into(),
+            level: PermissionLevel::Deny,
+            reason: Some("no writes allowed".into()),
+        }
+    }
+
+    #[tokio::test]
+    async fn deny_rule_blocks_tool_even_in_yolo_mode() {
+        let provider = ScriptedProvider::new(vec![
+            tool_call_response("p-1", "write", json!({ "path": "a.rs" })),
+            text_response("done"),
+        ]);
+        let reg = ToolRegistry::new();
+        reg.register(Arc::new(FakeWriteTool));
+        let gate = RulesetApprovalGate::new(
+            Box::new(crate::agent::AutoApprovalGate),
+            PermissionRuleset::new(vec![deny_write_rule()]),
+        );
+        let mut t = AgentThread::new(20, 50, true);
+        let out = Agent::new(provider, Arc::new(reg), Arc::new(SentinelConfig::default()))
+            .run_with_approval(&mut t, "go", &gate, &None)
+            .await
+            .unwrap();
+        assert!(
+            matches!(out, AgentOutput::Success { ref text } if text == "done"),
+            "got {:?}",
+            out
+        );
+        let denied = t.context.messages().iter().any(|m| {
+            matches!(
+                m.content.first(),
+                Some(ContentBlock::ToolResult { content, .. }) if content.contains("no writes allowed")
+            )
+        });
+        assert!(denied, "deny rule must block the write tool even in yolo mode");
+    }
+
+    #[tokio::test]
+    async fn allow_rule_bypasses_inner_gate_without_prompting() {
+        let provider = ScriptedProvider::new(vec![
+            tool_call_response("p-2", "echo_tool", json!({ "msg": "ping" })),
+            text_response("pong"),
+        ]);
+        let reg = ToolRegistry::new();
+        reg.register(Arc::new(EchoTool));
+        let gate = RulesetApprovalGate::new(
+            Box::new(RejectAllGate),
+            PermissionRuleset::new(vec![PermissionRule {
+                pattern: "echo_tool".into(),
+                level: PermissionLevel::Allow,
+                reason: None,
+            }]),
+        );
+        let mut t = thread();
+        let out = Agent::new(provider, Arc::new(reg), Arc::new(SentinelConfig::default()))
+            .run_with_approval(&mut t, "go", &gate, &None)
+            .await
+            .unwrap();
+        assert!(
+            matches!(out, AgentOutput::Success { ref text } if text == "pong"),
+            "allow-listed tool must execute despite inner rejection, got {:?}",
+            out
+        );
+    }
+
+    #[tokio::test]
+    async fn ask_rule_delegates_to_inner_gate() {
+        let provider = ScriptedProvider::new(vec![
+            tool_call_response("p-3", "echo_tool", json!({ "msg": "ping" })),
+            text_response("pong"),
+        ]);
+        let reg = ToolRegistry::new();
+        reg.register(Arc::new(EchoTool));
+        let gate = RulesetApprovalGate::new(Box::new(RejectAllGate), PermissionRuleset::new(vec![]));
+        let mut t = thread();
+        let out = Agent::new(provider, Arc::new(reg), Arc::new(SentinelConfig::default()))
+            .run_with_approval(&mut t, "go", &gate, &None)
+            .await
+            .unwrap();
+        assert!(
+            matches!(out, AgentOutput::Success { ref text } if text == "pong"),
+            "got {:?}",
+            out
+        );
+        let rejected = t.context.messages().iter().any(|m| {
+            matches!(
+                m.content.first(),
+                Some(ContentBlock::ToolResult { content, .. }) if content.contains("gate blocked")
+            )
+        });
+        assert!(rejected, "ask rule must delegate to the inner gate");
+    }
+
+    #[tokio::test]
+    async fn deny_default_level_blocks_unmatched_tools() {
+        let provider = ScriptedProvider::new(vec![
+            tool_call_response("p-4", "echo_tool", json!({ "msg": "ping" })),
+            text_response("done"),
+        ]);
+        let reg = ToolRegistry::new();
+        reg.register(Arc::new(EchoTool));
+        let ruleset = PermissionRuleset {
+            rules: vec![PermissionRule {
+                pattern: "read".into(),
+                level: PermissionLevel::Allow,
+                reason: None,
+            }],
+            default_level: PermissionLevel::Deny,
+        };
+        let gate = RulesetApprovalGate::new(Box::new(crate::agent::AutoApprovalGate), ruleset);
+        let mut t = thread();
+        let out = Agent::new(provider, Arc::new(reg), Arc::new(SentinelConfig::default()))
+            .run_with_approval(&mut t, "go", &gate, &None)
+            .await
+            .unwrap();
+        assert!(
+            matches!(out, AgentOutput::Success { ref text } if text == "done"),
+            "got {:?}",
+            out
+        );
+        let denied = t.context.messages().iter().any(|m| {
+            matches!(
+                m.content.first(),
+                Some(ContentBlock::ToolResult { content, .. })
+                    if content.contains("denied by permission ruleset")
+            )
+        });
+        assert!(denied, "default deny must block tools with no matching rule");
     }
 
     // ── Test 10: summary generation records tokens + budget ──────────────────

@@ -130,11 +130,14 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     // and the agent; LSP clients start asynchronously and never block startup.
     let mut app = App::new((*config).clone());
     app.attach_agent(agent);
-    app.set_permissions(if config.agent.yolo_mode {
-        Box::new(sentinel_core::AutoApprovalGate)
-    } else {
-        Box::new(CliApprovalGate)
-    });
+    app.set_permissions(sentinel_core::permissions_gate_for(
+        &config,
+        if config.agent.yolo_mode {
+            Box::new(sentinel_core::AutoApprovalGate)
+        } else {
+            Box::new(CliApprovalGate)
+        },
+    ));
     app.start_background();
 
     // The pipeline wraps the central agent with staged execution.

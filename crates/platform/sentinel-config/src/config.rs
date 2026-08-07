@@ -94,6 +94,33 @@ impl Default for ThemeSettings {
     }
 }
 
+/// One per-tool permission rule: tool name or glob (e.g. `git_*`) mapped to
+/// `allow` (never prompt), `ask` (prompt the user) or `deny` (always block).
+#[derive(Debug, Clone, Deserialize)]
+pub struct PermissionRuleConfig {
+    pub pattern: String,
+    #[serde(default = "default_permission_level")]
+    pub level: String,
+    #[serde(default)]
+    pub reason: Option<String>,
+}
+
+fn default_permission_level() -> String {
+    "ask".into()
+}
+
+/// Per-tool permission allowlists consulted before every tool execution.
+/// Rules are evaluated in order; the first matching pattern wins. When no
+/// rule matches, `default_level` applies (unset = `ask`, the previous
+/// behavior: prompt for every tool).
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct PermissionSettings {
+    #[serde(default)]
+    pub default_level: Option<String>,
+    #[serde(default)]
+    pub rules: Vec<PermissionRuleConfig>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct LspServerDef {
     pub id: String,
@@ -223,6 +250,8 @@ pub struct SentinelConfig {
     #[serde(default)]
     pub theme: ThemeSettings,
     #[serde(default)]
+    pub permissions: PermissionSettings,
+    #[serde(default)]
     pub lsp_servers: Vec<LspServerDef>,
 }
 
@@ -292,6 +321,17 @@ impl SentinelConfig {
             }
         }
 
+        // The explicit env allowlist wins over file-configured rules: it is
+        // set per invocation and must not be silently overridden by a repo or
+        // global config file.
+        if let Some(v) = get_env("SENTINEL_PERMISSIONS") {
+            if !v.trim().is_empty() {
+                if let Some(rules) = Self::parse_permissions_env(&v) {
+                    config.permissions.rules = rules;
+                }
+            }
+        }
+
         config.discover_providers(get_env);
         config.adjust();
         Ok(config)
@@ -355,6 +395,41 @@ impl SentinelConfig {
             self.debug.enabled =
                 v.eq_ignore_ascii_case("true") || v == "1" || v.eq_ignore_ascii_case("yes");
         });
+        set("SENTINEL_PERMISSIONS", &mut |v| {
+            if let Some(rules) = Self::parse_permissions_env(v) {
+                self.permissions.rules = rules;
+            }
+        });
+    }
+
+    /// Parse `SENTINEL_PERMISSIONS` — a comma-separated list of `level:pattern`
+    /// pairs, e.g. `allow:read,allow:write,deny:run_shell_command`. Replaces
+    /// file-configured rules entirely when set.
+    fn parse_permissions_env(value: &str) -> Option<Vec<PermissionRuleConfig>> {
+        let mut rules = Vec::new();
+        for part in value.split(',') {
+            let part = part.trim();
+            if part.is_empty() {
+                continue;
+            }
+            let (level, pattern) = match part.split_once(':') {
+                Some((l, p)) if !p.trim().is_empty() => (l.trim(), p.trim()),
+                _ => continue,
+            };
+            if !matches!(level, "allow" | "ask" | "deny") {
+                continue;
+            }
+            rules.push(PermissionRuleConfig {
+                pattern: pattern.to_string(),
+                level: level.to_string(),
+                reason: Some("configured via SENTINEL_PERMISSIONS".into()),
+            });
+        }
+        if rules.is_empty() {
+            None
+        } else {
+            Some(rules)
+        }
     }
 
     /// Discover and configure LLM providers from environment variables.
@@ -537,6 +612,12 @@ impl SentinelConfig {
         if other.theme.name != default_theme() {
             self.theme = other.theme;
         }
+        if !other.permissions.rules.is_empty() {
+            self.permissions.rules = other.permissions.rules;
+        }
+        if other.permissions.default_level.is_some() {
+            self.permissions.default_level = other.permissions.default_level;
+        }
         if !other.lsp_servers.is_empty() {
             self.lsp_servers = other.lsp_servers;
         }
@@ -561,6 +642,27 @@ impl SentinelConfig {
                 return Err(ConfigError::Validation(format!(
                     "agent.reasoning_effort must be one of low|medium|high, got '{}'",
                     effort
+                )));
+            }
+        }
+        if let Some(level) = &self.permissions.default_level {
+            if !matches!(level.as_str(), "allow" | "ask" | "deny") {
+                return Err(ConfigError::Validation(format!(
+                    "permissions.default_level must be one of allow|ask|deny, got '{}'",
+                    level
+                )));
+            }
+        }
+        for rule in &self.permissions.rules {
+            if rule.pattern.trim().is_empty() {
+                return Err(ConfigError::Validation(
+                    "permissions rule pattern must not be empty".into(),
+                ));
+            }
+            if !matches!(rule.level.as_str(), "allow" | "ask" | "deny") {
+                return Err(ConfigError::Validation(format!(
+                    "permissions rule '{}' has unknown level '{}' (expected allow|ask|deny)",
+                    rule.pattern, rule.level
                 )));
             }
         }
@@ -709,6 +811,7 @@ impl Default for SentinelConfig {
             debug: DebugSettings::default(),
             context: ContextSettings::default(),
             theme: ThemeSettings::default(),
+            permissions: PermissionSettings::default(),
             lsp_servers: Vec::new(),
         }
     }
@@ -909,6 +1012,145 @@ languages = ["rust"]
         assert_eq!(cfg.lsp_servers.len(), 1);
         assert_eq!(cfg.lsp_servers[0].id, "rust-analyzer");
         assert_eq!(cfg.lsp_servers[0].languages, vec!["rust"]);
+    }
+
+    #[test]
+    fn parses_permission_rules() {
+        let path = temp_toml(
+            "perms",
+            r#"
+[agent]
+default_model = "m"
+
+[[providers]]
+id = "local"
+name = "Local"
+base_url = "http://localhost:9999/v1"
+
+[[providers.models]]
+id = "m"
+name = "M"
+
+[permissions]
+default_level = "deny"
+
+[[permissions.rules]]
+pattern = "read"
+level = "allow"
+
+[[permissions.rules]]
+pattern = "run_shell_command"
+level = "deny"
+reason = "sandbox it"
+"#,
+        );
+        let cfg = SentinelConfig::load_from(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+
+        assert_eq!(cfg.permissions.default_level.as_deref(), Some("deny"));
+        assert_eq!(cfg.permissions.rules.len(), 2);
+        assert_eq!(cfg.permissions.rules[0].pattern, "read");
+        assert_eq!(cfg.permissions.rules[0].level, "allow");
+        assert_eq!(cfg.permissions.rules[1].pattern, "run_shell_command");
+        assert_eq!(cfg.permissions.rules[1].level, "deny");
+        assert_eq!(cfg.permissions.rules[1].reason.as_deref(), Some("sandbox it"));
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn invalid_permission_level_fails_validation() {
+        let path = temp_toml(
+            "badperm",
+            r#"
+[permissions]
+default_level = "maybe"
+
+[[permissions.rules]]
+pattern = "read"
+level = "sure"
+"#,
+        );
+        let cfg = SentinelConfig::load_from(&path).unwrap();
+        let _ = std::fs::remove_file(&path);
+        let err = cfg.validate().unwrap_err();
+        assert!(err.to_string().contains("default_level"));
+    }
+
+    #[test]
+    fn sentinel_permissions_env_parses_rule_pairs() {
+        let env = env_of(&[(
+            "SENTINEL_PERMISSIONS",
+            "allow:read, allow:write ,deny:run_shell_command,allow:git_*",
+        )]);
+        let cfg = SentinelConfig::load_with(env).unwrap();
+        assert_eq!(cfg.permissions.rules.len(), 4);
+        assert_eq!(cfg.permissions.rules[0].pattern, "read");
+        assert_eq!(cfg.permissions.rules[0].level, "allow");
+        assert_eq!(cfg.permissions.rules[2].pattern, "run_shell_command");
+        assert_eq!(cfg.permissions.rules[2].level, "deny");
+        assert_eq!(cfg.permissions.rules[3].pattern, "git_*");
+    }
+
+    #[test]
+    fn permissions_env_overrides_file_rules_on_merge() {
+        let env = env_of(&[("SENTINEL_PERMISSIONS", "deny:*")]);
+        let global = temp_toml(
+            "permglobal",
+            r#"
+[[permissions.rules]]
+pattern = "read"
+level = "allow"
+"#,
+        );
+        let cfg =
+            SentinelConfig::load_from_sources(&env, Some(std::path::Path::new(&global)), &[])
+                .unwrap();
+        let _ = std::fs::remove_file(&global);
+        assert_eq!(cfg.permissions.rules.len(), 1);
+        assert_eq!(cfg.permissions.rules[0].pattern, "*");
+        assert_eq!(cfg.permissions.rules[0].level, "deny");
+    }
+
+    #[test]
+    fn layered_permissions_merge() {
+        let global = temp_toml(
+            "permmerge_g",
+            r#"
+[permissions]
+default_level = "deny"
+
+[[permissions.rules]]
+pattern = "read"
+level = "allow"
+"#,
+        );
+        let local = temp_toml(
+            "permmerge_l",
+            r#"
+[[permissions.rules]]
+pattern = "write"
+level = "ask"
+"#,
+        );
+        let cfg = SentinelConfig::load_from_sources(
+            &empty_env,
+            Some(std::path::Path::new(&global)),
+            &[&local],
+        )
+        .unwrap();
+        let _ = std::fs::remove_file(&global);
+        let _ = std::fs::remove_file(&local);
+
+        assert_eq!(
+            cfg.permissions.default_level.as_deref(),
+            Some("deny"),
+            "global default survives when local doesn't set it"
+        );
+        assert_eq!(cfg.permissions.rules.len(), 1);
+        assert_eq!(
+            cfg.permissions.rules[0].pattern, "write",
+            "local rules replace global rules"
+        );
     }
 
     #[test]

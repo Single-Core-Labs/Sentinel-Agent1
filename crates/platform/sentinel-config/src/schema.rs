@@ -180,6 +180,37 @@ pub fn config_json_schema() -> Value {
                     },
                     "required": ["id"]
                 }
+            },
+            "permissions": {
+                "type": "object",
+                "description": "Per-tool permission allowlists consulted before every tool execution.",
+                "properties": {
+                    "default_level": {
+                        "type": "string",
+                        "enum": ["allow", "ask", "deny"],
+                        "description": "Level for tools matching no rule (default ask)."
+                    },
+                    "rules": {
+                        "type": "array",
+                        "description": "First matching pattern wins.",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "pattern": {
+                                    "type": "string",
+                                    "description": "Tool name or glob, e.g. read, git_*"
+                                },
+                                "level": {
+                                    "type": "string",
+                                    "enum": ["allow", "ask", "deny"],
+                                    "default": "ask"
+                                },
+                                "reason": { "type": "string" }
+                            },
+                            "required": ["pattern"]
+                        }
+                    }
+                }
             }
         }
     })
@@ -213,6 +244,7 @@ mod tests {
             "debug",
             "context",
             "theme",
+            "permissions",
             "lsp_servers",
         ] {
             assert!(props.contains_key(section), "missing section: {section}");
