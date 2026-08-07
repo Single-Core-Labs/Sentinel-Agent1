@@ -154,6 +154,7 @@ on qwen3:8b (~30-90s per task); `bench` is the slowest task and is NOT in the de
   commands, GPU RPC methods/structs, frontend GPU bar, GPU docs (TESTING.md, GPU_SANDBOX.md,
   ai-features-doic.md, GPU DOICs). Roadmap rewritten GPU-free.
 - **Cost harness scaffolded** (`f11b32d`): `scripts/cost-benchmark.ps1` + `sentinel local <model> /cmd` one-shot mode.
+- **Task 3 — one-command install**: `install.ps1`/`install.sh` rewritten — GitHub API latest/pinned version resolution, `~/.sentinel/bin` install, default `~/.sentinel/sentinel.toml` write, PATH persistence (user env / rc-file), `-LocalBuild` dev-install path, VS Code vsix opt-in. Live-verified: local-build install, idempotent rerun, 404/no-release error paths.
 - **Repo cleanup:** dead `which_tool` removed; session threads gitignored; Cargo.toml BOM fixed.
 
 ### Verified green
@@ -164,7 +165,6 @@ on qwen3:8b (~30-90s per task); `bench` is the slowest task and is NOT in the de
 
 ### Not started
 - Full cost-harness LLM run (deferred by user; rerun `scripts/cost-benchmark.ps1`).
-- Task 3 `sentinel install` (config write + PATH).
 - Platform pillar: VS Code extension, graph-store memory integration, autonomous `--watch`.
 - `auth login` not yet performed on this machine (LLM path needs a provider; qwen3:8b via ollama-local works without a key).
 
@@ -180,7 +180,7 @@ on qwen3:8b (~30-90s per task); `bench` is the slowest task and is NOT in the de
 |---|---|---|
 | 1 | Guard plugins + policy docs | ✅ shipped (`b9c0c8e`) |
 | 2 | Cost harness (script + results) | 🔶 script shipped; full run pending |
-| 3 | `sentinel install` (config write + PATH) | ⬜ |
+| 3 | `sentinel install` (config write + PATH) | ✅ install.ps1/install.sh (release + local-build, config write, PATH, VS Code opt-in) |
 | 4 | VS Code extension on app-server | ⬜ |
 | 5 | Graph-store memory + memoized commands | ⬜ |
 | 6 | Autonomous watch + daemon | ⬜ |

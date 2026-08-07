@@ -19,13 +19,40 @@ Describe a problem in plain English, and the agent investigates with real tools 
 
 ## Quick Start
 
-### Rust CLI (agent command)
+### One-command install (recommended)
+
+Install the release binary, write a default `~/.sentinel/sentinel.toml`, and add it to PATH:
+
+```powershell
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/Single-Core-Labs/Sentinel-Agent1/main/install.ps1 | iex
+```
+
+```bash
+# Linux / macOS
+curl -fsSL https://raw.githubusercontent.com/Single-Core-Labs/Sentinel-Agent1/main/install.sh | sh
+```
+
+Open a new terminal, then:
+
+```bash
+sentinel ai
+```
+
+To pin a version: `install.ps1 -Version v0.1.0` / `install.sh --version v0.1.0`.
+
+### Build from source (developers only)
+
+Cargo builds are a development workflow — production installs use the one-command installers above.
 
 ```bash
 git clone https://github.com/Single-Core-Labs/Sentinel-Agent1.git
 cd Sentinel-Agent1
 # Build and install the Rust CLI
 cargo install --path crates/interfaces/sentinel-cli
+# or install the local build without cargo install:
+#   install.ps1 -LocalBuild target\release\sentinel.exe   (Windows)
+#   install.sh --local-build target/release/sentinel      (Linux/macOS)
 ```
 
 Now `sentinel ai` works from any directory:

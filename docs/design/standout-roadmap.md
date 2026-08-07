@@ -61,10 +61,10 @@ Candidate zero-token tasks (all deterministic slash commands): `/bench` (token t
 
 ---
 
-## 3. Task 3 — One-command install (next after cost harness)
+## 3. Task 3 — One-command install (DONE)
 
-- `sentinel install` (PowerShell/bash script): pulls release binary, writes `sentinel.toml`, sets PATH, optionally registers the VS Code extension. Cargo-based builds become dev-only.
-- Acceptance: `curl | sh`-style install on clean Windows/macOS/Linux.
+- `install.ps1` / `install.sh`: resolve latest release (GitHub API) or pinned `-Version`, download the `sentinel-<tag>-<target>.{zip,tar.gz}` release asset, install to `~/.sentinel/bin`, write a default `~/.sentinel/sentinel.toml` (global config, honored by `SentinelConfig::load()`), persist PATH (user env on Windows; rc-file append on Unix), optionally register the VS Code extension from a `.vsix` (`-InstallVSCode`), verify with `sentinel --version`. `-LocalBuild`/`--local-build` installs a local cargo build — dev workflow.
+- Acceptance: `irm <raw install.ps1> | iex` and `curl -fsSL <raw install.sh> | sh` on clean Windows/macOS/Linux. Live-verified: local-build install, idempotent rerun, graceful errors when no release exists yet (repo has no published releases — first `v*` tag will enable the download path via `.github/workflows/release.yml`).
 
 ---
 
@@ -88,7 +88,7 @@ Candidate zero-token tasks (all deterministic slash commands): `/bench` (token t
 |---|-------|--------|--------------|
 | 1 | Guard plugins + policy docs | done | — |
 | 2 | Cost harness (benchmark script + results) | ~0.5 day | none |
-| 3 | `sentinel install` (config write + PATH) | ~0.5 day | none |
+| 3 | `sentinel install` (config write + PATH) | done | release.yml asset naming (`sentinel-<tag>-<target>`) |
 | 4 | VS Code extension on app-server | 2–4 days | app-server maturity |
 | 5 | Graph-store memory + memoized commands | 1–2 days | graph-store fields |
 | 6 | Autonomous watch + daemon | 2 days | daemon, analytics |

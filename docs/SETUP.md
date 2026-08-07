@@ -2,6 +2,22 @@
 
 ## CLI Installation
 
+### One-command install (recommended)
+
+```powershell
+irm https://raw.githubusercontent.com/Single-Core-Labs/Sentinel-Agent1/main/install.ps1 | iex
+```
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/Single-Core-Labs/Sentinel-Agent1/main/install.sh | sh
+```
+
+Installs the release binary to `~/.sentinel/bin`, writes a default global config
+(`~/.sentinel/sentinel.toml`), and adds the dir to PATH. Local builds can be installed with
+`install.ps1 -LocalBuild target\release\sentinel.exe` / `install.sh --local-build target/release/sentinel`.
+
+### Build from source (developers)
+
 ```powershell
 cd ml-intern-main
 cargo install --path crates\interfaces\sentinel-cli
