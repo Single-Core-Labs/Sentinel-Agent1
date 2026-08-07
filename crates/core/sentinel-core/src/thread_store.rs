@@ -255,9 +255,14 @@ impl ThreadStore for SqliteThreadStore {
             .lock()
             .map_err(|e| ThreadStoreError::Store(e.to_string()))?;
         conn.execute(
-            "INSERT OR REPLACE INTO threads (thread_id, created_at, updated_at, data, schema_version) VALUES (?1, ?2, ?3, ?4, ?5)",
+            "INSERT INTO threads (thread_id, created_at, updated_at, data, schema_version) VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(thread_id) DO UPDATE SET
+               updated_at = excluded.updated_at,
+               data = excluded.data,
+               schema_version = excluded.schema_version",
             params![thread_id, now.clone(), now, json, 1usize],
-        ).map_err(|e| ThreadStoreError::Store(e.to_string()))?;
+        )
+        .map_err(|e| ThreadStoreError::Store(e.to_string()))?;
         Ok(())
     }
 
@@ -365,6 +370,34 @@ mod tests {
         assert_eq!(thread.turn, loaded.turn);
         assert_eq!(thread.iterations, loaded.iterations);
         assert_eq!(thread.conversation, loaded.conversation);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn test_created_at_is_immutable_across_saves() {
+        let dir = std::env::temp_dir().join(format!("sqlite_created_at_test_{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).expect("failed to create temp dir");
+        let db_path = dir.join("threads.db");
+
+        let store = SqliteThreadStore::new(&db_path).expect("failed to init store");
+        let thread = AgentThread::new(10, 20, false);
+        store.save_thread(&thread).await.expect("save failed");
+
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        store.save_thread(&thread).await.expect("resave failed");
+
+        let conn = store.conn.lock().unwrap();
+        let (created_at, updated_at): (String, String) = conn
+            .query_row(
+                "SELECT created_at, updated_at FROM threads WHERE thread_id = ?1",
+                rusqlite::params![thread.id.to_string()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        drop(conn);
+
+        assert_ne!(created_at, updated_at, "updated_at should advance on save");
 
         let _ = std::fs::remove_dir_all(&dir);
     }
