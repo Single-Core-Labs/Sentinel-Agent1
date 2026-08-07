@@ -163,7 +163,13 @@ async fn chat_loop(
         std::io::stdout().flush()?;
 
         let mut input = String::new();
-        std::io::stdin().read_line(&mut input)?;
+        let bytes = std::io::stdin().read_line(&mut input)?;
+        if bytes == 0 {
+            // EOF (closed/redirected stdin): exit cleanly instead of
+            // spinning forever re-reading an empty line.
+            println!();
+            break;
+        }
         let input = input.trim().to_string();
 
         if input.is_empty() {
@@ -932,7 +938,12 @@ async fn select_model(info: &SysInfo) -> anyhow::Result<String> {
         use std::io::Write;
         std::io::stdout().flush()?;
         let mut input = String::new();
-        std::io::stdin().read_line(&mut input)?;
+        let bytes = std::io::stdin().read_line(&mut input)?;
+        if bytes == 0 {
+            // EOF (closed/redirected stdin): nothing sane to pick, fail
+            // fast instead of spinning forever re-reading an empty line.
+            anyhow::bail!("No input received while picking a model.");
+        }
         let input = input.trim().to_string();
         if input.is_empty() {
             continue;
