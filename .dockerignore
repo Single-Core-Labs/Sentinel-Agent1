@@ -1,0 +1,10 @@
+.git
+target
+node_modules
+packages/cli-agent/node_modules
+events
+threads
+dist
+*.log
+.env
+telemetry.opt
