@@ -52,6 +52,20 @@ pub fn default_providers() -> Vec<ProviderInfo> {
             timeout_secs: 120,
             extra_headers: HashMap::new(),
         },
+        ProviderInfo {
+            id: "mistral".into(),
+            name: "Mistral".into(),
+            base_url: "https://api.mistral.ai/v1".into(),
+            auth: AuthConfig::EnvKey { var: "MISTRAL_API_KEY".into() },
+            models: vec![
+                ModelEntry { id: "mistral-large-latest".into(), name: "Mistral Large".into(), context_window: 128000, supports_streaming: true, supports_tools: true },
+                ModelEntry { id: "mistral-medium".into(), name: "Mistral Medium".into(), context_window: 32000, supports_streaming: true, supports_tools: true },
+                ModelEntry { id: "mistral-small".into(), name: "Mistral Small".into(), context_window: 32000, supports_streaming: true, supports_tools: true },
+                ModelEntry { id: "mistral".into(), name: "Mistral (default)".into(), context_window: 32000, supports_streaming: true, supports_tools: true },
+            ],
+            timeout_secs: 120,
+            extra_headers: HashMap::new(),
+        },
     ]
 }
 

@@ -1,5 +1,5 @@
 use colored::*;
-use sentinel_auth::{AuthEntry, get, set, remove, load};
+use sentinel_auth::{AuthEntry, set, remove, load};
 use std::io::{self, Write};
 
 pub async fn run(args: &[String]) -> anyhow::Result<()> {

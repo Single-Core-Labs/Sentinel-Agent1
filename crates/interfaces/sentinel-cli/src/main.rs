@@ -11,6 +11,10 @@ mod local;
 mod web;
 mod completion;
 mod plugin_cmd;
+mod setup;
+mod interactive;
+mod config_storage;
+mod commands_handler;
 
 use colored::*;
 
@@ -27,8 +31,9 @@ async fn main() -> anyhow::Result<()> {
 
     let args: Vec<String> = std::env::args().collect();
 
+    // If no args, start interactive mode or setup
     if args.len() < 2 {
-        return ai::run(&[]).await;
+        return start_interactive_or_setup().await;
     }
 
     let subcommand = &args[1];
@@ -51,6 +56,34 @@ async fn main() -> anyhow::Result<()> {
             eprintln!("{} Unknown subcommand: '{}'", "Error:".red().bold(), other);
             eprintln!("Run 'sentinel --help' for usage.");
             std::process::exit(1);
+        }
+    }
+
+    Ok(())
+}
+
+async fn start_interactive_or_setup() -> anyhow::Result<()> {
+    // Check if config exists
+    match config_storage::load_config() {
+        Ok(Some(config)) => {
+            // Config exists, start interactive mode
+            interactive::run_interactive(config).await?;
+        }
+        Ok(None) => {
+            // No config, run setup
+            let config = setup::run_setup().await?;
+            config_storage::save_config(&config)?;
+
+            // Start interactive mode after setup
+            interactive::run_interactive(config).await?;
+        }
+        Err(_) => {
+            // Error loading config, run setup
+            let config = setup::run_setup().await?;
+            config_storage::save_config(&config)?;
+
+            // Start interactive mode after setup
+            interactive::run_interactive(config).await?;
         }
     }
 
