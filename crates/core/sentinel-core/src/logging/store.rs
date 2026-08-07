@@ -42,6 +42,10 @@ impl LogStore {
 
     /// Append a message to the store, trim to capacity, and notify all
     /// subscribers with a [`CreatedEvent`].
+    ///
+    /// Capacity trimming skips entries marked `persist` (the `persistKeyArg`
+    /// special attribute): persistent messages are never evicted by the
+    /// oldest-first pruning.
     pub fn log(&self, msg: LogMessage) {
         self.total.fetch_add(1, Ordering::SeqCst);
         let event = CreatedEvent::new(msg.id.clone(), msg.clone());
@@ -50,7 +54,16 @@ impl LogStore {
             all.push(msg);
             let overflow = all.len().saturating_sub(self.capacity);
             if overflow > 0 {
-                all.drain(..overflow);
+                // Trim oldest-first, but never evict persistent entries.
+                let mut removed = 0usize;
+                all.retain(|m| {
+                    if removed < overflow && !m.persist {
+                        removed += 1;
+                        false
+                    } else {
+                        true
+                    }
+                });
             }
         }
         self.broker.publish(event);
@@ -177,5 +190,22 @@ mod tests {
         }
         assert_eq!(store.count(), 400);
         assert_eq!(store.total(), 400);
+    }
+
+    #[test]
+    fn trimming_never_evicts_persistent_entries() {
+        let store = LogStore::with_capacity(3);
+        store.log(msg(1).with_persist(true));
+        store.log(msg(2));
+        store.log(msg(3));
+        store.log(msg(4));
+        store.log(msg(5));
+        let all = store.messages();
+        assert_eq!(all.len(), 3, "persist entry resists trimming");
+        assert_eq!(all[0].id, "m1", "persistent entry kept oldest");
+        // Evictable entries are pruned oldest-first above capacity.
+        assert_eq!(all[1].id, "m4");
+        assert_eq!(all[2].id, "m5");
+        assert_eq!(store.total(), 5);
     }
 }

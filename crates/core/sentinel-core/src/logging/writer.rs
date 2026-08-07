@@ -6,15 +6,34 @@
 //! line, and [`parse_logfmt_line`] decodes such a line back into a
 //! [`LogMessage`], so the persisted/in-memory representation is
 //! interchangeable.
+//!
+//! [`LogfmtWriter`] mirrors the reference writer's `io.Writer` surface: it
+//! ingests logfmt byte streams, decodes each complete line into a
+//! [`LogMessage`] (including the `persist` / `persist_time` special
+//! attributes), and hands the message to an attached sink (by default the
+//! global log store, firing its publish-subscribe notifications).
 
-use crate::logging::message::{LogLevel, LogMessage};
+use crate::logging::message::{LogLevel, LogMessage, parse_persist_duration};
+use crate::logging::store::{LogStore, default_log_store};
 use chrono::{DateTime, Utc};
 use std::collections::BTreeMap;
+use std::io;
 
 const KEY_ID: &str = "id";
 const KEY_TS: &str = "ts";
 const KEY_LEVEL: &str = "level";
 const KEY_MESSAGE: &str = "message";
+const KEY_PERSIST: &str = "persist";
+const KEY_PERSIST_TIME: &str = "persist_time";
+
+const KNOWN_KEYS: [&str; 6] = [
+    KEY_ID,
+    KEY_TS,
+    KEY_LEVEL,
+    KEY_MESSAGE,
+    KEY_PERSIST,
+    KEY_PERSIST_TIME,
+];
 
 /// Errors produced while parsing a logfmt line.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,10 +57,23 @@ pub fn write_logfmt(msg: &LogMessage) -> String {
     push_field(&mut out, KEY_LEVEL, msg.level.as_str());
     push_field(&mut out, KEY_ID, &msg.id);
     push_field(&mut out, KEY_MESSAGE, &msg.message);
+    if msg.persist {
+        push_field(&mut out, KEY_PERSIST, "true");
+    }
+    if let Some(duration) = msg.persist_time {
+        push_field(&mut out, KEY_PERSIST_TIME, &format_persist_duration(duration));
+    }
     for (k, v) in &msg.attributes {
         push_field(&mut out, k, v);
     }
     out
+}
+
+/// Format a persistence duration as a Go-style duration string, e.g.
+/// `5400000000000ns` (nanoseconds with an `ns` unit) — the inverse of
+/// [`parse_persist_duration`].
+pub fn format_persist_duration(d: std::time::Duration) -> String {
+    format!("{}ns", d.as_nanos())
 }
 
 /// Quote `value` if needed (contains whitespace, quote or equals) and append
@@ -72,7 +104,9 @@ fn push_field(out: &mut String, key: &str, value: &str) {
 }
 
 /// Parse a single logfmt line into a [`LogMessage`]. Unknown keys become
-/// attributes; `ts`, `level`, `id`, and `message` drive the struct fields.
+/// attributes; `ts`, `level`, `id`, `message`, `persist`, and `persist_time`
+/// drive the struct fields (the last two mirroring the reference
+/// `persistKeyArg` / `PersistTimeArg` special attributes).
 pub fn parse_logfmt_line(line: &str) -> Result<LogMessage, LogfmtError> {
     let fields = parse_fields(line)?;
     let message = fields
@@ -90,9 +124,15 @@ pub fn parse_logfmt_line(line: &str) -> Result<LogMessage, LogfmtError> {
         None => Utc::now(),
     };
     let id = fields.get(KEY_ID).cloned().unwrap_or_default();
+    let persist = fields
+        .get(KEY_PERSIST)
+        .is_some_and(|v| v == "true" || v == "1");
+    let persist_time = fields
+        .get(KEY_PERSIST_TIME)
+        .and_then(|v| parse_persist_duration(v));
     let mut attributes = BTreeMap::new();
     for (k, v) in fields {
-        if k != KEY_ID && k != KEY_TS && k != KEY_LEVEL && k != KEY_MESSAGE {
+        if !KNOWN_KEYS.contains(&k.as_str()) {
             attributes.insert(k, v);
         }
     }
@@ -102,12 +142,13 @@ pub fn parse_logfmt_line(line: &str) -> Result<LogMessage, LogfmtError> {
         level,
         message,
         attributes,
+        persist,
+        persist_time,
     })
 }
 
 /// Low-level logfmt `key=value` parser returning the raw field map.
-fn parse_fields(line: &str) -> Result<BTreeMap<String, String>, LogfmtError> {
-    let mut fields = BTreeMap::new();
+fn parse_fields(line: &str) -> Result<BTreeMap<String, String>, LogfmtError> {    let mut fields = BTreeMap::new();
     let bytes = line.as_bytes();
     let mut i = 0usize;
     while i < bytes.len() {
@@ -191,6 +232,94 @@ fn parse_fields(line: &str) -> Result<BTreeMap<String, String>, LogfmtError> {
     Ok(fields)
 }
 
+/// An `io::Writer` that ingests logfmt byte streams and turns every complete
+/// line into a [`LogMessage`], forwarding it to a sink (the in-memory log
+/// store or a custom callback).
+///
+/// Mirrors the reference `writer.go`'s `io.Writer` surface: callers can hand
+/// this to any component that writes bytes, and each newline-terminated
+/// logfmt line becomes a structured entry in the store, triggering the
+/// store's publish `CreatedEvent`s for live subscribers.
+pub struct LogfmtWriter {
+    on_message: Box<dyn FnMut(LogMessage) + Send>,
+    buffer: Vec<u8>,
+}
+
+impl LogfmtWriter {
+    /// Ingest into the process-wide default log store.
+    pub fn new() -> Self {
+        Self::to_store(default_log_store())
+    }
+
+    /// Ingest into a specific (static) log store. The default store is
+    /// `'static`; for owned stores used in tests, use [`LogfmtWriter::with_callback`].
+    pub fn to_store(store: &'static LogStore) -> Self {
+        Self::with_callback(move |msg| store.log(msg))
+    }
+
+    /// Ingest and hand every decoded [`LogMessage`] to `f`.
+    pub fn with_callback(f: impl FnMut(LogMessage) + Send + 'static) -> Self {
+        Self {
+            on_message: Box::new(f),
+            buffer: Vec::with_capacity(256),
+        }
+    }
+
+    /// Number of bytes still buffered (a partial line awaiting `\n`).
+    pub fn buffered(&self) -> usize {
+        self.buffer.len()
+    }
+}
+
+impl Default for LogfmtWriter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl io::Write for LogfmtWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.buffer.extend_from_slice(buf);
+        let mut consumed = 0usize;
+        loop {
+            let nl = match self.buffer[consumed..].iter().position(|b| *b == b'\n') {
+                Some(nl) => consumed + nl,
+                None => break,
+            };
+            let line = String::from_utf8_lossy(&self.buffer[consumed..nl]).into_owned();
+            self.dispatch(&line);
+            consumed = nl + 1;
+        }
+        if consumed > 0 {
+            self.buffer.drain(..consumed);
+        }
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        // A trailing partial line (no newline) is flushed as-is so `write_logfmt`
+        // producers ending without a trailing `\n` still get decoded.
+        if !self.buffer.is_empty() {
+            let line = String::from_utf8_lossy(&self.buffer).into_owned();
+            self.buffer.clear();
+            self.dispatch(&line);
+        }
+        Ok(())
+    }
+}
+
+impl LogfmtWriter {
+    fn dispatch(&mut self, line: &str) {
+        let line = line.trim();
+        if line.is_empty() {
+            return;
+        }
+        if let Ok(msg) = parse_logfmt_line(line) {
+            (self.on_message)(msg);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -262,5 +391,83 @@ mod tests {
         let parsed = parse_logfmt_line(&write_logfmt(&msg)).unwrap();
         assert_eq!(parsed.message, "line1\nline2");
         assert_eq!(parsed.attr("cmd"), Some("run --json"));
+    }
+
+    #[test]
+    fn persist_attributes_roundtrip() {
+        let msg = LogMessage::new("1", Utc::now(), LogLevel::Info, "keep me")
+            .with_persist(true)
+            .with_persist_time(std::time::Duration::from_secs(7200));
+        let encoded = write_logfmt(&msg);
+        assert!(encoded.contains("persist=true"), "encoded: {encoded}");
+        assert!(
+            encoded.contains("persist_time="),
+            "encoded: {encoded}"
+        );
+
+        let decoded = parse_logfmt_line(&encoded).unwrap();
+        assert_eq!(decoded, msg);
+    }
+
+    #[test]
+    fn io_writer_decodes_lines_and_flushes_partials() {
+        use std::io::Write as _;
+        use std::sync::{Arc, Mutex as StdMutex};
+
+        let received: Arc<StdMutex<Vec<LogMessage>>> = Arc::new(StdMutex::new(Vec::new()));
+        let received_sink = Arc::clone(&received);
+        let mut writer: LogfmtWriter =
+            LogfmtWriter::with_callback(move |msg| received_sink.lock().unwrap().push(msg));
+
+        // Two complete lines + a partial line lacking a trailing newline.
+        writer
+            .write_all(b"level=INFO id=a message=first\nlevel=WARN id=b message=second\n")
+            .unwrap();
+        assert_eq!(received.lock().unwrap().len(), 2);
+        assert_eq!(writer.buffered(), 0);
+
+        // Split writes still accumulate a line across calls.
+        writer.write_all(b"level=ERROR id=c message=t").unwrap();
+        writer.write_all(b"hird\n").unwrap();
+        {
+            let msgs = received.lock().unwrap();
+            assert_eq!(msgs.len(), 3);
+            assert_eq!(msgs[2].level, LogLevel::Error);
+            assert_eq!(msgs[2].message, "third");
+        }
+
+        // Trailing partial line is flushed on flush().
+        writer.write_all(b"level=DEBUG id=d message=partial").unwrap();
+        assert_eq!(
+            received.lock().unwrap().len(),
+            3,
+            "partial line must wait for newline"
+        );
+        writer.flush().unwrap();
+        assert_eq!(received.lock().unwrap().len(), 4);
+        assert_eq!(received.lock().unwrap()[3].message, "partial");
+        assert_eq!(writer.buffered(), 0);
+    }
+
+    #[test]
+    fn io_writer_ingests_into_a_store_with_pubsub() {
+        use std::io::Write as _;
+
+        let store: &'static LogStore = Box::leak(Box::new(LogStore::new()));
+        let sub = store.subscribe(8);
+        let mut writer = LogfmtWriter::to_store(store);
+        writer
+            .write_all(b"level=INFO id=e message=beep persist=true persist_time=1h\n")
+            .unwrap();
+        writer.flush().unwrap();
+
+        let event = sub.try_recv().expect("store must emit a CreatedEvent");
+        assert_eq!(event.value().message, "beep");
+        assert!(event.value().persist);
+        assert_eq!(
+            event.value().persist_time,
+            Some(std::time::Duration::from_secs(3600))
+        );
+        drop(sub);
     }
 }
