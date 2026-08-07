@@ -132,6 +132,51 @@ async fn test_glob_pattern() {
 }
 
 #[tokio::test]
+async fn test_glob_limit_prioritizes_recently_modified() {
+    use std::io::Write;
+    use std::time::{Duration, SystemTime};
+
+    let registry = ToolRegistry::new();
+    let ctx = ToolContext::new();
+
+    let tmp_dir = std::env::temp_dir().join("sentinel-glob-mtime-test");
+    let _ = std::fs::create_dir_all(&tmp_dir);
+    let old = tmp_dir.join("old.cpp");
+    let fresh = tmp_dir.join("fresh.cpp");
+    let stale = tmp_dir.join("stale.cpp");
+    for p in [&old, &fresh, &stale] {
+        std::fs::File::create(p).unwrap().write_all(b"x").unwrap();
+    }
+    let old_time = SystemTime::now() - Duration::from_secs(3600);
+    std::fs::File::options()
+        .write(true)
+        .open(&old)
+        .unwrap()
+        .set_modified(old_time)
+        .unwrap();
+
+    let glob_args = serde_json::json!({
+        "pattern": "*.cpp",
+        "path": tmp_dir.to_str().unwrap(),
+        "limit": 1
+    });
+    let result = registry.execute("glob", glob_args, &ctx).await;
+    assert!(!result.is_error, "glob failed: {}", result.text);
+    assert!(
+        result.text.contains("stale.cpp") || result.text.contains("fresh.cpp"),
+        "limited result should be a recent file, got: {}",
+        result.text
+    );
+    assert!(
+        !result.text.contains("old.cpp"),
+        "oldest file must not win with limit=1: {}",
+        result.text
+    );
+
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+}
+
+#[tokio::test]
 async fn test_apply_patch_tool() {
     let registry = ToolRegistry::new();
     let ctx = ToolContext::new();

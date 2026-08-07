@@ -296,7 +296,7 @@ impl Tool for GlobTool {
         "glob"
     }
     fn description(&self) -> &str {
-        "Find files matching a glob pattern"
+        "Find files matching a glob pattern (supports ** doublestar). When a limit is set, returns the most recently modified matches"
     }
     fn input_schema(&self) -> serde_json::Value {
         json!({
@@ -304,7 +304,8 @@ impl Tool for GlobTool {
             "properties": {
                 "pattern": { "type": "string", "description": "Glob pattern (e.g. **/*.rs)" },
                 "path": { "type": "string", "description": "Directory to search in" },
-                "dot_files": { "type": "boolean", "description": "Include hidden files (default false)" }
+                "dot_files": { "type": "boolean", "description": "Include hidden files (default false)" },
+                "limit": { "type": "integer", "description": "Max results; the most recently modified matches are kept (default: no limit)" }
             },
             "required": ["pattern"]
         })
@@ -317,6 +318,7 @@ impl Tool for GlobTool {
         }
         let base_dir = args["path"].as_str().map(|p| p.to_string());
         let dot_files = args["dot_files"].as_bool().unwrap_or(false);
+        let limit = args["limit"].as_u64().map(|v| v as usize);
         let base_dir = base_dir.unwrap_or_else(|| ".".to_string());
         let full_pattern = format!(
             "{}/{}",
@@ -332,7 +334,24 @@ impl Tool for GlobTool {
                     .filter(|p| !filter.should_skip(p))
                     .map(|p| p.display().to_string())
                     .collect();
-                results.sort();
+                // With a limit, keep the most recently modified matches.
+                if let Some(max) = limit {
+                    if results.len() > max {
+                        results.sort_by(|a, b| {
+                            let mtime = |p: &str| {
+                                std::fs::metadata(p)
+                                    .and_then(|m| m.modified())
+                                    .ok()
+                            };
+                            let (ta, tb) = (mtime(a), mtime(b));
+                            tb.cmp(&ta).then_with(|| a.cmp(b))
+                        });
+                        results.truncate(max);
+                        results.sort();
+                    }
+                } else {
+                    results.sort();
+                }
                 ToolOutput::ok(
                     serde_json::to_string_pretty(&results).unwrap_or_else(|_| "[]".to_string()),
                 )
