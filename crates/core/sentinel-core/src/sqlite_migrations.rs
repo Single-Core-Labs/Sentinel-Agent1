@@ -31,6 +31,9 @@ pub const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX IF NOT EXISTS idx_session_events_session_id
         ON session_events(session_id);",
+    // v3: per-session token usage (PromptTokens/CompletionTokens)
+    "ALTER TABLE threads ADD COLUMN prompt_tokens INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE threads ADD COLUMN completion_tokens INTEGER NOT NULL DEFAULT 0;",
 ];
 
 /// Apply connection-level PRAGMAs for performance and data integrity.
@@ -131,7 +134,7 @@ mod tests {
             .unwrap()
             .collect::<Result<_, _>>()
             .unwrap();
-        assert_eq!(rows, vec![1, 2]);
+        assert_eq!(rows, vec![1, 2, 3]);
     }
 
     #[test]

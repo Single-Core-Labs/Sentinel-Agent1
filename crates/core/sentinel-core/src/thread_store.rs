@@ -26,6 +26,10 @@ pub struct SavedThread {
     pub parent_thread_id: Option<String>,
     pub budget_cost_cap_usd: Option<f64>,
     pub budget_total_spend_usd: f64,
+    #[serde(default)]
+    pub prompt_tokens: u64,
+    #[serde(default)]
+    pub completion_tokens: u64,
 }
 
 impl From<&AgentThread> for SavedThread {
@@ -41,6 +45,8 @@ impl From<&AgentThread> for SavedThread {
             parent_thread_id: t.parent_thread_id.clone(),
             budget_cost_cap_usd: t.budget.cost_cap_usd,
             budget_total_spend_usd: t.budget.total_spend_usd,
+            prompt_tokens: t.budget.prompt_tokens,
+            completion_tokens: t.budget.completion_tokens,
         }
     }
 }
@@ -80,6 +86,8 @@ impl SavedThread {
     pub fn into_thread(self) -> AgentThread {
         let mut budget = BudgetGuard::new(self.budget_cost_cap_usd, self.yolo_mode);
         budget.total_spend_usd = self.budget_total_spend_usd;
+        budget.prompt_tokens = self.prompt_tokens;
+        budget.completion_tokens = self.completion_tokens;
         if let Some(cap) = self.budget_cost_cap_usd {
             if self.budget_total_spend_usd >= cap {
                 budget.exhausted = true;
@@ -252,12 +260,23 @@ fn upsert_thread(conn: &Connection, thread: &AgentThread) -> Result<(), ThreadSt
     let thread_id = saved.id;
     let now = Utc::now().to_rfc3339();
     conn.execute(
-        "INSERT INTO threads (thread_id, created_at, updated_at, data, schema_version) VALUES (?1, ?2, ?3, ?4, ?5)
+        "INSERT INTO threads (thread_id, created_at, updated_at, data, schema_version, prompt_tokens, completion_tokens)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
          ON CONFLICT(thread_id) DO UPDATE SET
            updated_at = excluded.updated_at,
            data = excluded.data,
-           schema_version = excluded.schema_version",
-        params![thread_id, now.clone(), now, json, 1usize],
+           schema_version = excluded.schema_version,
+           prompt_tokens = excluded.prompt_tokens,
+           completion_tokens = excluded.completion_tokens",
+        params![
+            thread_id,
+            now.clone(),
+            now,
+            json,
+            crate::sqlite_migrations::MIGRATIONS.len(),
+            sanitized.prompt_tokens,
+            sanitized.completion_tokens
+        ],
     )
     .map_err(|e| ThreadStoreError::Store(e.to_string()))?;
     Ok(())
@@ -392,6 +411,28 @@ mod tests {
         assert_eq!(thread.turn, loaded.turn);
         assert_eq!(thread.iterations, loaded.iterations);
         assert_eq!(thread.conversation, loaded.conversation);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn test_token_usage_roundtrips_through_store() {
+        let dir = std::env::temp_dir().join(format!("sqlite_tokens_test_{}", Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).expect("failed to create temp dir");
+        let db_path = dir.join("threads.db");
+
+        let store = SqliteThreadStore::new(&db_path).expect("failed to init store");
+        let mut thread = AgentThread::new(10, 20, false);
+        thread.budget.record_usage(0.01, 1200, 340);
+        store.save_thread(&thread).await.expect("save failed");
+
+        let loaded = store
+            .load_thread(&thread.id.to_string())
+            .await
+            .expect("load failed");
+        assert_eq!(loaded.budget.prompt_tokens, 1200);
+        assert_eq!(loaded.budget.completion_tokens, 340);
+        assert_eq!(loaded.budget.total_spend_usd, 0.01);
 
         let _ = std::fs::remove_dir_all(&dir);
     }

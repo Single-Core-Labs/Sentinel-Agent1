@@ -16,6 +16,10 @@ pub struct BudgetGuard {
     pub total_spend_usd: f64,
     /// Running total of reserved (estimated but not yet reconciled) spend.
     pub reserved_spend_usd: f64,
+    /// Cumulative prompt tokens consumed, persisted with the session.
+    pub prompt_tokens: u64,
+    /// Cumulative completion tokens consumed, persisted with the session.
+    pub completion_tokens: u64,
     /// Active reservations keyed by reservation_id.
     reservations: HashMap<String, BudgetReservation>,
     /// Whether auto-approval mode is enabled (yolo).
@@ -30,6 +34,8 @@ impl BudgetGuard {
             cost_cap_usd,
             total_spend_usd: 0.0,
             reserved_spend_usd: 0.0,
+            prompt_tokens: 0,
+            completion_tokens: 0,
             reservations: HashMap::new(),
             auto_approval_enabled,
             exhausted: false,
@@ -105,6 +111,14 @@ impl BudgetGuard {
                 self.exhausted = true;
             }
         }
+    }
+
+    /// Record confirmed spend together with the token usage that produced it.
+    /// The token counters are persisted with the session (PromptTokens/CompletionTokens).
+    pub fn record_usage(&mut self, cost_usd: f64, prompt_tokens: u64, completion_tokens: u64) {
+        self.record_spend(cost_usd);
+        self.prompt_tokens += prompt_tokens;
+        self.completion_tokens += completion_tokens;
     }
 
     /// Total confirmed spend.

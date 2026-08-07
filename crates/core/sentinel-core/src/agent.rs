@@ -412,7 +412,11 @@ impl Agent {
                     &self.effective_model(),
                     &crate::cost::Usage::new(usage.prompt_tokens, usage.completion_tokens),
                 );
-                thread.budget.record_spend(cost);
+                thread.budget.record_usage(
+                    cost,
+                    usage.prompt_tokens as u64,
+                    usage.completion_tokens as u64,
+                );
             }
 
             if thread.budget.exhausted {
@@ -645,7 +649,11 @@ impl Agent {
                 &self.effective_model(),
                 &crate::cost::Usage::new(usage.prompt_tokens, usage.completion_tokens),
             );
-            thread.budget.record_spend(cost);
+            thread.budget.record_usage(
+                cost,
+                usage.prompt_tokens as u64,
+                usage.completion_tokens as u64,
+            );
         }
 
         Ok(summary)

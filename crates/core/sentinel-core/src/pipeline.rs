@@ -266,7 +266,11 @@ impl PipelineAgent {
                     self.agent.provider.name(),
                     &crate::cost::Usage::new(usage.prompt_tokens, usage.completion_tokens),
                 );
-                thread.budget.record_spend(cost);
+                thread.budget.record_usage(
+                    cost,
+                    usage.prompt_tokens as u64,
+                    usage.completion_tokens as u64,
+                );
             }
 
             if thread.budget.exhausted {
