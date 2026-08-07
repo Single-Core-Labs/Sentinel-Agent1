@@ -1,0 +1,2 @@
+{"UserMessage":{"session_id":"23843cb9-f067-43d1-b4ea-0b87960c8389","timestamp":"2026-08-07T05:42:53.738042300Z","content":"hi"}}
+{"Error":{"session_id":"23843cb9-f067-43d1-b4ea-0b87960c8389","timestamp":"2026-08-07T05:42:53.738912500Z","message":"LLM call failed after 1 attempt(s): API request failed: boom"}}

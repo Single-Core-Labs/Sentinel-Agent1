@@ -6,20 +6,40 @@
 //! ```text
 //! logs/sessions/
 //!   <session_id>/
-//!     <request_id>/
+//!     <request_seq>/
 //!       request.txt      – the user request
 //!       response.txt     – the final assistant response
 //!       stream.txt       – streaming deltas as they arrive
 //!       tool_result.txt  – tool call outputs
+//!       *.jsonl          – JSON-serialized variants (Write*Json writers)
 //! ```
 //!
-//! Writes are serialized with a mutex so concurrent appends (streaming
-//! pump, event bridge) cannot interleave or corrupt files.
+//! Requests are numbered with a per-session monotonic sequence so a session's
+//! turn order is stable and readable. Writes are serialized with a mutex so
+//! concurrent appends (streaming pump, event bridge) cannot interleave or
+//! corrupt files.
 
+use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Mutex, OnceLock};
+
+use serde::Serialize;
+
+/// Per-session monotonic request counters (session id → next sequence).
+fn request_seq_table() -> &'static Mutex<HashMap<String, u64>> {
+    static TABLE: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
+    TABLE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// The next request sequence number for a session (1-based, monotonic).
+pub fn next_request_seq(session_id: &str) -> u64 {
+    let mut table = request_seq_table().lock().unwrap_or_else(|e| e.into_inner());
+    let next = table.entry(session_id.to_string()).or_insert(0);
+    *next += 1;
+    *next
+}
 
 /// The kind of interaction data stored in a request directory.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -38,6 +58,16 @@ impl MessageKind {
             MessageKind::Response => "response.txt",
             MessageKind::Stream => "stream.txt",
             MessageKind::ToolResult => "tool_result.txt",
+        }
+    }
+
+    /// JSON-lines file name this kind is persisted under (`Write*Json`).
+    pub fn json_file_name(self) -> &'static str {
+        match self {
+            MessageKind::Request => "request.jsonl",
+            MessageKind::Response => "response.jsonl",
+            MessageKind::Stream => "stream.jsonl",
+            MessageKind::ToolResult => "tool_result.jsonl",
         }
     }
 
@@ -72,18 +102,19 @@ pub fn session_logger_for(session_id: &str) -> Option<SessionLogger> {
     if std::env::var_os(SESSION_LOGS_ENV).is_none() {
         return None;
     }
-    let request_id = uuid::Uuid::new_v4().to_string();
+    let request_seq = next_request_seq(session_id);
     let root = std::env::var_os("SENTINEL_SESSION_LOGS_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(default_session_logs_dir);
-    Some(SessionLogger::new(root, session_id, &request_id))
+    Some(SessionLogger::new(root, session_id, request_seq.to_string()))
 }
 
-/// Appends interaction data for one `(session_id, request_id)` pair into a
+/// Appends interaction data for one `(session_id, request_seq)` pair into a
 /// dedicated directory, guarded by a mutex.
 #[derive(Clone)]
 pub struct SessionLogger {
     dir: PathBuf,
+    request_seq: u64,
     lock: std::sync::Arc<Mutex<()>>,
 }
 
@@ -96,8 +127,10 @@ impl SessionLogger {
         let root = root.into();
         let session_id = session_id.into();
         let request_id = request_id.into();
+        let request_seq = request_id.parse::<u64>().unwrap_or(0);
         Self {
             dir: root.join(&session_id).join(&request_id),
+            request_seq,
             lock: std::sync::Arc::new(Mutex::new(())),
         }
     }
@@ -105,6 +138,12 @@ impl SessionLogger {
     /// The unique per-session, per-request directory.
     pub fn dir(&self) -> &Path {
         &self.dir
+    }
+
+    /// The monotonic request sequence number for this request (0 when the
+    /// logger was built directly with a non-numeric id).
+    pub fn request_seq(&self) -> u64 {
+        self.request_seq
     }
 
     /// The session id this logger belongs to.
@@ -135,15 +174,88 @@ impl SessionLogger {
         file.flush()
     }
 
+    /// Append a JSON-serialized message of `kind`. Writes one JSON object per
+    /// line to `{kind}.jsonl`; the object carries `ts` (RFC 3339), `seq` (the
+    /// request sequence) and the `payload` as given.
+    pub fn append_json<T: ?Sized + Serialize>(
+        &self,
+        kind: MessageKind,
+        payload: &T,
+    ) -> std::io::Result<()> {
+        let _guard = self.lock.lock().unwrap_or_else(|e| e.into_inner());
+        fs::create_dir_all(&self.dir)?;
+        let file_path = self.dir.join(kind.json_file_name());
+        let mut file = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&file_path)?;
+        let line = serde_json::json!({
+            "ts": chrono::Utc::now().to_rfc3339(),
+            "seq": self.request_seq,
+            "kind": kind.as_str(),
+            "payload": payload,
+        });
+        serde_json::to_writer(&mut file, &line)?;
+        file.write_all(b"\n")?;
+        file.flush()
+    }
+
     /// Read back everything stored for one kind (used by tests and audits).
     pub fn read(&self, kind: MessageKind) -> std::io::Result<String> {
         fs::read_to_string(self.dir.join(kind.file_name()))
+    }
+
+    /// Read back the JSON-lines store for one kind.
+    pub fn read_json(&self, kind: MessageKind) -> std::io::Result<Vec<serde_json::Value>> {
+        let raw = fs::read_to_string(self.dir.join(kind.json_file_name()))?;
+        Ok(raw
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(serde_json::from_str)
+            .collect::<Result<Vec<_>, _>>()?)
     }
 
     /// Path of the file backing `kind`, if any.
     pub fn file_for(&self, kind: MessageKind) -> PathBuf {
         self.dir.join(kind.file_name())
     }
+
+    /// Path of the JSON-lines file backing `kind`.
+    pub fn json_file_for(&self, kind: MessageKind) -> PathBuf {
+        self.dir.join(kind.json_file_name())
+    }
+}
+
+/// Serialize and store the user's request message (the `WriteRequestMessageJson`
+/// parity helper).
+pub fn write_request_message_json<T: ?Sized + Serialize>(
+    logger: &SessionLogger,
+    message: &T,
+) -> std::io::Result<()> {
+    logger.append_json(MessageKind::Request, message)
+}
+
+/// Serialize and store the final chat response (the `WriteChatResponseJson`
+/// parity helper).
+pub fn write_chat_response_json<T: ?Sized + Serialize>(
+    logger: &SessionLogger,
+    response: &T,
+) -> std::io::Result<()> {
+    logger.append_json(MessageKind::Response, response)
+}
+
+/// Serialize and store a single tool result (the `WriteToolResultsJson` parity
+/// helper; one JSON object per tool invocation).
+pub fn write_tool_results_json(
+    logger: &SessionLogger,
+    name: &str,
+    output: &str,
+    is_error: bool,
+) -> std::io::Result<()> {
+    logger.append_json(
+        MessageKind::ToolResult,
+        &serde_json::json!({ "name": name, "output": output, "isError": is_error }),
+    )
 }
 
 #[cfg(test)]
@@ -218,5 +330,41 @@ mod tests {
         // Without the env var, no logger is produced.
         std::env::remove_var(SESSION_LOGS_ENV);
         assert!(session_logger_for("sess-x").is_none());
+    }
+
+    #[test]
+    fn request_seqs_are_monotonic_per_session() {
+        assert_eq!(next_request_seq("seq-a"), 1);
+        assert_eq!(next_request_seq("seq-a"), 2);
+        assert_eq!(next_request_seq("seq-b"), 1);
+        assert_eq!(next_request_seq("seq-a"), 3);
+    }
+
+    #[test]
+    fn write_json_helpers_persist_payloads_and_seq() {
+        let root = tmp_root();
+        std::env::set_var("SENTINEL_SESSION_LOGS_DIR", &root);
+        std::env::set_var(SESSION_LOGS_ENV, "1");
+        let logger = session_logger_for("sess-json").expect("logger with env set");
+
+        write_request_message_json(&logger, &"hi").unwrap();
+        write_chat_response_json(&logger, &"hello").unwrap();
+        write_tool_results_json(&logger, "run_shell", "ok", false).unwrap();
+
+        let requests = logger.read_json(MessageKind::Request).unwrap();
+        let responses = logger.read_json(MessageKind::Response).unwrap();
+        let tools = logger.read_json(MessageKind::ToolResult).unwrap();
+
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0]["payload"], "hi");
+        assert!(requests[0]["seq"].as_u64().unwrap() >= 1);
+        assert_eq!(responses[0]["payload"], "hello");
+        assert_eq!(tools[0]["payload"]["name"], "run_shell");
+        assert_eq!(tools[0]["payload"]["output"], "ok");
+        assert_eq!(tools[0]["payload"]["isError"], false);
+
+        std::env::remove_var("SENTINEL_SESSION_LOGS_DIR");
+        std::env::remove_var(SESSION_LOGS_ENV);
+        let _ = fs::remove_dir_all(root);
     }
 }

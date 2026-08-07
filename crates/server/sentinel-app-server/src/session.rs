@@ -46,10 +46,7 @@ impl EventHandler for ServerEventBridge {
                 ..
             } => {
                 if let Some(log) = self.request_logs.lock().await.as_ref() {
-                    let _ = log.append(
-                        MessageKind::ToolResult,
-                        &format!("tool={name} is_error={is_error}\n{output}"),
-                    );
+                    let _ = sentinel_core::write_tool_results_json(log, &name, &output, is_error);
                 }
                 ServerEvent::ToolResult {
                     name,
@@ -309,7 +306,7 @@ impl AppSession {
             *slot = request_log.clone();
         }
         if let Some(log) = &request_log {
-            let _ = log.append(MessageKind::Request, message);
+            let _ = sentinel_core::write_request_message_json(log, message);
         }
 
         let mut thread = self.thread.lock().await;
@@ -357,7 +354,7 @@ impl AppSession {
         }
 
         if let Some(log) = &request_log {
-            let _ = log.append(MessageKind::Response, &accumulated_text);
+            let _ = sentinel_core::write_chat_response_json(log, &accumulated_text);
         }
         // The request is finished: releases the current slot so tool results
         // from a subsequent turn are not attributed to it.
@@ -732,7 +729,7 @@ mod tests {
         let (chunk_tx, _chunk_rx) = tokio::sync::mpsc::channel(16);
         session.chat_stream("hi", chunk_tx).await;
 
-        // Layout: logs_root/<session_id>/<request_id>/{request,response,stream}.txt
+        // Layout: logs_root/<session_id>/<request_seq>/{request,response}.jsonl + stream.txt
         let session_dir = logs_root.join(&session.id);
         let request_id = std::fs::read_dir(&session_dir)
             .expect("session dir must exist")
@@ -740,20 +737,30 @@ mod tests {
             .next()
             .expect("one request dir per chat turn");
         let request_dir = session_dir.join(request_id);
-        assert_eq!(
-            std::fs::read_to_string(request_dir.join("request.txt")).unwrap(),
-            "hi\n"
+
+        let request_json: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(request_dir.join("request.jsonl")).unwrap())
+                .unwrap();
+        assert_eq!(request_json["payload"], "hi");
+        assert!(
+            request_json["seq"].as_u64().unwrap() >= 1,
+            "request must carry a sequence number"
         );
+
         assert_eq!(
             std::fs::read_to_string(request_dir.join("stream.txt")).unwrap(),
             "hello\n"
         );
-        assert_eq!(
-            std::fs::read_to_string(request_dir.join("response.txt")).unwrap(),
-            "hello\n"
-        );
+
+        let response_json: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(request_dir.join("response.jsonl")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(response_json["payload"], "hello");
+        assert_eq!(response_json["kind"], "response");
+
         assert!(
-            !request_dir.join("tool_result.txt").exists(),
+            !request_dir.join("tool_result.jsonl").exists(),
             "no tool calls in the scripted turn"
         );
 

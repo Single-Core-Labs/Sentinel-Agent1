@@ -5,6 +5,9 @@
 //! into a dedicated directory, then always runs an optional cleanup closure.
 //! [`recover_panic`] wraps a closure with `catch_unwind`, captures the panic
 //! payload, and dumps it — mirroring the reference `RecoverPanic` helper.
+//!
+//! The module also provides [`get_caller`], the caller-information helper
+//! used to enrich `Info`/`Debug` log entries with `file.rs:line`.
 
 use std::any::Any;
 use std::backtrace::Backtrace;
@@ -13,6 +16,19 @@ use std::fs;
 use std::io::Write as _;
 use std::panic::{AssertUnwindSafe, UnwindSafe};
 use std::path::{Path, PathBuf};
+
+use crate::logging::message::{LogLevel, LogMessage};
+use crate::logging::store::default_log_store;
+
+/// The file and line of the immediate caller, formatted as `file.rs:line`.
+///
+/// `#[track_caller]` makes `file!()`/`line!()` resolve to the caller's own
+/// location, so any `Info`/`Debug` writer can call this to enrich the event
+/// with the exact code origin (the reference `getCaller` helper).
+#[track_caller]
+pub fn get_caller() -> String {
+    format!("{}:{}", file!(), line!())
+}
 
 /// Default directory for panic dumps: `$SENTINEL_HOME/logs/panics`, falling
 /// back to `~/.sentinel/logs/panics`.
@@ -64,7 +80,7 @@ impl RecoverPanic {
 impl Drop for RecoverPanic {
     fn drop(&mut self) {
         if std::thread::panicking() {
-            let _ = write_panic_dump(&self.dump_dir, None);
+            let _ = record_panic(&self.dump_dir, None);
         }
         if let Some(cleanup) = self.cleanup.take() {
             cleanup();
@@ -89,7 +105,7 @@ where
             Ok(value)
         }
         Err(payload) => {
-            let _ = write_panic_dump(dir, Some(&format_payload(payload.as_ref())));
+            let _ = record_panic(dir, Some(&format_payload(payload.as_ref())));
             cleanup();
             Err(())
         }
@@ -150,6 +166,37 @@ pub fn write_panic_dump(dir: &Path, payload: Option<&str>) -> std::io::Result<Pa
     file.write_all(body.as_bytes())?;
     file.flush()?;
     Ok(path)
+}
+
+/// Record a recovered panic end-to-end: write the timestamped dump file
+/// (via [`write_panic_dump`]) **and** publish a structured `Error` event into
+/// the global [`LogStore`](crate::logging::store::LogStore) so subscribers
+/// (TUI log stream, session logs) observe the crash in real time.
+///
+/// Returns the created dump file path, or `None` if the dump write failed.
+pub fn record_panic(dir: &Path, payload: Option<&str>) -> Option<PathBuf> {
+    let path = write_panic_dump(dir, payload).ok();
+
+    let thread_name = std::thread::current()
+        .name()
+        .map(|n| n.to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+    let detail = payload.unwrap_or("<payload unavailable>");
+
+    let message = LogMessage::new(
+        uuid::Uuid::new_v4(),
+        chrono::Utc::now(),
+        LogLevel::Error,
+        format!("panic recovered: {detail}"),
+    )
+    .with_attr("caller", get_caller())
+    .with_attr("thread", thread_name)
+    .with_attr("dump_path", path.as_ref().map(|p| p.display().to_string()).unwrap_or_default());
+
+    default_log_store().log(message);
+    tracing::error!(panic = %detail, "panic recovered (see dump file)");
+
+    path
 }
 
 #[cfg(test)]
@@ -237,6 +284,52 @@ mod tests {
         let dump = fs::read_to_string(&entries[0]).unwrap();
         assert!(dump.contains("guard-test"));
         assert!(dump.contains("stack"));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn get_caller_reports_caller_file_and_line() {
+        let caller = get_caller();
+        assert!(
+            caller.starts_with(concat!(file!(), ":")),
+            "expected caller file prefix, got {caller}"
+        );
+        let (_, line) = caller.rsplit_once(':').unwrap();
+        assert!(line.parse::<u32>().is_ok(), "line must be numeric: {caller}");
+    }
+
+    #[test]
+    fn recovered_panic_also_emits_structured_error_event() {
+        use crate::logging::message::LogLevel;
+
+        let dir = tmp_dir();
+        crate::logging::store::drain_default_log_store();
+        let result = recover_panic(&dir, || {}, || {
+            panic!("kaboom-event");
+            #[allow(unreachable_code)]
+            ()
+        });
+        assert!(result.is_err());
+
+        let events: Vec<LogMessage> = default_log_store().messages();
+        let panic_event = events
+            .iter()
+            .find(|m| m.message == "panic recovered: kaboom-event")
+            .expect("panic must be surfaced in the log store");
+        assert_eq!(panic_event.level, LogLevel::Error);
+        assert!(
+            panic_event
+                .attr("thread")
+                .is_some_and(|t| !t.is_empty()),
+            "expected a thread attribute"
+        );
+        assert!(
+            panic_event
+                .attr("dump_path")
+                .unwrap_or("")
+                .ends_with(".log"),
+            "expected a dump path attribute"
+        );
         let _ = fs::remove_dir_all(dir);
     }
 }
