@@ -64,6 +64,7 @@ All deterministic operations. The agent system prompt includes local context (OS
 
 - Run `cargo test --workspace` and `cargo check --workspace` after any change; `bun run typecheck` when touching `packages/cli-agent`
 - All external commands go through `run_shell()` (wraps PowerShell on Windows, sh on Linux)
+- OpenTUI TUI requires `preload = ["@opentui/solid/preload"]` (or the file path) in `bunfig.toml` at the run cwd's project root — bun otherwise resolves solid-js to its SSR `server.js` build and effects (onMount, signal repaints) never run. Keep both `bunfig.toml` (repo root, used by `sentinel ai`) and `packages/cli-agent/bunfig.toml` in sync.
 - Plugins: patterns in `patterns.txt`/`allowlist.txt` must be valid in BOTH PowerShell `-match` and POSIX `grep -E`
 - Windows gotcha: PowerShell 5.1 `Set-Content`/`Get-Content` default to ANSI — use explicit UTF-8 (no BOM) when touching `.rs`/`.toml` files
 - A background bot may commit/push and clean untracked files — stage work early
