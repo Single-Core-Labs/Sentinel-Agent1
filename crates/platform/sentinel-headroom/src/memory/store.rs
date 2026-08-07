@@ -37,7 +37,13 @@ pub struct SqliteMemoryStore {
 
 impl SqliteMemoryStore {
     pub fn open(path: &str) -> crate::memory::Result<Self> {
-        let conn = Connection::open(path)?;
+        let mut conn = Connection::open(path)?;
+        conn.execute_batch(
+            "PRAGMA journal_mode=WAL;
+             PRAGMA synchronous=NORMAL;
+             PRAGMA foreign_keys=ON;
+             PRAGMA busy_timeout=5000;",
+        )?;
         let store = Self {
             conn: Mutex::new(conn),
             cache: Mutex::new(LruCache::new(NonZeroUsize::new(500).unwrap())),
@@ -48,7 +54,12 @@ impl SqliteMemoryStore {
     }
 
     pub fn in_memory() -> crate::memory::Result<Self> {
-        let conn = Connection::open_in_memory()?;
+        let mut conn = Connection::open_in_memory()?;
+        conn.execute_batch(
+            "PRAGMA synchronous=NORMAL;
+             PRAGMA foreign_keys=ON;
+             PRAGMA busy_timeout=5000;",
+        )?;
         let store = Self {
             conn: Mutex::new(conn),
             cache: Mutex::new(LruCache::new(NonZeroUsize::new(500).unwrap())),

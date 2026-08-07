@@ -268,7 +268,11 @@ pub struct SqliteEventStore {
 #[cfg(feature = "sqlite")]
 impl SqliteEventStore {
     pub fn new(path: &str) -> Result<Arc<Self>, rusqlite::Error> {
+        if let Some(parent) = std::path::Path::new(path).parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
         let mut conn = rusqlite::Connection::open(path)?;
+        crate::sqlite_migrations::configure_connection(&mut conn)?;
         crate::sqlite_migrations::run_migrations(&mut conn)?;
         Ok(Arc::new(Self {
             conn: std::sync::Mutex::new(conn),
@@ -483,10 +487,13 @@ mod tests {
             })
             .await;
         // JSONL fallback must leave a file on disk; sqlite feature writes a db.
+        // In WAL mode the durable log may live in the -wal journal until checkpoint.
         #[cfg(not(feature = "sqlite"))]
         assert!(dir.join("s11.jsonl").exists());
         #[cfg(feature = "sqlite")]
-        assert!(dir.join("session_events.db").exists());
+        assert!(
+            dir.join("session_events.db").exists() || dir.join("session_events.db-wal").exists()
+        );
 
         let reopened = create_event_store_in(&dir);
         let events = reopened.read("s11").await;

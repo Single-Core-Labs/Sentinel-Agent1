@@ -216,9 +216,12 @@ impl SqliteThreadStore {
     /// Open or create the SQLite database at the given path.
     pub fn new(path: impl Into<std::path::PathBuf>) -> Result<Self, ThreadStoreError> {
         let path_buf = path.into();
-        let conn =
+        if let Some(parent) = path_buf.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let mut conn =
             Connection::open(&path_buf).map_err(|e| ThreadStoreError::Store(e.to_string()))?;
-        conn.execute_batch("PRAGMA journal_mode=WAL;")
+        crate::sqlite_migrations::configure_connection(&mut conn)
             .map_err(|e| ThreadStoreError::Store(e.to_string()))?;
         let store = Self {
             conn: Arc::new(Mutex::new(conn)),

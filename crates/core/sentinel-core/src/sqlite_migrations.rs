@@ -33,6 +33,24 @@ pub const MIGRATIONS: &[&str] = &[
         ON session_events(session_id);",
 ];
 
+/// Apply connection-level PRAGMAs for performance and data integrity.
+///
+/// Mirrors the "Connect" step of a typical persistence layer:
+/// - `journal_mode=WAL` — concurrent readers/writers without blocking;
+/// - `synchronous=NORMAL` — safe durability with WAL, without full fsync cost;
+/// - `foreign_keys=ON` — enforce referential integrity declared in migrations;
+/// - `busy_timeout=5000` — wait instead of failing with `SQLITE_BUSY` when
+///   another process (e.g. a background worker) holds the write lock.
+#[cfg(feature = "sqlite")]
+pub fn configure_connection(conn: &mut Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(
+        "PRAGMA journal_mode=WAL;
+         PRAGMA synchronous=NORMAL;
+         PRAGMA foreign_keys=ON;
+         PRAGMA busy_timeout=5000;",
+    )
+}
+
 /// Apply all pending migrations to `conn` inside a transaction.
 #[cfg(feature = "sqlite")]
 pub fn run_migrations(conn: &mut Connection) -> rusqlite::Result<()> {
@@ -114,5 +132,21 @@ mod tests {
             .collect::<Result<_, _>>()
             .unwrap();
         assert_eq!(rows, vec![1, 2]);
+    }
+
+    #[test]
+    fn configure_connection_applies_integrity_pragmas() {
+        let mut conn = Connection::open_in_memory().unwrap();
+        configure_connection(&mut conn).unwrap();
+
+        let foreign_keys: i64 = conn
+            .query_row("PRAGMA foreign_keys", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(foreign_keys, 1);
+
+        let busy_timeout: i64 = conn
+            .query_row("PRAGMA busy_timeout", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(busy_timeout, 5000);
     }
 }

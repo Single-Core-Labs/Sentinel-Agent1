@@ -20,8 +20,15 @@ impl LocalAgentGraphStore {
     /// Open (or create) the SQLite database at the given path.
     /// Uses in-memory DB if path is `:memory:`.
     pub fn open(path: &str) -> Result<Self, GraphStoreError> {
-        let conn =
+        let mut conn =
             Connection::open(path).map_err(|e| GraphStoreError::DatabaseError(e.to_string()))?;
+        conn.execute_batch(
+            "PRAGMA journal_mode=WAL;
+             PRAGMA synchronous=NORMAL;
+             PRAGMA foreign_keys=ON;
+             PRAGMA busy_timeout=5000;",
+        )
+        .map_err(|e| GraphStoreError::DatabaseError(e.to_string()))?;
         let store = Self {
             conn: Arc::new(Mutex::new(conn)),
         };
