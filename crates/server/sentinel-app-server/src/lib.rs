@@ -1,3 +1,4 @@
+pub mod diagnostics_tool;
 pub mod handler;
 pub mod http;
 pub mod logs;

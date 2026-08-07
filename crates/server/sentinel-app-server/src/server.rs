@@ -30,6 +30,9 @@ impl AppServer {
                 Arc::new(sentinel_headroom::ccr::CcrStore::default()),
             );
             reg.register(Arc::new(headroom_retrieve));
+            reg.register(Arc::new(crate::diagnostics_tool::DiagnosticsTool::new(
+                lsp.diagnostics(),
+            )));
             Arc::new(reg)
         };
 

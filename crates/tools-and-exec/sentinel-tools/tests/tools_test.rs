@@ -221,10 +221,13 @@ async fn test_tool_defs() {
     );
     assert!(names.contains(&"glob"), "glob tool missing");
     assert!(names.contains(&"grep"), "grep tool missing");
+    assert!(names.contains(&"ls"), "ls tool missing");
+    assert!(names.contains(&"view"), "view tool missing");
+    assert!(names.contains(&"sourcegraph"), "sourcegraph tool missing");
     assert_eq!(
         defs.len(),
-        19,
-        "expected 19 built-in tools, got {}",
+        22,
+        "expected 22 built-in tools, got {}",
         defs.len()
     );
 }

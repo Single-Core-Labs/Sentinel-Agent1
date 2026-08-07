@@ -6,14 +6,17 @@ use std::sync::Arc;
 pub fn builtin_tools() -> Vec<Arc<dyn Tool>> {
     vec![
         Arc::new(ReadTool),
+        Arc::new(ViewTool),
         Arc::new(WriteTool),
         Arc::new(EditTool),
         Arc::new(ApplyPatchTool),
+        Arc::new(LsTool),
         Arc::new(GlobTool),
         Arc::new(GrepTool),
         Arc::new(RunShellCommandTool),
         Arc::new(WebSearchTool),
         Arc::new(WebFetchTool),
+        Arc::new(SourcegraphTool),
         Arc::new(PlanTool),
         Arc::new(GitHubTool),
         Arc::new(GitStatusTool),
@@ -1217,5 +1220,491 @@ impl Tool for FindApiTool {
             Ok(resp) => ToolOutput::err(format!("HTTP {} fetching OpenAPI spec", resp.status())),
             Err(e) => ToolOutput::err(format!("Failed to fetch OpenAPI spec: {}", e)),
         }
+    }
+}
+
+// ── View ───────────────────────────────────────────────────────
+/// Reads a file with line numbers, supporting offset/limit for large
+/// files. Suggests nearby files when the requested path is mistyped.
+pub struct ViewTool;
+#[async_trait]
+impl Tool for ViewTool {
+    fn name(&self) -> &str {
+        "view"
+    }
+    fn description(&self) -> &str {
+        "Read a file with line numbers (offset/limit supported). Suggests nearby files on mistyped paths."
+    }
+    fn input_schema(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "file_path": { "type": "string", "description": "Path to the file to view" },
+                "offset": { "type": "integer", "description": "1-based line to start from" },
+                "limit": { "type": "integer", "description": "Maximum number of lines to return" }
+            },
+            "required": ["file_path"]
+        })
+    }
+
+    async fn execute(&self, args: serde_json::Value, ctx: &ToolContext) -> ToolOutput {
+        let path = args["file_path"].as_str().unwrap_or("");
+        if path.is_empty() {
+            return ToolOutput::err("file_path is required");
+        }
+        let offset = args["offset"].as_u64().map(|v| v as usize);
+        let limit = args["limit"].as_u64().map(|v| v as usize);
+
+        let content = match std::fs::read(path) {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                return ToolOutput::err(suggest_similar_path(path, ctx));
+            }
+        };
+
+        if content.iter().take(8192).any(|b| *b == 0) {
+            return ToolOutput::err(format!("{} appears to be a binary file", path));
+        }
+
+        let text = match String::from_utf8(content) {
+            Ok(t) => t,
+            Err(_) => {
+                return ToolOutput::err(format!("{} is not valid UTF-8 text", path));
+            }
+        };
+
+        let lines: Vec<&str> = text.lines().collect();
+        let total = lines.len();
+        let start = offset.unwrap_or(1).saturating_sub(1);
+        if start >= total {
+            return ToolOutput::ok(format!(
+                "{} has {} lines; requested offset {} is past the end.",
+                path, total, start + 1
+            ));
+        }
+        let end = match limit {
+            Some(l) => (start + l).min(total),
+            None => total,
+        };
+
+        let mut out = String::new();
+        for (i, line) in lines[start..end].iter().enumerate() {
+            out.push_str(&format!("{:>6} | {}\n", start + i + 1, line));
+        }
+        if end < total {
+            out.push_str(&format!(
+                "... ({} of {} lines shown; use offset/limit to page)\n",
+                end - start,
+                total
+            ));
+        }
+        ToolOutput::ok(out)
+    }
+}
+
+/// Best-effort nearest-filename suggestion for a mistyped path, scoped to
+/// the parent directory (or the workspace root when the parent is missing).
+fn suggest_similar_path(path: &str, ctx: &ToolContext) -> String {
+    let p = std::path::Path::new(path);
+    let parent = match p.parent() {
+        Some(dir) if !dir.as_os_str().is_empty() => dir.to_path_buf(),
+        _ => ctx
+            .workspace_dir
+            .as_ref()
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(std::path::PathBuf::new),
+    };
+    let wanted = p
+        .file_name()
+        .map(|f| f.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
+
+    let mut scored: Vec<(usize, String)> = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&parent) {
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name.to_lowercase() == wanted {
+                return format!("File not found: {}", path);
+            }
+            scored.push((edit_distance(&wanted, &name.to_lowercase()), name));
+        }
+    }
+    scored.sort_by_key(|(d, _)| *d);
+    let mut out = format!("File not found: {}", path);
+    if let Some((dist, name)) = scored.first() {
+        if *dist <= 4 && *dist < wanted.len().max(2) {
+            out.push_str(&format!("\nDid you mean: {}", name));
+            if scored.len() > 1 && scored[1].0 <= *dist + 1 {
+                out.push_str(&format!(" or {}", scored[1].1));
+            }
+        }
+    }
+    out
+}
+
+/// Classic Levenshtein edit distance between two ASCII/lowercased strings.
+fn edit_distance(a: &str, b: &str) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.iter().enumerate() {
+        let mut cur = vec![i + 1];
+        for (j, cb) in b.iter().enumerate() {
+            let cost = if ca == cb { 0 } else { 1 };
+            cur.push((prev[j + 1] + 1).min(cur[j] + 1).min(prev[j] + cost));
+        }
+        prev = cur;
+    }
+    prev[b.len()]
+}
+
+// ── Ls ─────────────────────────────────────────────────────────
+/// Lists files and subdirectories in a tree structure, skipping hidden
+/// and common system/build directories.
+pub struct LsTool;
+#[async_trait]
+impl Tool for LsTool {
+    fn name(&self) -> &str {
+        "ls"
+    }
+    fn description(&self) -> &str {
+        "List files and subdirectories in a tree structure (skips hidden and common build/system dirs)"
+    }
+    fn input_schema(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "path": { "type": "string", "description": "Directory to explore (default: workspace root)" },
+                "depth": { "type": "integer", "description": "Maximum recursion depth (default 2, max 6)" },
+                "max_entries": { "type": "integer", "description": "Maximum entries to print (default 200)" }
+            }
+        })
+    }
+
+    async fn execute(&self, args: serde_json::Value, ctx: &ToolContext) -> ToolOutput {
+        let root = args["path"]
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .map(std::path::PathBuf::from)
+            .or_else(|| ctx.workspace_dir.as_ref().map(std::path::PathBuf::from))
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
+
+        if !root.is_dir() {
+            return ToolOutput::err(format!("Not a directory: {}", root.display()));
+        }
+
+        let depth = args["depth"].as_u64().map(|v| v as usize).unwrap_or(2).min(6);
+        let max_entries = args["max_entries"].as_u64().map(|v| v as usize).unwrap_or(200);
+
+        let mut out = String::new();
+        out.push_str(&format!("{}\n", root.display()));
+        let mut count = 0usize;
+        let mut truncated = false;
+
+        fn walk(
+            dir: &std::path::Path,
+            prefix: &str,
+            depth_left: usize,
+            max: usize,
+            count: &mut usize,
+            truncated: &mut bool,
+            out: &mut String,
+        ) {
+            if *count >= max {
+                *truncated = true;
+                return;
+            }
+            let mut entries: Vec<_> = std::fs::read_dir(dir)
+                .map(|rd| rd.flatten().collect())
+                .unwrap_or_default();
+            entries.sort_by_key(|e| {
+                let is_dir = e.path().is_dir();
+                (!is_dir, e.file_name().to_string_lossy().to_lowercase())
+            });
+
+            for (i, entry) in entries.iter().enumerate() {
+                if *count >= max {
+                    *truncated = true;
+                    return;
+                }
+                let name = entry.file_name().to_string_lossy().to_string();
+                if is_skipped_entry(&name) {
+                    continue;
+                }
+                let is_dir = entry.path().is_dir();
+                let last = i == entries.len() - 1;
+                let branch = if last { "└── " } else { "├── " };
+                out.push_str(&format!(
+                    "{}{}{}{}\n",
+                    prefix,
+                    branch,
+                    name,
+                    if is_dir { "/" } else { "" }
+                ));
+                *count += 1;
+                if is_dir && depth_left > 0 {
+                    let child_prefix = format!("{}{}", prefix, if last { "    " } else { "│   " });
+                    walk(
+                        &entry.path(),
+                        &child_prefix,
+                        depth_left - 1,
+                        max,
+                        count,
+                        truncated,
+                        out,
+                    );
+                }
+            }
+        }
+
+        walk(&root, "", depth, max_entries, &mut count, &mut truncated, &mut out);
+        if truncated {
+            out.push_str(&format!("... (truncated after {} entries)\n", count));
+        }
+        ToolOutput::ok(out)
+    }
+}
+
+/// Entries skipped by `ls`: hidden files and common build/system dirs.
+fn is_skipped_entry(name: &str) -> bool {
+    if name.starts_with('.') {
+        return true;
+    }
+    matches!(
+        name,
+        "node_modules"
+            | "target"
+            | "dist"
+            | "build"
+            | "out"
+            | ".venv"
+            | "venv"
+            | "vendor"
+            | "__pycache__"
+            | ".next"
+            | ".cache"
+            | ".idea"
+            | ".vscode"
+            | ".git"
+    )
+}
+
+// ── Sourcegraph ────────────────────────────────────────────────
+/// Searches code across public repositories via Sourcegraph's GraphQL API.
+pub struct SourcegraphTool;
+#[async_trait]
+impl Tool for SourcegraphTool {
+    fn name(&self) -> &str {
+        "sourcegraph"
+    }
+    fn description(&self) -> &str {
+        "Search public code on Sourcegraph. Returns repository, file path, and matching line snippets."
+    }
+    fn input_schema(&self) -> serde_json::Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "query": { "type": "string", "description": "Sourcegraph search query, e.g. 'lang:go regexp' or 'repo:facebook/react useSyncExternalStore'" },
+                "first": { "type": "integer", "description": "Maximum file matches to return (default 10, max 25)" }
+            },
+            "required": ["query"]
+        })
+    }
+
+    async fn execute(&self, args: serde_json::Value, _ctx: &ToolContext) -> ToolOutput {
+        let query = args["query"].as_str().unwrap_or("").trim();
+        if query.is_empty() {
+            return ToolOutput::err("query is required");
+        }
+        let first = args["first"].as_u64().unwrap_or(10).min(25) as u32;
+
+        let endpoint = std::env::var("SOURCEGRAPH_ENDPOINT")
+            .unwrap_or_else(|_| "https://sourcegraph.com/.api/graphql".to_string());
+        let token = std::env::var("SOURCEGRAPH_TOKEN")
+            .or_else(|_| std::env::var("SRC_ACCESS_TOKEN"))
+            .ok();
+
+        let client = reqwest::Client::builder()
+            .user_agent("SentinelAI/1.0")
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .unwrap();
+        let body = serde_json::json!({
+            "query": r#"query($q: String!, $n: Int!) {
+  search(query: $q, version: V3) {
+    results {
+      matchCount
+      results {
+        __typename
+        ... on FileMatch {
+          repository { name }
+          file { path }
+          lineMatches { lineNumber preview }
+        }
+      }
+    }
+  }
+}"#,
+            "variables": { "q": query, "n": first }
+        });
+
+        let mut req = client.post(&endpoint).json(&body);
+        if let Some(t) = &token {
+            req = req.header("Authorization", format!("Bearer {}", t));
+        }
+
+        match req.send().await {
+            Ok(resp) if resp.status().is_success() => {
+                let parsed: serde_json::Value = match resp.json().await {
+                    Ok(v) => v,
+                    Err(e) => return ToolOutput::err(format!("Failed to parse response: {}", e)),
+                };
+                if let Some(errors) = parsed["errors"].as_array() {
+                    let msg = errors
+                        .iter()
+                        .filter_map(|e| e["message"].as_str())
+                        .collect::<Vec<_>>()
+                        .join("; ");
+                    return ToolOutput::err(format!("Sourcegraph error: {}", msg));
+                }
+                let results = parsed["data"]["search"]["results"]["results"]
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_default();
+                let match_count = parsed["data"]["search"]["results"]["matchCount"]
+                    .as_u64()
+                    .unwrap_or(results.len() as u64);
+
+                if results.is_empty() {
+                    return ToolOutput::ok("No results found.");
+                }
+                let mut out = format!("{} result(s) for: {}\n\n", match_count, query);
+                for (i, r) in results.iter().enumerate() {
+                    let repo = r["repository"]["name"].as_str().unwrap_or("?");
+                    let path = r["file"]["path"].as_str().unwrap_or("?");
+                    out.push_str(&format!("{}. {}/{}", i + 1, repo, path));
+                    let lines = r["lineMatches"].as_array().cloned().unwrap_or_default();
+                    for lm in lines.iter().take(5) {
+                        let ln = lm["lineNumber"].as_u64().unwrap_or(0) + 1;
+                        let preview = lm["preview"].as_str().unwrap_or("");
+                        out.push_str(&format!("\n    {} | {}", ln, preview.trim_end()));
+                    }
+                    out.push('\n');
+                }
+                ToolOutput::ok(out)
+            }
+            Ok(resp) => ToolOutput::err(format!(
+                "HTTP {} from Sourcegraph ({}). Set SOURCEGRAPH_TOKEN or SOURCEGRAPH_ENDPOINT to configure.",
+                resp.status(),
+                endpoint
+            )),
+            Err(e) => ToolOutput::err(format!("Request failed: {}", e)),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ctx() -> ToolContext {
+        ToolContext::new()
+    }
+
+    #[tokio::test]
+    async fn view_numbers_lines_and_pages() {
+        let dir = std::env::temp_dir().join(format!("sentinel-view-test-{}", std::process::id()));
+        let file = dir.join("demo.txt");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(&file, "one\ntwo\nthree\nfour\n").unwrap();
+
+        let full = ViewTool
+            .execute(json!({ "file_path": file.to_string_lossy() }), &ctx())
+            .await;
+        assert!(!full.is_error, "{}", full.text);
+        assert!(full.text.contains("1 | one"), "{}", full.text);
+        assert!(full.text.contains("4 | four"), "{}", full.text);
+
+        let paged = ViewTool
+            .execute(
+                json!({ "file_path": file.to_string_lossy(), "offset": 2, "limit": 2 }),
+                &ctx(),
+            )
+            .await;
+        assert!(!paged.is_error, "{}", paged.text);
+        assert!(paged.text.contains("2 | two"), "{}", paged.text);
+        assert!(paged.text.contains("3 | three"), "{}", paged.text);
+        assert!(!paged.text.contains("4 | four"), "{}", paged.text);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[tokio::test]
+    async fn view_suggests_mistyped_paths() {
+        let dir = std::env::temp_dir().join(format!("sentinel-view-sug-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("app_router.rs"), "// x\n").unwrap();
+
+        let out = ViewTool
+            .execute(
+                json!({ "file_path": format!("{}/app_rouer.rs", dir.display()) }),
+                &ctx(),
+            )
+            .await;
+        assert!(out.is_error, "{}", out.text);
+        assert!(out.text.contains("Did you mean"), "{}", out.text);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[tokio::test]
+    async fn view_rejects_binary_files() {
+        let dir = std::env::temp_dir().join(format!("sentinel-view-bin-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("blob.bin"), [0u8, 1, 2, 3, 0]).unwrap();
+
+        let out = ViewTool
+            .execute(
+                json!({ "file_path": format!("{}/blob.bin", dir.display()) }),
+                &ctx(),
+            )
+            .await;
+        assert!(out.is_error, "{}", out.text);
+        assert!(out.text.contains("binary"), "{}", out.text);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[tokio::test]
+    async fn ls_renders_tree_and_skips_hidden() {
+        let dir = std::env::temp_dir().join(format!("sentinel-ls-test-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        std::fs::create_dir_all(dir.join("node_modules")).unwrap();
+        std::fs::write(dir.join("src").join("main.rs"), "// m\n").unwrap();
+        std::fs::write(dir.join(".hidden"), "h\n").unwrap();
+        std::fs::write(dir.join("node_modules").join("pkg.js"), "// p\n").unwrap();
+
+        let out = LsTool
+            .execute(json!({ "path": dir.to_string_lossy(), "depth": 2 }), &ctx())
+            .await;
+        assert!(!out.is_error, "{}", out.text);
+        assert!(out.text.contains("src/"), "{}", out.text);
+        assert!(out.text.contains("main.rs"), "{}", out.text);
+        assert!(!out.text.contains(".hidden"), "{}", out.text);
+        assert!(!out.text.contains("node_modules"), "{}", out.text);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[tokio::test]
+    async fn edit_distance_is_sane() {
+        assert_eq!(edit_distance("", ""), 0);
+        assert_eq!(edit_distance("abc", "abc"), 0);
+        assert_eq!(edit_distance("abc", "abd"), 1);
+        assert_eq!(edit_distance("kitten", "sitting"), 3);
+    }
+
+    #[tokio::test]
+    async fn sourcegraph_requires_query() {
+        let out = SourcegraphTool
+            .execute(json!({ "query": "   " }), &ctx())
+            .await;
+        assert!(out.is_error, "{}", out.text);
     }
 }
