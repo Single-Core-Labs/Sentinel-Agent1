@@ -129,6 +129,7 @@ function App() {
   const [tokenIn, setTokenIn] = createSignal(0)
   const [tokenOut, setTokenOut] = createSignal(0)
   const [inputFocused, setInputFocused] = createSignal(true)
+  const [runCompleted, setRunCompleted] = createSignal(true)
 
   const commandRegistry = new CommandRegistry()
   let client: BackendClient
@@ -162,6 +163,33 @@ function App() {
 
   const onEvent = (evt: ServerEvent) => {
     switch (evt.event) {
+      case 'thinking': {
+        // Streaming buffer: server sends cumulative turn text, so we replace.
+        setMessages((prev) => {
+          const last = prev[prev.length - 1]
+          if (last && last.kind === 'thinking') {
+            const next = prev.slice()
+            next[next.length - 1] = { ...last, text: evt.text }
+            return next
+          }
+          return [...prev, { id: generateId(), kind: 'thinking', text: evt.text }]
+        })
+        break
+      }
+      case 'completed': {
+        // Finalize: replace the streaming buffer with the final assistant text.
+        setRunCompleted(true)
+        setMessages((prev) => {
+          const last = prev[prev.length - 1]
+          if (last && last.kind === 'thinking') {
+            const next = prev.slice()
+            next[next.length - 1] = { id: last.id, kind: 'assistant', text: evt.text }
+            return next
+          }
+          return [...prev, { id: generateId(), kind: 'assistant', text: evt.text }]
+        })
+        break
+      }
       case 'tool_call':
         push({
           id: generateId(),
@@ -182,6 +210,7 @@ function App() {
         setTokenOut(evt.completion)
         break
       case 'error':
+        setRunCompleted(true)
         push({ id: generateId(), kind: 'system', text: `Error: ${evt.message}` })
         break
       case 'session_created':
@@ -281,6 +310,7 @@ function App() {
     setThinkingSecs(0)
     setIsProcessing(true)
     setSpinFrame(0)
+    setRunCompleted(false)
     const timer = setInterval(() => {
       setThinkingSecs((s) => s + 1)
       setSpinFrame((f) => (f + 1) % SPINNER.length)
@@ -291,14 +321,33 @@ function App() {
         return
       }
 
-      const result = (await client.call('chat', {
+      // chat/stream: the agent run streams live `thinking` / `tool_call` /
+      // `tool_result` / `completed` events; the RPC reply is a fallback.
+      const result = (await client.call('chat/stream', {
         session_id: conn().sessionId,
         message,
-      })) as Record<string, unknown>
+      })) as { chunks?: Array<{ choices?: Array<{ delta?: { content?: string | null } }> }> }
 
-      const responseText = (result?.response ?? 'No response') as string
-      push({ id: generateId(), kind: 'assistant', text: responseText })
+      if (!runCompleted()) {
+        const responseText = (result?.chunks ?? [])
+          .flatMap((c) => c.choices ?? [])
+          .map((c) => c.delta?.content ?? '')
+          .join('')
+          .trim()
+        if (responseText) {
+          setMessages((prev) => {
+            const last = prev[prev.length - 1]
+            if (last && last.kind === 'thinking') {
+              const next = prev.slice()
+              next[next.length - 1] = { id: last.id, kind: 'assistant', text: responseText }
+              return next
+            }
+            return [...prev, { id: generateId(), kind: 'assistant', text: responseText }]
+          })
+        }
+      }
     } catch (err: unknown) {
+      setRunCompleted(true)
       push({
         id: generateId(),
         kind: 'system',
@@ -569,10 +618,10 @@ ${commandRegistry.getHelpText()}`,
         </text>
         <text fg={DIM}>  ·  {statusLabel()}</text>
         <box flexGrow={1} />
-        <Show when={sessionShort()}>
+        {sessionShort() ? (
           <text fg={DIM}>{sessionShort()}</text>
-          <text fg={DIM}>  ·  </text>
-        </Show>
+        ) : null}
+        {sessionShort() ? <text fg={DIM}>  ·  </text> : null}
         <text fg={DIM}>Esc exit</text>
       </box>
 
@@ -600,6 +649,9 @@ ${commandRegistry.getHelpText()}`,
                 </box>
               )}
               {m.kind === 'assistant' && <RichText text={m.text} />}
+              {m.kind === 'thinking' && (
+                <text fg={DIM} wrapMode="word">{m.text}</text>
+              )}
               {m.kind === 'system' && (
                 <text fg={DIM} wrapMode="word">{m.text}</text>
               )}
@@ -624,11 +676,11 @@ ${commandRegistry.getHelpText()}`,
             </box>
           )}
         </For>
-        <Show when={isProcessing()}>
+        {isProcessing() ? (
           <text fg={YELLOW}>
             {SPINNER[spinFrame()]} working… {thinkingSecs()}s
           </text>
-        </Show>
+        ) : null}
       </scrollbox>
 
       <box width="100%" height={1} backgroundColor={SEP} />
@@ -669,9 +721,9 @@ ${commandRegistry.getHelpText()}`,
         paddingRight={1}
       >
         <text fg={DIM}>{conn().model ?? 'no model'}</text>
-        <Show when={conn().sessionId}>
+        {conn().sessionId ? (
           <text fg={DIM}>  ·  session {sessionShort()}</text>
-        </Show>
+        ) : null}
         <box flexGrow={1} />
         <text fg={DIM}>
           {tokenIn()}→{tokenOut()} tok

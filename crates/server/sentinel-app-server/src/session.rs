@@ -286,6 +286,9 @@ impl AppSession {
         };
 
         tokio::pin!(stream);
+        // Thinking events carry the cumulative turn text so clients can
+        // replace (not append) their streaming buffer on every delta.
+        let mut accumulated_text = String::new();
         while let Some(chunk) = stream.next().await {
             if self.agent.is_cancelled() {
                 break;
@@ -295,9 +298,10 @@ impl AppSession {
                     let _ = event_tx.send(Ok(chunk.clone())).await;
                     for choice in &chunk.choices {
                         if let Some(ref text) = choice.delta.content {
-                            let _ = self
-                                .events
-                                .send(ServerEvent::Thinking { text: text.clone() });
+                            accumulated_text.push_str(text);
+                            let _ = self.events.send(ServerEvent::Thinking {
+                                text: accumulated_text.clone(),
+                            });
                         }
                     }
                 }

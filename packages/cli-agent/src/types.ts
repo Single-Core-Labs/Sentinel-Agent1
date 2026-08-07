@@ -18,6 +18,7 @@ export interface ToolCallState {
 export type UiMessage =
   | { id: string; kind: 'user'; text: string }
   | { id: string; kind: 'assistant'; text: string }
+  | { id: string; kind: 'thinking'; text: string }
   | { id: string; kind: 'system'; text: string }
   | { id: string; kind: 'tool'; tool: ToolCallState }
   | { id: string; kind: 'log'; level: string; text: string }
