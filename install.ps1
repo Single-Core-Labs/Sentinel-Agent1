@@ -1,6 +1,6 @@
-﻿# Sentinel AI Installer for Windows (PowerShell 5.1+)
+# Sentinel AI Installer for Windows (PowerShell 5.1+)
 # Usage:
-#   One-liner (latest release):      irm https://raw.githubusercontent.com/Single-Core-Labs/Sentinel-Agent1/main/install.ps1 | iex
+#   One-liner (latest release):      irm https://raw.githubusercontent.com/Single-Core-Labs/Sentinel-Agent1/master/install.ps1 | iex
 #   Pinned version:                  powershell -ExecutionPolicy Bypass -File install.ps1 -Version v0.1.0
 #   Dev install (local cargo build): powershell -ExecutionPolicy Bypass -File install.ps1 -LocalBuild target\release\sentinel.exe
 param(
@@ -48,7 +48,7 @@ if (-not [string]::IsNullOrEmpty($LocalBuild)) {
 }
 Write-Host "  install to: $InstallDir"
 
-# ── 1. Resolve the binary ──────────────────────────────────────────────────
+# -- 1. Resolve the binary --------------------------------------------------
 $LocalBuild = $LocalBuild.Trim()
 if ([string]::IsNullOrEmpty($LocalBuild)) {
     if (-not (Test-Path $InstallDir)) { New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null }
@@ -114,7 +114,7 @@ if (-not (Test-Path $Exe)) {
     exit 1
 }
 
-# ── 2. Write default global config (~/.sentinel/sentinel.toml) ─────────────
+# -- 2. Write default global config (~/.sentinel/sentinel.toml) -------------
 if (-not $SkipConfig) {
     $ConfigDir = Join-Path $env:USERPROFILE ".sentinel"
     $ConfigPath = Join-Path $ConfigDir "sentinel.toml"
@@ -143,7 +143,7 @@ verbose = false
     }
 }
 
-# ── 3. Add install dir to user PATH ────────────────────────────────────────
+# -- 3. Add install dir to user PATH ----------------------------------------
 if (-not $SkipPath) {
     $UserPath = [Environment]::GetEnvironmentVariable("Path", "User")
     if ($UserPath -notlike "*$InstallDir*") {
@@ -157,7 +157,7 @@ if (-not $SkipPath) {
     Write-Warn "PATH update skipped (-SkipPath)."
 }
 
-# ── 4. Optional VS Code extension registration ────────────────────────────
+# -- 4. Optional VS Code extension registration ----------------------------
 if ($InstallVSCode) {
     if ([string]::IsNullOrEmpty($VsixPath)) {
         $VsixCandidates = @(Join-Path $env:USERPROFILE ".sentinel\extensions\*.vsix")
@@ -179,7 +179,7 @@ if ($InstallVSCode) {
     Write-Warn "VS Code extension registration skipped (pass -InstallVSCode [-VsixPath <file.vsix>] to enable)."
 }
 
-# ── 5. Verify ──────────────────────────────────────────────────────────────
+# -- 5. Verify --------------------------------------------------------------
 Write-Step "Verifying install..."
 & $Exe --version
 if ($LASTEXITCODE -ne 0) {

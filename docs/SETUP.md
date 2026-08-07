@@ -5,11 +5,11 @@
 ### One-command install (recommended)
 
 ```powershell
-irm https://raw.githubusercontent.com/Single-Core-Labs/Sentinel-Agent1/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/Single-Core-Labs/Sentinel-Agent1/master/install.ps1 | iex
 ```
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Single-Core-Labs/Sentinel-Agent1/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/Single-Core-Labs/Sentinel-Agent1/master/install.sh | sh
 ```
 
 Installs the release binary to `~/.sentinel/bin`, writes a default global config

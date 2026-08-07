@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Sentinel AI Installer for Linux / macOS
 # Usage:
-#   One-liner (latest release):  curl -fsSL https://raw.githubusercontent.com/Single-Core-Labs/Sentinel-Agent1/main/install.sh | sh
+#   One-liner (latest release):  curl -fsSL https://raw.githubusercontent.com/Single-Core-Labs/Sentinel-Agent1/master/install.sh | sh
 #   Pinned version:              sh install.sh --version v0.1.0
 #   Dev install (local build):   sh install.sh --local-build target/release/sentinel
 set -euo pipefail
