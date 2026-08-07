@@ -163,6 +163,16 @@ async fn test_glob_limit_prioritizes_recently_modified() {
     let result = registry.execute("glob", glob_args, &ctx).await;
     assert!(!result.is_error, "glob failed: {}", result.text);
     assert!(
+        result.text.contains("most recently modified"),
+        "truncated results must say so: {}",
+        result.text
+    );
+    assert!(
+        result.text.contains("3 match(es), showing the latest 1"),
+        "expected a truncation report: {}",
+        result.text
+    );
+    assert!(
         result.text.contains("stale.cpp") || result.text.contains("fresh.cpp"),
         "limited result should be a recent file, got: {}",
         result.text
@@ -217,6 +227,71 @@ async fn test_apply_patch_tool() {
     assert_eq!(
         std::fs::read_to_string(tmp_dir.join("b.txt")).unwrap(),
         "ALPHA\nbeta\n"
+    );
+
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+}
+
+#[tokio::test]
+async fn test_ls_fuzzy_filters_and_ranks() {
+    let registry = ToolRegistry::new();
+    let ctx = ToolContext::new();
+
+    let tmp_dir = std::env::temp_dir().join("sentinel-ls-fuzzy-test");
+    let _ = std::fs::create_dir_all(&tmp_dir.join("src"));
+    std::fs::write(tmp_dir.join("README.md"), "r").unwrap();
+    std::fs::write(tmp_dir.join("src/main.rs"), "m").unwrap();
+    std::fs::write(tmp_dir.join("src/helpers.rs"), "h").unwrap();
+    std::fs::write(tmp_dir.join("src/main.txt"), "t").unwrap();
+
+    let ls_args = serde_json::json!({
+        "path": tmp_dir.to_str().unwrap(),
+        "fuzzy": "mr"
+    });
+    let result = registry.execute("ls", ls_args, &ctx).await;
+    assert!(!result.is_error, "ls failed: {}", result.text);
+    assert!(
+        result.text.contains("src/main.rs"),
+        "fuzzy should find src/main.rs: {}",
+        result.text
+    );
+    assert!(
+        !result.text.contains("main.txt"),
+        "main.txt has no 'r' after 'm', must not match 'mr': {}",
+        result.text
+    );
+    assert!(
+        !result.text.contains("helpers.rs"),
+        "helpers.rs must not match 'mr': {}",
+        result.text
+    );
+    // A bare extension query surfaces all files of that type.
+    let result_txt = registry
+        .execute(
+            "ls",
+            serde_json::json!({ "path": tmp_dir.to_str().unwrap(), "fuzzy": "txt" }),
+            &ctx,
+        )
+        .await;
+    assert!(
+        result_txt.text.contains("src/main.txt"),
+        "fuzzy should find src/main.txt for 'txt': {}",
+        result_txt.text
+    );
+    // Entry under a hidden dir must be skipped.
+    let _ = std::fs::create_dir_all(tmp_dir.join(".cache"));
+    std::fs::write(tmp_dir.join(".cache/rs.txt"), "x").unwrap();
+    let result2 = registry
+        .execute(
+            "ls",
+            serde_json::json!({ "path": tmp_dir.to_str().unwrap(), "fuzzy": "rs" }),
+            &ctx,
+        )
+        .await;
+    assert!(
+        !result2.text.contains(".cache"),
+        "hidden dirs must be skipped: {}",
+        result2.text
     );
 
     let _ = std::fs::remove_dir_all(&tmp_dir);

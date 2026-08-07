@@ -334,7 +334,8 @@ impl Tool for GlobTool {
                     .filter(|p| !filter.should_skip(p))
                     .map(|p| p.display().to_string())
                     .collect();
-                // With a limit, keep the most recently modified matches.
+                // With a limit, collect the full match set, keep the most
+                // recently modified first, then truncate and say so.
                 if let Some(max) = limit {
                     if results.len() > max {
                         results.sort_by(|a, b| {
@@ -346,12 +347,17 @@ impl Tool for GlobTool {
                             let (ta, tb) = (mtime(a), mtime(b));
                             tb.cmp(&ta).then_with(|| a.cmp(b))
                         });
+                        let total = results.len();
                         results.truncate(max);
-                        results.sort();
+                        let json = serde_json::to_string_pretty(&results)
+                            .unwrap_or_else(|_| "[]".to_string());
+                        return ToolOutput::ok(format!(
+                            "{} match(es), showing the latest {} (most recently modified first):\n{}",
+                            total, max, json
+                        ));
                     }
-                } else {
-                    results.sort();
                 }
+                results.sort();
                 ToolOutput::ok(
                     serde_json::to_string_pretty(&results).unwrap_or_else(|_| "[]".to_string()),
                 )
@@ -1425,7 +1431,7 @@ impl Tool for LsTool {
         "ls"
     }
     fn description(&self) -> &str {
-        "List files and subdirectories in a tree structure (skips hidden and common build/system dirs)"
+        "List and search files. Without `fuzzy`: prints a tree (skips hidden and common build/system dirs). With `fuzzy <query>`: ranks matching paths by subsequence similarity (fzf-style), best first"
     }
     fn input_schema(&self) -> serde_json::Value {
         json!({
@@ -1433,7 +1439,8 @@ impl Tool for LsTool {
             "properties": {
                 "path": { "type": "string", "description": "Directory to explore (default: workspace root)" },
                 "depth": { "type": "integer", "description": "Maximum recursion depth (default 2, max 6)" },
-                "max_entries": { "type": "integer", "description": "Maximum entries to print (default 200)" }
+                "max_entries": { "type": "integer", "description": "Maximum entries to print (default 200)" },
+                "fuzzy": { "type": "string", "description": "Fuzzy query; returns ranked flat matches instead of a tree" }
             }
         })
     }
@@ -1452,6 +1459,27 @@ impl Tool for LsTool {
 
         let depth = args["depth"].as_u64().map(|v| v as usize).unwrap_or(2).min(6);
         let max_entries = args["max_entries"].as_u64().map(|v| v as usize).unwrap_or(200);
+        let fuzzy_query = args["fuzzy"]
+            .as_str()
+            .map(str::to_string)
+            .filter(|s| !s.is_empty());
+
+        if let Some(query) = fuzzy_query {
+            let mut matches: Vec<(i64, String)> = Vec::new();
+            collect_fuzzy(&root, &query, depth, &mut matches);
+            if matches.is_empty() {
+                return ToolOutput::ok(format!("no matches for {:?}\n", query));
+            }
+            matches.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+            if matches.len() > max_entries {
+                matches.truncate(max_entries);
+            }
+            let mut out = format!("{} match(es) for {:?}:\n", matches.len(), query);
+            for (_, path) in matches {
+                out.push_str(&format!("  {}\n", path));
+            }
+            return ToolOutput::ok(out);
+        }
 
         let mut out = String::new();
         out.push_str(&format!("{}\n", root.display()));
@@ -1544,6 +1572,85 @@ fn is_skipped_entry(name: &str) -> bool {
             | ".vscode"
             | ".git"
     )
+}
+
+/// Subsequence fuzzy match with scoring (fzf-style). Returns `Some(score)`
+/// where lower is a better match; `None` when `query` is not a subsequence
+/// of `text` (case-insensitive). Intended for the `ls --fuzzy` ranking:
+/// contiguous runs and a leading-position hit score better than gaps.
+fn fuzzy_score(query: &str, text: &str) -> Option<i64> {
+    let q: Vec<char> = query.to_lowercase().chars().collect();
+    let t: Vec<char> = text.to_lowercase().chars().collect();
+    if q.is_empty() {
+        return Some(0);
+    }
+    let mut qi = 0usize;
+    let mut prev: Option<usize> = None;
+    let mut score: i64 = 0;
+    for (ti, tc) in t.iter().enumerate() {
+        if qi < q.len() && *tc == q[qi] {
+            match prev {
+                None => {
+                    score -= 1;
+                    if ti == 0 {
+                        score -= 3; // prefix bonus
+                    }
+                }
+                Some(p) => {
+                    if ti == p + 1 {
+                        score -= 3; // contiguity bonus
+                    } else {
+                        score += 2; // gap penalty between matched chars
+                    }
+                }
+            }
+            prev = Some(ti);
+            qi += 1;
+            if qi == q.len() {
+                return Some(score);
+            }
+        } else {
+            score += 1; // gap penalty for skipped text
+        }
+    }
+    None
+}
+
+/// Flat walk for `ls --fuzzy`: emit every non-skipped entry whose relative
+/// path is a subsequence match, keeping the score. Descends into non-matching
+/// directories so deep matches are found.
+fn collect_fuzzy(root: &std::path::Path, query: &str, max_depth: usize, out: &mut Vec<(i64, String)>) {
+    fn walk(
+        dir: &std::path::Path,
+        root: &std::path::Path,
+        query: &str,
+        depth_left: usize,
+        out: &mut Vec<(i64, String)>,
+    ) {
+        let Ok(rd) = std::fs::read_dir(dir) else {
+            return;
+        };
+        let mut entries: Vec<_> = rd.flatten().collect();
+        entries.sort_by_key(|e| e.file_name().to_string_lossy().to_lowercase());
+        for entry in entries {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if is_skipped_entry(&name) {
+                continue;
+            }
+            let path = entry.path();
+            let rel = path
+                .strip_prefix(root)
+                .map(|r| r.to_string_lossy().replace('\\', "/"))
+                .unwrap_or_else(|_| name.clone());
+            if let Some(score) = fuzzy_score(query, &rel) {
+                out.push((score, rel));
+            }
+            if path.is_dir() && depth_left > 0 {
+                walk(&path, root, query, depth_left - 1, out);
+            }
+        }
+    }
+    walk(root, root, query, max_depth, out);
 }
 
 // ── Sourcegraph ────────────────────────────────────────────────
@@ -1755,6 +1862,20 @@ mod tests {
         assert_eq!(edit_distance("abc", "abc"), 0);
         assert_eq!(edit_distance("abc", "abd"), 1);
         assert_eq!(edit_distance("kitten", "sitting"), 3);
+    }
+
+    #[test]
+    fn fuzzy_score_ranks_better_matches_lower() {
+        // exact prefix beats gapped subsequence
+        assert!(fuzzy_score("ab", "ab").unwrap() < fuzzy_score("ab", "xab").unwrap());
+        // contiguous beats gapped
+        assert!(fuzzy_score("ab", "xxab").unwrap() < fuzzy_score("ab", "axb").unwrap());
+        // matching always beats non-match
+        assert!(fuzzy_score("abc", "axbycz").is_some());
+        assert!(fuzzy_score("abc", "ab").is_none());
+        assert!(fuzzy_score("abc", "ABC").is_some());
+        // empty query matches everything at zero
+        assert_eq!(fuzzy_score("", "anything"), Some(0));
     }
 
     #[tokio::test]
