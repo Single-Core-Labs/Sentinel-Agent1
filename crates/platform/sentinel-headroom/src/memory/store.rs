@@ -37,7 +37,7 @@ pub struct SqliteMemoryStore {
 
 impl SqliteMemoryStore {
     pub fn open(path: &str) -> crate::memory::Result<Self> {
-        let mut conn = Connection::open(path)?;
+        let conn = Connection::open(path)?;
         conn.execute_batch(
             "PRAGMA journal_mode=WAL;
              PRAGMA synchronous=NORMAL;
@@ -54,7 +54,7 @@ impl SqliteMemoryStore {
     }
 
     pub fn in_memory() -> crate::memory::Result<Self> {
-        let mut conn = Connection::open_in_memory()?;
+        let conn = Connection::open_in_memory()?;
         conn.execute_batch(
             "PRAGMA synchronous=NORMAL;
              PRAGMA foreign_keys=ON;
@@ -119,7 +119,7 @@ impl SqliteMemoryStore {
     }
 }
 
-// ── Row mapping (sync) ──────────────────────────────────────────
+// â”€â”€ Row mapping (sync) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 fn row_to_memory(row: &rusqlite::Row) -> rusqlite::Result<Memory> {
     Ok(Memory {
@@ -210,7 +210,7 @@ fn recency_factor(updated_at: i64, half_life_secs: f64) -> f64 {
     (-age / half_life_secs).exp()
 }
 
-// ── SqliteMemoryStore trait impl ──────────────────────────────
+// â”€â”€ SqliteMemoryStore trait impl â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 #[async_trait]
 impl MemoryStore for SqliteMemoryStore {
@@ -243,7 +243,7 @@ impl MemoryStore for SqliteMemoryStore {
         }
         let result = {
             let conn = self.conn.lock().await;
-            let mut stmt = conn.prepare("SELECT * FROM memories WHERE id = ?1")?;
+            let mut stmt = conn.prepare_cached("SELECT * FROM memories WHERE id = ?1")?;
             stmt.query_row(params![id], row_to_memory).ok()
         };
         if let Some(ref m) = result {
@@ -316,7 +316,7 @@ impl MemoryStore for SqliteMemoryStore {
 
         let limit_param_idx = where_params.len() + 2;
 
-        // SQL query — fully synchronous, no awaits
+        // SQL query â€” fully synchronous, no awaits
         let memories: Vec<Memory> = {
             let conn = self.conn.lock().await;
             let sql = format!(
@@ -485,7 +485,7 @@ impl MemoryStore for SqliteMemoryStore {
             )?;
 
             let mut by_category = Vec::new();
-            let mut cat_stmt = conn.prepare(
+            let mut cat_stmt = conn.prepare_cached(
                 "SELECT category, COUNT(*) as cnt FROM memories WHERE user_id = ?1 AND superseded_by IS NULL GROUP BY category ORDER BY cnt DESC"
             )?;
             let cat_rows = cat_stmt.query_map(params![user_id], |r| {
@@ -498,7 +498,7 @@ impl MemoryStore for SqliteMemoryStore {
             }
 
             let mut by_scope = Vec::new();
-            let mut scope_stmt = conn.prepare(
+            let mut scope_stmt = conn.prepare_cached(
                 "SELECT scope, COUNT(*) as cnt FROM memories WHERE user_id = ?1 AND superseded_by IS NULL GROUP BY scope ORDER BY cnt DESC"
             )?;
             let scope_rows = scope_stmt.query_map(params![user_id], |r| {
@@ -517,7 +517,7 @@ impl MemoryStore for SqliteMemoryStore {
             }
 
             let mut by_source = Vec::new();
-            let mut src_stmt = conn.prepare(
+            let mut src_stmt = conn.prepare_cached(
                 "SELECT source, COUNT(*) as cnt FROM memories WHERE user_id = ?1 AND superseded_by IS NULL GROUP BY source ORDER BY cnt DESC"
             )?;
             let src_rows = src_stmt.query_map(params![user_id], |r| {
@@ -620,7 +620,7 @@ impl SqliteMemoryStore {
     }
 }
 
-// ── InMemoryStore ─────────────────────────────────────────────
+// â”€â”€ InMemoryStore â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 pub struct InMemoryStore {
     memories: Mutex<Vec<Memory>>,

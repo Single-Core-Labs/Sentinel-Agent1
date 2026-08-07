@@ -298,7 +298,9 @@ impl EventStore for SqliteEventStore {
     async fn read(&self, session_id: &str) -> Vec<SessionEvent> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
-            .prepare("SELECT payload FROM session_events WHERE session_id = ?1 ORDER BY id")
+            .prepare_cached(
+                "SELECT payload FROM session_events WHERE session_id = ?1 ORDER BY id",
+            )
             .unwrap();
         let rows = stmt
             .query_map(rusqlite::params![session_id], |row| {

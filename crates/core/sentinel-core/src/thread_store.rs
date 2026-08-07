@@ -240,30 +240,62 @@ impl SqliteThreadStore {
     }
 }
 
+/// Serialize and upsert a thread (create immutable, update advances `updated_at`).
+/// Internal, lock-free helper shared by [`save_thread`](ThreadStore::save_thread)
+/// and transaction-scoped forks.
+#[cfg(feature = "sqlite")]
+fn upsert_thread(conn: &Connection, thread: &AgentThread) -> Result<(), ThreadStoreError> {
+    let saved: SavedThread = thread.into();
+    let sanitized = saved.sanitized();
+    let json = serde_json::to_string_pretty(&sanitized)
+        .map_err(|e| ThreadStoreError::Serialization(e.to_string()))?;
+    let thread_id = saved.id;
+    let now = Utc::now().to_rfc3339();
+    conn.execute(
+        "INSERT INTO threads (thread_id, created_at, updated_at, data, schema_version) VALUES (?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(thread_id) DO UPDATE SET
+           updated_at = excluded.updated_at,
+           data = excluded.data,
+           schema_version = excluded.schema_version",
+        params![thread_id, now.clone(), now, json, 1usize],
+    )
+    .map_err(|e| ThreadStoreError::Store(e.to_string()))?;
+    Ok(())
+}
+
+/// Load a thread from any connection (direct or transaction-scoped).
+#[cfg(feature = "sqlite")]
+fn load_in(conn: &Connection, thread_id: &str) -> Result<AgentThread, ThreadStoreError> {
+    let mut stmt = conn
+        .prepare_cached("SELECT data FROM threads WHERE thread_id = ?1")
+        .map_err(|e| ThreadStoreError::Store(e.to_string()))?;
+    let mut rows = stmt
+        .query(params![thread_id])
+        .map_err(|e| ThreadStoreError::Store(e.to_string()))?;
+    if let Some(row) = rows
+        .next()
+        .map_err(|e| ThreadStoreError::Store(e.to_string()))?
+    {
+        let data: String = row
+            .get(0)
+            .map_err(|e| ThreadStoreError::Store(e.to_string()))?;
+        let saved: SavedThread = serde_json::from_str(&data)
+            .map_err(|e| ThreadStoreError::Serialization(e.to_string()))?;
+        Ok(saved.into_thread())
+    } else {
+        Err(ThreadStoreError::NotFound(thread_id.to_string()))
+    }
+}
+
 #[async_trait]
 #[cfg(feature = "sqlite")]
 impl ThreadStore for SqliteThreadStore {
     async fn save_thread(&self, thread: &AgentThread) -> Result<(), ThreadStoreError> {
-        let saved: SavedThread = thread.into();
-        let sanitized = saved.sanitized();
-        let json = serde_json::to_string_pretty(&sanitized)
-            .map_err(|e| ThreadStoreError::Serialization(e.to_string()))?;
-        let thread_id = saved.id;
-        let now = Utc::now().to_rfc3339();
         let conn = self
             .conn
             .lock()
             .map_err(|e| ThreadStoreError::Store(e.to_string()))?;
-        conn.execute(
-            "INSERT INTO threads (thread_id, created_at, updated_at, data, schema_version) VALUES (?1, ?2, ?3, ?4, ?5)
-             ON CONFLICT(thread_id) DO UPDATE SET
-               updated_at = excluded.updated_at,
-               data = excluded.data,
-               schema_version = excluded.schema_version",
-            params![thread_id, now.clone(), now, json, 1usize],
-        )
-        .map_err(|e| ThreadStoreError::Store(e.to_string()))?;
-        Ok(())
+        upsert_thread(&conn, thread)
     }
 
     async fn load_thread(&self, thread_id: &str) -> Result<AgentThread, ThreadStoreError> {
@@ -271,25 +303,7 @@ impl ThreadStore for SqliteThreadStore {
             .conn
             .lock()
             .map_err(|e| ThreadStoreError::Store(e.to_string()))?;
-        let mut stmt = conn
-            .prepare("SELECT data FROM threads WHERE thread_id = ?1")
-            .map_err(|e| ThreadStoreError::Store(e.to_string()))?;
-        let mut rows = stmt
-            .query(params![thread_id])
-            .map_err(|e| ThreadStoreError::Store(e.to_string()))?;
-        if let Some(row) = rows
-            .next()
-            .map_err(|e| ThreadStoreError::Store(e.to_string()))?
-        {
-            let data: String = row
-                .get(0)
-                .map_err(|e| ThreadStoreError::Store(e.to_string()))?;
-            let saved: SavedThread = serde_json::from_str(&data)
-                .map_err(|e| ThreadStoreError::Serialization(e.to_string()))?;
-            Ok(saved.into_thread())
-        } else {
-            Err(ThreadStoreError::NotFound(thread_id.to_string()))
-        }
+        load_in(&conn, thread_id)
     }
 
     async fn list_threads(&self) -> Result<Vec<String>, ThreadStoreError> {
@@ -298,7 +312,7 @@ impl ThreadStore for SqliteThreadStore {
             .lock()
             .map_err(|e| ThreadStoreError::Store(e.to_string()))?;
         let mut stmt = conn
-            .prepare("SELECT thread_id FROM threads ORDER BY thread_id ASC")
+            .prepare_cached("SELECT thread_id FROM threads ORDER BY thread_id ASC")
             .map_err(|e| ThreadStoreError::Store(e.to_string()))?;
         let rows = stmt
             .query_map([], |row| row.get(0))
@@ -329,13 +343,21 @@ impl ThreadStore for SqliteThreadStore {
     }
 
     async fn fork_thread(&self, thread_id: &str) -> Result<AgentThread, ThreadStoreError> {
-        let thread = self.load_thread(thread_id).await?;
-        let forked_conversation = thread.conversation.clone();
-        let mut forked =
-            AgentThread::new(thread.max_turns, thread.max_iterations, thread.yolo_mode);
-        forked.conversation = forked_conversation;
+        // Atomic: load + insert the fork inside a single transaction (DBTX/WithTx equivalent).
+        let mut conn = self
+            .conn
+            .lock()
+            .map_err(|e| ThreadStoreError::Store(e.to_string()))?;
+        let tx = conn
+            .transaction()
+            .map_err(|e| ThreadStoreError::Store(e.to_string()))?;
+        let thread = load_in(&tx, thread_id)?;
+        let mut forked = AgentThread::new(thread.max_turns, thread.max_iterations, thread.yolo_mode);
+        forked.conversation = thread.conversation.clone();
         forked.parent_thread_id = Some(thread.id.to_string());
-        self.save_thread(&forked).await?;
+        upsert_thread(&tx, &forked)?;
+        tx.commit()
+            .map_err(|e| ThreadStoreError::Store(e.to_string()))?;
         Ok(forked)
     }
 }

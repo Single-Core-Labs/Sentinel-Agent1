@@ -20,7 +20,7 @@ impl LocalAgentGraphStore {
     /// Open (or create) the SQLite database at the given path.
     /// Uses in-memory DB if path is `:memory:`.
     pub fn open(path: &str) -> Result<Self, GraphStoreError> {
-        let mut conn =
+        let conn =
             Connection::open(path).map_err(|e| GraphStoreError::DatabaseError(e.to_string()))?;
         conn.execute_batch(
             "PRAGMA journal_mode=WAL;
@@ -163,7 +163,7 @@ impl AgentGraphStore for LocalAgentGraphStore {
             .lock()
             .map_err(|e| GraphStoreError::DatabaseError(e.to_string()))?;
         let mut stmt = conn
-            .prepare(
+            .prepare_cached(
                 "SELECT id, parent_thread_id, child_thread_id, status, created_at, updated_at
              FROM thread_spawn_edges
              WHERE parent_thread_id = ?1
@@ -207,7 +207,7 @@ impl AgentGraphStore for LocalAgentGraphStore {
             .lock()
             .map_err(|e| GraphStoreError::DatabaseError(e.to_string()))?;
         let mut stmt = conn
-            .prepare(
+            .prepare_cached(
                 "SELECT id, parent_thread_id, child_thread_id, status, created_at, updated_at
              FROM thread_spawn_edges
              WHERE child_thread_id = ?1
@@ -231,7 +231,7 @@ impl AgentGraphStore for LocalAgentGraphStore {
             .conn
             .lock()
             .map_err(|e| GraphStoreError::DatabaseError(e.to_string()))?;
-        let mut stmt = conn.prepare(
+        let mut stmt = conn.prepare_cached(
             "SELECT e.id, e.parent_thread_id, e.child_thread_id, e.status, e.created_at, e.updated_at
              FROM thread_spawn_edges e
              LEFT JOIN thread_spawn_edges p ON e.parent_thread_id = p.child_thread_id
@@ -254,7 +254,7 @@ impl AgentGraphStore for LocalAgentGraphStore {
             .lock()
             .map_err(|e| GraphStoreError::DatabaseError(e.to_string()))?;
         let mut stmt = conn
-            .prepare(
+            .prepare_cached(
                 "SELECT DISTINCT parent_thread_id FROM thread_spawn_edges
              UNION
              SELECT DISTINCT child_thread_id FROM thread_spawn_edges
@@ -296,7 +296,7 @@ impl LocalAgentGraphStore {
         conn: &Connection,
         thread_id: &str,
     ) -> Result<Option<String>, GraphStoreError> {
-        let mut stmt = conn.prepare(
+        let mut stmt = conn.prepare_cached(
             "SELECT parent_thread_id FROM thread_spawn_edges WHERE child_thread_id = ?1 LIMIT 1"
         ).map_err(|e| GraphStoreError::DatabaseError(e.to_string()))?;
 
@@ -311,3 +311,4 @@ impl LocalAgentGraphStore {
         }
     }
 }
+
