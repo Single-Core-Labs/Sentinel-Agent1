@@ -22,7 +22,13 @@ impl CliApprovalGate {
             std::io::stdout().flush().ok();
 
             let mut input = String::new();
-            std::io::stdin().read_line(&mut input).ok();
+            let bytes = std::io::stdin().read_line(&mut input).unwrap_or(0);
+            if bytes == 0 {
+                // EOF (closed/redirected stdin): can't ask, so fail closed
+                // instead of silently treating the empty input as "yes".
+                println!(" {} stdin closed; denying tool call.", "✖".red());
+                return ApprovalDecision::Rejected("stdin closed (EOF)".into());
+            }
             let input = input.trim().to_lowercase();
 
             match input.as_str() {
@@ -52,7 +58,10 @@ fn inquire_reason() -> String {
     use std::io::Write;
     std::io::stdout().flush().ok();
     let mut reason = String::new();
-    std::io::stdin().read_line(&mut reason).ok();
+    let bytes = std::io::stdin().read_line(&mut reason).unwrap_or(0);
+    if bytes == 0 {
+        return "stdin closed (EOF)".to_string();
+    }
     reason.trim().to_string()
 }
 
