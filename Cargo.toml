@@ -62,7 +62,6 @@ sentinel-config = { path = "crates/platform/sentinel-config" }
 sentinel-provider = { path = "crates/platform/sentinel-provider" }
 sentinel-provider-info = { path = "crates/platform/sentinel-provider-info" }
 sentinel-agent-identity = { path = "crates/platform/sentinel-agent-identity" }
-sentinel-agent-graph-store = { path = "crates/platform/sentinel-agent-graph-store" }
 sentinel-analytics = { path = "crates/platform/sentinel-analytics" }
 sentinel-headroom = { path = "crates/platform/sentinel-headroom" }
 sentinel-proxy = { path = "crates/platform/sentinel-proxy" }

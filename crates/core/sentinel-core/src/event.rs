@@ -121,48 +121,6 @@ impl EventStore for NullEventStore {
     }
 }
 
-#[derive(Debug)]
-pub struct VecEventStore {
-    events: std::sync::Mutex<Vec<SessionEvent>>,
-}
-
-impl VecEventStore {
-    pub fn new() -> Self {
-        Self {
-            events: std::sync::Mutex::new(Vec::new()),
-        }
-    }
-}
-
-impl Default for VecEventStore {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[async_trait]
-impl EventStore for VecEventStore {
-    async fn append(&self, event: SessionEvent) {
-        let mut guard = self.events.lock().unwrap();
-        guard.push(event);
-    }
-
-    async fn read(&self, _session_id: &str) -> Vec<SessionEvent> {
-        let guard = self.events.lock().unwrap();
-        guard.clone()
-    }
-
-    async fn stream(
-        &self,
-        _session_id: &str,
-    ) -> Box<dyn tokio_stream::Stream<Item = SessionEvent> + Send + Unpin> {
-        let events = {
-            let guard = self.events.lock().unwrap();
-            guard.clone()
-        };
-        Box::new(tokio_stream::iter(events))
-    }
-}
 
 pub type SharedEventStore = Arc<dyn EventStore>;
 
@@ -341,51 +299,6 @@ mod tests {
         assert!(events.is_empty());
     }
 
-    #[tokio::test]
-    async fn test_vec_store_append_read() {
-        let store = VecEventStore::new();
-        store
-            .append(SessionEvent::UserMessage {
-                session_id: "s1".into(),
-                timestamp: Utc::now(),
-                content: "hello".into(),
-            })
-            .await;
-        let events = store.read("s1").await;
-        assert_eq!(events.len(), 1);
-        match &events[0] {
-            SessionEvent::UserMessage { content, .. } => assert_eq!(content, "hello"),
-            _ => panic!("wrong variant"),
-        }
-    }
-
-    #[tokio::test]
-    async fn test_vec_store_stream() {
-        let store = VecEventStore::new();
-        store
-            .append(SessionEvent::SessionCreated {
-                session_id: "s1".into(),
-                timestamp: Utc::now(),
-                model: "gpt-4".into(),
-            })
-            .await;
-        store
-            .append(SessionEvent::TurnEnd {
-                session_id: "s1".into(),
-                timestamp: Utc::now(),
-                turn: 1,
-                iteration: 1,
-            })
-            .await;
-        use tokio_stream::StreamExt;
-        let mut stream = store.stream("s1").await;
-        let first = stream.next().await;
-        assert!(first.is_some());
-        let second = stream.next().await;
-        assert!(second.is_some());
-        let third = stream.next().await;
-        assert!(third.is_none());
-    }
 
     #[tokio::test]
     async fn test_event_session_id_accessor() {

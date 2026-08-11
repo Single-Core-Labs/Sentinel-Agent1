@@ -1,4 +1,4 @@
-use crate::agent::{Agent, AgentOutput, ApprovalGate};
+use crate::agent::{Agent, AgentOutput};
 use crate::compression::ContentCompressor;
 use crate::thread::AgentThread;
 use sentinel_config::SentinelConfig;
@@ -87,64 +87,6 @@ pub async fn run_sub_agent_team(
     results
 }
 
-/// Run sub-tasks with approval gating on each forked thread.
-pub async fn run_sub_agent_team_with_approval(
-    parent_thread: &AgentThread,
-    sub_tasks: Vec<SubTask>,
-    provider: Arc<dyn ModelProvider>,
-    tools: Arc<ToolRegistry>,
-    config: Arc<SentinelConfig>,
-    plugins: Arc<PluginRegistry>,
-    approval: Arc<dyn ApprovalGate>,
-    compressor: Option<Arc<dyn ContentCompressor>>,
-) -> Vec<SubTaskResult> {
-    let mut set: JoinSet<SubTaskResult> = JoinSet::new();
-    let prompt_manager = crate::project_context::ProjectContext::inject_into_prompt_manager(
-        &config,
-    );
-
-    for task in sub_tasks {
-        let provider = Arc::clone(&provider);
-        let tools = Arc::clone(&tools);
-        let config = Arc::clone(&config);
-        let plugins = Arc::clone(&plugins);
-        let approval = Arc::clone(&approval);
-        let compressor = compressor.clone();
-        let prompt_manager = prompt_manager.clone();
-        let forked = parent_thread.fork();
-
-        set.spawn(async move {
-            let mut agent = Agent::new(provider, tools, config)
-                .with_prompt_manager(prompt_manager)
-                .with_plugin_registry(plugins);
-            if let Some(compressor) = compressor {
-                agent = agent.with_compressor(compressor);
-            }
-            let mut thread = forked;
-            let instruction = format!("[Sub-task: {}]\n{}", task.description, task.instruction,);
-            let output = agent
-                .run_with_approval(&mut thread, &instruction, &*approval, &None)
-                .await
-                .unwrap_or_else(|e| AgentOutput::error(e.to_string()));
-
-            SubTaskResult {
-                sub_task_id: task.id,
-                output,
-                thread,
-            }
-        });
-    }
-
-    let mut results = Vec::with_capacity(set.len());
-    while let Some(res) = set.join_next().await {
-        match res {
-            Ok(result) => results.push(result),
-            Err(e) => tracing::error!("Sub-task panicked: {}", e),
-        }
-    }
-
-    results
-}
 
 #[cfg(test)]
 mod tests {

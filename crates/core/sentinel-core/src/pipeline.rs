@@ -355,7 +355,6 @@ impl PipelineAgent {
                 &self.agent.compressor,
                 &None,
                 &None,
-                &None,
                 &self.agent.plugin_registry,
             )
             .await;

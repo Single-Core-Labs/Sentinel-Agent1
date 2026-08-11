@@ -1,10 +1,10 @@
 use crate::compression::{ContentCompressor, NullCompressor};
 use crate::diff_capture::DiffCapture;
 use crate::event::{SessionEvent, SharedEventStore};
-use crate::event_bus::{BusEvent, EventBus, PolicyDecision, PolicyEngine};
+use crate::event_bus::{PolicyDecision, PolicyEngine};
 use crate::prompt::SystemPromptManager;
 use crate::thread::{AgentThread, ApprovalRequest, ThreadStatus};
-use crate::uploader::{create_uploader, NullUploader, SessionPayload, SessionUploader};
+use crate::uploader::{NullUploader, SessionPayload, SessionUploader};
 use crate::checkpoint::CheckpointManager;
 use futures::StreamExt;
 use sentinel_config::SentinelConfig;
@@ -210,16 +210,6 @@ impl Agent {
 
     pub fn with_prompt_manager(mut self, manager: SystemPromptManager) -> Self {
         self.prompt_manager = manager;
-        self
-    }
-
-    pub fn with_uploader(mut self, uploader: Box<dyn SessionUploader>) -> Self {
-        self.uploader = uploader;
-        self
-    }
-
-    pub fn with_uploader_from_config(mut self, config: &crate::uploader::UploadConfig) -> Self {
-        self.uploader = create_uploader(config);
         self
     }
 
@@ -598,7 +588,6 @@ impl Agent {
                 &cancel,
                 &self.compressor,
                 &self.sandbox,
-                &None,
                 policy,
                 &self.plugin_registry,
             )
@@ -985,7 +974,6 @@ impl Agent {
                 &self.compressor,
                 &self.sandbox,
                 &None,
-                &None,
                 &self.plugin_registry,
             )
             .await;
@@ -993,7 +981,10 @@ impl Agent {
             let tool_results = match tool_batch {
                 ToolBatchOutcome::Results(results) => results,
                 ToolBatchOutcome::Denied(reason) => {
-                    return Ok(denied_error(&reason));
+                    return Err(crate::agent::AgentError::Generic(format!(
+                        "Policy denied: {}",
+                        reason
+                    )));
                 }
             };
 
@@ -1274,7 +1265,6 @@ pub(crate) async fn execute_tools_concurrent(
     cancel: &CancellationToken,
     compressor: &Arc<dyn ContentCompressor>,
     sandbox: &Option<crate::sandbox::SharedSandbox>,
-    event_bus: &Option<EventBus>,
     policy: &Option<Arc<dyn PolicyEngine>>,
     plugins: &Arc<PluginRegistry>,
 ) -> ToolBatchOutcome {
@@ -1369,22 +1359,8 @@ pub(crate) async fn execute_tools_concurrent(
         // Policy check (before user approval)
         if let Some(ref policy) = policy {
             let decision = policy.evaluate(name, args).await;
-            let correlation_id = format!("tool-{}-{}", i, tool_call_id);
-            if let Some(ref bus) = event_bus {
-                bus.publish(BusEvent::PolicyCheck {
-                    tool_name: name.clone(),
-                    correlation_id: correlation_id.clone(),
-                    args: args.clone(),
-                });
-            }
             match decision {
                 PolicyDecision::Deny(reason) => {
-                    if let Some(ref bus) = event_bus {
-                        bus.publish(BusEvent::PolicyResult {
-                            correlation_id,
-                            decision: PolicyDecision::Deny(reason.clone()),
-                        });
-                    }
                     evt_handler
                         .handle_event(AgentEvent::Permission {
                             tool: name.clone(),
