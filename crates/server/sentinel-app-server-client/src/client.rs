@@ -79,7 +79,7 @@ impl RemoteClient {
                                 };
                                 pending.insert(id, req.response);
                                 if let Ok(json) = serde_json::to_string(&request) {
-                                    let _ = write.send(tokio_tungstenite::tungstenite::Message::Text(json)).await;
+                                    let _ = write.send(tokio_tungstenite::tungstenite::Message::Text(json.into())).await;
                                 }
                             }
                             Some(msg) = read.next() => {

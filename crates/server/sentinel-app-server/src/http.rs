@@ -162,7 +162,7 @@ async fn handle_ws(socket: WebSocket, handler: Arc<RequestHandler>) {
         let mut rx = UnboundedReceiverStream::new(rx);
         while let Some(msg) = FuturesStreamExt::next(&mut rx).await {
             let json = serde_json::to_string(&msg).unwrap_or_default();
-            if FuturesSinkExt::send(&mut ws_sender, Message::Text(json))
+            if FuturesSinkExt::send(&mut ws_sender, Message::Text(json.into()))
                 .await
                 .is_err()
             {

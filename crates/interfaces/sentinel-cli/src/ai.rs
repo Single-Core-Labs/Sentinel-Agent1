@@ -58,7 +58,7 @@ fn try_spawn_ts_agent(args: &[String]) -> bool {
     // for the config default model. Exported via env so the bun child sees it.
     if let Ok(parsed) = CliArgs::parse(args, "") {
         if !parsed.model_id.is_empty() {
-            std::env::set_var("SENTINEL_REQUESTED_MODEL", &parsed.model_id);
+            unsafe { std::env::set_var("SENTINEL_REQUESTED_MODEL", &parsed.model_id) };
         }
     }
 

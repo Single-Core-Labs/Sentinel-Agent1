@@ -111,14 +111,14 @@ mod tests {
         let _guard = CONSENT_LOCK.lock().unwrap();
         let dir = std::env::temp_dir().join(format!("sentinel-consent-{}", std::process::id()));
         let _ = fs::create_dir_all(&dir);
-        std::env::set_var("SENTINEL_HOME", &dir);
-        std::env::remove_var("USERPROFILE");
-        std::env::remove_var("HOME");
+        unsafe { std::env::set_var("SENTINEL_HOME", &dir) };
+        unsafe { std::env::remove_var("USERPROFILE") };
+        unsafe { std::env::remove_var("HOME") };
 
         assert_eq!(load_consent(), TelemetryConsent::Unset);
         assert!(!is_consent_granted());
 
-        std::env::remove_var("SENTINEL_HOME");
+        unsafe { std::env::remove_var("SENTINEL_HOME") };
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -127,9 +127,9 @@ mod tests {
         let _guard = CONSENT_LOCK.lock().unwrap();
         let dir = std::env::temp_dir().join(format!("sentinel-consent2-{}", std::process::id()));
         let _ = fs::create_dir_all(&dir);
-        std::env::set_var("SENTINEL_HOME", &dir);
-        std::env::remove_var("USERPROFILE");
-        std::env::remove_var("HOME");
+        unsafe { std::env::set_var("SENTINEL_HOME", &dir) };
+        unsafe { std::env::remove_var("USERPROFILE") };
+        unsafe { std::env::remove_var("HOME") };
 
         let path = save_consent(true).expect("save accepted");
         assert!(path.exists());
@@ -140,7 +140,7 @@ mod tests {
         assert_eq!(load_consent(), TelemetryConsent::OptedOut);
         assert!(!is_consent_granted());
 
-        std::env::remove_var("SENTINEL_HOME");
+        unsafe { std::env::remove_var("SENTINEL_HOME") };
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -149,16 +149,16 @@ mod tests {
         let _guard = CONSENT_LOCK.lock().unwrap();
         let dir = std::env::temp_dir().join(format!("sentinel-consent3-{}", std::process::id()));
         let _ = fs::create_dir_all(&dir);
-        std::env::set_var("SENTINEL_HOME", &dir);
-        std::env::remove_var("USERPROFILE");
-        std::env::remove_var("HOME");
+        unsafe { std::env::set_var("SENTINEL_HOME", &dir) };
+        unsafe { std::env::remove_var("USERPROFILE") };
+        unsafe { std::env::remove_var("HOME") };
 
         // Simulate a non-tty first run: nothing is blocked, decision is off.
         let result = prompt_for_consent_once(true);
         assert_eq!(result, TelemetryConsent::OptedOut);
         assert!(is_consent_already_decided(), "a marker must be written");
 
-        std::env::remove_var("SENTINEL_HOME");
+        unsafe { std::env::remove_var("SENTINEL_HOME") };
         let _ = fs::remove_dir_all(&dir);
     }
 }

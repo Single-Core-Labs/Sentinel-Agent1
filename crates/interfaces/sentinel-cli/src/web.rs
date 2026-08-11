@@ -39,7 +39,7 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
                 i += 1;
                 // Explicit token overrides SENTINEL_SERVER_TOKEN env var.
                 if let Some(tok) = args.get(i).cloned() {
-                    std::env::set_var("SENTINEL_SERVER_TOKEN", &tok);
+                    unsafe { std::env::set_var("SENTINEL_SERVER_TOKEN", &tok) };
                 }
             }
             // #61 – unknown flags are an error, not silently ignored

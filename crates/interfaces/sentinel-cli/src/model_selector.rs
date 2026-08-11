@@ -364,7 +364,7 @@ mod tests {
         fn new(key: &'static str, value: &str) -> Self {
             let had = std::env::var_os(key).is_some();
             let prev = std::env::var(key).ok();
-            std::env::set_var(key, value);
+            unsafe { std::env::set_var(key, value) };
             Self { key, had, prev }
         }
     }
@@ -372,8 +372,8 @@ mod tests {
     impl Drop for SetEnv {
         fn drop(&mut self) {
             match (self.had, self.prev.as_deref()) {
-                (true, Some(v)) => std::env::set_var(self.key, v),
-                _ => std::env::remove_var(self.key),
+                (true, Some(v)) => unsafe { std::env::set_var(self.key, v) },
+                _ => unsafe { std::env::remove_var(self.key) },
             }
         }
     }

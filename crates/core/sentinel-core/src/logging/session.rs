@@ -349,7 +349,7 @@ mod tests {
     #[test]
     fn opt_in_env_gate() {
         // Without the env var, no logger is produced.
-        std::env::remove_var(SESSION_LOGS_ENV);
+        unsafe { std::env::remove_var(SESSION_LOGS_ENV) };
         assert!(session_logger_for("sess-x").is_none());
     }
 
@@ -364,8 +364,10 @@ mod tests {
     #[test]
     fn write_json_helpers_persist_payloads_and_seq() {
         let root = tmp_root();
-        std::env::set_var("SENTINEL_SESSION_LOGS_DIR", &root);
-        std::env::set_var(SESSION_LOGS_ENV, "1");
+        unsafe {
+            unsafe { std::env::set_var("SENTINEL_SESSION_LOGS_DIR", &root) };
+            unsafe { std::env::set_var(SESSION_LOGS_ENV, "1") };
+        }
         let logger = session_logger_for("sess-json").expect("logger with env set");
 
         write_request_message_json(&logger, &"hi").unwrap();
@@ -384,8 +386,10 @@ mod tests {
         assert_eq!(tools[0]["payload"]["output"], "ok");
         assert_eq!(tools[0]["payload"]["isError"], false);
 
-        std::env::remove_var("SENTINEL_SESSION_LOGS_DIR");
-        std::env::remove_var(SESSION_LOGS_ENV);
+        unsafe {
+            unsafe { std::env::remove_var("SENTINEL_SESSION_LOGS_DIR") };
+            unsafe { std::env::remove_var(SESSION_LOGS_ENV) };
+        }
         let _ = fs::remove_dir_all(root);
     }
 

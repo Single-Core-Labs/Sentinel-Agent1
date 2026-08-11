@@ -1357,7 +1357,7 @@ pub(crate) async fn execute_tools_concurrent(
         }
 
         // Policy check (before user approval)
-        if let Some(ref policy) = policy {
+        if let Some(policy) = policy {
             let decision = policy.evaluate(name, args).await;
             match decision {
                 PolicyDecision::Deny(reason) => {
@@ -1492,7 +1492,7 @@ pub(crate) async fn execute_tools_concurrent(
         let name = name.clone();
         let args = reroot_sandbox_args(&name, args, sandbox);
         let mut ctx = ctx.clone();
-        if let Some(ref sb) = sandbox {
+        if let Some(sb) = sandbox {
             // Shell workdir and workspace-root defaults land in the sandbox
             // working copy, matching where resolve_path re-roots file paths.
             ctx.sandbox_dir = Some(sb.work_dir().to_string_lossy().to_string());

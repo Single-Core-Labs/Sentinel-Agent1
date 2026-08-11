@@ -1,5 +1,5 @@
 use ed25519_dalek::{Signature, Signer, SigningKey, VerifyingKey};
-use rand::RngCore;
+use rand::TryRngCore;
 
 /// Ed25519 key pair for an agent's cryptographic identity.
 ///
@@ -14,7 +14,9 @@ pub struct KeyPair {
 impl KeyPair {
     pub fn generate() -> Self {
         let mut bytes = [0u8; 32];
-        rand::rngs::OsRng.fill_bytes(&mut bytes);
+        rand::rngs::OsRng
+            .try_fill_bytes(&mut bytes)
+            .expect("OS randomness source must work");
         let signing_key = SigningKey::from_bytes(&bytes);
         let verifying_key = signing_key.verifying_key();
         Self {

@@ -151,11 +151,11 @@ mod tests {
 
     #[test]
     fn openrouter_routes_to_openai_compatible_provider() {
-        std::env::set_var("OPENROUTER_API_KEY", "sk-test");
+        unsafe { std::env::set_var("OPENROUTER_API_KEY", "sk-test") };
         let kind = ProviderKind::from_info(openrouter_info()).expect("openrouter builds");
         // OpenRouter talks OpenAI-compatible REST, so it constructs an OpenAI client.
         assert!(matches!(kind, ProviderKind::OpenAI(_)));
         assert_eq!(kind.name(), "OpenRouter");
-        std::env::remove_var("OPENROUTER_API_KEY");
+        unsafe { std::env::remove_var("OPENROUTER_API_KEY") };
     }
 }
