@@ -64,10 +64,11 @@ function RichText(props: { text: string }) {
   )
 }
 
+/** Tool calls render as a subdued "machinery" timeline — visible, never loud. */
 function ToolRow(props: { tool: ToolCallState }) {
   const t = () => props.tool
   return (
-    <box flexDirection="column" width="100%">
+    <box flexDirection="column" width="100%" marginLeft={1}>
       <Show
         when={t().status === 'running'}
         fallback={
@@ -97,14 +98,44 @@ function ToolRow(props: { tool: ToolCallState }) {
   )
 }
 
+/** Empty-state brand block — the grok-style centered welcome, sentinel voice. */
+function Welcome(props: { model: string | null; onChip: (cmd: string) => void }) {
+  return (
+    <box width="100%" height="100%" flexDirection="column" justifyContent="center" alignItems="center">
+      <box flexDirection="row" alignItems="center">
+        <text fg={theme().accent}>
+          <strong>◆</strong>
+        </text>
+        <text fg={theme().fg}>
+          <strong> SENTINEL</strong>
+        </text>
+      </box>
+      <box width="100%" height={1} />
+      <text fg={theme().dim}>Measurable work is free.</text>
+      <box width="100%" height={1} />
+      <box flexDirection="row">
+        {['/help', '/backends', '/theme', '/models'].map((cmd) => (
+          <box
+            marginLeft={1}
+            marginRight={1}
+            paddingLeft={1}
+            paddingRight={1}
+            borderStyle="rounded"
+            borderColor={theme().sep}
+            onMouseDown={() => props.onChip(cmd)}
+          >
+            <text fg={theme().dim}>{cmd}</text>
+          </box>
+        ))}
+      </box>
+      <box width="100%" height={1} />
+      <text fg={theme().dim}>{props.model ? `model · ${props.model}` : 'connecting to backend…'}</text>
+    </box>
+  )
+}
+
 function App() {
-  const [messages, setMessages] = createSignal<UiMessage[]>([
-    {
-      id: 'system-1',
-      kind: 'system',
-      text: '◆ sentinel — type /help for commands',
-    },
-  ])
+  const [messages, setMessages] = createSignal<UiMessage[]>([])
   const [inputText, setInputText] = createSignal('')
   const [conn, setConn] = createSignal<ConnectionState>({
     status: 'disconnected',
@@ -482,9 +513,7 @@ ${commandRegistry.getHelpText()}`,
       }
 
       case '/clear':
-        setMessages([
-          { id: 'system-1', kind: 'system', text: '◆ sentinel · conversation cleared' },
-        ])
+        setMessages([])
         setTokenIn(0)
         setTokenOut(0)
         break
@@ -696,88 +725,102 @@ ${commandRegistry.getHelpText()}`,
     return id ? id.slice(0, 8) : ''
   })
 
+  const emptyFeed = createMemo(() => messages().length === 0)
+
   return (
     <box width="100%" height="100%" backgroundColor={theme().bg} flexDirection="column">
-      {/* header */}
+      {/* header — minimal chrome, grok-style */}
       <box
         width="100%"
         height={1}
-        backgroundColor={theme().surface}
         flexDirection="row"
         alignItems="center"
-        paddingLeft={1}
-        paddingRight={1}
+        paddingLeft={2}
+        paddingRight={2}
       >
-<text fg={theme().accent}>◆</text>
+        <text fg={theme().accent}>◆</text>
         <text fg={theme().fg}>
           <strong> sentinel</strong>
         </text>
-        <text fg={theme().dim}>  ·  {statusLabel()}</text>
+        <text fg={theme().dim}>  ·  </text>
+        <text fg={statusColor()}>{statusLabel()}</text>
         <box flexGrow={1} />
-        {sessionShort() ? (
-          <text fg={theme().dim}>{sessionShort()}</text>
-        ) : null}
-        {sessionShort() ? <text fg={theme().dim}>  ·  </text> : null}
-        <text fg={theme().dim}>Esc exit</text>
+        {sessionShort() ? <text fg={theme().dim}>{sessionShort()}</text> : null}
       </box>
 
       <box width="100%" height={1} backgroundColor={theme().sep} />
 
       {/* message feed */}
-      <scrollbox
-        width="100%"
-        flexGrow={1}
-        flexDirection="column"
-        paddingLeft={1}
-        paddingRight={1}
-        paddingTop={1}
-        stickyScroll
-        stickyStart="bottom"
-        onMouseDown={() => setInputFocused(false)}
-      >
-        <For each={messages()}>
-          {(m: UiMessage) => (
-            <box flexDirection="column" width="100%">
-              {m.kind === 'user' && (
-                <box flexDirection="row" width="100%">
-                  <text fg={theme().accent}>▶ </text>
-                  <RichText text={m.text} />
-                </box>
-              )}
-              {m.kind === 'assistant' && <RichText text={m.text} />}
-              {m.kind === 'thinking' && (
-                <text fg={theme().dim} wrapMode="word">{m.text}</text>
-              )}
-              {m.kind === 'system' && (
-                <text fg={theme().dim} wrapMode="word">{m.text}</text>
-              )}
-              {m.kind === 'tool' && <ToolRow tool={m.tool} />}
-              {m.kind === 'log' && (
-                <text
-                  fg={m.level === 'ERROR' ? theme().red : m.level === 'WARN' ? theme().yellow : theme().dim}
-                  wrapMode="word"
-                >
-                  {m.text}
-                </text>
-              )}
-              {m.kind === 'permission' && (
-                <text
-                  fg={m.action === 'allow' ? theme().green : m.action === 'veto' ? theme().red : theme().yellow}
-                  wrapMode="word"
-                >
-                  {m.text}
-                </text>
-              )}
-              <box width="100%" height={1} />
-            </box>
-          )}
-        </For>
-        {isProcessing() ? (
-          <text fg={theme().yellow}>
-            {SPINNER[spinFrame()]} working… {thinkingSecs()}s
-          </text>
-        ) : null}
-      </scrollbox>
+      {emptyFeed() ? (
+        <box flexGrow={1} width="100%" onMouseDown={() => setInputFocused(false)}>
+          <Welcome model={conn().model} onChip={(cmd) => handleSend(cmd)} />
+        </box>
+      ) : (
+        <scrollbox
+          width="100%"
+          flexGrow={1}
+          flexDirection="column"
+          paddingLeft={2}
+          paddingRight={2}
+          paddingTop={1}
+          stickyScroll
+          stickyStart="bottom"
+          onMouseDown={() => setInputFocused(false)}
+        >
+          <For each={messages()}>
+            {(m: UiMessage) => (
+              <box flexDirection="column" width="100%">
+                {m.kind === 'user' && (
+                  <box flexDirection="row" width="100%">
+                    <box flexGrow={1} />
+                    <box flexDirection="column" maxWidth="82%">
+                      <RichText text={m.text} />
+                    </box>
+                  </box>
+                )}
+                {m.kind === 'assistant' && <RichText text={m.text} />}
+                {m.kind === 'thinking' && (
+                  <box flexDirection="row" width="100%">
+                    <box flexGrow={1} />
+                    <box flexDirection="column" maxWidth="82%">
+                      <text fg={theme().dim} wrapMode="word">
+                        {m.text}
+                        <text fg={theme().yellow}>▍</text>
+                      </text>
+                    </box>
+                  </box>
+                )}
+                {m.kind === 'system' && (
+                  <text fg={theme().dim} wrapMode="word">{m.text}</text>
+                )}
+                {m.kind === 'tool' && <ToolRow tool={m.tool} />}
+                {m.kind === 'log' && (
+                  <text
+                    fg={m.level === 'ERROR' ? theme().red : m.level === 'WARN' ? theme().yellow : theme().dim}
+                    wrapMode="word"
+                  >
+                    {m.text}
+                  </text>
+                )}
+                {m.kind === 'permission' && (
+                  <text
+                    fg={m.action === 'allow' ? theme().green : m.action === 'veto' ? theme().red : theme().yellow}
+                    wrapMode="word"
+                  >
+                    {m.text}
+                  </text>
+                )}
+                <box width="100%" height={1} />
+              </box>
+            )}
+          </For>
+          {isProcessing() ? (
+            <text fg={theme().dim}>
+              {SPINNER[spinFrame()]} working… {thinkingSecs()}s
+            </text>
+          ) : null}
+        </scrollbox>
+      )}
 
       <box width="100%" height={1} backgroundColor={theme().sep} />
 
@@ -788,13 +831,13 @@ ${commandRegistry.getHelpText()}`,
           flexDirection="column"
           backgroundColor={theme().surface}
           borderStyle="rounded"
-          borderColor={theme().yellow}
+          borderColor={theme().accent}
           paddingLeft={1}
           paddingRight={1}
           paddingTop={1}
           paddingBottom={1}
         >
-          <text fg={theme().yellow}>
+          <text fg={theme().fg}>
             <strong>? {pendingDialog()!.prompt}</strong>
           </text>
           <box width="100%" height={1} />
@@ -829,21 +872,27 @@ ${commandRegistry.getHelpText()}`,
         <box width="100%" height={1} backgroundColor={theme().sep} />
       </Show>
 
-      {/* input */}
+      {/* input — pill bar, grok-style */}
       <box
         width="100%"
-        height={1}
-        backgroundColor={theme().surface}
-        paddingLeft={1}
-        paddingRight={1}
         flexDirection="row"
         alignItems="center"
+        paddingLeft={1}
+        paddingRight={1}
+        paddingTop={1}
+        paddingBottom={1}
+        borderStyle="rounded"
+        borderColor={theme().dim}
+        marginLeft={1}
+        marginRight={1}
+        marginBottom={1}
+        backgroundColor={theme().surface}
       >
-        <text fg={theme().accent}>{'>'}</text>
+        <text fg={theme().accent}>◆</text>
         <input
           value={inputText()}
           onInput={(v: string) => setInputText(v)}
-          placeholder={pendingDialog() ? (dialogCustomMode() ? '  Type your answer…' : '  ↑↓ choose · Enter select · Esc dismiss') : '  Type a message or /help'}
+          placeholder={pendingDialog() ? (dialogCustomMode() ? '  Type your answer…' : '  ↑↓ choose · Enter select · Esc dismiss') : '  Ask anything, or /help'}
           focused={inputFocused() && (!pendingDialog() || dialogCustomMode())}
           width="100%"
           textColor={theme().fg}
@@ -854,24 +903,22 @@ ${commandRegistry.getHelpText()}`,
         />
       </box>
 
-      {/* footer */}
+      {/* footer — the cost story strip */}
       <box
         width="100%"
         height={1}
-        backgroundColor={theme().bg}
         flexDirection="row"
         alignItems="center"
-        paddingLeft={1}
-        paddingRight={1}
+        paddingLeft={2}
+        paddingRight={2}
       >
-        <text fg={theme().dim}>{conn().model ?? 'no model'}</text>
-        {conn().sessionId ? (
-          <text fg={theme().dim}>  ·  session {sessionShort()}</text>
-        ) : null}
+        <text fg={theme().dim}>◆ {getThemeName()}</text>
+        {sessionShort() ? <text fg={theme().dim}>  ·  session {sessionShort()}</text> : null}
         <box flexGrow={1} />
         <text fg={theme().dim}>
-          {tokenIn()}→{tokenOut()} tok
+          ↑{tokenIn()} ↓{tokenOut()} tok
         </text>
+        <text fg={theme().dim}>  ·  esc exit</text>
       </box>
     </box>
   )
