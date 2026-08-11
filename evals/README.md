@@ -40,9 +40,11 @@ bun run evals:budget         # Context budget tests
 
 | Env Var | Description | Default |
 |---------|-------------|---------|
-| `SENTINEL_BIN` | Path to the `sentinel` binary | Auto-resolved: `./target/debug/sentinel.exe` → `./target/release/sentinel.exe` → `sentinel` on PATH |
+| `SENTINEL_BIN` | Path to the `sentinel` binary | Auto-resolved: `./target/debug/sentinel.exe` → `./target/release/sentinel.exe` → `sentinel` on PATH. CI sets it to `${{ github.workspace }}/target/debug/sentinel`. |
 | `SENTINEL_EVAL_MODEL` | Model under test | `claude-3-5-haiku-20241022` |
 | `SENTINEL_JUDGE_MODEL` | Model used for LLM-as-judge | Same as `SENTINEL_EVAL_MODEL` |
+| `SENTINEL_YOLO_MODE` | `1` adds `--yolo` (auto-approve tool calls); `0`/`false` spawns the agent in approval-gated mode | Auto-approve (`--yolo`) |
+| `SENTINEL_SANDBOX` | `1` forces `run_shell_command` through the OSJailSandbox wrapper | Per config |
 | `EVAL_CATEGORY` | Only run evals of this category | (all categories) |
 | `RUN_EVALS` | Set to `1` to actually execute evals | (skip USUALLY_PASSES in CI) |
 
@@ -51,7 +53,7 @@ bun run evals:budget         # Context budget tests
 Each eval spawns the binary in **single-shot mode**:
 
 ```
-sentinel ai <model> --yolo --prompt "<prompt>"
+sentinel ai <model> --yolo --prompt "<prompt>"     # approval-safety evals set SENTINEL_YOLO_MODE=0
 ```
 
 - `--prompt` runs exactly one agent turn and exits (no REPL).

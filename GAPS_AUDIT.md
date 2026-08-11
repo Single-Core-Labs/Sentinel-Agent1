@@ -6,6 +6,27 @@
 
 ---
 
+## 0.1 Resolution Status (2026-08-11)
+
+Fix work landed on branch `fix/plugin-plane-guards` (default branch `master`):
+
+| # | Status | Where |
+|---|--------|-------|
+| S1+S2+S3 | ✅ FIXED — Windows `guard.cmd`→`guard.ps1` resolution; `Deny` variant enforced; plugins wired into `exec`, `local`, sub-agents, server sessions | `db3eda8`, `88da08b` (script.rs, plugin.rs, agent.rs) |
+| S4 | ✅ FIXED — `write`/`edit`/`view`/`apply_patch`/`patch`/`glob`/`grep`/`ls`/`git_*` re-rooted into the sandbox dir when `SENTINEL_SANDBOX=1` | `0a6a275` (sandbox.rs `resolve_path`/`work_dir`, agent.rs `reroot_sandbox_args`) |
+| S10 | ✅ FIXED — activity log single-writer: `registry.rs` appends `tool_call` records; handler only renders + writes permission records | `0a6a275` |
+| S11 | ✅ FIXED — real tool names (`write`/`read`/`grep`), `getEvalModel()` env capture, conditional `--yolo` via `SENTINEL_YOLO_MODE`, `parseActivityLog` dedupe + content fallback, sandbox evals set `SENTINEL_SANDBOX=1` | `0a6a275` (test-helper.ts, tool_use_correctness, sandbox_safety) |
+| S12 | ✅ FIXED — `JsonRpcError::unauthorized` (-32001) + `ensure_authed` gating `tools/call`, `fs/*`, `command/exec(+sandboxed)`, `config/set`, `chat*` when `SENTINEL_SERVER_TOKEN` set | `5d9998f` (rpc.rs, handler.rs, test) |
+| S13 | ✅ FIXED — `SENTINEL_WS_URL` env with `ws://127.0.0.1:9090/ws` fallback | `19124ef` (App.tsx) |
+| S14 | ✅ FIXED — Rust emits `TokenCount` after `chat`/`chat/stream` turns; TS renders blocking `ask_user` card (select + custom answer + Esc dismiss → `dialog/submitResponse`); `session_created` surfaced from RPC result | `19124ef` (handler.rs, App.tsx, types.ts) |
+| X7 / M13 | ✅ WIRED — agent path wraps the selected provider in `ModelRouter` (retry + backoff + health-aware fallback, previously tests-only) | `6ba9735` (ai.rs) |
+| S5 | ⚠️ PARTIAL — `ollama-local` provider id fix verified in selector; first-run wizard still absent (M15) |
+| X1 / X3 / X5 / X6 | KEEP — `compact.rs` superseded by sentinel-headroom; graph-store is roadmap item 2 with tests; `SlackMessenger`/`ResearchTool` tested but unwired — delete or wire as follow-up |
+
+Remaining known gaps after this pass: S15 (MCP tools all mutating), S16 (web sessions toolset), S17 (port convention), S18/S23 (guard `patch`/relative-path coverage), S21 (hook verdicts fire-and-forget), S22/S31 (bunfig/lockfile hygiene), S24 (web_search Wikipedia-only), M-series roadmap (extensions, graph memory wiring, marketplace, watch mode, OIDC).
+
+---
+
 ## 0. Docs vs Reality (stale documentation)
 
 The repo ships several analysis/plan docs (`newgaps.md`, `m.md`, `sep.md`, README) that describe code that no longer exists or never existed. Any fix work must update these alongside code.
@@ -142,13 +163,15 @@ The repo ships several analysis/plan docs (`newgaps.md`, `m.md`, `sep.md`, READM
 
 ## 4. Recommended Fix Order (correctness first)
 
-1. **S1+S2+S3 — Plugin plane restore:** Windows `guard.cmd/.ps1` resolution in `script.rs`; add `Deny` variant and wire plugins into `exec`, `local`, subagents, server sessions. (This is the "policy moat" — currently does nothing on the primary OS.)
-2. **S10/S11 — Evals green**: fix tool names, activity-log single-write, `SENTINEL_YOLO_MODE`/`--yolo` harness, `EVAL_MODEL` scoping. Restore `evals:always` gate.
+**Done 2026-08-11:** items 1, 2, 4 (sandbox half), 5, and the S13/S14 contract drift (see 0.1).
+
+1. ~~**S1+S2+S3 — Plugin plane restore**~~ ✅
+2. ~~**S10/S11 — Evals green**~~ ✅ (gate restored in CI `evals:always` on `master`)
 3. **S6 — Exit-code discipline**: interactive failure → non-zero; build App on interactive path.
-4. **S4/S5 — core correctness**: sandbox write/edit; default-model local auto-detection with the `ollama-local` shipped config.
-5. **S12 — server auth**: enforce token on `tools/call`/`command/exec`/`fs/*`; validate `--port`.
-6. **X-list — delete or wire dead code** (`compact.rs`, `route/`, `hooks.rs`, `messaging.rs`, `research_tool`, graph-store crate, `with_subagent_team` approval variant, `cost.rs` tracker), then draft.
-7. **Docs sync pass** (D-series + `newgaps.md`/`m.md`/`sep.md`/README) once code matches reality.
+4. ~~**S4/S5 — core correctness**~~ ✅ S4 sandboxed file tools; S5 partial (local-model first-run still open)
+5. ~~**S12 — server auth**~~ ✅
+6. **X-list — delete or wire dead code**: wire or delete `messaging.rs` Slack, `research_tool`, `hooks.rs`; keep graph-store (roadmap) and `compact.rs` (superseded by headroom); `route/`/`protocols/` orphan layer triage.
+7. **Docs sync pass** (D-series + `newgaps.md`/`m.md`/`sep.md`/README) — GAPS_AUDIT 0.1 updated; README tool-name claims pending.
 8. **M-list triage** — re-prioritize unbuilt product features vs. Sept launch.
 
 ---
