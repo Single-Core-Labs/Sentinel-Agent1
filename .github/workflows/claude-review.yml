@@ -64,7 +64,7 @@ jobs:
       - name: Prepare Claude Code bin directory
         run: mkdir -p "$HOME/.local/bin"
 
-      - uses: anthropics/claude-code-action@v1.0.181
+      - uses: anthropics/claude-code-action@v1.0.185
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           # Bypass the OIDC -> Claude GitHub App token exchange. That exchange
