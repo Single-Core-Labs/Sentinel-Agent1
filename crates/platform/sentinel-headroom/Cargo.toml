@@ -19,7 +19,6 @@ code-aware = [
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
-serde_yaml = "0.9"
 tracing.workspace = true
 thiserror.workspace = true
 regex.workspace = true

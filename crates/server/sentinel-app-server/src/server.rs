@@ -2,9 +2,7 @@ use crate::handler::RequestHandler;
 use crate::http::HttpServer;
 use sentinel_analytics::AnalyticsPipeline;
 use sentinel_app_server_protocol::rpc::{JsonRpcMessage, JsonRpcResponse};
-use sentinel_app_server_transport::{
-    Authenticator, BoxedSink, TransportEvent, TransportKind, TransportServer,
-};
+use sentinel_app_server_transport::{BoxedSink, TransportEvent, TransportKind, TransportServer};
 use sentinel_config::SentinelConfig;
 use sentinel_core::thread_store::{JsonFileThreadStore, ThreadStore};
 use sentinel_tools::ToolRegistry;
@@ -15,7 +13,6 @@ pub struct AppServer {
     _config: Arc<SentinelConfig>,
     handler: Arc<RequestHandler>,
     _analytics: Arc<AnalyticsPipeline>,
-    _authenticator: Option<Authenticator>,
     lsp: crate::lsp::LspManager,
 }
 
@@ -114,14 +111,8 @@ impl AppServer {
             _config: config,
             handler,
             _analytics: analytics,
-            _authenticator: None,
             lsp,
         }
-    }
-
-    pub fn with_auth(mut self, secret: impl Into<String>) -> Self {
-        self._authenticator = Some(Authenticator::new(secret));
-        self
     }
 
     pub async fn run_stdio(&self) -> Result<(), Box<dyn std::error::Error>> {
@@ -137,20 +128,6 @@ impl AppServer {
         result
     }
 
-    pub async fn run_http(&self, addr: &SocketAddr) -> anyhow::Result<()> {
-        let http = HttpServer::new(self.handler.clone());
-        http.run(addr).await
-    }
-
-    pub async fn run_http_with_dir(
-        &self,
-        addr: &SocketAddr,
-        static_dir: &str,
-    ) -> anyhow::Result<()> {
-        let (_tx, rx) = tokio::sync::watch::channel(false);
-        self.run_http_with_dir_with_shutdown(addr, static_dir, rx).await
-    }
-
     pub async fn run_http_with_dir_with_shutdown(
         &self,
         addr: &SocketAddr,
@@ -162,11 +139,6 @@ impl AppServer {
         let result = http.run_with_shutdown(addr, shutdown).await;
         self.lsp.shutdown().await;
         result
-    }
-
-    pub async fn run_tcp(&self, addr: &str) -> Result<(), Box<dyn std::error::Error>> {
-        let (_tx, rx) = tokio::sync::watch::channel(false);
-        self.run_tcp_with_shutdown(addr, rx).await
     }
 
     pub async fn run_tcp_with_shutdown(

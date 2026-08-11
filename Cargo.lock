@@ -1939,9 +1939,7 @@ dependencies = [
  "jsonwebtoken",
  "rand",
  "reqwest",
- "sentinel-protocol",
  "serde",
- "serde_json",
  "thiserror 2.0.19",
  "tokio",
  "tracing",
@@ -1952,12 +1950,9 @@ dependencies = [
 name = "sentinel-ai-core"
 version = "0.1.0"
 dependencies = [
- "async-trait",
  "serde",
- "serde_json",
  "thiserror 2.0.19",
  "tokio",
- "tracing",
  "uuid",
 ]
 
@@ -2152,11 +2147,8 @@ dependencies = [
 name = "sentinel-exec"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "async-trait",
- "glob",
  "serde",
- "serde_json",
  "thiserror 2.0.19",
  "tokio",
  "tracing",
@@ -2182,7 +2174,6 @@ dependencies = [
  "sentinel-tools",
  "serde",
  "serde_json",
- "serde_yaml",
  "sha2",
  "thiserror 2.0.19",
  "tokio",
@@ -2200,7 +2191,6 @@ dependencies = [
 name = "sentinel-mcp"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "async-trait",
  "reqwest",
  "sentinel-protocol",
@@ -2270,21 +2260,14 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "axum",
- "base64",
  "chrono",
- "colored",
- "hex",
- "hyper",
  "reqwest",
- "sentinel-core",
  "sentinel-headroom",
  "serde",
  "serde_json",
- "sha2",
  "tokio",
  "tower-http 0.5.2",
  "tracing",
- "uuid",
 ]
 
 [[package]]
@@ -2379,19 +2362,6 @@ dependencies = [
  "itoa",
  "ryu",
  "serde",
-]
-
-[[package]]
-name = "serde_yaml"
-version = "0.9.34+deprecated"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a8b1a1a2ebf674015cc02edccce75287f1a0130d394307b36743c2f5d504b47"
-dependencies = [
- "indexmap",
- "itoa",
- "ryu",
- "serde",
- "unsafe-libyaml",
 ]
 
 [[package]]
@@ -3101,12 +3071,6 @@ name = "unicode-ident"
 version = "1.0.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75"
-
-[[package]]
-name = "unsafe-libyaml"
-version = "0.2.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "673aac59facbab8a9007c7f6108d11f63b603f7cabff99fabf650fea5c32b861"
 
 [[package]]
 name = "untrusted"

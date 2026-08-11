@@ -28,7 +28,6 @@ pub mod thread;
 pub mod thread_store;
 pub mod title;
 pub mod uploader;
-pub mod worktree;
 pub use event::create_event_store_in;
 pub use event_bus::*;
 pub use logging::*;

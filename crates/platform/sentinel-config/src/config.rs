@@ -1,6 +1,6 @@
 use crate::error::ConfigError;
 use sentinel_mcp::McpServerDef;
-use sentinel_provider_info::{default_providers, AuthConfig, ModelEntry, ProviderInfo};
+use sentinel_provider_info::{default_providers, AuthConfig, ProviderInfo};
 use serde::Deserialize;
 use std::sync::{Mutex, OnceLock};
 
@@ -875,6 +875,7 @@ pub fn update_theme(name: &str) -> Result<(), ConfigError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sentinel_provider_info::ModelEntry;
 
     fn temp_toml(name: &str, content: &str) -> String {
         let path = std::env::temp_dir().join(format!(

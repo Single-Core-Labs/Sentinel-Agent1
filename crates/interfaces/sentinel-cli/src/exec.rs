@@ -211,11 +211,6 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     );
     let pipeline_agent = pipeline_agent.with_memory_file(mfm);
 
-    // Optional: Set up worktree manager for parallel agents
-    let _wtm =
-        sentinel_core::worktree::WorktreeManager::new(&std::env::current_dir().unwrap_or_default());
-    // Use wtm.create_worktree("agent-1").await for parallel agent isolation
-
     let mut thread = app.new_session(config.agent.yolo_mode);
 
     print_banner();
