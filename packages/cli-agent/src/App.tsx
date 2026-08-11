@@ -1,6 +1,7 @@
 import { createSignal, createMemo, For, onMount, onCleanup, Show } from 'solid-js'
 import { useKeyboard } from '@opentui/solid'
-import type { UiMessage, ToolCallState, ConnectionState, ServerEvent } from './types'
+import type { SelectOption } from '@opentui/core'
+import type { UiMessage, ToolCallState, ConnectionState, ServerEvent, PendingDialog } from './types'
 import { BackendClient } from './backend'
 import { CommandRegistry, CommandExpander } from './commands'
 
@@ -130,6 +131,13 @@ function App() {
   const [tokenOut, setTokenOut] = createSignal(0)
   const [inputFocused, setInputFocused] = createSignal(true)
   const [runCompleted, setRunCompleted] = createSignal(true)
+  // Blocking question card (grok TUI pattern): while set, the prompt is
+  // disabled and keyboard input goes to the dialog.
+  const [pendingDialog, setPendingDialog] = createSignal<PendingDialog | null>(null)
+  const [dialogCustomMode, setDialogCustomMode] = createSignal(false)
+
+  const wsUrl =
+    (Bun.env.SENTINEL_WS_URL as string | undefined)?.trim() || 'ws://127.0.0.1:9090/ws'
 
   const commandRegistry = new CommandRegistry()
   let client: BackendClient
@@ -227,6 +235,17 @@ function App() {
           text: `Session ended: ${evt.reason}`,
         })
         break
+      case 'ask_user':
+        // Blocking card: freeze the prompt until the user answers.
+        setPendingDialog({
+          requestId: evt.request_id,
+          prompt: evt.prompt,
+          options: evt.options ?? [],
+          allowCustom: evt.allow_custom,
+        })
+        setDialogCustomMode(false)
+        setInputFocused(false)
+        break
       case 'log':
         push({
           id: generateId(),
@@ -268,7 +287,7 @@ function App() {
     })
     client.onEvent = onEvent
     try {
-      await client.connect('ws://127.0.0.1:9090/ws')
+      await client.connect(wsUrl)
       const requestedModel = (Bun.env.SENTINEL_REQUESTED_MODEL as string | undefined) || null
       const result = (await client.call('session/create', { model: requestedModel })) as Record<string, unknown>
       const sessionId = result.session_id as string
@@ -279,6 +298,13 @@ function App() {
         model: result.model as string,
       }))
       await client.subscribe(sessionId).catch(() => {})
+      // The server broadcasts `session_created` before any client has
+      // subscribed, so surface the session from the RPC result directly.
+      push({
+        id: generateId(),
+        kind: 'system',
+        text: `Session created: ${sessionId} (${String(result.model ?? '')})`,
+      })
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Connection failed'
       setConn((c) => ({
@@ -304,6 +330,11 @@ function App() {
 
   useKeyboard((key) => {
     if (key.name === 'escape') {
+      // Escape while a question card is open dismisses it (grok cancel-turn).
+      if (pendingDialog()) {
+        void submitDialog('')
+        return
+      }
       if (exitArmed()) {
         push({ id: generateId(), kind: 'system', text: 'Exit cancelled. Session kept for /resume.' })
         setExitArmed(false)
@@ -369,6 +400,11 @@ function App() {
   const handleSend = (text: string) => {
     const trimmed = text.trim()
     if (!trimmed || isProcessing()) return
+    if (pendingDialog()) {
+      // Answer the open question card.
+      if (dialogCustomMode()) void submitDialog(trimmed)
+      return
+    }
     if (trimmed.startsWith('/')) {
       handleSlashCommand(trimmed)
       return
@@ -376,6 +412,29 @@ function App() {
     push({ id: generateId(), kind: 'user', text: trimmed })
     setInputText('')
     doChat(trimmed)
+  }
+
+  /** Answer the blocking question card via dialog/submitResponse. */
+  const submitDialog = async (response: string) => {
+    const dlg = pendingDialog()
+    if (!dlg) return
+    try {
+      await client?.call('dialog/submitResponse', {
+        request_id: dlg.requestId,
+        response,
+      })
+      push({ id: generateId(), kind: 'user', text: response || '(no answer)' })
+    } catch (err: unknown) {
+      push({
+        id: generateId(),
+        kind: 'system',
+        text: `Dialog failed: ${err instanceof Error ? err.message : 'unknown error'}`,
+      })
+    } finally {
+      setPendingDialog(null)
+      setDialogCustomMode(false)
+      setInputFocused(true)
+    }
   }
 
   const handleSlashCommand = async (cmd: string) => {
@@ -588,6 +647,16 @@ ${commandRegistry.getHelpText()}`,
     setInputText('')
   }
 
+  const dialogOptions = createMemo<SelectOption[]>(() => {
+    const dlg = pendingDialog()
+    if (!dlg) return []
+    const opts: SelectOption[] = dlg.options.map((o) => ({ name: o, description: '' }))
+    if (dlg.allowCustom) {
+      opts.push({ name: 'Type your own answer…', description: '', value: '__custom__' })
+    }
+    return opts
+  })
+
   const statusColor = createMemo(() => {
     const s = conn().status
     return s === 'connected' ? GREEN : s === 'connecting' ? YELLOW : RED
@@ -692,6 +761,54 @@ ${commandRegistry.getHelpText()}`,
 
       <box width="100%" height={1} backgroundColor={SEP} />
 
+      {/* blocking question card */}
+      <Show when={pendingDialog()}>
+        <box
+          width="100%"
+          flexDirection="column"
+          backgroundColor={SURFACE}
+          borderStyle="rounded"
+          borderColor={YELLOW}
+          paddingLeft={1}
+          paddingRight={1}
+          paddingTop={1}
+          paddingBottom={1}
+        >
+          <text fg={YELLOW}>
+            <strong>? {pendingDialog()!.prompt}</strong>
+          </text>
+          <box width="100%" height={1} />
+          <Show
+            when={!dialogCustomMode()}
+            fallback={
+              <text fg={DIM} wrapMode="word">
+                Type your answer and press Enter (Esc to dismiss).
+              </text>
+            }
+          >
+            <select
+              width="100%"
+              options={dialogOptions()}
+              focused={!dialogCustomMode()}
+              showDescription={false}
+              showSelectionIndicator={true}
+              selectedBackgroundColor={ACCENT}
+              selectedTextColor={BG}
+              onSelect={(_i, opt) => {
+                if (!opt) return
+                if (opt.value === '__custom__') {
+                  setDialogCustomMode(true)
+                  setInputFocused(true)
+                } else {
+                  void submitDialog(opt.name)
+                }
+              }}
+            />
+          </Show>
+        </box>
+        <box width="100%" height={1} backgroundColor={SEP} />
+      </Show>
+
       {/* input */}
       <box
         width="100%"
@@ -706,8 +823,8 @@ ${commandRegistry.getHelpText()}`,
         <input
           value={inputText()}
           onInput={(v: string) => setInputText(v)}
-          placeholder="  Type a message or /help"
-          focused={inputFocused()}
+          placeholder={pendingDialog() ? (dialogCustomMode() ? '  Type your answer…' : '  ↑↓ choose · Enter select · Esc dismiss') : '  Type a message or /help'}
+          focused={inputFocused() && (!pendingDialog() || dialogCustomMode())}
           width="100%"
           textColor={FG}
           backgroundColor={SURFACE}

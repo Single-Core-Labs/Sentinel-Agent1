@@ -501,6 +501,15 @@ impl RequestHandler {
                     let msg = p.message.clone();
                     tokio::spawn(async move { session.ensure_title(&msg).await });
                 }
+                // Token counters: keep the client's footer accurate.
+                let (prompt, completion) = (
+                    session.agent.prompt_tokens() as u64,
+                    session.agent.completion_tokens() as u64,
+                );
+                let _ = session.events.send(ServerEvent::TokenCount {
+                    prompt,
+                    completion,
+                });
                 Ok(serde_json::json!({ "response": response }))
             }
             Err(e) => Err(JsonRpcError::internal_error(e)),
@@ -521,6 +530,7 @@ impl RequestHandler {
             None
         };
         let store = self.thread_store.clone();
+        let session_for_tokens = session.clone();
         tokio::spawn(async move {
             session
                 .chat_stream_with_context(&msg, tx, first_turn_context)
@@ -534,6 +544,14 @@ impl RequestHandler {
                     tracing::error!("Failed to save thread to store: {:?}", e);
                 }
             }
+            let (prompt, completion) = (
+                session_for_tokens.agent.prompt_tokens() as u64,
+                session_for_tokens.agent.completion_tokens() as u64,
+            );
+            let _ = session_for_tokens.events.send(ServerEvent::TokenCount {
+                prompt,
+                completion,
+            });
         });
 
         let stream = ReceiverStream::new(rx);

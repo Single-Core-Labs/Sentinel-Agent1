@@ -29,6 +29,7 @@ export type ServerEvent =
   | { event: 'thinking'; text: string }
   | { event: 'tool_call'; name: string; args: unknown }
   | { event: 'tool_result'; name: string; output: string; is_error: boolean }
+  | { event: 'ask_user'; request_id: string; prompt: string; options: string[]; allow_custom: boolean }
   | { event: 'completed'; text: string }
   | { event: 'error'; message: string }
   | { event: 'token_count'; prompt: number; completion: number }
@@ -36,6 +37,14 @@ export type ServerEvent =
   | { event: 'session_ended'; session_id: string; reason: string }
   | { event: 'log'; level: string; message: string }
   | { event: 'permission'; tool: string; action: 'allow' | 'deny' | 'veto'; reason?: string | null }
+
+/** A pending question from the agent (blocking card, grok-style). */
+export interface PendingDialog {
+  requestId: string
+  prompt: string
+  options: string[]
+  allowCustom: boolean
+}
 
 export interface ChatMessage {
   id: string
