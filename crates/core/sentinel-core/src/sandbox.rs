@@ -6,6 +6,18 @@ use std::sync::Arc;
 pub trait Sandbox: Send + Sync {
     fn name(&self) -> &str;
     fn root(&self) -> &Path;
+    /// Map a tool-supplied path into the sandbox. Default: unchanged.
+    /// Implementations re-root absolute paths and resolve relative paths
+    /// against the sandbox working copy so file tools (read/write/edit/
+    /// apply_patch) cannot escape the jail.
+    fn resolve_path(&self, path: &str) -> PathBuf {
+        PathBuf::from(path)
+    }
+    /// Directory that relative paths and shell commands resolve against
+    /// inside the sandbox (the working copy).
+    fn work_dir(&self) -> PathBuf {
+        self.root().join("work")
+    }
     async fn exec(&self, command: &str, workdir: &Path) -> Result<String, String>;
     async fn read_file(&self, path: &Path) -> Result<String, String>;
     async fn write_file(&self, path: &Path, content: &str) -> Result<(), String>;
@@ -88,6 +100,10 @@ impl Sandbox for LocalSandbox {
     }
     fn root(&self) -> &Path {
         &self.root
+    }
+
+    fn resolve_path(&self, path: &str) -> PathBuf {
+        self.resolve(Path::new(path))
     }
 
     async fn exec(&self, command: &str, _workdir: &Path) -> Result<String, String> {

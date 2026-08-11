@@ -4,6 +4,7 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 
+use crate::agent::execute_tools_concurrent;
 use crate::agent::*;
 use crate::event::SessionEvent;
 use crate::memory_file::MemoryFileManager;
@@ -343,7 +344,7 @@ impl PipelineAgent {
 
             let cancel = CancellationToken::new();
             let ctx = ToolContext::new();
-            let tool_results = execute_tools_concurrent(
+            let tool_batch = execute_tools_concurrent(
                 &tool_calls,
                 Arc::clone(&self.agent.tools),
                 approval,
@@ -358,6 +359,16 @@ impl PipelineAgent {
                 &self.agent.plugin_registry,
             )
             .await;
+
+            let tool_results = match tool_batch {
+                ToolBatchOutcome::Results(results) => results,
+                ToolBatchOutcome::Denied(reason) => {
+                    return Err(crate::agent::AgentError::Generic(format!(
+                        "Policy denied: {}",
+                        reason
+                    )));
+                }
+            };
 
             for result in &tool_results {
                 thread.add_message(Message::new(

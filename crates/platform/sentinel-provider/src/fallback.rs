@@ -136,10 +136,13 @@ pub struct RetryConfig {
 
 impl Default for RetryConfig {
     fn default() -> Self {
+        // grok TUI defaults (xai-grok-tools retry.rs): 10 attempts, 1s base,
+        // 30s cap, exponential — transient provider errors get several
+        // chances before the agent loop surfaces them.
         Self {
-            max_attempts: 3,
+            max_attempts: 10,
             base_delay_ms: 1000,
-            max_delay_ms: 10000,
+            max_delay_ms: 30000,
             jitter: true,
         }
     }

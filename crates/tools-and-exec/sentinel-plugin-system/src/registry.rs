@@ -54,7 +54,8 @@ impl PluginRegistry {
     }
 
     /// Dispatch an event to all registered hooks.
-    /// Returns the first veto action found, or the last modification.
+    /// Returns the first veto/deny action found (deny outranks veto), or the
+    /// last modification.
     pub async fn dispatch(&self, event: &PluginEvent) -> PluginAction {
         let hooks = self.hooks.read().await;
         let mut last_action = PluginAction::Continue;
@@ -62,6 +63,10 @@ impl PluginRegistry {
         for (_id, hook) in hooks.iter() {
             match hook.handle(event).await {
                 PluginAction::Continue => {}
+                PluginAction::Deny(reason) => {
+                    warn!(reason = %reason, "plugin denied operation");
+                    return PluginAction::Deny(reason);
+                }
                 PluginAction::Veto(reason) => {
                     warn!(reason = %reason, "plugin vetoed operation");
                     return PluginAction::Veto(reason);

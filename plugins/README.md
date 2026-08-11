@@ -40,7 +40,10 @@ JSON on stdin:
 
 The first stdout line decides the outcome:
 
-- `veto <reason>` / `deny <reason>` — block the tool call (fail-closed)
+- `veto <reason>` — block the tool call; execution continues with the next
+  tool in the batch
+- `deny <reason>` — block the tool call and abort the entire batch; the agent
+  run terminates with the reason (fail-closed, highest priority)
 - `allow` (or empty) — continue
 
 ## Notes

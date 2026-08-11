@@ -2,7 +2,7 @@ name: Main Branch
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   workflow_dispatch:
 
 permissions:
@@ -81,17 +81,6 @@ jobs:
       - run: cargo shear --workspace
 
   # ---------------------------------------------------------------------------
-  # Workspace manifest verification (enhanced)
-  # ---------------------------------------------------------------------------
-  verify-manifests:
-    name: Verify manifests
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-
-
-  # ---------------------------------------------------------------------------
   # Release build — full matrix
   # ---------------------------------------------------------------------------
   release-build:
@@ -106,49 +95,3 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: swatinem/rust-cache@v2
       - run: cargo build --release --workspace
-
-  # ---------------------------------------------------------------------------
-  # macOS notarization
-  # ---------------------------------------------------------------------------
-  notarize:
-    name: macOS notarization
-    runs-on: macos-latest
-    needs: [release-build]
-    if: ${{ github.ref == 'refs/heads/main' }}
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: swatinem/rust-cache@v2
-      - run: cargo build --release --workspace
-      - name: Sign and notarize
-        run: |
-          .github/scripts/macos-signing/notarize_macos_binary_with_rcodesign.sh
-        env:
-          MACOS_SIGNING_KEY: ${{ secrets.MACOS_SIGNING_KEY }}
-          MACOS_NOTARIZATION_EMAIL: ${{ secrets.MACOS_NOTARIZATION_EMAIL }}
-          MACOS_NOTARIZATION_PASSWORD: ${{ secrets.MACOS_NOTARIZATION_PASSWORD }}
-
-  # ---------------------------------------------------------------------------
-  # Package archive + symbol archiving
-  # ---------------------------------------------------------------------------
-  package:
-    name: Package archive (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
-    needs: [release-build]
-    steps:
-      - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: swatinem/rust-cache@v2
-      - run: cargo build --release --workspace
-      - name: Build package archive
-        run: .github/scripts/build-package-archive.sh
-      - name: Archive symbols
-        run: .github/scripts/archive-release-symbols-and-strip-binaries.sh
-      - uses: actions/upload-artifact@v7
-        with:
-          name: sentinel-${{ runner.os }}
-          path: dist/

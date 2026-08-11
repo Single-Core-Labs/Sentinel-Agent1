@@ -105,12 +105,13 @@ impl PluginHook for ScriptHook {
         #[cfg(target_os = "windows")]
         let mut cmd = {
             let mut c = tokio::process::Command::new("cmd");
-            c.arg("/C").arg(format!(
-                "{} {} {}",
-                self.command,
-                self.event,
-                event_tool_name(event)
-            ));
+            // Use separate .arg() calls so paths with spaces survive the
+            // cmd /C quote dance; a single interpolated string breaks when
+            // the plugin dir contains spaces.
+            c.arg("/C")
+                .arg(&self.command)
+                .arg(&self.event)
+                .arg(event_tool_name(event));
             c
         };
         #[cfg(not(target_os = "windows"))]
@@ -142,7 +143,14 @@ impl PluginHook for ScriptHook {
             Ok(Some(output)) => {
                 let stdout = String::from_utf8_lossy(&output.stdout);
                 let line = stdout.lines().next().unwrap_or("").trim().to_lowercase();
-                if line.starts_with("veto") || line.starts_with("deny") {
+                if line.starts_with("deny") {
+                    let reason = line
+                        .split_once(|c: char| c.is_whitespace())
+                        .map(|(_, r)| r.trim().to_string())
+                        .filter(|r| !r.is_empty())
+                        .unwrap_or_else(|| "denied by plugin script".into());
+                    PluginAction::Deny(reason)
+                } else if line.starts_with("veto") {
                     let reason = line
                         .split_once(|c: char| c.is_whitespace())
                         .map(|(_, r)| r.trim().to_string())
@@ -187,10 +195,20 @@ pub fn load_plugin_dir(dir: &Path) -> Result<Arc<dyn Plugin>, String> {
         cmd.as_ref().map(|c| {
             let p = PathBuf::from(c);
             if p.is_absolute() || p.exists() {
-                c.clone()
-            } else {
-                dir.join(c).to_string_lossy().into_owned()
+                return c.clone();
             }
+            // Windows: an extension-less manifest command (e.g. `guard`) must
+            // resolve to `guard.cmd` (which chains to `guard.ps1`) — `cmd /C`
+            // cannot execute a dotless sh script, so the hook would silently
+            // allow everything.
+            #[cfg(target_os = "windows")]
+            for ext in ["cmd", "ps1"] {
+                let candidate = dir.join(c).with_extension(ext);
+                if candidate.exists() {
+                    return candidate.to_string_lossy().into_owned();
+                }
+            }
+            dir.join(c).to_string_lossy().into_owned()
         })
     };
 
@@ -304,6 +322,21 @@ mod tests {
             })
             .await;
         assert!(matches!(other, PluginAction::Continue));
+    }
+
+    #[tokio::test]
+    async fn script_hook_denies_before_tool_call() {
+        let hook = ScriptHook::new("echo deny hard stop", "before_tool_call");
+        let action = hook
+            .handle(&PluginEvent::BeforeToolCall {
+                tool_name: "write".into(),
+                args: serde_json::json!({"file_path": "x"}),
+            })
+            .await;
+        let PluginAction::Deny(reason) = action else {
+            panic!("expected Deny, got {:?}", action);
+        };
+        assert!(reason.contains("hard stop"));
     }
 
     #[tokio::test]

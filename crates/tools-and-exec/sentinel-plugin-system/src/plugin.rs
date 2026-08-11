@@ -73,8 +73,12 @@ pub enum PluginEvent {
 pub enum PluginAction {
     /// Continue without changes.
     Continue,
-    /// Veto the operation (prevents execution).
+    /// Veto the operation (prevents execution). The model may retry with a
+    /// different approach.
     Veto(String),
+    /// Deny the operation (fail-closed). The agent run is terminated — no
+    /// retry is possible. This is the `deny <reason>` stdout contract.
+    Deny(String),
     /// Modify the event payload.
     Modify(serde_json::Value),
 }

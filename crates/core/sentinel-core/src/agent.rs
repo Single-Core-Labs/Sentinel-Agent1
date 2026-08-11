@@ -79,6 +79,7 @@ pub struct Agent {
     pub total_completion_tokens: AtomicU64,
     pub(crate) uploader: Box<dyn SessionUploader>,
     pub(crate) plugin_registry: Arc<PluginRegistry>,
+    pub(crate) hooks: crate::hooks::HookRegistry,
     pub(crate) compressor: Arc<dyn ContentCompressor>,
     pub(crate) checkpoints: Arc<dyn CheckpointStore>,
     cancellation: CancellationToken,
@@ -121,6 +122,7 @@ impl Agent {
             total_completion_tokens: AtomicU64::new(0),
             uploader: Box::new(NullUploader),
             plugin_registry: Arc::new(PluginRegistry::new()),
+            hooks: crate::hooks::HookRegistry::new(),
             compressor: Arc::new(NullCompressor::new()),
             checkpoints: Arc::new(CheckpointManager::new()),
             cancellation: CancellationToken::new(),
@@ -226,6 +228,12 @@ impl Agent {
         self
     }
 
+    /// Register lifecycle hooks observed by [`crate::hooks::HookRegistry`].
+    pub fn with_hooks(mut self, hooks: crate::hooks::HookRegistry) -> Self {
+        self.hooks = hooks;
+        self
+    }
+
     pub fn with_compressor(mut self, compressor: Arc<dyn ContentCompressor>) -> Self {
         self.compressor = compressor;
         self
@@ -284,6 +292,13 @@ impl Agent {
             session_id: thread.id.to_string(),
         })
         .await;
+        self.hooks.dispatch(&crate::hooks::HookEvent::SessionEnded {
+            session_id: thread.id.to_string(),
+            result: result
+                .as_ref()
+                .map(|o| o.text_or_empty())
+                .unwrap_or_default(),
+        });
         if result.is_ok() {
             self.upload_session(thread).await;
         }
@@ -306,6 +321,10 @@ impl Agent {
             session_id: sid.to_string(),
         })
         .await;
+
+        self.hooks.dispatch(&crate::hooks::HookEvent::SessionStarted {
+            session_id: sid.to_string(),
+        });
 
         self.event_store
             .append(SessionEvent::UserMessage {
@@ -340,6 +359,11 @@ impl Agent {
                 return Ok(AgentOutput::error("Max iterations reached"));
             }
 
+            self.hooks
+                .dispatch(&crate::hooks::HookEvent::BeforeTurn {
+                    turn: thread.iterations,
+                });
+
             if self.cancellation.is_cancelled() {
                 thread.status = ThreadStatus::Cancelled;
                 return Ok(AgentOutput::error("Agent cancelled"));
@@ -359,6 +383,12 @@ impl Agent {
                 prompt_tokens: 0,
             })
             .await;
+
+            self.hooks
+                .dispatch(&crate::hooks::HookEvent::BeforeModelRequest {
+                    model: self.effective_model().to_string(),
+                    messages: thread.context.messages().to_vec(),
+                });
 
             let mut attempts = 0;
             let response = loop {
@@ -416,6 +446,31 @@ impl Agent {
                 completion_tokens,
             })
             .await;
+
+            let (hook_text, hook_tool_calls) = response
+                .choices
+                .first()
+                .map(|c| {
+                    let text = c.message.extract_text();
+                    let calls = c
+                        .message
+                        .content
+                        .iter()
+                        .filter_map(|b| match b {
+                            ContentBlock::ToolCall { id, name, arguments } => {
+                                Some((name.clone(), id.clone(), arguments.clone()))
+                            }
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>();
+                    (text, calls)
+                })
+                .unwrap_or_default();
+            self.hooks.dispatch(&crate::hooks::HookEvent::AfterModelResponse {
+                model: self.effective_model().to_string(),
+                text: hook_text,
+                tool_calls: hook_tool_calls,
+            });
 
             if let Some(ref usage) = response.usage {
                 self.total_prompt_tokens
@@ -533,7 +588,7 @@ impl Agent {
             if mutating_batch {
                 self.checkpoints.begin_batch(&workspace, thread.turn);
             }
-            let tool_results = execute_tools_concurrent(
+            let tool_batch = execute_tools_concurrent(
                 &tool_calls,
                 Arc::clone(&self.tools),
                 approval,
@@ -548,6 +603,13 @@ impl Agent {
                 &self.plugin_registry,
             )
             .await;
+
+            let tool_results = match tool_batch {
+                ToolBatchOutcome::Results(results) => results,
+                ToolBatchOutcome::Denied(reason) => {
+                    return Ok(denied_error(&reason));
+                }
+            };
 
             for result in &tool_results {
                 self.event_store
@@ -602,6 +664,12 @@ impl Agent {
                     iteration: thread.iterations,
                 })
                 .await;
+
+            self.hooks
+                .dispatch(&crate::hooks::HookEvent::AfterTurn {
+                    turn: thread.turn,
+                    iteration: thread.iterations,
+                });
 
             if thread.is_doom_loop() {
                 return Ok(AgentOutput::error("Doom loop detected"));
@@ -906,7 +974,7 @@ impl Agent {
             if mutating_batch {
                 self.checkpoints.begin_batch(&workspace, thread.turn);
             }
-            let tool_results = execute_tools_concurrent(
+            let tool_batch = execute_tools_concurrent(
                 &tool_calls,
                 Arc::clone(&self.tools),
                 approval,
@@ -921,6 +989,13 @@ impl Agent {
                 &self.plugin_registry,
             )
             .await;
+
+            let tool_results = match tool_batch {
+                ToolBatchOutcome::Results(results) => results,
+                ToolBatchOutcome::Denied(reason) => {
+                    return Ok(denied_error(&reason));
+                }
+            };
 
             for result in &tool_results {
                 thread.add_message(Message::new(
@@ -954,6 +1029,12 @@ impl Agent {
                     iteration: thread.iterations,
                 })
                 .await;
+
+            self.hooks
+                .dispatch(&crate::hooks::HookEvent::AfterTurn {
+                    turn: thread.turn,
+                    iteration: thread.iterations,
+                });
 
             if thread.is_doom_loop() {
                 return Ok(AgentOutput::error("Doom loop detected"));
@@ -1175,6 +1256,13 @@ fn simulate_edit_content(
     }
 }
 
+/// Outcome of a concurrent tool batch. A plugin `deny` aborts the entire
+/// batch and terminates the agent run (fail-closed).
+pub(crate) enum ToolBatchOutcome {
+    Results(Vec<ToolResult>),
+    Denied(String),
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn execute_tools_concurrent(
     tool_calls: &[(String, String, serde_json::Value)],
@@ -1189,7 +1277,7 @@ pub(crate) async fn execute_tools_concurrent(
     event_bus: &Option<EventBus>,
     policy: &Option<Arc<dyn PolicyEngine>>,
     plugins: &Arc<PluginRegistry>,
-) -> Vec<ToolResult> {
+) -> ToolBatchOutcome {
     let mut ordered_results: BTreeMap<usize, ToolResult> = BTreeMap::new();
     let mut set: JoinSet<(usize, ToolResult)> = JoinSet::new();
 
@@ -1233,12 +1321,11 @@ pub(crate) async fn execute_tools_concurrent(
         }
 
         // Plugin veto (before user approval)
-        if let PluginAction::Veto(reason) = plugins
-            .dispatch(&PluginEvent::BeforeToolCall {
-                tool_name: name.clone(),
-                args: args.clone(),
-            })
-            .await
+        if let PluginAction::Veto(reason) = plugins.dispatch(&PluginEvent::BeforeToolCall {
+            tool_name: name.clone(),
+            args: args.clone(),
+        })
+        .await
         {
             evt_handler
                 .handle_event(AgentEvent::Permission {
@@ -1257,6 +1344,26 @@ pub(crate) async fn execute_tools_concurrent(
                 },
             );
             continue;
+        }
+
+        // Plugin deny (hard stop, fail-closed): cancel in-flight tools and
+        // abort the whole batch — the model gets no chance to retry.
+        if let PluginAction::Deny(reason) = plugins
+            .dispatch(&PluginEvent::BeforeToolCall {
+                tool_name: name.clone(),
+                args: args.clone(),
+            })
+            .await
+        {
+            evt_handler
+                .handle_event(AgentEvent::Permission {
+                    tool: name.clone(),
+                    action: PermissionAction::Deny,
+                    reason: Some(reason.clone()),
+                })
+                .await;
+            cancel.cancel();
+            return ToolBatchOutcome::Denied(reason);
         }
 
         // Policy check (before user approval)
@@ -1407,10 +1514,13 @@ pub(crate) async fn execute_tools_concurrent(
         let tools = Arc::clone(&tools);
         let tool_call_id = tool_call_id.clone();
         let name = name.clone();
-        let args = args.clone();
+        let args = reroot_sandbox_args(&name, args, sandbox);
         let mut ctx = ctx.clone();
         if let Some(ref sb) = sandbox {
-            ctx.sandbox_dir = Some(sb.root().to_string_lossy().to_string());
+            // Shell workdir and workspace-root defaults land in the sandbox
+            // working copy, matching where resolve_path re-roots file paths.
+            ctx.sandbox_dir = Some(sb.work_dir().to_string_lossy().to_string());
+            ctx.workspace_dir = Some(sb.work_dir().to_string_lossy().to_string());
         }
         let cancel = cancel.clone();
         let evt_handler = events.read().unwrap().clone();
@@ -1469,7 +1579,55 @@ pub(crate) async fn execute_tools_concurrent(
         }
     }
 
-    ordered_results.into_values().collect()
+    ToolBatchOutcome::Results(ordered_results.into_values().collect())
+}
+
+fn denied_error(reason: &str) -> AgentOutput {
+    AgentOutput::error(format!("Policy denied: {}", reason))
+}
+
+/// When a sandbox is attached, re-root the path arguments of file tools
+/// (read/write/edit/view/glob/grep/git_*/apply_patch) into the sandbox
+/// working copy so no tool can touch the real workspace. Non-path tools pass
+/// through unchanged.
+fn reroot_sandbox_args(
+    name: &str,
+    args: &serde_json::Value,
+    sandbox: &Option<crate::sandbox::SharedSandbox>,
+) -> serde_json::Value {
+    let Some(sb) = sandbox.as_ref() else {
+        return args.clone();
+    };
+    let obj = match args.as_object() {
+        Some(o) => o,
+        None => return args.clone(),
+    };
+    let path_keys: &[&str] = match name {
+        "read" | "write" | "edit" | "view" => &["file_path"],
+        "glob" | "grep" | "git_status" | "git_diff" | "git_log" | "ls" => &["path"],
+        "apply_patch" | "patch" => &["base_path"],
+        _ => return args.clone(),
+    };
+    let mut out = obj.clone();
+    let mut changed = false;
+    for key in path_keys {
+        if let Some(value) = obj.get(*key).and_then(|v| v.as_str()) {
+            if !value.is_empty() {
+                out.insert(
+                    (*key).to_string(),
+                    serde_json::Value::String(
+                        sb.resolve_path(value).to_string_lossy().into_owned(),
+                    ),
+                );
+                changed = true;
+            }
+        }
+    }
+    if changed {
+        serde_json::Value::Object(out)
+    } else {
+        args.clone()
+    }
 }
 
 #[derive(Debug, Clone)]

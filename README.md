@@ -113,16 +113,7 @@ sentinel ai
 #### Headless mode (single prompt, auto-approve):
 
 ```bash
-sentinel ai "debug why the production model deployment on k8s is crash-looping"
-```
-
-**Options:**
-
-```bash
-sentinel ai --sandbox-tools "your prompt"              # use sandbox tools (if supported)
-sentinel ai --max-iterations 100 "your prompt"
-sentinel ai --no-stream "your prompt"
-sentinel ai --model openai/gpt-4o "your prompt"
+sentinel ai --prompt "debug why the production model deployment on k8s is crash-looping"
 ```
 
 Run `sentinel ai` then `/model` to see the full list of suggested model ids.
@@ -189,9 +180,9 @@ LOCAL_LLM_API_KEY=<optional-local-api-key>
 │  │  └──────────────┘  └──────────────┘  └────────────────┘ │    │
 │  └──────────────────────────────────────────────────────────┘    │
 │                                                                  │
-│  Tools: bash, read, write, edit, grep, glob, git,               │
-│         web_search, research, docs, plan, subagent, notify,     │
-│         github_search, github_pr, github_file                   │
+│  Tools: run_shell_command, read, write, edit, apply_patch,       │
+│         glob, grep, web_fetch, web_search, github, plan,         │
+│         fork_sub_agent, explore_docs, fetch_docs, notify         │
 └──────────────────────────────────────────────────────────────────┘
                               │
                               ▼

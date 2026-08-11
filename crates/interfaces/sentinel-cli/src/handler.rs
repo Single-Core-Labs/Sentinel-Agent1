@@ -38,11 +38,9 @@ impl EventHandler for CliEventHandler {
                 }
             }
             AgentEvent::ToolCall { name, args } => {
-                append_activity(&serde_json::json!({
-                    "type": "tool_call",
-                    "tool": name,
-                    "args": args,
-                }));
+                // Note: the canonical tool_call activity record (with
+                // success/content/sandboxed) is written by ToolRegistry::execute
+                // so it appears exactly once. The CLI handler only renders.
                 let args_str = serde_json::to_string_pretty(&args).unwrap_or_default();
                 let width = terminal_width().saturating_sub(4) as usize;
                 println!();
@@ -63,13 +61,9 @@ impl EventHandler for CliEventHandler {
                 is_error,
                 sandboxed,
             } => {
-                append_activity(&serde_json::json!({
-                    "type": "tool_result",
-                    "tool": name,
-                    "result": output,
-                    "is_error": is_error,
-                    "sandboxed": sandboxed,
-                }));
+                // Activity record (with sandboxed) is written once by
+                // ToolRegistry::execute; the handler only renders.
+                let _ = sandboxed;
                 let icon = if is_error { "✖" } else { "✔" };
                 let preview: String = output.chars().take(1000).collect();
                 let suffix = if output.len() > 1000 { " …" } else { "" };

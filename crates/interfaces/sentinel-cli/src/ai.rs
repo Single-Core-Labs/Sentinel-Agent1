@@ -333,14 +333,18 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
             return Ok(());
         }
     }
-    let provider = match sentinel_provider::ProviderKind::from_info(selected.provider.clone()) {
-        Ok(provider) => Arc::new(provider),
-        Err(e) => {
-            eprintln!("✖ Provider '{}' needs setup: {}", selected.provider.name, e);
-            eprintln!("   → Run: sentinel auth login");
-            return Ok(());
-        }
-    };
+    // Wrap the provider in a ModelRouter so transient failures get
+    // exponential-backoff retries (and, if more providers are added, health-
+    // aware fallback) transparently at every call site in the agent loop.
+    let provider: Arc<dyn sentinel_provider::ModelProvider> =
+        match sentinel_provider::ProviderKind::from_info(selected.provider.clone()) {
+            Ok(provider) => Arc::new(sentinel_provider::ModelRouter::new(vec![Box::new(provider)])),
+            Err(e) => {
+                eprintln!("✖ Provider '{}' needs setup: {}", selected.provider.name, e);
+                eprintln!("   → Run: sentinel auth login");
+                return Ok(());
+            }
+        };
     let model_id = selected.model_id;
 
     let tool_registry = sentinel_tools::ToolRegistry::new();
@@ -356,34 +360,11 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         tool_registry.register(tool);
     }
 
-    let tools = Arc::new(tool_registry);
-    tools.register(Arc::new(sentinel_core::SubAgentTool::new(
-        provider.clone(),
-        Arc::clone(&tools),
-        config.clone(),
-    )));
-
+    // Guard plugins load before the sub-agent tool so forked sub-agents inherit
+    // the same policy hooks (plugin plane must never be missing).
     let plugin_registry = Arc::new(sentinel_plugin_system::PluginRegistry::new());
-    let plugin_dir = plugin_dir();
-    if !plugin_dir.exists() {
-        if let Err(e) = std::fs::create_dir_all(&plugin_dir) {
-            eprintln!(
-                "{} Could not create plugin directory '{}': {}",
-                "W".yellow(),
-                plugin_dir.display(),
-                e
-            );
-        }
-    }
-    let loaded_plugins = sentinel_plugin_system::load_plugins_dir(&plugin_dir);
-    let mut loaded_count = 0;
-    let mut failed_plugins: Vec<String> = Vec::new();
-    for plugin in loaded_plugins {
-        match plugin_registry.register(plugin).await {
-            Ok(_) => loaded_count += 1,
-            Err(e) => failed_plugins.push(e.to_string()),
-        }
-    }
+    let (loaded_count, failed_plugins) =
+        sentinel_plugin_system::load_default_plugins(&plugin_registry).await;
     if loaded_count > 0 {
         println!(
             " {} plugins loaded",
@@ -400,6 +381,17 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
             eprintln!("  {} {}", "•".red(), err);
         }
     }
+
+    let tools = Arc::new(tool_registry);
+    tools.register(Arc::new(
+        sentinel_core::SubAgentTool::new(
+            provider.clone(),
+            Arc::clone(&tools),
+            config.clone(),
+            Arc::clone(&plugin_registry),
+        )
+        .with_compressor(headroom_compressor.clone()),
+    ));
 
     // MCP handshakes have been running in the background during plugin and
     // headroom setup; register their tools right before the agent is built.
@@ -525,20 +517,6 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         }
     }
     Ok(())
-}
-
-fn plugin_dir() -> std::path::PathBuf {
-    if let Ok(home) = std::env::var("SENTINEL_HOME") {
-        return std::path::PathBuf::from(home).join("plugins");
-    }
-    std::env::var("USERPROFILE")
-        .or_else(|_| std::env::var("HOME"))
-        .map(|h| {
-            std::path::PathBuf::from(h)
-                .join(".sentinel")
-                .join("plugins")
-        })
-        .unwrap_or_else(|_| std::path::PathBuf::from("plugins"))
 }
 
 #[cfg(test)]

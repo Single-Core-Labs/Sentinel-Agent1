@@ -1,124 +1,15 @@
-use async_trait::async_trait;
 use sentinel_core::*;
-use sentinel_protocol::{
-    Choice, CompletionRequest, CompletionResponse, ContentBlock, Message, Role, StreamChunk, Usage,
-};
-use sentinel_provider::{ModelProvider, ProviderError};
-use sentinel_provider_info::{AuthConfig, ModelEntry, ProviderInfo};
+use sentinel_core::mock_inference::MockInference;
+use sentinel_protocol::{ContentBlock, Role};
+use sentinel_provider::ModelProvider;
 use sentinel_tools::ToolRegistry;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
-
-/// A mock provider that returns predefined responses.
-struct MockProvider {
-    info: ProviderInfo,
-    responses: Vec<CompletionResponse>,
-    call_count: AtomicUsize,
-}
-
-impl MockProvider {
-    fn new(responses: Vec<CompletionResponse>) -> Self {
-        let info = ProviderInfo {
-            id: "mock".into(),
-            name: "Mock".into(),
-            base_url: "http://mock".into(),
-            auth: AuthConfig::None,
-            models: vec![ModelEntry {
-                id: "mock-model".into(),
-                name: "Mock Model".into(),
-                context_window: 1000,
-                supports_streaming: true,
-                supports_tools: true,
-            }],
-            timeout_secs: 5,
-            extra_headers: Default::default(),
-            disabled: false,
-            provider: None,
-        };
-        Self {
-            info,
-            responses,
-            call_count: AtomicUsize::new(0),
-        }
-    }
-}
-
-#[async_trait]
-impl ModelProvider for MockProvider {
-    fn info(&self) -> &ProviderInfo {
-        &self.info
-    }
-
-    async fn complete(
-        &self,
-        _req: &CompletionRequest,
-    ) -> Result<CompletionResponse, ProviderError> {
-        let idx = self.call_count.fetch_add(1, Ordering::SeqCst);
-        Ok(self.responses[idx % self.responses.len()].clone())
-    }
-
-    async fn complete_stream(
-        &self,
-        _req: &CompletionRequest,
-    ) -> Result<
-        Box<dyn tokio_stream::Stream<Item = Result<StreamChunk, ProviderError>> + Send + Unpin>,
-        ProviderError,
-    > {
-        Err(ProviderError::RequestError(
-            "stream not supported in mock".into(),
-        ))
-    }
-}
-
-fn text_response(text: &str, finish_reason: Option<&str>) -> CompletionResponse {
-    CompletionResponse {
-        id: "mock-1".into(),
-        model: "mock-model".into(),
-        choices: vec![Choice {
-            index: 0,
-            message: Message::assistant(text),
-            finish_reason: finish_reason.map(String::from),
-        }],
-        usage: Some(Usage {
-            prompt_tokens: 10,
-            completion_tokens: 5,
-            total_tokens: 15,
-        }),
-    }
-}
-
-fn tool_call_response(tool_name: &str, args: serde_json::Value) -> CompletionResponse {
-    CompletionResponse {
-        id: "mock-2".into(),
-        model: "mock-model".into(),
-        choices: vec![Choice {
-            index: 0,
-            message: Message::new(
-                Role::Assistant,
-                vec![ContentBlock::ToolCall {
-                    id: "call_1".into(),
-                    name: tool_name.into(),
-                    arguments: args,
-                }],
-            ),
-            finish_reason: Some("tool_calls".into()),
-        }],
-        usage: Some(Usage {
-            prompt_tokens: 15,
-            completion_tokens: 8,
-            total_tokens: 23,
-        }),
-    }
-}
 
 #[tokio::test]
 async fn test_agent_simple_response() {
-    let responses = vec![text_response(
-        "Hello! How can I help you today?",
-        Some("stop"),
-    )];
-
-    let provider = Arc::new(MockProvider::new(responses));
+    let provider = Arc::new(MockInference::scripted(vec![
+        MockInference::text("Hello! How can I help you today?", Some("stop")),
+    ]));
     let tools = Arc::new(ToolRegistry::new());
     let config = Arc::new(sentinel_config::SentinelConfig::default());
 
@@ -150,9 +41,9 @@ async fn test_agent_tool_use() {
     let tmp_file = std::env::temp_dir().join("sentinel-integration-test.txt");
     let _ = std::fs::remove_file(&tmp_file);
 
-    let responses = vec![
+    let provider = Arc::new(MockInference::scripted(vec![
         // First turn: call write tool
-        tool_call_response(
+        MockInference::tool_call(
             "write",
             serde_json::json!({
                 "file_path": tmp_file.to_str().unwrap(),
@@ -160,10 +51,8 @@ async fn test_agent_tool_use() {
             }),
         ),
         // Second turn: text response after tool result
-        text_response("File written successfully!", Some("stop")),
-    ];
-
-    let provider = Arc::new(MockProvider::new(responses));
+        MockInference::text("File written successfully!", Some("stop")),
+    ]));
     let tools = Arc::new(ToolRegistry::new());
     let config = Arc::new(sentinel_config::SentinelConfig::default());
 
@@ -201,7 +90,7 @@ async fn test_agent_doom_loop_detection() {
     let mut responses = Vec::new();
     // Create a loop: tool call -> result -> tool call -> result -> ...
     for i in 0..25 {
-        responses.push(tool_call_response(
+        responses.push(MockInference::tool_call(
             "read",
             serde_json::json!({
                 "file_path": if i % 2 == 0 { "a.txt" } else { "b.txt" }
@@ -209,7 +98,7 @@ async fn test_agent_doom_loop_detection() {
         ));
     }
 
-    let provider = Arc::new(MockProvider::new(responses));
+    let provider = Arc::new(MockInference::scripted(responses));
     let tools = Arc::new(ToolRegistry::new());
     let config = Arc::new(sentinel_config::SentinelConfig::default());
 
@@ -233,12 +122,10 @@ async fn test_agent_doom_loop_detection() {
 
 #[tokio::test]
 async fn test_agent_max_iterations() {
-    let responses = vec![tool_call_response(
+    let provider = Arc::new(MockInference::scripted(vec![MockInference::tool_call(
         "read",
         serde_json::json!({"file_path": "test.txt"}),
-    )];
-
-    let provider = Arc::new(MockProvider::new(responses));
+    )]));
     let tools = Arc::new(ToolRegistry::new());
     let config = Arc::new(sentinel_config::SentinelConfig::default());
 
@@ -262,4 +149,98 @@ async fn test_agent_max_iterations() {
         "Should have stopped at 3 iterations, got {}",
         thread.iterations
     );
+}
+
+/// Deterministic, zero-cost check of what the agent loop actually sends to
+/// the model: system prompt present, user input present, tools attached, and
+/// the tool-result feedback loop feeding prior assistant tool calls back.
+#[tokio::test]
+async fn test_agent_request_log_records_prompts() {
+    let tmp_file = std::env::temp_dir().join("sentinel-request-log-test.txt");
+    let _ = std::fs::remove_file(&tmp_file);
+
+    let mock = Arc::new(MockInference::scripted(vec![
+        MockInference::tool_call(
+            "write",
+            serde_json::json!({
+                "file_path": tmp_file.to_str().unwrap(),
+                "content": "hello"
+            }),
+        ),
+        MockInference::text("Done.", Some("stop")),
+    ]));
+    let provider: Arc<dyn ModelProvider> = mock.clone();
+    let tools = Arc::new(ToolRegistry::new());
+    let config = Arc::new(sentinel_config::SentinelConfig::default());
+
+    let agent = Agent::new(provider, tools, config);
+    let mut thread = AgentThread::new(50, 10, true);
+    let _ = agent.run(&mut thread, "write a file").await;
+
+    let requests = mock.recorded_requests();
+    assert!(
+        requests.len() >= 2,
+        "expected at least 2 model requests, got {}",
+        requests.len()
+    );
+
+    // First request: user input + system prompt + tool definitions.
+    let first = &requests[0];
+    assert!(
+        first.conversation_text().contains("write a file"),
+        "user input should reach the model, got: {:?}",
+        first.conversation_text()
+    );
+    assert_eq!(first.message_count, 2); // system + user
+    assert!(
+        first.tool_count > 0,
+        "tool definitions should be attached to the first request"
+    );
+
+    // Second request: the tool result was fed back to the model.
+    let second = &requests[1];
+    assert!(
+        second.message_count >= 4,
+        "tool result should be fed back: system + user + assistant(tool call) + tool result"
+    );
+}
+
+#[tokio::test]
+async fn test_hooks_fire_through_agent_loop() {
+    use sentinel_core::hooks::{HookEvent, HookRegistry};
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let turns = Arc::new(AtomicUsize::new(0));
+    let sessions = Arc::new(AtomicUsize::new(0));
+
+    let mut hooks = HookRegistry::new();
+    {
+        let t = turns.clone();
+        hooks.register(Arc::new(move |e| {
+            if let HookEvent::BeforeTurn { .. } = e {
+                t.fetch_add(1, Ordering::SeqCst);
+            }
+        }));
+    }
+    {
+        let s = sessions.clone();
+        hooks.register(Arc::new(move |e| {
+            if let HookEvent::SessionStarted { .. } = e {
+                s.fetch_add(1, Ordering::SeqCst);
+            }
+        }));
+    }
+
+    let provider = Arc::new(MockInference::scripted(vec![
+        MockInference::text("hi", Some("stop")),
+    ]));
+    let tools = Arc::new(ToolRegistry::new());
+    let config = Arc::new(sentinel_config::SentinelConfig::default());
+
+    let agent = Agent::new(provider, tools, config).with_hooks(hooks);
+    let mut thread = AgentThread::new(50, 10, true);
+    let _ = agent.run(&mut thread, "hello").await;
+
+    assert_eq!(sessions.load(Ordering::SeqCst), 1);
+    assert_eq!(turns.load(Ordering::SeqCst), 1);
 }

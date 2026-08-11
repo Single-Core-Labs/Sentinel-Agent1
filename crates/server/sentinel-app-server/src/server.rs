@@ -26,10 +26,9 @@ impl AppServer {
         let analytics = Arc::new(AnalyticsPipeline::new());
         let tools = {
             let reg = ToolRegistry::new();
-            let headroom_retrieve = sentinel_headroom::integration::HeadroomRetrieveTool::new(
-                Arc::new(sentinel_headroom::ccr::CcrStore::default()),
-            );
-            reg.register(Arc::new(headroom_retrieve));
+            // Headroom retrieve/memory tools are NOT registered here: the
+            // compressor (and its shared CcrStore) is built lazily on first
+            // session creation, which registers them into this registry.
             reg.register(Arc::new(crate::diagnostics_tool::DiagnosticsTool::new(
                 lsp.diagnostics(),
             )));
@@ -81,12 +80,32 @@ impl AppServer {
             }
         };
 
+        // Guard plugins: shared by every session. Loaded in the background so
+        // the sync constructor stays sync; the registry is live immediately,
+        // so tool calls made before loading completes (startup race only) still
+        // dispatch against whatever is registered at that moment.
+        let plugins = Arc::new(sentinel_plugin_system::PluginRegistry::new());
+        {
+            let plugins = Arc::clone(&plugins);
+            tokio::spawn(async move {
+                let (loaded, failures) =
+                    sentinel_plugin_system::load_default_plugins(&plugins).await;
+                if loaded > 0 {
+                    tracing::info!(count = loaded, "guard plugins loaded for app server");
+                }
+                for failure in failures {
+                    tracing::warn!("plugin load failed: {}", failure);
+                }
+            });
+        }
+
         let handler = Arc::new(
             RequestHandler::new_with_store(
                 config.clone(),
                 analytics.clone(),
                 tools,
                 thread_store,
+                plugins,
             )
             .with_lsp_diagnostics(lsp.diagnostics()),
         );

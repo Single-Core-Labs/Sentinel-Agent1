@@ -1,8 +1,10 @@
 use crate::agent::AgentOutput;
+use crate::compression::ContentCompressor;
 use crate::sub_agent::{run_sub_agent_team, SubTask};
 use crate::thread::AgentThread;
 use async_trait::async_trait;
 use sentinel_config::SentinelConfig;
+use sentinel_plugin_system::PluginRegistry;
 use sentinel_provider::ModelProvider;
 use sentinel_tools::ToolRegistry;
 use sentinel_tools::{Tool, ToolContext, ToolOutput};
@@ -15,6 +17,8 @@ pub struct SubAgentTool {
     provider: Arc<dyn ModelProvider>,
     tools: Arc<ToolRegistry>,
     config: Arc<SentinelConfig>,
+    plugins: Arc<PluginRegistry>,
+    compressor: Option<Arc<dyn ContentCompressor>>,
     max_turns: u32,
     max_iterations: u32,
 }
@@ -24,14 +28,24 @@ impl SubAgentTool {
         provider: Arc<dyn ModelProvider>,
         tools: Arc<ToolRegistry>,
         config: Arc<SentinelConfig>,
+        plugins: Arc<PluginRegistry>,
     ) -> Self {
         Self {
             provider,
             tools,
             config,
+            plugins,
+            compressor: None,
             max_turns: 50,
             max_iterations: 250,
         }
+    }
+
+    /// Share the parent's headroom compressor so forked agents honor the
+    /// same context budget (tool-output + conversation compression).
+    pub fn with_compressor(mut self, compressor: Arc<dyn ContentCompressor>) -> Self {
+        self.compressor = Some(compressor);
+        self
     }
 
     pub fn with_max_turns(mut self, turns: u32) -> Self {
@@ -88,6 +102,8 @@ impl Tool for SubAgentTool {
             Arc::clone(&self.provider),
             Arc::clone(&self.tools),
             Arc::clone(&self.config),
+            Arc::clone(&self.plugins),
+            self.compressor.clone(),
         )
         .await;
 
@@ -110,6 +126,7 @@ mod tests {
             Arc::new(TestProvider),
             Arc::new(ToolRegistry::new()),
             Arc::new(SentinelConfig::default()),
+            Arc::new(PluginRegistry::new()),
         )
     }
 

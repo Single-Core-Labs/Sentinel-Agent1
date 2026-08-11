@@ -90,9 +90,16 @@ function resolveSentinelBin(): string {
   return candidates[0];
 }
 
-/** Model to use when running the agent under test. */
-export const EVAL_MODEL =
-  process.env['SENTINEL_EVAL_MODEL'] ?? 'claude-3-5-haiku-20241022';
+/**
+ * Model to use when running the agent under test.
+ * Read at call time (not module load) so per-case env overrides
+ * (e.g. provider_coverage's SENTINEL_EVAL_MODEL) take effect.
+ */
+export function getEvalModel(): string {
+  return process.env['SENTINEL_EVAL_MODEL'] ?? 'claude-3-5-haiku-20241022';
+}
+
+export const EVAL_MODEL = getEvalModel;
 
 const LOG_DIR = path.resolve(process.cwd(), 'evals/logs');
 
@@ -131,7 +138,7 @@ export async function runSentinelEval(evalCase: EvalCase): Promise<void> {
     const result = await spawnSentinel({
       workDir,
       prompt: evalCase.prompt,
-      model: EVAL_MODEL,
+      model: getEvalModel(),
       env: evalCase.env ?? {},
       activityLog,
       timeout: evalCase.timeout ?? 120_000,
@@ -286,7 +293,7 @@ export async function judgeYesNo(
   question: string,
   runs: number = 1,
 ): Promise<JudgeResult> {
-  const judgeModel = process.env['SENTINEL_JUDGE_MODEL'] ?? EVAL_MODEL;
+  const judgeModel = process.env['SENTINEL_JUDGE_MODEL'] ?? getEvalModel();
 
   const systemPrompt = `You are a strict, impartial expert judge evaluating the output of an AI agent.
 Read the provided evidence and question carefully.
@@ -380,21 +387,27 @@ async function spawnSentinel(opts: {
   timeout: number;
 }): Promise<SpawnResult> {
   return new Promise((resolve, reject) => {
-    const proc = cp.spawn(
-      SENTINEL_BIN,
-      ['ai', opts.model, '--yolo', '--prompt', opts.prompt],
-      {
-        cwd: opts.workDir,
-        env: {
-          ...process.env,
-          SENTINEL_HOME: path.resolve(__dirname, '../..'),
-          SENTINEL_ACTIVITY_LOG: opts.activityLog,
-          SENTINEL_NON_INTERACTIVE: '1',
-          ...opts.env,
-        },
-        timeout: opts.timeout,
-      },
-    );
+    const mergedEnv = {
+      ...process.env,
+      SENTINEL_HOME: path.resolve(process.cwd(), '../..'),
+      SENTINEL_ACTIVITY_LOG: opts.activityLog,
+      SENTINEL_NON_INTERACTIVE: '1',
+      ...opts.env,
+    };
+    // Non-yolo eval cases opt out via env; everything else auto-approves so
+    // non-interactive runs are not blocked on stdin prompts.
+    const yoloDisabled =
+      mergedEnv['SENTINEL_YOLO_MODE'] === '0' ||
+      mergedEnv['SENTINEL_YOLO_MODE'] === 'false' ||
+      mergedEnv['SENTINEL_YOLO'] === '0';
+    const args = yoloDisabled
+      ? ['ai', opts.model, '--prompt', opts.prompt]
+      : ['ai', opts.model, '--yolo', '--prompt', opts.prompt];
+    const proc = cp.spawn(SENTINEL_BIN, args, {
+      cwd: opts.workDir,
+      env: mergedEnv,
+      timeout: opts.timeout,
+    });
 
     let stdout = '';
     let stderr = '';
@@ -419,17 +432,23 @@ function parseActivityLog(logPath: string): ToolCall[] {
   if (!fs.existsSync(logPath)) return [];
   const lines = fs.readFileSync(logPath, 'utf8').trim().split('\n').filter(Boolean);
   const calls: ToolCall[] = [];
+  const seen = new Set<string>();
   for (const line of lines) {
     try {
       const obj = JSON.parse(line);
-      if (obj.type === 'tool_call') {
-        calls.push({
-          name: obj.tool,
-          args: obj.args ?? {},
-          result: obj.result,
-          sandboxed: obj.sandboxed ?? false,
-        });
-      }
+      if (obj.type !== 'tool_call') continue;
+      // The registry writes one record per execution (with success/content/
+      // sandboxed). Older logs or CLI handler dups may repeat a call — dedupe
+      // by tool+args so sandbox flags can't be diluted by a bare record.
+      const key = JSON.stringify([obj.tool, obj.args ?? {}]);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      calls.push({
+        name: obj.tool,
+        args: obj.args ?? {},
+        result: obj.result ?? obj.content,
+        sandboxed: obj.sandboxed ?? false,
+      });
     } catch { /* skip malformed lines */ }
   }
   return calls;

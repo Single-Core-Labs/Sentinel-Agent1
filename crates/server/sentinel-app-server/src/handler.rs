@@ -8,6 +8,7 @@ use sentinel_core::thread_store::SqliteThreadStore;
 use sentinel_core::thread_store::ThreadStore;
 use sentinel_provider::{ModelProvider, ProviderKind};
 use sentinel_provider_info::ProviderInfo;
+use sentinel_plugin_system::PluginRegistry;
 use sentinel_tools::ToolRegistry;
 use sentinel_ai_core::diff::{change_count, generate_unified_diff_file, parse_unified_diff};
 use serde_json::Value;
@@ -24,7 +25,13 @@ pub struct RequestHandler {
     config: Arc<SentinelConfig>,
     analytics: Arc<AnalyticsPipeline>,
     tools: Arc<ToolRegistry>,
-    headroom_compressor: Option<Arc<dyn sentinel_core::ContentCompressor>>,
+    /// Guard plugins shared by every session (workspace/web/command guards).
+    plugins: Arc<PluginRegistry>,
+    /// Headroom compressor cache: pre-supplied via `new_with_headroom`, or
+    /// built lazily by `ensure_headroom()` on first session creation (the
+    /// AppServer constructor must stay sync). Retrieval/memory tools are
+    /// registered into the shared registry when the lazy build runs.
+    headroom: Mutex<Option<Arc<dyn sentinel_core::ContentCompressor>>>,
     #[allow(dead_code)]
     thread_store: Option<Arc<dyn ThreadStore>>,
     /// Runtime overrides applied via `config/set` (merged on top of the
@@ -90,7 +97,8 @@ impl RequestHandler {
                         self.tools.clone(),
                         self.config.clone(),
                         self.analytics.clone(),
-                        self.headroom_compressor.clone(),
+                        self.ensure_headroom().await,
+                        self.plugins.clone(),
                     ));
 
                     sessions.insert(session_id.to_string(), session.clone());
@@ -113,8 +121,9 @@ impl RequestHandler {
         config: Arc<SentinelConfig>,
         analytics: Arc<AnalyticsPipeline>,
         tools: Arc<ToolRegistry>,
+        plugins: Arc<PluginRegistry>,
     ) -> Self {
-        Self::new_with_headroom(config, analytics, tools, None)
+        Self::new_with_headroom(config, analytics, tools, None, plugins)
     }
 
     /// Create with an explicit thread store for session persistence (Gap 5).
@@ -123,8 +132,9 @@ impl RequestHandler {
         analytics: Arc<AnalyticsPipeline>,
         tools: Arc<ToolRegistry>,
         thread_store: Option<Arc<dyn ThreadStore>>,
+        plugins: Arc<PluginRegistry>,
     ) -> Self {
-        let mut handler = Self::new_with_headroom(config, analytics, tools, None);
+        let mut handler = Self::new_with_headroom(config, analytics, tools, None, plugins);
         handler.thread_store = thread_store;
         handler
     }
@@ -134,6 +144,7 @@ impl RequestHandler {
         analytics: Arc<AnalyticsPipeline>,
         tools: Arc<ToolRegistry>,
         headroom_compressor: Option<Arc<dyn sentinel_core::ContentCompressor>>,
+        plugins: Arc<PluginRegistry>,
     ) -> Self {
         let thread_store: Option<Arc<dyn ThreadStore>> = match config.thread_store.as_str() {
             "sqlite" => {
@@ -161,7 +172,8 @@ impl RequestHandler {
             config,
             analytics,
             tools,
-            headroom_compressor,
+            plugins,
+            headroom: tokio::sync::Mutex::new(headroom_compressor),
             thread_store,
             config_overrides: RwLock::new(serde_json::Map::new()),
             pending_dialogs: Mutex::new(HashMap::new()),
@@ -186,6 +198,25 @@ impl RequestHandler {
     pub fn with_lsp_diagnostics(mut self, store: Arc<crate::lsp::DiagnosticsStore>) -> Self {
         self.lsp_diagnostics = store;
         self
+    }
+
+    /// Build (once) and cache the headroom compressor, registering its
+    /// retrieve/memory tools into the shared registry on first use.
+    pub async fn ensure_headroom(&self) -> Option<Arc<dyn sentinel_core::ContentCompressor>> {
+        let mut slot = self.headroom.lock().await;
+        if let Some(compressor) = slot.as_ref() {
+            return Some(compressor.clone());
+        }
+        let (compressor, retrieve_tool, memory_tools) =
+            sentinel_headroom::integration::create_headroom_compressor_with_tools().await;
+        self.tools.register(retrieve_tool as Arc<dyn sentinel_tools::Tool>);
+        for tool in memory_tools {
+            self.tools.register(tool);
+        }
+        tracing::info!("headroom compressor initialized for app server sessions");
+        let compressor: Arc<dyn sentinel_core::ContentCompressor> = compressor;
+        *slot = Some(compressor.clone());
+        Some(compressor)
     }
 
     /// Pump the process-wide log bus (Gap 8a) into every active session's
@@ -313,14 +344,18 @@ impl RequestHandler {
         })?;
         let provider: Arc<dyn ModelProvider> = Arc::new(provider);
 
-        let session = match &self.headroom_compressor {
+        // Headroom: every session gets the shared compressor (lazily built
+        // and cached on first session, pre-supplied via new_with_headroom
+        // otherwise). Fall back to a plain session only if init produced none.
+        let session = match self.ensure_headroom().await {
             Some(compressor) => Arc::new(crate::session::AppSession::new_with_compressor(
                 Some(model_id.clone()),
                 provider,
                 self.tools.clone(),
                 self.config.clone(),
                 self.analytics.clone(),
-                compressor.clone(),
+                compressor,
+                self.plugins.clone(),
             )),
             None => Arc::new(crate::session::AppSession::new(
                 Some(model_id.clone()),
@@ -328,6 +363,7 @@ impl RequestHandler {
                 self.tools.clone(),
                 self.config.clone(),
                 self.analytics.clone(),
+                self.plugins.clone(),
             )),
         };
 
@@ -410,6 +446,7 @@ impl RequestHandler {
     }
 
     async fn handle_chat(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
+        self.ensure_authed()?;
         let p: api::ChatParams = parse_params(params)?;
         let session = self.get_or_load_session(&p.session_id).await?;
 
@@ -490,6 +527,15 @@ impl RequestHandler {
                     let msg = p.message.clone();
                     tokio::spawn(async move { session.ensure_title(&msg).await });
                 }
+                // Token counters: keep the client's footer accurate.
+                let (prompt, completion) = (
+                    session.agent.prompt_tokens() as u64,
+                    session.agent.completion_tokens() as u64,
+                );
+                let _ = session.events.send(ServerEvent::TokenCount {
+                    prompt,
+                    completion,
+                });
                 Ok(serde_json::json!({ "response": response }))
             }
             Err(e) => Err(JsonRpcError::internal_error(e)),
@@ -497,6 +543,7 @@ impl RequestHandler {
     }
 
     async fn handle_chat_stream(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
+        self.ensure_authed()?;
         let p: api::ChatStreamParams = parse_params(params)?;
         let session = self.get_or_load_session(&p.session_id).await?;
 
@@ -509,6 +556,7 @@ impl RequestHandler {
             None
         };
         let store = self.thread_store.clone();
+        let session_for_tokens = session.clone();
         tokio::spawn(async move {
             session
                 .chat_stream_with_context(&msg, tx, first_turn_context)
@@ -522,6 +570,14 @@ impl RequestHandler {
                     tracing::error!("Failed to save thread to store: {:?}", e);
                 }
             }
+            let (prompt, completion) = (
+                session_for_tokens.agent.prompt_tokens() as u64,
+                session_for_tokens.agent.completion_tokens() as u64,
+            );
+            let _ = session_for_tokens.events.send(ServerEvent::TokenCount {
+                prompt,
+                completion,
+            });
         });
 
         let stream = ReceiverStream::new(rx);
@@ -554,6 +610,7 @@ impl RequestHandler {
     }
 
     async fn handle_tools_call(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
+        self.ensure_authed()?;
         let p: api::ToolCallParams = parse_params(params)?;
         let ctx = sentinel_tools::ToolContext::new();
         let output = self.tools.execute(&p.tool_name, p.arguments, &ctx).await;
@@ -570,6 +627,7 @@ impl RequestHandler {
     }
 
     async fn handle_fs_read_file(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
+        self.ensure_authed()?;
         let p: api::FsReadParams = parse_params(params)?;
         let ctx = sentinel_tools::ToolContext::new();
         let args = serde_json::json!({ "file_path": p.path });
@@ -582,6 +640,7 @@ impl RequestHandler {
     }
 
     async fn handle_fs_write_file(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
+        self.ensure_authed()?;
         let p: api::FsWriteParams = parse_params(params)?;
         let ctx = sentinel_tools::ToolContext::new();
         let args = serde_json::json!({ "file_path": p.path, "content": p.content });
@@ -594,6 +653,7 @@ impl RequestHandler {
     }
 
     async fn handle_fs_glob(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
+        self.ensure_authed()?;
         let p: api::FsGlobParams = parse_params(params)?;
         let ctx = sentinel_tools::ToolContext::new();
         let args = serde_json::json!({ "pattern": p.pattern });
@@ -607,6 +667,7 @@ impl RequestHandler {
     }
 
     async fn handle_fs_grep(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
+        self.ensure_authed()?;
         let ctx = sentinel_tools::ToolContext::new();
         let args = params.clone().unwrap_or_default();
         let output = self.tools.execute("grep", args, &ctx).await;
@@ -618,6 +679,7 @@ impl RequestHandler {
     }
 
     async fn handle_command_exec(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
+        self.ensure_authed()?;
         let p: api::CommandExecParams = parse_params(params)?;
         let ctx = sentinel_tools::ToolContext::new();
         let full_cmd = if p.args.is_empty() {
@@ -646,6 +708,7 @@ impl RequestHandler {
         &self,
         params: Option<Value>,
     ) -> Result<Value, JsonRpcError> {
+        self.ensure_authed()?;
         let p: api::CommandExecParams = parse_params(params)?;
         if p.command.is_empty() {
             return Err(JsonRpcError::invalid_params("command is required"));
@@ -684,6 +747,7 @@ impl RequestHandler {
     }
 
     async fn handle_config_set(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
+        self.ensure_authed()?;
         let params = params.ok_or_else(|| JsonRpcError::invalid_params("Missing params"))?;
         let obj = params
             .as_object()
@@ -994,6 +1058,21 @@ impl RequestHandler {
         }))
     }
 
+    /// When `SENTINEL_SERVER_TOKEN` is set, privileged RPCs (tool calls,
+    /// filesystem, shell exec, config mutation) require an authenticated
+    /// session established via `auth/login`.
+    fn ensure_authed(&self) -> Result<(), JsonRpcError> {
+        let required = std::env::var("SENTINEL_SERVER_TOKEN")
+            .map(|t| !t.is_empty())
+            .unwrap_or(false);
+        if required && self.auth_token.try_read().map(|t| t.is_none()).unwrap_or(true) {
+            return Err(JsonRpcError::unauthorized(
+                "Not authenticated: call auth/login first",
+            ));
+        }
+        Ok(())
+    }
+
     async fn handle_auth_login(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
         let p: api::AuthLoginParams = parse_params(params)?;
         if p.token.trim().is_empty() {
@@ -1175,6 +1254,7 @@ mod tests {
             cfg.clone(),
             Arc::new(AnalyticsPipeline::default()),
             Arc::new(ToolRegistry::new()),
+            Arc::new(PluginRegistry::new()),
         );
 
         let result = handler.handle_config_get().expect("config get");
@@ -1199,6 +1279,63 @@ mod tests {
                 "provider {} missing api_key_set",
                 p["id"]
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn privileged_rpcs_require_session_auth_when_server_token_set() {
+        // Restore any previous value after the test so parallel tests are not
+        // affected by the env mutation.
+        let prev = std::env::var("SENTINEL_SERVER_TOKEN").ok();
+        std::env::set_var("SENTINEL_SERVER_TOKEN", "test-token");
+
+        let handler = RequestHandler::new(
+            Arc::new(SentinelConfig::default()),
+            Arc::new(AnalyticsPipeline::new()),
+            Arc::new(ToolRegistry::new()),
+            Arc::new(PluginRegistry::new()),
+        );
+
+        // Before login: privileged RPCs are rejected with -32001.
+        let params = serde_json::json!({ "tool_name": "ls", "arguments": {} });
+        let err = handler
+            .handle_tools_call(Some(params))
+            .await
+            .expect_err("tools/call must require auth");
+        assert_eq!(err.code, -32001, "unauthorized code");
+
+        let err = handler
+            .handle_command_exec(Some(serde_json::json!({ "command": "whoami" })))
+            .await
+            .expect_err("command/exec must require auth");
+        assert_eq!(err.code, -32001);
+
+        let err = handler
+            .handle_fs_read_file(Some(serde_json::json!({ "path": "Cargo.toml" })))
+            .await
+            .expect_err("fs/read_file must require auth");
+        assert_eq!(err.code, -32001);
+
+        // After login with the matching token: privileged RPCs are allowed.
+        handler
+            .handle_auth_login(Some(serde_json::json!({ "token": "test-token" })))
+            .await
+            .expect("auth/login with correct token");
+        handler
+            .handle_fs_read_file(Some(serde_json::json!({ "path": "Cargo.toml" })))
+            .await
+            .expect("fs/read_file allowed after login");
+
+        // Logout revokes access again.
+        handler.handle_auth_logout().await.expect("logout");
+        handler
+            .handle_fs_read_file(Some(serde_json::json!({ "path": "Cargo.toml" })))
+            .await
+            .expect_err("fs/read_file must require auth after logout");
+
+        match prev {
+            Some(v) => std::env::set_var("SENTINEL_SERVER_TOKEN", v),
+            None => std::env::remove_var("SENTINEL_SERVER_TOKEN"),
         }
     }
 
@@ -1249,6 +1386,7 @@ mod tests {
             Arc::new(cfg),
             Arc::new(AnalyticsPipeline::new()),
             Arc::new(ToolRegistry::new()),
+            Arc::new(PluginRegistry::new()),
         ));
         let session = Arc::new(crate::session::AppSession::new(
             None,
@@ -1258,6 +1396,7 @@ mod tests {
             Arc::new(ToolRegistry::new()),
             Arc::new(SentinelConfig::default()),
             Arc::new(AnalyticsPipeline::new()),
+            Arc::new(PluginRegistry::new()),
         ));
         let rx = session.events.subscribe();
         handler
@@ -1348,6 +1487,7 @@ mod tests {
             Arc::new(SentinelConfig::default()),
             Arc::new(AnalyticsPipeline::new()),
             Arc::new(ToolRegistry::new()),
+            Arc::new(PluginRegistry::new()),
         ));
 
         // No IDE context synced yet → no override.
@@ -1396,6 +1536,7 @@ mod tests {
             Arc::new(SentinelConfig::default()),
             Arc::new(AnalyticsPipeline::new()),
             Arc::new(ToolRegistry::new()),
+            Arc::new(PluginRegistry::new()),
         ));
         handler
             .lsp_diagnostics
@@ -1488,6 +1629,7 @@ mod tests {
             Arc::new(SentinelConfig::default()),
             Arc::new(AnalyticsPipeline::new()),
             Arc::new(ToolRegistry::new()),
+            Arc::new(PluginRegistry::new()),
         ));
 
         let provider = Arc::new(MemScriptedProvider {
@@ -1503,6 +1645,7 @@ mod tests {
             Arc::new(ToolRegistry::new()),
             Arc::new(SentinelConfig::default()),
             Arc::new(AnalyticsPipeline::new()),
+            Arc::new(PluginRegistry::new()),
         ));
         handler
             .sessions
@@ -1547,6 +1690,7 @@ mod tests {
             Arc::new(SentinelConfig::default()),
             Arc::new(AnalyticsPipeline::new()),
             Arc::new(ToolRegistry::new()),
+            Arc::new(PluginRegistry::new()),
         ));
         // Seed one fact so the consumer has something to inject. The injector
         // filters by session, so the memory must carry the session id that
@@ -1562,6 +1706,7 @@ mod tests {
             Arc::new(ToolRegistry::new()),
             Arc::new(SentinelConfig::default()),
             Arc::new(AnalyticsPipeline::new()),
+            Arc::new(PluginRegistry::new()),
         ));
         handler
             .sessions

@@ -1,5 +1,10 @@
 use sentinel_protocol::{ContentBlock, Message, Role};
 
+/// Auto-compact once estimated usage crosses 85% of the window (grok's
+/// CompactionPolicy default) so the next turn keeps headroom below the hard
+/// limit instead of hitting it mid-run.
+const COMPACTION_RATIO_PCT: usize = 85;
+
 #[derive(Debug)]
 pub struct ContextManager {
     messages: Vec<Message>,
@@ -34,7 +39,11 @@ impl ContextManager {
     }
 
     pub fn needs_compaction(&self) -> bool {
-        self.estimated_tokens() > self.max_tokens
+        !self.messages.is_empty()
+            && self
+                .estimated_tokens()
+                .saturating_mul(100)
+                >= self.max_tokens.saturating_mul(COMPACTION_RATIO_PCT)
     }
 
     pub fn should_summarize(&self) -> bool {
@@ -155,6 +164,28 @@ mod tests {
     fn test_no_compaction_needed_when_under_limit() {
         let ctx = ContextManager::new(1000);
         assert!(!ctx.needs_compaction());
+    }
+
+    #[test]
+    fn test_prefires_at_85_percent_ratio() {
+        // Grok-style pre-fire: compaction triggers once estimated usage
+        // crosses 85% of the window, well before the hard limit.
+        let mut ctx = ContextManager::new(160);
+        let msg = |i: usize| Message::user(format!("{}", "m".repeat(100) + &i.to_string()));
+        let resp = |i: usize| Message::assistant(format!("{}", "r".repeat(100) + &i.to_string()));
+        for i in 0..2 {
+            ctx.add(msg(i));
+            ctx.add(resp(i));
+        }
+        // 2 pairs * ~200 chars / 4 = ~100 tokens of 160 — under 85%.
+        assert!(!ctx.needs_compaction());
+        for i in 2..3 {
+            ctx.add(msg(i));
+            ctx.add(resp(i));
+        }
+        // ~150 tokens — over 85% of 160, still under the hard 160 limit.
+        assert!(ctx.estimated_tokens() < 160);
+        assert!(ctx.needs_compaction());
     }
 
     #[test]
