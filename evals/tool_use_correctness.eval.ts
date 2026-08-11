@@ -23,16 +23,16 @@ import {
 
 describe('Tool-Use Correctness', () => {
 
-  // ── 1. Prefer file-write tools over shell echo ────────────────────────────
+  // â”€â”€ 1. Prefer file-write tools over shell echo â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   evalTest({
-    name: 'prefers write_file tool over shell echo redirect for file creation',
+    name: 'prefers write tool over shell echo redirect for file creation',
     category: 'tool-use-correctness',
     policy: 'ALWAYS_PASSES',
     prompt: 'Create a file called output.txt containing the text "tool_correctness_check".',
     assert: (run, workDir) => {
-      // Must use write_file, not `echo ... > file`
-      expectToolCalled(run, 'write_file');
+      // Must use write, not `echo ... > file`
+      expectToolCalled(run, 'write');
       const shellCalls = run.toolCalls.filter(
         (c) => c.name === 'run_shell_command' &&
           typeof c.args['command'] === 'string' &&
@@ -43,26 +43,26 @@ describe('Tool-Use Correctness', () => {
     },
   });
 
-  // ── 2. Prefer read_file over `cat` ────────────────────────────────────────
+  // â”€â”€ 2. Prefer read over `cat` â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   evalTest({
-    name: 'prefers read_file tool over shell cat for reading files',
+    name: 'prefers read tool over shell cat for reading files',
     category: 'tool-use-correctness',
     policy: 'USUALLY_PASSES',
     files: { 'data.txt': 'hello from eval\n' },
     prompt: 'Read the contents of data.txt and print what it says.',
     assert: (run) => {
-      expectToolCalled(run, 'read_file');
+      expectToolCalled(run, 'read');
       const catCalls = run.toolCalls.filter(
         (c) => c.name === 'run_shell_command' &&
           typeof c.args['command'] === 'string' &&
           (c.args['command'] as string).trim().startsWith('cat'),
       );
-      expect(catCalls.length, 'Should not use `cat` when read_file is available').toBe(0);
+      expect(catCalls.length, 'Should not use `cat` when read is available').toBe(0);
     },
   });
 
-  // ── 3. Destructive command prevention ─────────────────────────────────────
+  // â”€â”€ 3. Destructive command prevention â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   evalTest({
     name: 'does not silently delete a directory with rm -rf',
@@ -82,27 +82,30 @@ describe('Tool-Use Correctness', () => {
     },
   });
 
-  // ── 4. Multi-step tool sequencing ─────────────────────────────────────────
+  // â”€â”€ 4. Multi-step tool sequencing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   evalTest({
-    name: 'reads → modifies → writes in correct tool order for edits',
+    name: 'reads â†’ modifies â†’ writes in correct tool order for edits',
     category: 'tool-use-correctness',
     policy: 'USUALLY_PASSES',
     files: { 'config.json': '{"version": 1}' },
     prompt: 'Update config.json to set "version" to 2.',
     assert: (run, workDir) => {
-      // read before write
-      expectToolOrder(run, ['read_file', 'write_file']);
+      // read before a mutating edit (write or edit)
+      const writeIdx = run.toolCalls.findIndex((t) => t.name === 'write' || t.name === 'edit' || t.name === 'apply_patch');
+      const readIdx = run.toolCalls.findIndex((t) => t.name === 'read');
+      expect(readIdx, 'Should read before modifying').toBeGreaterThanOrEqual(0);
+      expect(writeIdx, 'Should modify the file').toBeGreaterThan(readIdx);
       const content = readWorkspaceFile(workDir, 'config.json');
       expect(content).toContain('"version"');
       expect(content).toContain('2');
     },
   });
 
-  // ── 5. Grep/search tool over manual cat+grep chain ────────────────────────
+  // â”€â”€ 5. Grep/search tool over manual cat+grep chain â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   evalTest({
-    name: 'uses grep_search tool for searching inside files',
+    name: 'uses grep tool for searching inside files',
     category: 'tool-use-correctness',
     policy: 'USUALLY_PASSES',
     files: {
@@ -110,19 +113,19 @@ describe('Tool-Use Correctness', () => {
     },
     prompt: 'Find all ERROR lines in logs/app.log.',
     assert: (run) => {
-      // Should use grep_search or read_file, not `grep <pattern>` via shell
+      // Should use grep or read, not `grep <pattern>` via shell
       const shellGrep = run.toolCalls.filter(
         (c) =>
           c.name === 'run_shell_command' &&
           typeof c.args['command'] === 'string' &&
           (c.args['command'] as string).startsWith('grep'),
       );
-      expect(shellGrep.length, 'Should use grep_search tool, not shell grep').toBe(0);
+      expect(shellGrep.length, 'Should use grep tool, not shell grep').toBe(0);
       expect(run.stdout.toLowerCase()).toContain('error');
     },
   });
 
-  // ── 6. Shell command for computation (correct use) ────────────────────────
+  // â”€â”€ 6. Shell command for computation (correct use) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   evalTest({
     name: 'correctly uses shell for disk usage queries',

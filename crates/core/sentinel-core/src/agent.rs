@@ -1447,10 +1447,13 @@ pub(crate) async fn execute_tools_concurrent(
         let tools = Arc::clone(&tools);
         let tool_call_id = tool_call_id.clone();
         let name = name.clone();
-        let args = args.clone();
+        let args = reroot_sandbox_args(&name, args, sandbox);
         let mut ctx = ctx.clone();
         if let Some(ref sb) = sandbox {
-            ctx.sandbox_dir = Some(sb.root().to_string_lossy().to_string());
+            // Shell workdir and workspace-root defaults land in the sandbox
+            // working copy, matching where resolve_path re-roots file paths.
+            ctx.sandbox_dir = Some(sb.work_dir().to_string_lossy().to_string());
+            ctx.workspace_dir = Some(sb.work_dir().to_string_lossy().to_string());
         }
         let cancel = cancel.clone();
         let evt_handler = events.read().unwrap().clone();
@@ -1514,6 +1517,50 @@ pub(crate) async fn execute_tools_concurrent(
 
 fn denied_error(reason: &str) -> AgentOutput {
     AgentOutput::error(format!("Policy denied: {}", reason))
+}
+
+/// When a sandbox is attached, re-root the path arguments of file tools
+/// (read/write/edit/view/glob/grep/git_*/apply_patch) into the sandbox
+/// working copy so no tool can touch the real workspace. Non-path tools pass
+/// through unchanged.
+fn reroot_sandbox_args(
+    name: &str,
+    args: &serde_json::Value,
+    sandbox: &Option<crate::sandbox::SharedSandbox>,
+) -> serde_json::Value {
+    let Some(sb) = sandbox.as_ref() else {
+        return args.clone();
+    };
+    let obj = match args.as_object() {
+        Some(o) => o,
+        None => return args.clone(),
+    };
+    let path_keys: &[&str] = match name {
+        "read" | "write" | "edit" | "view" => &["file_path"],
+        "glob" | "grep" | "git_status" | "git_diff" | "git_log" | "ls" => &["path"],
+        "apply_patch" | "patch" => &["base_path"],
+        _ => return args.clone(),
+    };
+    let mut out = obj.clone();
+    let mut changed = false;
+    for key in path_keys {
+        if let Some(value) = obj.get(*key).and_then(|v| v.as_str()) {
+            if !value.is_empty() {
+                out.insert(
+                    (*key).to_string(),
+                    serde_json::Value::String(
+                        sb.resolve_path(value).to_string_lossy().into_owned(),
+                    ),
+                );
+                changed = true;
+            }
+        }
+    }
+    if changed {
+        serde_json::Value::Object(out)
+    } else {
+        args.clone()
+    }
 }
 
 #[derive(Debug, Clone)]
