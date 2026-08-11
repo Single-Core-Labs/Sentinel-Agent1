@@ -333,14 +333,18 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
             return Ok(());
         }
     }
-    let provider = match sentinel_provider::ProviderKind::from_info(selected.provider.clone()) {
-        Ok(provider) => Arc::new(provider),
-        Err(e) => {
-            eprintln!("✖ Provider '{}' needs setup: {}", selected.provider.name, e);
-            eprintln!("   → Run: sentinel auth login");
-            return Ok(());
-        }
-    };
+    // Wrap the provider in a ModelRouter so transient failures get
+    // exponential-backoff retries (and, if more providers are added, health-
+    // aware fallback) transparently at every call site in the agent loop.
+    let provider: Arc<dyn sentinel_provider::ModelProvider> =
+        match sentinel_provider::ProviderKind::from_info(selected.provider.clone()) {
+            Ok(provider) => Arc::new(sentinel_provider::ModelRouter::new(vec![Box::new(provider)])),
+            Err(e) => {
+                eprintln!("✖ Provider '{}' needs setup: {}", selected.provider.name, e);
+                eprintln!("   → Run: sentinel auth login");
+                return Ok(());
+            }
+        };
     let model_id = selected.model_id;
 
     let tool_registry = sentinel_tools::ToolRegistry::new();
