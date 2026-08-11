@@ -420,6 +420,7 @@ impl RequestHandler {
     }
 
     async fn handle_chat(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
+        self.ensure_authed()?;
         let p: api::ChatParams = parse_params(params)?;
         let session = self.get_or_load_session(&p.session_id).await?;
 
@@ -507,6 +508,7 @@ impl RequestHandler {
     }
 
     async fn handle_chat_stream(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
+        self.ensure_authed()?;
         let p: api::ChatStreamParams = parse_params(params)?;
         let session = self.get_or_load_session(&p.session_id).await?;
 
@@ -564,6 +566,7 @@ impl RequestHandler {
     }
 
     async fn handle_tools_call(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
+        self.ensure_authed()?;
         let p: api::ToolCallParams = parse_params(params)?;
         let ctx = sentinel_tools::ToolContext::new();
         let output = self.tools.execute(&p.tool_name, p.arguments, &ctx).await;
@@ -580,6 +583,7 @@ impl RequestHandler {
     }
 
     async fn handle_fs_read_file(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
+        self.ensure_authed()?;
         let p: api::FsReadParams = parse_params(params)?;
         let ctx = sentinel_tools::ToolContext::new();
         let args = serde_json::json!({ "file_path": p.path });
@@ -592,6 +596,7 @@ impl RequestHandler {
     }
 
     async fn handle_fs_write_file(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
+        self.ensure_authed()?;
         let p: api::FsWriteParams = parse_params(params)?;
         let ctx = sentinel_tools::ToolContext::new();
         let args = serde_json::json!({ "file_path": p.path, "content": p.content });
@@ -604,6 +609,7 @@ impl RequestHandler {
     }
 
     async fn handle_fs_glob(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
+        self.ensure_authed()?;
         let p: api::FsGlobParams = parse_params(params)?;
         let ctx = sentinel_tools::ToolContext::new();
         let args = serde_json::json!({ "pattern": p.pattern });
@@ -617,6 +623,7 @@ impl RequestHandler {
     }
 
     async fn handle_fs_grep(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
+        self.ensure_authed()?;
         let ctx = sentinel_tools::ToolContext::new();
         let args = params.clone().unwrap_or_default();
         let output = self.tools.execute("grep", args, &ctx).await;
@@ -628,6 +635,7 @@ impl RequestHandler {
     }
 
     async fn handle_command_exec(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
+        self.ensure_authed()?;
         let p: api::CommandExecParams = parse_params(params)?;
         let ctx = sentinel_tools::ToolContext::new();
         let full_cmd = if p.args.is_empty() {
@@ -656,6 +664,7 @@ impl RequestHandler {
         &self,
         params: Option<Value>,
     ) -> Result<Value, JsonRpcError> {
+        self.ensure_authed()?;
         let p: api::CommandExecParams = parse_params(params)?;
         if p.command.is_empty() {
             return Err(JsonRpcError::invalid_params("command is required"));
@@ -694,6 +703,7 @@ impl RequestHandler {
     }
 
     async fn handle_config_set(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
+        self.ensure_authed()?;
         let params = params.ok_or_else(|| JsonRpcError::invalid_params("Missing params"))?;
         let obj = params
             .as_object()
@@ -1004,6 +1014,21 @@ impl RequestHandler {
         }))
     }
 
+    /// When `SENTINEL_SERVER_TOKEN` is set, privileged RPCs (tool calls,
+    /// filesystem, shell exec, config mutation) require an authenticated
+    /// session established via `auth/login`.
+    fn ensure_authed(&self) -> Result<(), JsonRpcError> {
+        let required = std::env::var("SENTINEL_SERVER_TOKEN")
+            .map(|t| !t.is_empty())
+            .unwrap_or(false);
+        if required && self.auth_token.try_read().map(|t| t.is_none()).unwrap_or(true) {
+            return Err(JsonRpcError::unauthorized(
+                "Not authenticated: call auth/login first",
+            ));
+        }
+        Ok(())
+    }
+
     async fn handle_auth_login(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
         let p: api::AuthLoginParams = parse_params(params)?;
         if p.token.trim().is_empty() {
@@ -1210,6 +1235,63 @@ mod tests {
                 "provider {} missing api_key_set",
                 p["id"]
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn privileged_rpcs_require_session_auth_when_server_token_set() {
+        // Restore any previous value after the test so parallel tests are not
+        // affected by the env mutation.
+        let prev = std::env::var("SENTINEL_SERVER_TOKEN").ok();
+        std::env::set_var("SENTINEL_SERVER_TOKEN", "test-token");
+
+        let handler = RequestHandler::new(
+            Arc::new(SentinelConfig::default()),
+            Arc::new(AnalyticsPipeline::new()),
+            Arc::new(ToolRegistry::new()),
+            Arc::new(PluginRegistry::new()),
+        );
+
+        // Before login: privileged RPCs are rejected with -32001.
+        let params = serde_json::json!({ "tool_name": "ls", "arguments": {} });
+        let err = handler
+            .handle_tools_call(Some(params))
+            .await
+            .expect_err("tools/call must require auth");
+        assert_eq!(err.code, -32001, "unauthorized code");
+
+        let err = handler
+            .handle_command_exec(Some(serde_json::json!({ "command": "whoami" })))
+            .await
+            .expect_err("command/exec must require auth");
+        assert_eq!(err.code, -32001);
+
+        let err = handler
+            .handle_fs_read_file(Some(serde_json::json!({ "path": "Cargo.toml" })))
+            .await
+            .expect_err("fs/read_file must require auth");
+        assert_eq!(err.code, -32001);
+
+        // After login with the matching token: privileged RPCs are allowed.
+        handler
+            .handle_auth_login(Some(serde_json::json!({ "token": "test-token" })))
+            .await
+            .expect("auth/login with correct token");
+        handler
+            .handle_fs_read_file(Some(serde_json::json!({ "path": "Cargo.toml" })))
+            .await
+            .expect("fs/read_file allowed after login");
+
+        // Logout revokes access again.
+        handler.handle_auth_logout().await.expect("logout");
+        handler
+            .handle_fs_read_file(Some(serde_json::json!({ "path": "Cargo.toml" })))
+            .await
+            .expect_err("fs/read_file must require auth after logout");
+
+        match prev {
+            Some(v) => std::env::set_var("SENTINEL_SERVER_TOKEN", v),
+            None => std::env::remove_var("SENTINEL_SERVER_TOKEN"),
         }
     }
 

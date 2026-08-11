@@ -74,6 +74,13 @@ impl JsonRpcError {
             data: None,
         }
     }
+    pub fn unauthorized(msg: impl Into<String>) -> Self {
+        Self {
+            code: -32001,
+            message: msg.into(),
+            data: None,
+        }
+    }
     pub fn with_data(mut self, data: Value) -> Self {
         self.data = Some(data);
         self
