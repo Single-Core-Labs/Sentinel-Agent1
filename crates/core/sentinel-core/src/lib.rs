@@ -14,6 +14,7 @@ pub mod hooks;
 pub mod logging;
 pub mod memory_file;
 pub mod messaging;
+pub mod mock_inference;
 pub mod pipeline;
 pub mod prompt;
 pub mod project_context;

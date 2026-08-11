@@ -36,6 +36,25 @@ pub enum HookEvent {
         session_id: String,
         result: String,
     },
+    /// App lifecycle events (grok-style hooks): a new app version was
+    /// created, the installed version changed, a storage migration ran,
+    /// or a branch is about to be merged.
+    AppCreated {
+        name: String,
+        version: String,
+    },
+    VersionChanged {
+        previous: String,
+        current: String,
+    },
+    Migration {
+        from: String,
+        to: String,
+    },
+    PreMerge {
+        branch: String,
+        target: String,
+    },
 }
 
 pub type HookFn = Arc<dyn Fn(&HookEvent) + Send + Sync>;
@@ -114,5 +133,39 @@ mod tests {
             iteration: 1,
         });
         assert_eq!(count.load(std::sync::atomic::Ordering::SeqCst), 3);
+    }
+
+    #[test]
+    fn test_app_lifecycle_events() {
+        let mut reg = HookRegistry::new();
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let s = seen.clone();
+        reg.register(Arc::new(move |e| {
+            s.lock().unwrap().push(format!("{e:?}"));
+        }));
+
+        reg.dispatch(&HookEvent::AppCreated {
+            name: "sentinel".into(),
+            version: "1.2.0".into(),
+        });
+        reg.dispatch(&HookEvent::VersionChanged {
+            previous: "1.1.0".into(),
+            current: "1.2.0".into(),
+        });
+        reg.dispatch(&HookEvent::Migration {
+            from: "v3".into(),
+            to: "v4".into(),
+        });
+        reg.dispatch(&HookEvent::PreMerge {
+            branch: "feat/grok-compat".into(),
+            target: "main".into(),
+        });
+
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.len(), 4);
+        assert!(seen[0].contains("AppCreated"));
+        assert!(seen[1].contains("VersionChanged"));
+        assert!(seen[2].contains("Migration"));
+        assert!(seen[3].contains("PreMerge"));
     }
 }

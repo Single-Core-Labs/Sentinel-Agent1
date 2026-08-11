@@ -1,24 +1,14 @@
-import { createSignal, createMemo, For, onMount, onCleanup, Show } from 'solid-js'
+﻿import { createSignal, createMemo, For, onMount, onCleanup, Show } from 'solid-js'
 import { useKeyboard } from '@opentui/solid'
 import type { SelectOption } from '@opentui/core'
 import type { UiMessage, ToolCallState, ConnectionState, ServerEvent, PendingDialog } from './types'
 import { BackendClient } from './backend'
 import { CommandRegistry, CommandExpander } from './commands'
+import { theme, getThemeName, setThemeName, themeNames, VALID_THEMES, type ThemeName } from './theme'
 
 function generateId(): string {
   return Math.random().toString(36).slice(2, 10)
 }
-
-const BG = '#0E1116'
-const SURFACE = '#161B22'
-const SEP = '#21262D'
-const ACCENT = '#FFC972'
-const GREEN = '#3ECF8E'
-const RED = '#FF6B6B'
-const YELLOW = '#FFB454'
-const DIM = '#8B949E'
-const FG = '#E6EDF3'
-const WHITE = FG
 
 const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
 
@@ -36,8 +26,8 @@ function RichText(props: { text: string }) {
       {blocks.map((block, i) => {
         if (i % 2 === 1) {
           return (
-            <box flexDirection="column" marginLeft={2} marginRight={2} paddingLeft={1} paddingRight={1} backgroundColor={SURFACE}>
-              <text fg={DIM}>{block}</text>
+            <box flexDirection="column" marginLeft={2} marginRight={2} paddingLeft={1} paddingRight={1} backgroundColor={theme().surface}>
+              <text fg={theme().dim}>{block}</text>
             </box>
           )
         }
@@ -47,20 +37,20 @@ function RichText(props: { text: string }) {
               const heading = line.match(/^(#{1,4})\s+(.*)$/)
               if (heading) {
                 return (
-                  <text fg={FG} wrapMode="word">
+                  <text fg={theme().fg} wrapMode="word">
                     <strong>{heading[2]}</strong>
                   </text>
                 )
               }
               const segments = line.split(/(\*\*[^*]+\*\*|`[^`]+`)/g).filter(Boolean)
               return (
-                <text fg={FG} wrapMode="word">
+                <text fg={theme().fg} wrapMode="word">
                   {segments.map((seg) => {
                     if (seg.startsWith('**') && seg.endsWith('**')) {
                       return <strong>{seg.slice(2, -2)}</strong>
                     }
                     if (seg.startsWith('`') && seg.endsWith('`')) {
-                      return <text fg={YELLOW}>{seg.slice(1, -1)}</text>
+                      return <text fg={theme().yellow}>{seg.slice(1, -1)}</text>
                     }
                     return seg
                   })}
@@ -85,23 +75,23 @@ function ToolRow(props: { tool: ToolCallState }) {
             when={t().status === 'error'}
             fallback={
               <box flexDirection="row">
-                <text fg={GREEN}>✓ </text>
-                <text fg={FG}>{t().name}</text>
-                {t().result ? <text fg={DIM}>  ·  {anchor(t().result!)}</text> : null}
+                <text fg={theme().green}>✓ </text>
+                <text fg={theme().fg}>{t().name}</text>
+                {t().result ? <text fg={theme().dim}>  ·  {anchor(t().result!)}</text> : null}
               </box>
             }
           >
             <box flexDirection="column">
               <box flexDirection="row">
-                <text fg={RED}>✖ </text>
-                <text fg={RED}>{t().name}</text>
+                <text fg={theme().red}>✖ </text>
+                <text fg={theme().red}>{t().name}</text>
               </box>
-              {t().result ? <text fg={RED}>{anchor(t().result!, 160)}</text> : null}
+              {t().result ? <text fg={theme().red}>{anchor(t().result!, 160)}</text> : null}
             </box>
           </Show>
         }
       >
-        <text fg={YELLOW}>▍{t().name}</text>
+        <text fg={theme().yellow}>▍{t().name}</text>
       </Show>
     </box>
   )
@@ -455,11 +445,41 @@ function App() {
   /clear          - Clear the conversation
   /auth           - Authenticate with a provider
   /backends       - Show detected local LLM backends
+  /theme [name]   - Show current theme or switch (groknight/grokday/tokyonight/
+                    rosepine-moon/oscura-midnight/auto; env SENTINEL_THEME)
   /connect        - Reconnect to backend
   /exit           - Exit the agent (confirms first to protect your session)
 ${commandRegistry.getHelpText()}`,
         })
         break
+
+      case '/theme': {
+        const names = themeNames().join(', ')
+        if (!args) {
+          push({
+            id: generateId(),
+            kind: 'system',
+            text: `Theme: ${getThemeName()} (default via SENTINEL_THEME). Available: ${names}`,
+          })
+          break
+        }
+        const want = args.trim().toLowerCase()
+        if (!VALID_THEMES.has(want)) {
+          push({
+            id: generateId(),
+            kind: 'system',
+            text: `Unknown theme: ${args}. Available: ${names}`,
+          })
+          break
+        }
+        setThemeName(want as ThemeName)
+        push({
+          id: generateId(),
+          kind: 'system',
+          text: `Theme set: ${want}`,
+        })
+        break
+      }
 
       case '/clear':
         setMessages([
@@ -659,7 +679,7 @@ ${commandRegistry.getHelpText()}`,
 
   const statusColor = createMemo(() => {
     const s = conn().status
-    return s === 'connected' ? GREEN : s === 'connecting' ? YELLOW : RED
+    return s === 'connected' ? theme().green : s === 'connecting' ? theme().yellow : theme().red
   })
 
   const statusLabel = createMemo(() => {
@@ -677,31 +697,31 @@ ${commandRegistry.getHelpText()}`,
   })
 
   return (
-    <box width="100%" height="100%" backgroundColor={BG} flexDirection="column">
+    <box width="100%" height="100%" backgroundColor={theme().bg} flexDirection="column">
       {/* header */}
       <box
         width="100%"
         height={1}
-        backgroundColor={SURFACE}
+        backgroundColor={theme().surface}
         flexDirection="row"
         alignItems="center"
         paddingLeft={1}
         paddingRight={1}
       >
-<text fg={ACCENT}>◆</text>
-        <text fg={FG}>
+<text fg={theme().accent}>◆</text>
+        <text fg={theme().fg}>
           <strong> sentinel</strong>
         </text>
-        <text fg={DIM}>  ·  {statusLabel()}</text>
+        <text fg={theme().dim}>  ·  {statusLabel()}</text>
         <box flexGrow={1} />
         {sessionShort() ? (
-          <text fg={DIM}>{sessionShort()}</text>
+          <text fg={theme().dim}>{sessionShort()}</text>
         ) : null}
-        {sessionShort() ? <text fg={DIM}>  ·  </text> : null}
-        <text fg={DIM}>Esc exit</text>
+        {sessionShort() ? <text fg={theme().dim}>  ·  </text> : null}
+        <text fg={theme().dim}>Esc exit</text>
       </box>
 
-      <box width="100%" height={1} backgroundColor={SEP} />
+      <box width="100%" height={1} backgroundColor={theme().sep} />
 
       {/* message feed */}
       <scrollbox
@@ -720,21 +740,21 @@ ${commandRegistry.getHelpText()}`,
             <box flexDirection="column" width="100%">
               {m.kind === 'user' && (
                 <box flexDirection="row" width="100%">
-                  <text fg={ACCENT}>▶ </text>
+                  <text fg={theme().accent}>▶ </text>
                   <RichText text={m.text} />
                 </box>
               )}
               {m.kind === 'assistant' && <RichText text={m.text} />}
               {m.kind === 'thinking' && (
-                <text fg={DIM} wrapMode="word">{m.text}</text>
+                <text fg={theme().dim} wrapMode="word">{m.text}</text>
               )}
               {m.kind === 'system' && (
-                <text fg={DIM} wrapMode="word">{m.text}</text>
+                <text fg={theme().dim} wrapMode="word">{m.text}</text>
               )}
               {m.kind === 'tool' && <ToolRow tool={m.tool} />}
               {m.kind === 'log' && (
                 <text
-                  fg={m.level === 'ERROR' ? RED : m.level === 'WARN' ? YELLOW : DIM}
+                  fg={m.level === 'ERROR' ? theme().red : m.level === 'WARN' ? theme().yellow : theme().dim}
                   wrapMode="word"
                 >
                   {m.text}
@@ -742,7 +762,7 @@ ${commandRegistry.getHelpText()}`,
               )}
               {m.kind === 'permission' && (
                 <text
-                  fg={m.action === 'allow' ? GREEN : m.action === 'veto' ? RED : YELLOW}
+                  fg={m.action === 'allow' ? theme().green : m.action === 'veto' ? theme().red : theme().yellow}
                   wrapMode="word"
                 >
                   {m.text}
@@ -753,35 +773,35 @@ ${commandRegistry.getHelpText()}`,
           )}
         </For>
         {isProcessing() ? (
-          <text fg={YELLOW}>
+          <text fg={theme().yellow}>
             {SPINNER[spinFrame()]} working… {thinkingSecs()}s
           </text>
         ) : null}
       </scrollbox>
 
-      <box width="100%" height={1} backgroundColor={SEP} />
+      <box width="100%" height={1} backgroundColor={theme().sep} />
 
       {/* blocking question card */}
       <Show when={pendingDialog()}>
         <box
           width="100%"
           flexDirection="column"
-          backgroundColor={SURFACE}
+          backgroundColor={theme().surface}
           borderStyle="rounded"
-          borderColor={YELLOW}
+          borderColor={theme().yellow}
           paddingLeft={1}
           paddingRight={1}
           paddingTop={1}
           paddingBottom={1}
         >
-          <text fg={YELLOW}>
+          <text fg={theme().yellow}>
             <strong>? {pendingDialog()!.prompt}</strong>
           </text>
           <box width="100%" height={1} />
           <Show
             when={!dialogCustomMode()}
             fallback={
-              <text fg={DIM} wrapMode="word">
+              <text fg={theme().dim} wrapMode="word">
                 Type your answer and press Enter (Esc to dismiss).
               </text>
             }
@@ -792,8 +812,8 @@ ${commandRegistry.getHelpText()}`,
               focused={!dialogCustomMode()}
               showDescription={false}
               showSelectionIndicator={true}
-              selectedBackgroundColor={ACCENT}
-              selectedTextColor={BG}
+              selectedBackgroundColor={theme().accent}
+              selectedTextColor={theme().bg}
               onSelect={(_i, opt) => {
                 if (!opt) return
                 if (opt.value === '__custom__') {
@@ -806,29 +826,29 @@ ${commandRegistry.getHelpText()}`,
             />
           </Show>
         </box>
-        <box width="100%" height={1} backgroundColor={SEP} />
+        <box width="100%" height={1} backgroundColor={theme().sep} />
       </Show>
 
       {/* input */}
       <box
         width="100%"
         height={1}
-        backgroundColor={SURFACE}
+        backgroundColor={theme().surface}
         paddingLeft={1}
         paddingRight={1}
         flexDirection="row"
         alignItems="center"
       >
-        <text fg={ACCENT}>{'>'}</text>
+        <text fg={theme().accent}>{'>'}</text>
         <input
           value={inputText()}
           onInput={(v: string) => setInputText(v)}
           placeholder={pendingDialog() ? (dialogCustomMode() ? '  Type your answer…' : '  ↑↓ choose · Enter select · Esc dismiss') : '  Type a message or /help'}
           focused={inputFocused() && (!pendingDialog() || dialogCustomMode())}
           width="100%"
-          textColor={FG}
-          backgroundColor={SURFACE}
-          cursorColor={ACCENT}
+          textColor={theme().fg}
+          backgroundColor={theme().surface}
+          cursorColor={theme().accent}
           onSubmit={handleSend as any}
           onMouseDown={() => setInputFocused(true)}
         />
@@ -838,18 +858,18 @@ ${commandRegistry.getHelpText()}`,
       <box
         width="100%"
         height={1}
-        backgroundColor={BG}
+        backgroundColor={theme().bg}
         flexDirection="row"
         alignItems="center"
         paddingLeft={1}
         paddingRight={1}
       >
-        <text fg={DIM}>{conn().model ?? 'no model'}</text>
+        <text fg={theme().dim}>{conn().model ?? 'no model'}</text>
         {conn().sessionId ? (
-          <text fg={DIM}>  ·  session {sessionShort()}</text>
+          <text fg={theme().dim}>  ·  session {sessionShort()}</text>
         ) : null}
         <box flexGrow={1} />
-        <text fg={DIM}>
+        <text fg={theme().dim}>
           {tokenIn()}→{tokenOut()} tok
         </text>
       </box>

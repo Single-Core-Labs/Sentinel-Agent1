@@ -79,6 +79,7 @@ pub struct Agent {
     pub total_completion_tokens: AtomicU64,
     pub(crate) uploader: Box<dyn SessionUploader>,
     pub(crate) plugin_registry: Arc<PluginRegistry>,
+    pub(crate) hooks: crate::hooks::HookRegistry,
     pub(crate) compressor: Arc<dyn ContentCompressor>,
     pub(crate) checkpoints: Arc<dyn CheckpointStore>,
     cancellation: CancellationToken,
@@ -121,6 +122,7 @@ impl Agent {
             total_completion_tokens: AtomicU64::new(0),
             uploader: Box::new(NullUploader),
             plugin_registry: Arc::new(PluginRegistry::new()),
+            hooks: crate::hooks::HookRegistry::new(),
             compressor: Arc::new(NullCompressor::new()),
             checkpoints: Arc::new(CheckpointManager::new()),
             cancellation: CancellationToken::new(),
@@ -226,6 +228,12 @@ impl Agent {
         self
     }
 
+    /// Register lifecycle hooks observed by [`crate::hooks::HookRegistry`].
+    pub fn with_hooks(mut self, hooks: crate::hooks::HookRegistry) -> Self {
+        self.hooks = hooks;
+        self
+    }
+
     pub fn with_compressor(mut self, compressor: Arc<dyn ContentCompressor>) -> Self {
         self.compressor = compressor;
         self
@@ -284,6 +292,13 @@ impl Agent {
             session_id: thread.id.to_string(),
         })
         .await;
+        self.hooks.dispatch(&crate::hooks::HookEvent::SessionEnded {
+            session_id: thread.id.to_string(),
+            result: result
+                .as_ref()
+                .map(|o| o.text_or_empty())
+                .unwrap_or_default(),
+        });
         if result.is_ok() {
             self.upload_session(thread).await;
         }
@@ -306,6 +321,10 @@ impl Agent {
             session_id: sid.to_string(),
         })
         .await;
+
+        self.hooks.dispatch(&crate::hooks::HookEvent::SessionStarted {
+            session_id: sid.to_string(),
+        });
 
         self.event_store
             .append(SessionEvent::UserMessage {
@@ -340,6 +359,11 @@ impl Agent {
                 return Ok(AgentOutput::error("Max iterations reached"));
             }
 
+            self.hooks
+                .dispatch(&crate::hooks::HookEvent::BeforeTurn {
+                    turn: thread.iterations,
+                });
+
             if self.cancellation.is_cancelled() {
                 thread.status = ThreadStatus::Cancelled;
                 return Ok(AgentOutput::error("Agent cancelled"));
@@ -359,6 +383,12 @@ impl Agent {
                 prompt_tokens: 0,
             })
             .await;
+
+            self.hooks
+                .dispatch(&crate::hooks::HookEvent::BeforeModelRequest {
+                    model: self.effective_model().to_string(),
+                    messages: thread.context.messages().to_vec(),
+                });
 
             let mut attempts = 0;
             let response = loop {
@@ -416,6 +446,31 @@ impl Agent {
                 completion_tokens,
             })
             .await;
+
+            let (hook_text, hook_tool_calls) = response
+                .choices
+                .first()
+                .map(|c| {
+                    let text = c.message.extract_text();
+                    let calls = c
+                        .message
+                        .content
+                        .iter()
+                        .filter_map(|b| match b {
+                            ContentBlock::ToolCall { id, name, arguments } => {
+                                Some((name.clone(), id.clone(), arguments.clone()))
+                            }
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>();
+                    (text, calls)
+                })
+                .unwrap_or_default();
+            self.hooks.dispatch(&crate::hooks::HookEvent::AfterModelResponse {
+                model: self.effective_model().to_string(),
+                text: hook_text,
+                tool_calls: hook_tool_calls,
+            });
 
             if let Some(ref usage) = response.usage {
                 self.total_prompt_tokens
@@ -609,6 +664,12 @@ impl Agent {
                     iteration: thread.iterations,
                 })
                 .await;
+
+            self.hooks
+                .dispatch(&crate::hooks::HookEvent::AfterTurn {
+                    turn: thread.turn,
+                    iteration: thread.iterations,
+                });
 
             if thread.is_doom_loop() {
                 return Ok(AgentOutput::error("Doom loop detected"));
@@ -968,6 +1029,12 @@ impl Agent {
                     iteration: thread.iterations,
                 })
                 .await;
+
+            self.hooks
+                .dispatch(&crate::hooks::HookEvent::AfterTurn {
+                    turn: thread.turn,
+                    iteration: thread.iterations,
+                });
 
             if thread.is_doom_loop() {
                 return Ok(AgentOutput::error("Doom loop detected"));
