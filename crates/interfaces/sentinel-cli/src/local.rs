@@ -88,6 +88,23 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
 
     let tools = Arc::new(sentinel_tools::ToolRegistry::new());
 
+    // Guard plugins: same policy plane as other agent paths. A deny aborts
+    // the run; a veto surfaces as a tool error the model can retry around.
+    let plugin_registry = Arc::new(sentinel_plugin_system::PluginRegistry::new());
+    let (loaded_count, failed_plugins) =
+        sentinel_plugin_system::load_default_plugins(&plugin_registry).await;
+    if loaded_count > 0 {
+        println!(
+            " {} plugins loaded",
+            format!("{}", loaded_count).yellow()
+        );
+    }
+    if !failed_plugins.is_empty() {
+        for err in failed_plugins {
+            eprintln!(" {} {}", "•".yellow(), err);
+        }
+    }
+
     let mut ctx = format!(
         "LOCAL: {os} {arch}, {cores}c/{mem:.0}GB RAM",
         os = info.os,
@@ -125,8 +142,9 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     prompt_mgr.set_base(&base);
     sentinel_core::ProjectContext::discover(&config).apply_to_manager(&mut prompt_mgr);
 
-    let agent =
-        sentinel_core::Agent::new(provider, tools, config.clone()).with_prompt_manager(prompt_mgr);
+    let agent = sentinel_core::Agent::new(provider, tools, config.clone())
+        .with_prompt_manager(prompt_mgr)
+        .with_plugin_registry(plugin_registry.clone());
     let mut thread =
         sentinel_core::AgentThread::new(config.agent.max_turns, config.agent.max_iterations, false);
     agent.set_event_handler(Arc::new(crate::handler::CliEventHandler));

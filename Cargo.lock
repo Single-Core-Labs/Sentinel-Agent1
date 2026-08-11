@@ -2019,6 +2019,7 @@ dependencies = [
  "sentinel-exec",
  "sentinel-headroom",
  "sentinel-mcp",
+ "sentinel-plugin-system",
  "sentinel-protocol",
  "sentinel-provider",
  "sentinel-provider-info",

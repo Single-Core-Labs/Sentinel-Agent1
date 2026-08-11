@@ -533,7 +533,7 @@ impl Agent {
             if mutating_batch {
                 self.checkpoints.begin_batch(&workspace, thread.turn);
             }
-            let tool_results = execute_tools_concurrent(
+            let tool_batch = execute_tools_concurrent(
                 &tool_calls,
                 Arc::clone(&self.tools),
                 approval,
@@ -548,6 +548,13 @@ impl Agent {
                 &self.plugin_registry,
             )
             .await;
+
+            let tool_results = match tool_batch {
+                ToolBatchOutcome::Results(results) => results,
+                ToolBatchOutcome::Denied(reason) => {
+                    return Ok(denied_error(&reason));
+                }
+            };
 
             for result in &tool_results {
                 self.event_store
@@ -906,7 +913,7 @@ impl Agent {
             if mutating_batch {
                 self.checkpoints.begin_batch(&workspace, thread.turn);
             }
-            let tool_results = execute_tools_concurrent(
+            let tool_batch = execute_tools_concurrent(
                 &tool_calls,
                 Arc::clone(&self.tools),
                 approval,
@@ -921,6 +928,13 @@ impl Agent {
                 &self.plugin_registry,
             )
             .await;
+
+            let tool_results = match tool_batch {
+                ToolBatchOutcome::Results(results) => results,
+                ToolBatchOutcome::Denied(reason) => {
+                    return Ok(denied_error(&reason));
+                }
+            };
 
             for result in &tool_results {
                 thread.add_message(Message::new(
@@ -1175,6 +1189,13 @@ fn simulate_edit_content(
     }
 }
 
+/// Outcome of a concurrent tool batch. A plugin `deny` aborts the entire
+/// batch and terminates the agent run (fail-closed).
+pub(crate) enum ToolBatchOutcome {
+    Results(Vec<ToolResult>),
+    Denied(String),
+}
+
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn execute_tools_concurrent(
     tool_calls: &[(String, String, serde_json::Value)],
@@ -1189,7 +1210,7 @@ pub(crate) async fn execute_tools_concurrent(
     event_bus: &Option<EventBus>,
     policy: &Option<Arc<dyn PolicyEngine>>,
     plugins: &Arc<PluginRegistry>,
-) -> Vec<ToolResult> {
+) -> ToolBatchOutcome {
     let mut ordered_results: BTreeMap<usize, ToolResult> = BTreeMap::new();
     let mut set: JoinSet<(usize, ToolResult)> = JoinSet::new();
 
@@ -1233,12 +1254,11 @@ pub(crate) async fn execute_tools_concurrent(
         }
 
         // Plugin veto (before user approval)
-        if let PluginAction::Veto(reason) = plugins
-            .dispatch(&PluginEvent::BeforeToolCall {
-                tool_name: name.clone(),
-                args: args.clone(),
-            })
-            .await
+        if let PluginAction::Veto(reason) = plugins.dispatch(&PluginEvent::BeforeToolCall {
+            tool_name: name.clone(),
+            args: args.clone(),
+        })
+        .await
         {
             evt_handler
                 .handle_event(AgentEvent::Permission {
@@ -1257,6 +1277,26 @@ pub(crate) async fn execute_tools_concurrent(
                 },
             );
             continue;
+        }
+
+        // Plugin deny (hard stop, fail-closed): cancel in-flight tools and
+        // abort the whole batch — the model gets no chance to retry.
+        if let PluginAction::Deny(reason) = plugins
+            .dispatch(&PluginEvent::BeforeToolCall {
+                tool_name: name.clone(),
+                args: args.clone(),
+            })
+            .await
+        {
+            evt_handler
+                .handle_event(AgentEvent::Permission {
+                    tool: name.clone(),
+                    action: PermissionAction::Deny,
+                    reason: Some(reason.clone()),
+                })
+                .await;
+            cancel.cancel();
+            return ToolBatchOutcome::Denied(reason);
         }
 
         // Policy check (before user approval)
@@ -1469,7 +1509,11 @@ pub(crate) async fn execute_tools_concurrent(
         }
     }
 
-    ordered_results.into_values().collect()
+    ToolBatchOutcome::Results(ordered_results.into_values().collect())
+}
+
+fn denied_error(reason: &str) -> AgentOutput {
+    AgentOutput::error(format!("Policy denied: {}", reason))
 }
 
 #[derive(Debug, Clone)]

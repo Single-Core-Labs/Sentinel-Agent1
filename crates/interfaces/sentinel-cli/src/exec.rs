@@ -110,11 +110,35 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     for tool in headroom_memory_tools {
         tool_registry.register(tool);
     }
+
+    // Guard plugins: same policy plane as `sentinel ai` so exec runs cannot
+    // bypass workspace/web/command guards.
+    let plugin_registry = Arc::new(sentinel_plugin_system::PluginRegistry::new());
+    let (loaded_count, failed_plugins) =
+        sentinel_plugin_system::load_default_plugins(&plugin_registry).await;
+    if loaded_count > 0 {
+        println!(
+            " {} plugins loaded",
+            format!("{}", loaded_count).yellow()
+        );
+    }
+    if !failed_plugins.is_empty() {
+        eprintln!(
+            "{} {} plugins failed:",
+            "✖".red().bold(),
+            failed_plugins.len()
+        );
+        for err in failed_plugins {
+            eprintln!("  {} {}", "•".red(), err);
+        }
+    }
+
     let tools = Arc::new(tool_registry);
     tools.register(Arc::new(sentinel_core::SubAgentTool::new(
         provider.clone(),
         Arc::clone(&tools),
         config.clone(),
+        Arc::clone(&plugin_registry),
     )));
 
     let agent = sentinel_core::Agent::new(provider, tools, config.clone())
@@ -124,7 +148,8 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
             &sentinel_core::default_events_dir(),
         ))
         .with_compressor(headroom_compressor)
-        .with_model(model_id.clone());
+        .with_model(model_id.clone())
+        .with_plugin_registry(plugin_registry.clone());
 
     // SENTINEL_SANDBOX=1 confines write/edit/run_shell to a scratch copy of
     // the workspace in the OS temp dir — the agent can never touch the real

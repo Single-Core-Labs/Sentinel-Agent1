@@ -4,6 +4,7 @@ use sentinel_config::SentinelConfig;
 use sentinel_core::{
     Agent, AgentEvent, AgentOutput, AgentThread, EventHandler, SessionLogger,
 };
+use sentinel_plugin_system::PluginRegistry;
 use sentinel_provider::ModelProvider;
 use sentinel_tools::ToolRegistry;
 use std::sync::Arc;
@@ -78,6 +79,7 @@ impl AppSession {
         tools: Arc<ToolRegistry>,
         config: Arc<SentinelConfig>,
         analytics: Arc<AnalyticsPipeline>,
+        plugins: Arc<PluginRegistry>,
     ) -> Self {
         let id = Uuid::new_v4().to_string();
         let (evt_tx, _) = tokio::sync::broadcast::channel(256);
@@ -85,6 +87,7 @@ impl AppSession {
         let request_logs = Arc::new(tokio::sync::Mutex::new(None));
         let agent = Agent::new(provider.clone(), tools, config.clone())
             .with_model(model_id.clone())
+            .with_plugin_registry(plugins)
             .with_prompt_manager(sentinel_core::ProjectContext::inject_into_prompt_manager(
                 &config,
             ))
@@ -125,6 +128,7 @@ impl AppSession {
         config: Arc<SentinelConfig>,
         analytics: Arc<AnalyticsPipeline>,
         compressor: Arc<dyn sentinel_core::ContentCompressor>,
+        plugins: Arc<PluginRegistry>,
     ) -> Self {
         let id = Uuid::new_v4().to_string();
         let (evt_tx, _) = tokio::sync::broadcast::channel(256);
@@ -133,6 +137,7 @@ impl AppSession {
         let agent = Agent::new(provider.clone(), tools, config.clone())
             .with_compressor(compressor)
             .with_model(model_id.clone())
+            .with_plugin_registry(plugins)
             .with_prompt_manager(sentinel_core::ProjectContext::inject_into_prompt_manager(
                 &config,
             ))
@@ -174,6 +179,7 @@ impl AppSession {
         config: Arc<SentinelConfig>,
         analytics: Arc<AnalyticsPipeline>,
         compressor: Option<Arc<dyn sentinel_core::ContentCompressor>>,
+        plugins: Arc<PluginRegistry>,
     ) -> Self {
         let (evt_tx, _) = tokio::sync::broadcast::channel(256);
         let model_id = config.agent.default_model.clone();
@@ -185,6 +191,7 @@ impl AppSession {
             agent
         }
         .with_model(model_id.clone())
+        .with_plugin_registry(plugins)
         .with_prompt_manager(sentinel_core::ProjectContext::inject_into_prompt_manager(
             &config,
         ))
@@ -516,7 +523,7 @@ mod tests {
     #[tokio::test]
     async fn new_creates_valid_session_with_event_channel() {
         let (provider, tools, config, analytics) = session_deps();
-        let session = AppSession::new(None, provider, tools, config, analytics);
+        let session = AppSession::new(None, provider, tools, config, analytics, Arc::new(PluginRegistry::new()));
 
         assert!(Uuid::parse_str(&session.id).is_ok(), "id must be a UUID");
         assert_eq!(session.thread.lock().await.turn, 0);
@@ -526,7 +533,7 @@ mod tests {
     #[tokio::test]
     async fn events_broadcast_round_trip() {
         let (provider, tools, config, analytics) = session_deps();
-        let session = AppSession::new(None, provider, tools, config, analytics);
+        let session = AppSession::new(None, provider, tools, config, analytics, Arc::new(PluginRegistry::new()));
 
         let mut rx = session.events.subscribe();
         let receivers = session
@@ -553,6 +560,7 @@ mod tests {
             config,
             analytics,
             Arc::new(NamedCompressor),
+            Arc::new(PluginRegistry::new()),
         );
 
         assert!(Uuid::parse_str(&session.id).is_ok());
@@ -576,6 +584,7 @@ mod tests {
             config,
             analytics,
             None,
+            Arc::new(PluginRegistry::new()),
         );
 
         assert_eq!(session.id, id);
@@ -599,6 +608,7 @@ mod tests {
             config,
             analytics,
             Some(Arc::new(NamedCompressor)),
+            Arc::new(PluginRegistry::new()),
         );
 
         assert!(format!("{:?}", session.agent).contains("has_compressor: test-compressor"));
@@ -607,7 +617,7 @@ mod tests {
     #[tokio::test]
     async fn chat_returns_success_text() {
         let (provider, tools, config, analytics) = session_deps();
-        let session = AppSession::new(None, provider, tools, config, analytics);
+        let session = AppSession::new(None, provider, tools, config, analytics, Arc::new(PluginRegistry::new()));
 
         let result = session.chat("hi").await;
         assert_eq!(result, Ok("hello".to_string()));
@@ -622,7 +632,7 @@ mod tests {
     #[tokio::test]
     async fn chat_with_context_seeds_first_system_message() {
         let (provider, tools, config, analytics) = session_deps();
-        let session = AppSession::new(None, provider, tools, config, analytics);
+        let session = AppSession::new(None, provider, tools, config, analytics, Arc::new(PluginRegistry::new()));
 
         let result = session
             .chat_with_context("hi", Some("## IDE Context\n- active file: x.rs".into()))
@@ -648,7 +658,7 @@ mod tests {
     #[tokio::test]
     async fn chat_without_context_uses_prompt_manager() {
         let (provider, tools, config, analytics) = session_deps();
-        let session = AppSession::new(None, provider, tools, config, analytics);
+        let session = AppSession::new(None, provider, tools, config, analytics, Arc::new(PluginRegistry::new()));
 
         let result = session.chat("hi").await;
         assert_eq!(result, Ok("hello".to_string()));
@@ -678,6 +688,7 @@ mod tests {
             Arc::new(ToolRegistry::new()),
             Arc::new(SentinelConfig::default()),
             Arc::new(AnalyticsPipeline::new()),
+            Arc::new(PluginRegistry::new()),
         );
 
         let result = session.chat("hi").await;
@@ -695,7 +706,7 @@ mod tests {
     #[tokio::test]
     async fn chat_stream_forwards_chunks_and_broadcasts_thinking() {
         let (provider, tools, config, analytics) = session_deps();
-        let session = AppSession::new(None, provider, tools, config, analytics);
+        let session = AppSession::new(None, provider, tools, config, analytics, Arc::new(PluginRegistry::new()));
         let mut events_rx = session.events.subscribe();
         let (chunk_tx, mut chunk_rx) = tokio::sync::mpsc::channel(16);
 
@@ -727,7 +738,7 @@ mod tests {
         std::env::set_var("SENTINEL_SESSION_LOGS_DIR", &logs_root);
 
         let (provider, tools, config, analytics) = session_deps();
-        let session = AppSession::new(None, provider, tools, config, analytics);
+        let session = AppSession::new(None, provider, tools, config, analytics, Arc::new(PluginRegistry::new()));
         let (chunk_tx, _chunk_rx) = tokio::sync::mpsc::channel(16);
         session.chat_stream("hi", chunk_tx).await;
 
@@ -783,6 +794,7 @@ mod tests {
             Arc::new(ToolRegistry::new()),
             Arc::new(SentinelConfig::default()),
             Arc::new(AnalyticsPipeline::new()),
+            Arc::new(PluginRegistry::new()),
         );
         let (chunk_tx, mut chunk_rx) = tokio::sync::mpsc::channel(16);
 
@@ -797,7 +809,7 @@ mod tests {
     #[tokio::test]
     async fn ensure_title_captures_llm_output() {
         let (provider, tools, config, analytics) = session_deps();
-        let session = AppSession::new(None, provider, tools, config, analytics);
+        let session = AppSession::new(None, provider, tools, config, analytics, Arc::new(PluginRegistry::new()));
 
         assert!(session.title.read().await.is_none());
         session.ensure_title("Fix the login bug").await;
@@ -809,7 +821,7 @@ mod tests {
     #[tokio::test]
     async fn ensure_title_is_single_flight() {
         let (provider, tools, config, analytics) = session_deps();
-        let session = AppSession::new(None, provider, tools, config, analytics);
+        let session = AppSession::new(None, provider, tools, config, analytics, Arc::new(PluginRegistry::new()));
 
         session.ensure_title("first").await;
         session.ensure_title("second").await;
@@ -830,6 +842,7 @@ mod tests {
             Arc::new(ToolRegistry::new()),
             Arc::new(SentinelConfig::default()),
             Arc::new(AnalyticsPipeline::new()),
+            Arc::new(PluginRegistry::new()),
         );
 
         session.ensure_title("anything").await;
@@ -848,6 +861,7 @@ mod tests {
             Arc::new(ToolRegistry::new()),
             Arc::new(SentinelConfig::default()),
             Arc::new(AnalyticsPipeline::new()),
+            Arc::new(PluginRegistry::new()),
         );
 
         session.ensure_title("x").await;

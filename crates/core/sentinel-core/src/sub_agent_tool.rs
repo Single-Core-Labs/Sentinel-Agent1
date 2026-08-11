@@ -3,6 +3,7 @@ use crate::sub_agent::{run_sub_agent_team, SubTask};
 use crate::thread::AgentThread;
 use async_trait::async_trait;
 use sentinel_config::SentinelConfig;
+use sentinel_plugin_system::PluginRegistry;
 use sentinel_provider::ModelProvider;
 use sentinel_tools::ToolRegistry;
 use sentinel_tools::{Tool, ToolContext, ToolOutput};
@@ -15,6 +16,7 @@ pub struct SubAgentTool {
     provider: Arc<dyn ModelProvider>,
     tools: Arc<ToolRegistry>,
     config: Arc<SentinelConfig>,
+    plugins: Arc<PluginRegistry>,
     max_turns: u32,
     max_iterations: u32,
 }
@@ -24,11 +26,13 @@ impl SubAgentTool {
         provider: Arc<dyn ModelProvider>,
         tools: Arc<ToolRegistry>,
         config: Arc<SentinelConfig>,
+        plugins: Arc<PluginRegistry>,
     ) -> Self {
         Self {
             provider,
             tools,
             config,
+            plugins,
             max_turns: 50,
             max_iterations: 250,
         }
@@ -88,6 +92,7 @@ impl Tool for SubAgentTool {
             Arc::clone(&self.provider),
             Arc::clone(&self.tools),
             Arc::clone(&self.config),
+            Arc::clone(&self.plugins),
         )
         .await;
 
@@ -110,6 +115,7 @@ mod tests {
             Arc::new(TestProvider),
             Arc::new(ToolRegistry::new()),
             Arc::new(SentinelConfig::default()),
+            Arc::new(PluginRegistry::new()),
         )
     }
 

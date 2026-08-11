@@ -8,6 +8,7 @@ use sentinel_core::thread_store::SqliteThreadStore;
 use sentinel_core::thread_store::ThreadStore;
 use sentinel_provider::{ModelProvider, ProviderKind};
 use sentinel_provider_info::ProviderInfo;
+use sentinel_plugin_system::PluginRegistry;
 use sentinel_tools::ToolRegistry;
 use sentinel_ai_core::diff::{change_count, generate_unified_diff_file, parse_unified_diff};
 use serde_json::Value;
@@ -24,6 +25,8 @@ pub struct RequestHandler {
     config: Arc<SentinelConfig>,
     analytics: Arc<AnalyticsPipeline>,
     tools: Arc<ToolRegistry>,
+    /// Guard plugins shared by every session (workspace/web/command guards).
+    plugins: Arc<PluginRegistry>,
     headroom_compressor: Option<Arc<dyn sentinel_core::ContentCompressor>>,
     #[allow(dead_code)]
     thread_store: Option<Arc<dyn ThreadStore>>,
@@ -91,6 +94,7 @@ impl RequestHandler {
                         self.config.clone(),
                         self.analytics.clone(),
                         self.headroom_compressor.clone(),
+                        self.plugins.clone(),
                     ));
 
                     sessions.insert(session_id.to_string(), session.clone());
@@ -113,8 +117,9 @@ impl RequestHandler {
         config: Arc<SentinelConfig>,
         analytics: Arc<AnalyticsPipeline>,
         tools: Arc<ToolRegistry>,
+        plugins: Arc<PluginRegistry>,
     ) -> Self {
-        Self::new_with_headroom(config, analytics, tools, None)
+        Self::new_with_headroom(config, analytics, tools, None, plugins)
     }
 
     /// Create with an explicit thread store for session persistence (Gap 5).
@@ -123,8 +128,9 @@ impl RequestHandler {
         analytics: Arc<AnalyticsPipeline>,
         tools: Arc<ToolRegistry>,
         thread_store: Option<Arc<dyn ThreadStore>>,
+        plugins: Arc<PluginRegistry>,
     ) -> Self {
-        let mut handler = Self::new_with_headroom(config, analytics, tools, None);
+        let mut handler = Self::new_with_headroom(config, analytics, tools, None, plugins);
         handler.thread_store = thread_store;
         handler
     }
@@ -134,6 +140,7 @@ impl RequestHandler {
         analytics: Arc<AnalyticsPipeline>,
         tools: Arc<ToolRegistry>,
         headroom_compressor: Option<Arc<dyn sentinel_core::ContentCompressor>>,
+        plugins: Arc<PluginRegistry>,
     ) -> Self {
         let thread_store: Option<Arc<dyn ThreadStore>> = match config.thread_store.as_str() {
             "sqlite" => {
@@ -161,6 +168,7 @@ impl RequestHandler {
             config,
             analytics,
             tools,
+            plugins,
             headroom_compressor,
             thread_store,
             config_overrides: RwLock::new(serde_json::Map::new()),
@@ -321,6 +329,7 @@ impl RequestHandler {
                 self.config.clone(),
                 self.analytics.clone(),
                 compressor.clone(),
+                self.plugins.clone(),
             )),
             None => Arc::new(crate::session::AppSession::new(
                 Some(model_id.clone()),
@@ -328,6 +337,7 @@ impl RequestHandler {
                 self.tools.clone(),
                 self.config.clone(),
                 self.analytics.clone(),
+                self.plugins.clone(),
             )),
         };
 
@@ -1175,6 +1185,7 @@ mod tests {
             cfg.clone(),
             Arc::new(AnalyticsPipeline::default()),
             Arc::new(ToolRegistry::new()),
+            Arc::new(PluginRegistry::new()),
         );
 
         let result = handler.handle_config_get().expect("config get");
@@ -1249,6 +1260,7 @@ mod tests {
             Arc::new(cfg),
             Arc::new(AnalyticsPipeline::new()),
             Arc::new(ToolRegistry::new()),
+            Arc::new(PluginRegistry::new()),
         ));
         let session = Arc::new(crate::session::AppSession::new(
             None,
@@ -1258,6 +1270,7 @@ mod tests {
             Arc::new(ToolRegistry::new()),
             Arc::new(SentinelConfig::default()),
             Arc::new(AnalyticsPipeline::new()),
+            Arc::new(PluginRegistry::new()),
         ));
         let rx = session.events.subscribe();
         handler
@@ -1348,6 +1361,7 @@ mod tests {
             Arc::new(SentinelConfig::default()),
             Arc::new(AnalyticsPipeline::new()),
             Arc::new(ToolRegistry::new()),
+            Arc::new(PluginRegistry::new()),
         ));
 
         // No IDE context synced yet → no override.
@@ -1396,6 +1410,7 @@ mod tests {
             Arc::new(SentinelConfig::default()),
             Arc::new(AnalyticsPipeline::new()),
             Arc::new(ToolRegistry::new()),
+            Arc::new(PluginRegistry::new()),
         ));
         handler
             .lsp_diagnostics
@@ -1488,6 +1503,7 @@ mod tests {
             Arc::new(SentinelConfig::default()),
             Arc::new(AnalyticsPipeline::new()),
             Arc::new(ToolRegistry::new()),
+            Arc::new(PluginRegistry::new()),
         ));
 
         let provider = Arc::new(MemScriptedProvider {
@@ -1503,6 +1519,7 @@ mod tests {
             Arc::new(ToolRegistry::new()),
             Arc::new(SentinelConfig::default()),
             Arc::new(AnalyticsPipeline::new()),
+            Arc::new(PluginRegistry::new()),
         ));
         handler
             .sessions
@@ -1547,6 +1564,7 @@ mod tests {
             Arc::new(SentinelConfig::default()),
             Arc::new(AnalyticsPipeline::new()),
             Arc::new(ToolRegistry::new()),
+            Arc::new(PluginRegistry::new()),
         ));
         // Seed one fact so the consumer has something to inject. The injector
         // filters by session, so the memory must carry the session id that
@@ -1562,6 +1580,7 @@ mod tests {
             Arc::new(ToolRegistry::new()),
             Arc::new(SentinelConfig::default()),
             Arc::new(AnalyticsPipeline::new()),
+            Arc::new(PluginRegistry::new()),
         ));
         handler
             .sessions
