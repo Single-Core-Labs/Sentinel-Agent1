@@ -26,10 +26,9 @@ impl AppServer {
         let analytics = Arc::new(AnalyticsPipeline::new());
         let tools = {
             let reg = ToolRegistry::new();
-            let headroom_retrieve = sentinel_headroom::integration::HeadroomRetrieveTool::new(
-                Arc::new(sentinel_headroom::ccr::CcrStore::default()),
-            );
-            reg.register(Arc::new(headroom_retrieve));
+            // Headroom retrieve/memory tools are NOT registered here: the
+            // compressor (and its shared CcrStore) is built lazily on first
+            // session creation, which registers them into this registry.
             reg.register(Arc::new(crate::diagnostics_tool::DiagnosticsTool::new(
                 lsp.diagnostics(),
             )));

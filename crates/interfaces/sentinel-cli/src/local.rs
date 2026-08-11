@@ -88,6 +88,15 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
 
     let tools = Arc::new(sentinel_tools::ToolRegistry::new());
 
+    // Headroom: same context-budget engine as the other agent paths, so
+    // long zero-cost sessions stay inside the model's window.
+    let (headroom_compressor, headroom_retrieve_tool, headroom_memory_tools) =
+        sentinel_headroom::integration::create_headroom_compressor_with_tools().await;
+    tools.register(headroom_retrieve_tool as Arc<dyn sentinel_tools::Tool>);
+    for tool in headroom_memory_tools {
+        tools.register(tool);
+    }
+
     // Guard plugins: same policy plane as other agent paths. A deny aborts
     // the run; a veto surfaces as a tool error the model can retry around.
     let plugin_registry = Arc::new(sentinel_plugin_system::PluginRegistry::new());
@@ -144,6 +153,7 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
 
     let agent = sentinel_core::Agent::new(provider, tools, config.clone())
         .with_prompt_manager(prompt_mgr)
+        .with_compressor(headroom_compressor)
         .with_plugin_registry(plugin_registry.clone());
     let mut thread =
         sentinel_core::AgentThread::new(config.agent.max_turns, config.agent.max_iterations, false);

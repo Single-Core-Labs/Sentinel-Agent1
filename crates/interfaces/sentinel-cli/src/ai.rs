@@ -383,12 +383,15 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     }
 
     let tools = Arc::new(tool_registry);
-    tools.register(Arc::new(sentinel_core::SubAgentTool::new(
-        provider.clone(),
-        Arc::clone(&tools),
-        config.clone(),
-        Arc::clone(&plugin_registry),
-    )));
+    tools.register(Arc::new(
+        sentinel_core::SubAgentTool::new(
+            provider.clone(),
+            Arc::clone(&tools),
+            config.clone(),
+            Arc::clone(&plugin_registry),
+        )
+        .with_compressor(headroom_compressor.clone()),
+    ));
 
     // MCP handshakes have been running in the background during plugin and
     // headroom setup; register their tools right before the agent is built.

@@ -27,7 +27,11 @@ pub struct RequestHandler {
     tools: Arc<ToolRegistry>,
     /// Guard plugins shared by every session (workspace/web/command guards).
     plugins: Arc<PluginRegistry>,
-    headroom_compressor: Option<Arc<dyn sentinel_core::ContentCompressor>>,
+    /// Headroom compressor cache: pre-supplied via `new_with_headroom`, or
+    /// built lazily by `ensure_headroom()` on first session creation (the
+    /// AppServer constructor must stay sync). Retrieval/memory tools are
+    /// registered into the shared registry when the lazy build runs.
+    headroom: Mutex<Option<Arc<dyn sentinel_core::ContentCompressor>>>,
     #[allow(dead_code)]
     thread_store: Option<Arc<dyn ThreadStore>>,
     /// Runtime overrides applied via `config/set` (merged on top of the
@@ -93,7 +97,7 @@ impl RequestHandler {
                         self.tools.clone(),
                         self.config.clone(),
                         self.analytics.clone(),
-                        self.headroom_compressor.clone(),
+                        self.ensure_headroom().await,
                         self.plugins.clone(),
                     ));
 
@@ -169,7 +173,7 @@ impl RequestHandler {
             analytics,
             tools,
             plugins,
-            headroom_compressor,
+            headroom: tokio::sync::Mutex::new(headroom_compressor),
             thread_store,
             config_overrides: RwLock::new(serde_json::Map::new()),
             pending_dialogs: Mutex::new(HashMap::new()),
@@ -194,6 +198,25 @@ impl RequestHandler {
     pub fn with_lsp_diagnostics(mut self, store: Arc<crate::lsp::DiagnosticsStore>) -> Self {
         self.lsp_diagnostics = store;
         self
+    }
+
+    /// Build (once) and cache the headroom compressor, registering its
+    /// retrieve/memory tools into the shared registry on first use.
+    pub async fn ensure_headroom(&self) -> Option<Arc<dyn sentinel_core::ContentCompressor>> {
+        let mut slot = self.headroom.lock().await;
+        if let Some(compressor) = slot.as_ref() {
+            return Some(compressor.clone());
+        }
+        let (compressor, retrieve_tool, memory_tools) =
+            sentinel_headroom::integration::create_headroom_compressor_with_tools().await;
+        self.tools.register(retrieve_tool as Arc<dyn sentinel_tools::Tool>);
+        for tool in memory_tools {
+            self.tools.register(tool);
+        }
+        tracing::info!("headroom compressor initialized for app server sessions");
+        let compressor: Arc<dyn sentinel_core::ContentCompressor> = compressor;
+        *slot = Some(compressor.clone());
+        Some(compressor)
     }
 
     /// Pump the process-wide log bus (Gap 8a) into every active session's
@@ -321,14 +344,17 @@ impl RequestHandler {
         })?;
         let provider: Arc<dyn ModelProvider> = Arc::new(provider);
 
-        let session = match &self.headroom_compressor {
+        // Headroom: every session gets the shared compressor (lazily built
+        // and cached on first session, pre-supplied via new_with_headroom
+        // otherwise). Fall back to a plain session only if init produced none.
+        let session = match self.ensure_headroom().await {
             Some(compressor) => Arc::new(crate::session::AppSession::new_with_compressor(
                 Some(model_id.clone()),
                 provider,
                 self.tools.clone(),
                 self.config.clone(),
                 self.analytics.clone(),
-                compressor.clone(),
+                compressor,
                 self.plugins.clone(),
             )),
             None => Arc::new(crate::session::AppSession::new(

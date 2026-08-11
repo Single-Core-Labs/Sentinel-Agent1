@@ -134,12 +134,15 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     }
 
     let tools = Arc::new(tool_registry);
-    tools.register(Arc::new(sentinel_core::SubAgentTool::new(
-        provider.clone(),
-        Arc::clone(&tools),
-        config.clone(),
-        Arc::clone(&plugin_registry),
-    )));
+    tools.register(Arc::new(
+        sentinel_core::SubAgentTool::new(
+            provider.clone(),
+            Arc::clone(&tools),
+            config.clone(),
+            Arc::clone(&plugin_registry),
+        )
+        .with_compressor(headroom_compressor.clone()),
+    ));
 
     let agent = sentinel_core::Agent::new(provider, tools, config.clone())
         .with_event_handler(Arc::new(CliEventHandler))

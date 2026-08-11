@@ -1,4 +1,5 @@
 use crate::agent::{Agent, AgentOutput, ApprovalGate};
+use crate::compression::ContentCompressor;
 use crate::thread::AgentThread;
 use sentinel_config::SentinelConfig;
 use sentinel_plugin_system::PluginRegistry;
@@ -33,6 +34,7 @@ pub async fn run_sub_agent_team(
     tools: Arc<ToolRegistry>,
     config: Arc<SentinelConfig>,
     plugins: Arc<PluginRegistry>,
+    compressor: Option<Arc<dyn ContentCompressor>>,
 ) -> Vec<SubTaskResult> {
     let mut set: JoinSet<SubTaskResult> = JoinSet::new();
     // Discover once, share across forks: forked threads carry no system
@@ -46,13 +48,19 @@ pub async fn run_sub_agent_team(
         let tools = Arc::clone(&tools);
         let config = Arc::clone(&config);
         let plugins = Arc::clone(&plugins);
+        let compressor = compressor.clone();
         let prompt_manager = prompt_manager.clone();
         let forked = parent_thread.fork();
 
         set.spawn(async move {
-            let agent = Agent::new(provider, tools, config)
+            let mut agent = Agent::new(provider, tools, config)
                 .with_prompt_manager(prompt_manager)
                 .with_plugin_registry(plugins);
+            // Sub-agents inherit the parent's headroom compressor so their
+            // tool output and conversation stay within the same budget.
+            if let Some(compressor) = compressor {
+                agent = agent.with_compressor(compressor);
+            }
             let mut thread = forked;
             let instruction = format!("[Sub-task: {}]\n{}", task.description, task.instruction,);
             let output = agent
@@ -88,6 +96,7 @@ pub async fn run_sub_agent_team_with_approval(
     config: Arc<SentinelConfig>,
     plugins: Arc<PluginRegistry>,
     approval: Arc<dyn ApprovalGate>,
+    compressor: Option<Arc<dyn ContentCompressor>>,
 ) -> Vec<SubTaskResult> {
     let mut set: JoinSet<SubTaskResult> = JoinSet::new();
     let prompt_manager = crate::project_context::ProjectContext::inject_into_prompt_manager(
@@ -100,13 +109,17 @@ pub async fn run_sub_agent_team_with_approval(
         let config = Arc::clone(&config);
         let plugins = Arc::clone(&plugins);
         let approval = Arc::clone(&approval);
+        let compressor = compressor.clone();
         let prompt_manager = prompt_manager.clone();
         let forked = parent_thread.fork();
 
         set.spawn(async move {
-            let agent = Agent::new(provider, tools, config)
+            let mut agent = Agent::new(provider, tools, config)
                 .with_prompt_manager(prompt_manager)
                 .with_plugin_registry(plugins);
+            if let Some(compressor) = compressor {
+                agent = agent.with_compressor(compressor);
+            }
             let mut thread = forked;
             let instruction = format!("[Sub-task: {}]\n{}", task.description, task.instruction,);
             let output = agent
@@ -227,6 +240,7 @@ mod tests {
             tools,
             config,
             Arc::new(sentinel_plugin_system::PluginRegistry::new()),
+            None,
         )
         .await;
         assert_eq!(results.len(), 2, "should complete both sub-tasks");

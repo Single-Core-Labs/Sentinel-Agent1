@@ -1,4 +1,5 @@
 use crate::agent::{Agent, AutoApprovalGate};
+use crate::compression::ContentCompressor;
 use crate::thread::AgentThread;
 use async_trait::async_trait;
 use sentinel_config::SentinelConfig;
@@ -14,6 +15,7 @@ pub struct ResearchTool {
     provider: Arc<dyn ModelProvider>,
     read_only_tools: Arc<sentinel_tools::ToolRegistry>,
     config: Arc<SentinelConfig>,
+    compressor: Option<Arc<dyn ContentCompressor>>,
 }
 
 impl ResearchTool {
@@ -26,7 +28,13 @@ impl ResearchTool {
             provider,
             read_only_tools,
             config,
+            compressor: None,
         }
+    }
+
+    pub fn with_compressor(mut self, compressor: Arc<dyn ContentCompressor>) -> Self {
+        self.compressor = Some(compressor);
+        self
     }
 }
 
@@ -80,11 +88,14 @@ impl Tool for ResearchTool {
         thread.add_message(sentinel_protocol::Message::system(&system));
         thread.add_message(sentinel_protocol::Message::user(&instruction));
 
-        let agent = Agent::new(
+        let mut agent = Agent::new(
             self.provider.clone(),
             self.read_only_tools.clone(),
             self.config.clone(),
         );
+        if let Some(compressor) = &self.compressor {
+            agent = agent.with_compressor(compressor.clone());
+        }
 
         let mut total_tokens: u64 = 0;
         let mut warned_context = false;
