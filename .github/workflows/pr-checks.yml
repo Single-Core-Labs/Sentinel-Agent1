@@ -86,7 +86,7 @@ jobs:
         run: cargo audit
 
   # ---------------------------------------------------------------------------
-  # Clippy — fast single-platform on all three Tier-1 platforms
+  # Clippy �?" fast single-platform on all three Tier-1 platforms
   # ---------------------------------------------------------------------------
   clippy:
     name: Clippy (${{ matrix.os }})
@@ -104,27 +104,26 @@ jobs:
       - run: cargo clippy --workspace --all-targets -- -D warnings
 
   # ---------------------------------------------------------------------------
-  # Bazel test — hermetic cross-platform build with BuildBuddy
+  # Eval gate �?" ALWAYS_PASSES evals against a live LLM when a key exists.
   # ---------------------------------------------------------------------------
-  bazel:
-    name: Bazel (${{ matrix.os }})
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+  evals:
+    name: Evals (ALWAYS_PASSES)
+    runs-on: ubuntu-latest
+    if: secrets.ANTHROPIC_API_KEY != ''
+    needs: test
     steps:
       - uses: actions/checkout@v7
-      - name: Mount Bazel cache
-        uses: actions/cache@v6
-        with:
-          path: ~/.cache/bazel
-          key: bazel-${{ runner.os }}-${{ hashFiles('MODULE.bazel', 'Cargo.lock') }}
-          restore-keys: bazel-${{ runner.os }}-
-      - name: Compute Windows PATH (Windows only)
-        if: runner.os == 'Windows'
-        run: pwsh -File .github/scripts/compute-bazel-windows-path.ps1
-      - name: Test via Bazel CI wrapper
-        run: bash .github/scripts/run-bazel-ci.sh test //... --test_output=errors
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
+      - name: Build binary
+        run: cargo build --bin sentinel
+      - uses: oven-sh/setup-bun@v2
+      - name: Run ALWAYS_PASSES evals
+        run: bun run evals:always
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SENTINEL_BIN: ${{ github.workspace }}/target/debug/sentinel
+          SENTINEL_EVAL_MODEL: claude-3-5-haiku-20241022
+          SENTINEL_NON_INTERACTIVE: '1'
 
 

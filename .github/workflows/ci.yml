@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [master]
   pull_request:
 
 env:
@@ -47,3 +47,28 @@ jobs:
         run: cargo check --workspace
       - name: Run tests
         run: cargo test --workspace
+
+  # ---------------------------------------------------------------------------
+  # Eval gate — runs ALWAYS_PASSES evals against a real LLM whenever an
+  # API key is configured on the repository. Skipped (not failed) otherwise;
+  # run locally with `bun run evals:always`.
+  # ---------------------------------------------------------------------------
+  evals:
+    name: Evals (ALWAYS_PASSES)
+    runs-on: ubuntu-latest
+    if: secrets.ANTHROPIC_API_KEY != ''
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build binary
+        run: cargo build --bin sentinel
+      - uses: oven-sh/setup-bun@v2
+      - name: Run ALWAYS_PASSES evals
+        run: bun run evals:always
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SENTINEL_BIN: ${{ github.workspace }}/target/debug/sentinel
+          SENTINEL_EVAL_MODEL: claude-3-5-haiku-20241022
+          SENTINEL_NON_INTERACTIVE: '1'
