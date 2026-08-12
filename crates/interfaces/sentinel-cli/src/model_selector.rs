@@ -54,7 +54,11 @@ impl std::fmt::Display for SelectError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::NoProvider { model, available } => {
-                writeln!(f, "Model '{}' not recognized.", model)?;
+                if model.is_empty() {
+                    writeln!(f, "No model specified. Please specify a model using the --model <id> flag, or configure agent.default_model in sentinel.toml.")?;
+                } else {
+                    writeln!(f, "Model '{}' not recognized.", model)?;
+                }
                 write!(f, "   Available providers/models:")?;
                 for (provider, models) in available {
                     write!(f, "\n   {provider}:")?;

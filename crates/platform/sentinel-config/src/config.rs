@@ -133,7 +133,7 @@ pub struct LspServerDef {
 }
 
 fn default_model() -> String {
-    "gpt-4o".into()
+    "".into()
 }
 fn default_false() -> bool {
     false
@@ -667,11 +667,6 @@ impl SentinelConfig {
     /// Validate the config. Returns a `ConfigError::Validation` describing the
     /// first problem found.
     pub fn validate(&self) -> Result<(), ConfigError> {
-        if self.agent.default_model.trim().is_empty() {
-            return Err(ConfigError::Validation(
-                "agent.default_model must not be empty".into(),
-            ));
-        }
         if !matches!(self.thread_store.as_str(), "memory" | "json" | "sqlite") {
             return Err(ConfigError::Validation(format!(
                 "thread_store must be one of memory|json|sqlite, got '{}'",
@@ -740,7 +735,7 @@ impl SentinelConfig {
                 }
             }
         }
-        if !self
+        if !self.agent.default_model.trim().is_empty() && !self
             .providers
             .iter()
             .filter(|p| !p.disabled)

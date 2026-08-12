@@ -1,12 +1,8 @@
 {
   "name": "sentinel-monorepo",
   "private": true,
-  "workspaces": [
-    "packages/*"
-  ],
+  "workspaces": [],
   "scripts": {
-    "agent": "bun run \"--jsx-import-source=@opentui/solid\" packages/cli-agent/src/index.tsx",
-    "agent:check": "cd packages/cli-agent && bun run typecheck",
     "evals:always": "cross-env RUN_EVALS=1 vitest run --config evals/vitest.config.ts --reporter=verbose",
     "evals:all": "cross-env RUN_EVALS=1 vitest run --config evals/vitest.config.ts --reporter=verbose",
     "evals:behavioral": "cross-env RUN_EVALS=1 EVAL_CATEGORY=behavioral vitest run --config evals/vitest.config.ts",

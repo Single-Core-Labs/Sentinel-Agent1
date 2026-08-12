@@ -17,7 +17,6 @@ mod schema;
 mod server;
 mod telemetry;
 mod tui;
-mod web;
 
 use colored::*;
 use tracing_subscriber::layer::{Layer, SubscriberExt};
@@ -59,7 +58,6 @@ async fn main() -> anyhow::Result<()> {
         "server" => server::run(sub_args).await?,
         "plugin" => plugin_cmd::run(sub_args).await?,
         "telemetry" => telemetry::run(sub_args).await?,
-        "web" => web::run(sub_args).await?,
         "proxy" => proxy::run(sub_args).await?,
         "diagnostics" => diagnostics::run(sub_args).await?,
         "schema" => schema::run(sub_args)?,
@@ -120,7 +118,6 @@ fn print_help() {
     println!("  server start|stop|status App server control");
     println!("  plugin install|list|remove Plugin management (tools + policy hooks)");
     println!("  telemetry on|off|status  Anonymous crash-reporting consent");
-    println!("  web [--port <n>]        Start HTTP server with Web UI");
     println!("  proxy                  Headroom HTTP compression proxy");
     println!("  diagnostics            System diagnostic checks");
     println!(
