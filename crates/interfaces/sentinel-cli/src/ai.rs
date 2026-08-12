@@ -544,7 +544,6 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
 
     // Non-interactive single-shot mode (used by the eval harness)
     if let Some(one_shot) = prompt_arg {
-        app.start_background();
         let result = app
             .run_non_interactive(&mut thread, &one_shot, policy)
             .await;

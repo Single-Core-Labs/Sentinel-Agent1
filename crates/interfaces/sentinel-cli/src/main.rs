@@ -14,9 +14,7 @@ mod model_selector;
 mod plugin_cmd;
 mod proxy;
 mod schema;
-mod server;
 mod telemetry;
-mod tui;
 
 use colored::*;
 use tracing_subscriber::layer::{Layer, SubscriberExt};
@@ -33,7 +31,6 @@ async fn main() -> anyhow::Result<()> {
                     .add_directive(tracing::Level::WARN.into()),
             ),
         )
-        .with(sentinel_app_server::logs::LogLayer::new())
         .init();
 
     let args: Vec<String> = std::env::args().collect();
@@ -55,13 +52,11 @@ async fn main() -> anyhow::Result<()> {
         "ai" => ai::run(sub_args).await?,
         "local" => local::run(sub_args).await?,
         "auth" => auth::run(sub_args).await?,
-        "server" => server::run(sub_args).await?,
         "plugin" => plugin_cmd::run(sub_args).await?,
         "telemetry" => telemetry::run(sub_args).await?,
         "proxy" => proxy::run(sub_args).await?,
         "diagnostics" => diagnostics::run(sub_args).await?,
         "schema" => schema::run(sub_args)?,
-        "tui" => tui::run(sub_args).await?,
         other => {
             eprintln!("{} Unknown subcommand: '{}'", "Error:".red().bold(), other);
             eprintln!("Run 'sentinel --help' for usage.");
@@ -115,7 +110,6 @@ fn print_help() {
         "  completion [--model <id>] [--system-prompt <text>] <prompt>  One-shot completion (LLM judge)"
     );
     println!("  auth login|logout|status Authentication management");
-    println!("  server start|stop|status App server control");
     println!("  plugin install|list|remove Plugin management (tools + policy hooks)");
     println!("  telemetry on|off|status  Anonymous crash-reporting consent");
     println!("  proxy                  Headroom HTTP compression proxy");
@@ -123,7 +117,6 @@ fn print_help() {
     println!(
         "  schema                 Print JSON Schema for sentinel.toml (IDE validation/autocompletion)"
     );
-    println!("  tui [--port <n>]        Terminal UI for app server");
     println!();
     println!("{}", "Common flags:".yellow().bold());
     println!(
@@ -142,7 +135,7 @@ fn print_help() {
     println!("  sentinel exec gpt-4o-mini \"write hello world\"");
     println!("  sentinel auth login --token <token>");
     println!("  sentinel diagnostics");
-    println!("  sentinel server start");
+
     println!("  sentinel proxy --host 0.0.0.0 --port 8787");
     println!();
     println!("{}", "Configuration:".yellow().bold());

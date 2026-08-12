@@ -195,7 +195,6 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
             Box::new(CliApprovalGate)
         },
     ));
-    app.start_background();
 
     // The pipeline wraps the central agent with staged execution.
     let pipeline_agent = sentinel_core::pipeline::PipelineAgent::new(

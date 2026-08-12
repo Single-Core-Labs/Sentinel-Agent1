@@ -2,16 +2,12 @@
 //!
 //! [`App`] is the single orchestrating struct for the CLI crate. It owns the
 //! services the central agent needs — the session/message/history store, the
-//! permission gate and the theme from config — together with the asynchronously
-//! initialized LSP clients ([`LspManager`]) and the agent itself. Both the
-//! interactive and the non-interactive entry points construct one `App`, start
-//! its background work (LSP handshakes, workspace watchers) and tear it down
-//! through [`shutdown`](App::shutdown), which signals every background task
-//! and terminates each LSP connection gracefully.
+//! permission gate and the theme from config — together with the agent itself.
+//! Both the interactive and the non-interactive entry points construct one `App`
+//! and tear it down through [`shutdown`](App::shutdown).
 
 use colored::*;
 use futures::FutureExt;
-use sentinel_app_server::lsp::LspManager;
 use sentinel_config::{SentinelConfig, ThemeSettings};
 use sentinel_core::thread_store::{JsonFileThreadStore, ThreadStore, ThreadStoreError};
 use sentinel_core::{
@@ -40,7 +36,6 @@ pub struct App {
     permissions: Box<dyn ApprovalGate>,
     #[allow(dead_code)]
     theme: ThemeSettings,
-    lsp: LspManager,
     agent: Option<Agent>,
     shutdown_tx: watch::Sender<bool>,
     #[allow(dead_code)]
@@ -48,13 +43,10 @@ pub struct App {
 }
 
 impl App {
-    /// Construct the app core from config: DB-backed session/history store,
-    /// permission gate, theme and an (as-yet unstarted) LSP client set.
-    /// LSP clients are started later via [`start_background`](Self::start_background)
-    /// so they never block application startup.
+    /// Construct the app core from config: session/history store,
+    /// permission gate, and theme.
     pub fn new(config: SentinelConfig) -> Self {
         let theme = config.theme.clone();
-        let lsp = LspManager::from_config(&config);
         let store = thread_store_from_config(&config);
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
         Self {
@@ -62,7 +54,6 @@ impl App {
             store,
             permissions: Box::new(crate::approval::CliApprovalGate),
             theme,
-            lsp,
             agent: None,
             shutdown_tx,
             shutdown_rx,
@@ -106,12 +97,6 @@ impl App {
         self.store.as_ref()
     }
 
-    /// Number of configured LSP clients (diagnostics).
-    #[allow(dead_code)]
-    pub fn lsp_len(&self) -> usize {
-        self.lsp.len()
-    }
-
     /// Replace the permission gate used for interactive runs.
     pub fn set_permissions(&mut self, gate: Box<dyn ApprovalGate>) {
         self.permissions = gate;
@@ -119,12 +104,6 @@ impl App {
 
     pub fn permissions(&self) -> &dyn ApprovalGate {
         self.permissions.as_ref()
-    }
-
-    /// Start every LSP client on a background task and return immediately.
-    /// No-op when no servers are configured.
-    pub fn start_background(&self) {
-        self.lsp.start();
     }
 
     /// New session thread using config limits and the given auto-approval flag.
@@ -223,12 +202,9 @@ impl App {
         }
     }
 
-    /// Graceful shutdown: signal every background task (including LSP
-    /// workspace watchers) and terminate all LSP client connections —
-    /// `shutdown` + `exit`, a short grace window, then a hard kill.
+    /// Graceful shutdown: signal every background task.
     pub async fn shutdown(&self) {
         let _ = self.shutdown_tx.send(true);
-        self.lsp.shutdown().await;
     }
 
     /// Whether a shutdown has been requested.
@@ -390,26 +366,11 @@ mod tests {
     }
 
     #[test]
-    fn new_sets_theme_and_lsp_from_config() {
+    fn new_sets_theme_from_config() {
         let mut cfg = SentinelConfig::default();
         cfg.theme.name = "paper".into();
-        cfg.lsp_servers = vec![
-            sentinel_config::LspServerDef {
-                id: "tsserver".into(),
-                command: "node".into(),
-                args: vec!["--stdio".into()],
-                languages: vec!["typescript".into()],
-            },
-            sentinel_config::LspServerDef {
-                id: "pyright".into(),
-                command: "pyright-langserver".into(),
-                args: vec!["--stdio".into()],
-                languages: vec!["python".into()],
-            },
-        ];
         let app = App::new(cfg);
         assert_eq!(app.theme().name, "paper");
-        assert_eq!(app.lsp_len(), 2);
         assert!(app.agent().is_none());
     }
 
@@ -483,19 +444,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn shutdown_signals_and_terminates_lsp() {
-        let cfg = SentinelConfig {
-            lsp_servers: vec![sentinel_config::LspServerDef {
-                id: "fake".into(),
-                command: "nonexistent-lsp-binary".into(),
-                args: vec![],
-                languages: vec![],
-            }],
-            ..SentinelConfig::default()
-        };
-        let app = App::new(cfg);
+    async fn shutdown_signals_flag() {
+        let app = App::new(SentinelConfig::default());
         assert!(!app.shutdown_requested());
-        app.start_background();
         app.shutdown().await;
         assert!(app.shutdown_requested(), "shutdown must flip the signal");
     }

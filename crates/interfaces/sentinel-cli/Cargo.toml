@@ -26,10 +26,6 @@ sentinel-analytics = { workspace = true }
 sentinel-tools = { workspace = true }
 sentinel-mcp = { workspace = true }
 sentinel-plugin-system = { workspace = true }
-sentinel-app-server = { workspace = true }
-sentinel-app-server-client = { workspace = true }
-sentinel-app-server-transport = { workspace = true }
-sentinel-app-server-protocol = { workspace = true }
 sentinel-agent-identity = { workspace = true }
 sentinel-provider-info = { workspace = true }
 sentinel-headroom = { workspace = true }
