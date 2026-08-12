@@ -22,6 +22,7 @@ session_logs/
 session/
 .opencode/
 threads/
+evals/logs/
 CONTEXT.md
 docs/design/ai-features-doic.md
 events/
