@@ -5645,7 +5645,7 @@ dependencies = [
 
 [[package]]
 name = "sentinel-agent-identity"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64",
  "chrono",
@@ -5791,7 +5791,7 @@ dependencies = [
 
 [[package]]
 name = "sentinel-ai-host"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "futures",
@@ -6029,7 +6029,7 @@ dependencies = [
 
 [[package]]
 name = "sentinel-analytics"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64",
  "chrono",
@@ -6055,7 +6055,7 @@ dependencies = [
 
 [[package]]
 name = "sentinel-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6146,7 +6146,7 @@ dependencies = [
 
 [[package]]
 name = "sentinel-config"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "dirs 6.0.0",
@@ -6162,7 +6162,7 @@ dependencies = [
 
 [[package]]
 name = "sentinel-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6190,7 +6190,7 @@ dependencies = [
 
 [[package]]
 name = "sentinel-exec"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "serde",
@@ -6245,7 +6245,7 @@ dependencies = [
 
 [[package]]
 name = "sentinel-headroom"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "base64",
@@ -6284,7 +6284,7 @@ dependencies = [
 
 [[package]]
 name = "sentinel-mcp"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "reqwest 0.12.28",
@@ -6299,7 +6299,7 @@ dependencies = [
 
 [[package]]
 name = "sentinel-plugin-system"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6327,7 +6327,7 @@ dependencies = [
 
 [[package]]
 name = "sentinel-protocol"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -6336,7 +6336,7 @@ dependencies = [
 
 [[package]]
 name = "sentinel-provider"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6355,7 +6355,7 @@ dependencies = [
 
 [[package]]
 name = "sentinel-provider-info"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -6363,7 +6363,7 @@ dependencies = [
 
 [[package]]
 name = "sentinel-proxy"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "axum 0.7.9",
@@ -6430,7 +6430,7 @@ dependencies = [
 
 [[package]]
 name = "sentinel-tools"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "async-trait",

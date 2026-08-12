@@ -110,6 +110,10 @@ GITHUB_TOKEN=<github-personal-access-token>
 sentinel ai
 ```
 
+The native terminal REPL reads prompts from stdin and prints responses inline.
+Type `exit` or `quit` to end the session; `/help` shows inline commands.
+Sessions are saved automatically and can be resumed with `sentinel ai --resume <id>`.
+
 #### Headless mode (single prompt, auto-approve):
 
 ```bash
@@ -157,8 +161,9 @@ LOCAL_LLM_API_KEY=<optional-local-api-key>
 ┌──────────────────────────────────────────────────────────────────┐
 │                        User Interfaces                           │
 │  ┌────────────────────────────────────────────────────┐          │
-│  │  sentinel (Rust CLI)  •  OpenTUI agent (packages/ │          │
-│  │                        cli-agent, Solid.js+OpenTUI)│          │
+│  │   sentinel (Rust CLI)  •  terminal REPL           │          │
+│  │   - `sentinel ai`    (any LLM provider)           │          │
+│  │   - `sentinel local` (local models, slash cmds)   │          │
 │  └───────────────────────┬────────────────────────────┘          │
 └──────────────────────────┼───────────────────────────────────────┘
                            ▼
@@ -191,10 +196,10 @@ LOCAL_LLM_API_KEY=<optional-local-api-key>
 ┌──────────────────────────────────────────────────────────────────┐
 │                      Rust Crates                                 │
 │                                                                  │
-│  49 crates: sentinel-core, sentinel-cli, sentinel-provider,       │
+│  45 crates: sentinel-core, sentinel-cli, sentinel-provider,       │
 │  sentinel-tools, sentinel-mcp, sentinel-config, sentinel-exec,   │
-│  sentinel-analytics, sentinel-headroom, sentinel-app-server,     │
-│  sentinel-plugin-system, ...                                     │
+│  sentinel-analytics, sentinel-headroom, sentinel-plugin-system,  │
+│  ...                                                             │
 │                                                                  │
 │  Build system: Cargo (single workspace)                          │
 └──────────────────────────────────────────────────────────────────┘
@@ -255,11 +260,8 @@ The agent emits events via `event_queue`:
 ## Project Structure
 
 ```
-├── packages/           # TS/JS frontend packages
-│   └── cli-agent/      # Solid.js + OpenTUI interactive agent
 ├── crates/             # Domain-categorized Rust crates
 │   ├── core/           # Agent engine & protocol
-│   ├── server/         # App server JSON-RPC daemon
 │   ├── interfaces/     # CLI binary
 │   ├── tools-and-exec/ # Execution sandbox & tool registry
 │   └── platform/       # Providers, config, infra

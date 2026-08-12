@@ -22,7 +22,7 @@ assignees: ''
 
 <!--
   Who benefits? Which crate(s) would change?
-  - sentinel-core / sentinel-provider / sentinel-cli / packages/cli-agent
+  - sentinel-core / sentinel-provider / sentinel-cli
 -->
 
 ## Additional Context

@@ -202,6 +202,88 @@ impl App {
         }
     }
 
+    /// Interactive REPL: read prompts from stdin, run the agent with the
+    /// configured permission gate, print the result, and save the session
+    /// after every turn so history survives crashes and resumable sessions
+    /// stay current.
+    pub async fn run_interactive(
+        &self,
+        thread: &mut AgentThread,
+        policy: Option<Arc<dyn PolicyEngine>>,
+    ) -> anyhow::Result<()> {
+        use std::io::Write;
+        let agent = self
+            .agent
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("no agent attached to app"))?;
+
+        loop {
+            print!("{} ", ">".yellow().bold());
+            std::io::stdout().flush()?;
+
+            let mut input = String::new();
+            let bytes = std::io::stdin().read_line(&mut input)?;
+            if bytes == 0 {
+                println!();
+                break;
+            }
+            let input = input.trim().to_string();
+            if input.is_empty() {
+                continue;
+            }
+            if matches!(input.as_str(), "exit" | "quit") {
+                break;
+            }
+            if matches!(input.as_str(), "/help" | "/h") {
+                println!();
+                println!("  /help, /h   Show this help");
+                println!("  exit, quit  End the session");
+                println!("  (session id: {} — resume later with `sentinel ai --resume {}`)", thread.id, thread.id);
+                println!();
+                continue;
+            }
+
+            let result = match std::panic::AssertUnwindSafe(agent.run_with_approval(
+                thread,
+                &input,
+                self.permissions.as_ref(),
+                &policy,
+            ))
+            .catch_unwind()
+            .await
+            {
+                Ok(r) => r,
+                Err(payload) => {
+                    crate::display::print_error(&panic_message(payload));
+                    Ok(AgentOutput::Error {
+                        message: "agent panicked during run".to_string(),
+                    })
+                }
+            };
+
+            if let Some(store) = &self.store
+                && let Err(e) = store.save_thread(thread).await
+            {
+                eprintln!("{} Failed to save session: {}", "W".yellow(), e);
+            }
+
+            match result {
+                Ok(AgentOutput::Success { text }) => {
+                    if !text.is_empty() {
+                        println!("\n{}", text);
+                    }
+                }
+                Ok(AgentOutput::Error { message }) => {
+                    crate::display::print_error(&message)
+                }
+                Err(e) => crate::display::print_error(&e.to_string()),
+            }
+            println!();
+        }
+
+        Ok(())
+    }
+
     /// Graceful shutdown: signal every background task.
     pub async fn shutdown(&self) {
         let _ = self.shutdown_tx.send(true);

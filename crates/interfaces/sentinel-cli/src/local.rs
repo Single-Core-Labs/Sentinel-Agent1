@@ -281,7 +281,7 @@ fn help() {
     println!("  /info             Show system, model, and token info");
     println!("  /stats            Show conversation statistics");
     println!("  /ssh <host> <cmd>  Run command on remote machine (zero-cost)");
-    println!("  /ai [model]        Switch to full agent mode (plugins, MCP, TUI)");
+    println!("  /ai [model]        Switch to full agent mode (plugins, MCP)");
     println!("  /backends         List detected local LLM backends (Ollama, vLLM, LM Studio)");
     println!("  /clear            Clear screen");
     println!("  /exit, /quit      Exit");

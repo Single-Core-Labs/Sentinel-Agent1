@@ -102,7 +102,7 @@ fn print_help() {
     println!();
     println!("{}", "Subcommands:".yellow().bold());
     println!(
-        "  ai [model]            Interactive agent session (requires bun; use --prompt for one-shot mode without it)"
+        "  ai [model]            Interactive agent session (terminal REPL; --prompt for one-shot)"
     );
     println!("  local [model]         Run a local model via Ollama");
     println!("  exec <model> <prompt>  Run the agent with a prompt (Rust native)");

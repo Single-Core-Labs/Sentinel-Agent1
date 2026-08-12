@@ -4,168 +4,6 @@ use crate::handler::CliEventHandler;
 use colored::*;
 use std::sync::Arc;
 
-const TUI_WS_ADDR: &str = "127.0.0.1:9090";
-
-/// Recover from a panic on the interactive/one-shot paths so the user gets a
-/// friendly message and a non-zero exit instead of a raw unwind.
-fn panic_message(payload: Box<dyn std::any::Any + Send>) -> String {
-    if let Some(s) = payload.downcast_ref::<&str>() {
-        (*s).to_string()
-    } else if let Some(s) = payload.downcast_ref::<String>() {
-        s.clone()
-    } else {
-        "unknown internal error".to_string()
-    }
-}
-
-fn port_open(addr: &str) -> bool {
-    std::net::TcpStream::connect(addr)
-        .map(|_| true)
-        .unwrap_or(false)
-}
-
-fn resolve_ts_agent() -> Option<(std::path::PathBuf, std::path::PathBuf)> {
-    let agent_relative = "packages/cli-agent/src/index.tsx";
-
-    if let Ok(home) = std::env::var("SENTINEL_HOME") {
-        let home = std::path::PathBuf::from(home);
-        let ap = home.join(agent_relative);
-        if ap.exists() {
-            return Some((ap, home));
-        }
-    }
-
-    if let Ok(cwd) = std::env::current_dir() {
-        let ap = cwd.join(agent_relative);
-        if ap.exists() {
-            return Some((ap, cwd));
-        }
-    }
-
-    None
-}
-
-fn try_spawn_ts_agent(args: &[String]) -> bool {
-    if std::env::var("SENTINEL_NON_INTERACTIVE").as_deref() == Ok("1") {
-        return false;
-    }
-    if args.iter().any(|a| a == "--prompt") {
-        return false;
-    }
-
-    // #67 — an explicitly requested model (`sentinel ai <model>` / --model)
-    // must reach the OpenTUI frontend, which otherwise always asks the server
-    // for the config default model. Exported via env so the bun child sees it.
-    if let Ok(parsed) = CliArgs::parse(args, "")
-        && !parsed.model_id.is_empty()
-    {
-        unsafe { std::env::set_var("SENTINEL_REQUESTED_MODEL", &parsed.model_id) };
-    }
-
-    let (agent_path, cwd) = match resolve_ts_agent() {
-        Some(x) => x,
-        None => {
-            eprintln!(
-                "{} TypeScript agent UI not found (expected at packages/cli-agent/src/index.tsx under $SENTINEL_HOME or the current directory).",
-                "W".yellow()
-            );
-            eprintln!("   This is expected if you only checked out the Rust crates.");
-            return false;
-        }
-    };
-
-    let mut server_child: Option<std::process::Child> = None;
-    if !port_open(TUI_WS_ADDR) {
-        if let Ok(exe) = std::env::current_exe() {
-            match std::process::Command::new(&exe)
-                .args(["web", "--port", "9090", "--no-open"])
-                .current_dir(&cwd)
-                .stdin(std::process::Stdio::null())
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .spawn()
-            {
-                Ok(child) => {
-                    server_child = Some(child);
-                    let mut up = false;
-                    for _ in 0..80 {
-                        if port_open(TUI_WS_ADDR) {
-                            up = true;
-                            break;
-                        }
-                        std::thread::sleep(std::time::Duration::from_millis(100));
-                    }
-                    if !up {
-                        let _ = server_child.take().map(|mut c| c.kill());
-                        eprintln!(
-                            "{} Could not start WebSocket server on {}",
-                            "W".yellow(),
-                            TUI_WS_ADDR
-                        );
-                        return false;
-                    }
-                }
-                Err(_) => return false,
-            }
-        } else {
-            return false;
-        }
-    }
-
-    let bun = if cfg!(windows) { "bun.exe" } else { "bun" };
-
-    let status = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        std::process::Command::new(bun)
-            .arg("run")
-            .arg("--jsx-import-source=@opentui/solid")
-            .arg(&agent_path)
-            .current_dir(&cwd)
-            .stdin(std::process::Stdio::inherit())
-            .stdout(std::process::Stdio::inherit())
-            .stderr(std::process::Stdio::inherit())
-            .spawn()
-    }));
-    match status {
-        Ok(Ok(mut child)) => {
-            let wait = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| child.wait()));
-            if let Some(mut s) = server_child {
-                let _ = s.kill();
-            }
-            match wait {
-                Ok(_) => true,
-                Err(payload) => {
-                    eprintln!(
-                        "{} TUI crashed: {}",
-                        "✖".red().bold(),
-                        panic_message(payload)
-                    );
-                    false
-                }
-            }
-        }
-        Ok(Err(e)) => {
-            eprintln!("{} Could not start bun ({}).", "W".yellow(), e);
-            eprintln!("   Install it: https://bun.sh, or use one-shot mode:");
-            eprintln!("       sentinel ai <model> --prompt \"<text>\"");
-            if let Some(mut s) = server_child {
-                let _ = s.kill();
-            }
-            false
-        }
-        Err(payload) => {
-            eprintln!(
-                "{} TUI launch crashed: {}",
-                "✖".red().bold(),
-                panic_message(payload)
-            );
-            if let Some(mut s) = server_child {
-                let _ = s.kill();
-            }
-            std::process::exit(1)
-        }
-    }
-}
-
 struct CliArgs {
     resume_id: Option<String>,
     model_id: String,
@@ -271,9 +109,6 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     let non_interactive = std::env::var("SENTINEL_NON_INTERACTIVE").as_deref() == Ok("1")
         || args.iter().any(|a| a == "--prompt");
     crate::telemetry::boot(non_interactive);
-    if try_spawn_ts_agent(args) {
-        return Ok(());
-    }
     let config = Arc::new(match sentinel_config::SentinelConfig::load() {
         Ok(c) => c,
         Err(e) => {
@@ -316,19 +151,7 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         model_id.clone()
     };
 
-    // The inline terminal REPL is gone — OpenTUI (bun) is the only interactive
-    // UI. try_spawn_ts_agent() already printed the specific reason it
-    // couldn't run (TS agent not found vs. bun not found vs. crashed) when
-    // interactive mode was requested; without --prompt there's nothing left
-    // to do but point at one-shot mode.
-    if prompt_arg.is_none() {
-        eprintln!(
-            "{} No interactive session available; use one-shot mode instead:",
-            "W".yellow()
-        );
-        eprintln!("       sentinel ai <model> --prompt \"<text>\"");
-        return Ok(());
-    }
+    // Interactive mode falls through to the native terminal REPL after startup.
 
     // --host ai: drive the one-shot prompt through the sentinel-ai agent core
     // (AgentBuilder + sampler loop in sentinel-ai-host) instead of the
@@ -551,8 +374,15 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         if result.is_err() {
             std::process::exit(1);
         }
+        return Ok(());
     }
-    Ok(())
+
+    // Interactive: native terminal REPL.
+    println!(" {} Type 'exit' or 'quit' to end the session.", "·".cyan());
+    print_divider();
+    let result = app.run_interactive(&mut thread, policy).await;
+    app.shutdown().await;
+    result
 }
 
 #[cfg(test)]
