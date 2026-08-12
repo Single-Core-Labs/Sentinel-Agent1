@@ -1,6 +1,6 @@
 use sentinel_protocol::{ContentBlock, Message, Role};
 
-/// Auto-compact once estimated usage crosses 85% of the window (grok's
+/// Auto-compact once estimated usage crosses 85% of the window (ai's
 /// CompactionPolicy default) so the next turn keeps headroom below the hard
 /// limit instead of hitting it mid-run.
 const COMPACTION_RATIO_PCT: usize = 85;
@@ -168,7 +168,7 @@ mod tests {
 
     #[test]
     fn test_prefires_at_85_percent_ratio() {
-        // Grok-style pre-fire: compaction triggers once estimated usage
+        // Ai-style pre-fire: compaction triggers once estimated usage
         // crosses 85% of the window, well before the hard limit.
         let mut ctx = ContextManager::new(160);
         let msg = |i: usize| Message::user(format!("{}", "m".repeat(100) + &i.to_string()));

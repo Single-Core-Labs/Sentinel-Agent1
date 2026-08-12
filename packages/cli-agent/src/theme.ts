@@ -1,8 +1,8 @@
 import { createMemo, createSignal } from 'solid-js'
 
 export type ThemeName =
-  | 'groknight'
-  | 'grokday'
+  | 'ainight'
+  | 'aiday'
   | 'tokyonight'
   | 'rosepine-moon'
   | 'oscura-midnight'
@@ -20,11 +20,11 @@ export interface Palette {
   fg: string
 }
 
-// Palettes ported from the grok TUI (xai-grok-pager-render themes):
-// groknight/grokday = neutral ramp + TokyoNight accents; tokyonight,
+// Palettes ported from the ai TUI (sentinel-ai-pager-render themes):
+// ainight/aiday = neutral ramp + TokyoNight accents; tokyonight,
 // rosepine-moon, oscura-midnight are the stock palettes.
 export const THEMES: Record<Exclude<ThemeName, 'auto'>, Palette> = {
-  groknight: {
+  ainight: {
     bg: '#141414',
     surface: '#242424',
     sep: '#1c1c1c',
@@ -35,7 +35,7 @@ export const THEMES: Record<Exclude<ThemeName, 'auto'>, Palette> = {
     dim: '#6c6c6c',
     fg: '#e1e1e1',
   },
-  grokday: {
+  aiday: {
     bg: '#eeeeee',
     surface: '#dedede',
     sep: '#eaeaea',
@@ -94,10 +94,10 @@ export const themeName = createSignal<ThemeName>(initialTheme())
 export const getThemeName = themeName[0]
 export const setThemeName = themeName[1]
 
-/** Resolved palette: `auto` falls back to groknight (dark default). */
+/** Resolved palette: `auto` falls back to ainight (dark default). */
 export const theme = createMemo<Palette>(() => {
   const name = getThemeName()
-  return THEMES[name === 'auto' ? 'groknight' : name]
+  return THEMES[name === 'auto' ? 'ainight' : name]
 })
 
 export function themeNames(): string[] {

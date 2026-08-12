@@ -85,7 +85,7 @@
 | Branch | Location | Status |
 |---|---|---|
 | `main` | local + remote | obsolete — `master` is the canonical default |
-| `feat/grok-compat` | local + remote | merged into master (#123) |
+| `feat/ai-compat` | local + remote | merged into master (#123) |
 | `fix/plugin-plane-guards` | local | merged work — verify before deleting |
 | `docs/agent-testing-plan` | local + remote | scratch |
 | `feat/provider-auth-store` | remote | unknown — check PR status |

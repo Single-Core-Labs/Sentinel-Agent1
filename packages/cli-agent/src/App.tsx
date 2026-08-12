@@ -1,4 +1,4 @@
-﻿import { createSignal, createMemo, For, onMount, onCleanup, Show } from 'solid-js'
+import { createSignal, createMemo, For, onMount, onCleanup, Show } from 'solid-js'
 import { useKeyboard } from '@opentui/solid'
 import type { SelectOption } from '@opentui/core'
 import type { UiMessage, ToolCallState, ConnectionState, ServerEvent, PendingDialog } from './types'
@@ -98,7 +98,7 @@ function ToolRow(props: { tool: ToolCallState }) {
   )
 }
 
-/** Empty-state brand block — the grok-style centered welcome, sentinel voice. */
+/** Empty-state brand block — the ai-style centered welcome, sentinel voice. */
 function Welcome(props: { model: string | null; onChip: (cmd: string) => void }) {
   return (
     <box width="100%" height="100%" flexDirection="column" justifyContent="center" alignItems="center">
@@ -152,7 +152,7 @@ function App() {
   const [tokenOut, setTokenOut] = createSignal(0)
   const [inputFocused, setInputFocused] = createSignal(true)
   const [runCompleted, setRunCompleted] = createSignal(true)
-  // Blocking question card (grok TUI pattern): while set, the prompt is
+  // Blocking question card (ai TUI pattern): while set, the prompt is
   // disabled and keyboard input goes to the dialog.
   const [pendingDialog, setPendingDialog] = createSignal<PendingDialog | null>(null)
   const [dialogCustomMode, setDialogCustomMode] = createSignal(false)
@@ -351,7 +351,7 @@ function App() {
 
   useKeyboard((key) => {
     if (key.name === 'escape') {
-      // Escape while a question card is open dismisses it (grok cancel-turn).
+      // Escape while a question card is open dismisses it (ai cancel-turn).
       if (pendingDialog()) {
         void submitDialog('')
         return
@@ -476,7 +476,7 @@ function App() {
   /clear          - Clear the conversation
   /auth           - Authenticate with a provider
   /backends       - Show detected local LLM backends
-  /theme [name]   - Show current theme or switch (groknight/grokday/tokyonight/
+  /theme [name]   - Show current theme or switch (ainight/aiday/tokyonight/
                     rosepine-moon/oscura-midnight/auto; env SENTINEL_THEME)
   /connect        - Reconnect to backend
   /exit           - Exit the agent (confirms first to protect your session)
@@ -729,7 +729,7 @@ ${commandRegistry.getHelpText()}`,
 
   return (
     <box width="100%" height="100%" backgroundColor={theme().bg} flexDirection="column">
-      {/* header — minimal chrome, grok-style */}
+      {/* header — minimal chrome, ai-style */}
       <box
         width="100%"
         height={1}
@@ -872,7 +872,7 @@ ${commandRegistry.getHelpText()}`,
         <box width="100%" height={1} backgroundColor={theme().sep} />
       </Show>
 
-      {/* input — pill bar, grok-style */}
+      {/* input — pill bar, ai-style */}
       <box
         width="100%"
         flexDirection="row"

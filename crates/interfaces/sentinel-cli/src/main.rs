@@ -7,6 +7,7 @@ mod diagnostics;
 mod display;
 mod exec;
 mod handler;
+mod host;
 mod local;
 mod mcp_setup;
 mod model_selector;

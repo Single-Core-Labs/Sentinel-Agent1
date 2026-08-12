@@ -36,7 +36,7 @@ pub enum HookEvent {
         session_id: String,
         result: String,
     },
-    /// App lifecycle events (grok-style hooks): a new app version was
+    /// App lifecycle events (ai-style hooks): a new app version was
     /// created, the installed version changed, a storage migration ran,
     /// or a branch is about to be merged.
     AppCreated {
@@ -157,7 +157,7 @@ mod tests {
             to: "v4".into(),
         });
         reg.dispatch(&HookEvent::PreMerge {
-            branch: "feat/grok-compat".into(),
+            branch: "feat/ai-compat".into(),
             target: "main".into(),
         });
 

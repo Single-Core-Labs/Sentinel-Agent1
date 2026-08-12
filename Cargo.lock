@@ -9656,6 +9656,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "sentinel-acp-lib"
+version = "0.1.0"
+dependencies = [
+ "agent-client-protocol",
+ "async-trait",
+ "derive_more 2.1.1",
+ "futures",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "sentinel-agent-identity"
 version = "0.1.0"
 dependencies = [
@@ -9673,6 +9687,124 @@ dependencies = [
 ]
 
 [[package]]
+name = "sentinel-agent-lifecycle"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "sentinel-ai-agent"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "dirs 6.0.0",
+ "dunce",
+ "git2",
+ "ignore",
+ "minijinja",
+ "regex",
+ "sentinel-ai-config",
+ "sentinel-ai-hooks",
+ "sentinel-ai-sampling-types",
+ "sentinel-ai-tools",
+ "sentinel-token-estimation",
+ "sentinel-tool-types",
+ "sentinel-tty-utils",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "serial_test",
+ "sha2 0.10.9",
+ "strum 0.27.2",
+ "tempfile",
+ "thiserror 2.0.19",
+ "tokio",
+ "tracing",
+ "zeroize",
+]
+
+[[package]]
+name = "sentinel-ai-announcements"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "sentinel-ai-tools",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "ts-rs",
+]
+
+[[package]]
+name = "sentinel-ai-auth"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "http 1.4.2",
+ "mockito",
+ "reqwest 0.12.28",
+ "reqwest-middleware 0.4.2",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "sentinel-ai-compaction"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "sentinel-ai-config"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "blake3",
+ "core-foundation",
+ "dunce",
+ "prod-mc-cli-chat-proxy-types",
+ "ring",
+ "semver",
+ "sentinel-ai-version",
+ "sentinel-tty-utils",
+ "serde",
+ "serde_json",
+ "shellexpand",
+ "tempfile",
+ "thiserror 2.0.19",
+ "toml",
+ "tracing",
+ "urlencoding",
+ "which",
+]
+
+[[package]]
+name = "sentinel-ai-config-types"
+version = "0.1.0"
+dependencies = [
+ "agent-client-protocol",
+ "indexmap",
+ "sentinel-ai-announcements",
+ "sentinel-ai-config",
+ "sentinel-ai-mcp",
+ "serde",
+ "serde_json",
+ "strum 0.27.2",
+ "tracing",
+]
+
+[[package]]
 name = "sentinel-ai-core"
 version = "0.1.0"
 dependencies = [
@@ -9680,6 +9812,1138 @@ dependencies = [
  "thiserror 2.0.19",
  "tokio",
  "uuid",
+]
+
+[[package]]
+name = "sentinel-ai-env"
+version = "0.1.0"
+dependencies = [
+ "tracing",
+ "url",
+]
+
+[[package]]
+name = "sentinel-ai-extra-ca"
+version = "0.1.0"
+dependencies = [
+ "reqwest 0.12.28",
+ "rustls",
+ "tempfile",
+ "tracing",
+]
+
+[[package]]
+name = "sentinel-ai-hooks"
+version = "0.1.0"
+dependencies = [
+ "fastrand",
+ "regex",
+ "reqwest 0.12.28",
+ "sentinel-ai-config",
+ "sentinel-ai-tools",
+ "serde",
+ "serde_json",
+ "shellexpand",
+ "tempfile",
+ "thiserror 2.0.19",
+ "tokio",
+ "toml",
+ "tracing",
+ "url",
+]
+
+[[package]]
+name = "sentinel-ai-host"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "futures",
+ "schemars 1.2.2",
+ "sentinel-ai-agent",
+ "sentinel-ai-sampler",
+ "sentinel-ai-sampling-types",
+ "sentinel-ai-tools",
+ "sentinel-headroom",
+ "sentinel-plugin-system",
+ "sentinel-tool-protocol",
+ "sentinel-tool-runtime",
+ "sentinel-tool-types",
+ "sentinel-tools",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "sentinel-ai-http"
+version = "0.1.0"
+dependencies = [
+ "reqwest 0.12.28",
+ "reqwest-middleware 0.4.2",
+ "sentinel-ai-auth",
+ "sentinel-ai-extra-ca",
+ "sentinel-ai-sampler",
+ "sentinel-ai-telemetry",
+ "sentinel-ai-version",
+ "sentinel-ai-workspace",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
+name = "sentinel-ai-markdown"
+version = "0.1.0"
+dependencies = [
+ "anstyle",
+ "anstyle-lossy",
+ "anstyle-syntect",
+ "criterion",
+ "crossterm",
+ "html-escape",
+ "linkify",
+ "pretty_assertions",
+ "pulldown-cmark",
+ "ratatui",
+ "sentinel-ai-markdown-core",
+ "sentinel-ratatui-textarea",
+ "supports-color",
+ "syntect",
+ "textwrap",
+ "two-face",
+ "unicode-segmentation",
+ "unicode-width 0.2.0",
+ "url",
+]
+
+[[package]]
+name = "sentinel-ai-markdown-core"
+version = "0.1.0"
+dependencies = [
+ "pulldown-cmark",
+]
+
+[[package]]
+name = "sentinel-ai-mcp"
+version = "0.1.0"
+dependencies = [
+ "agent-client-protocol",
+ "async-trait",
+ "axum 0.8.9",
+ "futures",
+ "http 1.4.2",
+ "libc",
+ "oauth2",
+ "parking_lot",
+ "regex",
+ "reqwest 0.13.4",
+ "rmcp",
+ "sentinel-ai-config",
+ "sentinel-ai-extra-ca",
+ "sentinel-ai-telemetry",
+ "sentinel-ai-tools",
+ "sentinel-ai-version",
+ "sentinel-ai-workspace-types",
+ "sentinel-computer-hub-sdk",
+ "sentinel-file-utils",
+ "sentinel-tool-protocol",
+ "sentinel-tool-runtime",
+ "sentinel-tool-types",
+ "serde",
+ "serde_json",
+ "sse-stream",
+ "tempfile",
+ "thiserror 2.0.19",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "url",
+ "webbrowser",
+ "which",
+]
+
+[[package]]
+name = "sentinel-ai-memory"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "arc-swap",
+ "async-trait",
+ "blake3",
+ "chrono",
+ "dunce",
+ "filetime",
+ "flate2",
+ "git2",
+ "nix 0.30.1",
+ "notify",
+ "reqwest 0.12.28",
+ "reqwest-middleware 0.4.2",
+ "rusqlite",
+ "sentinel-ai-auth",
+ "sentinel-ai-config-types",
+ "sentinel-ai-http",
+ "sentinel-ai-telemetry",
+ "sentinel-ai-tools",
+ "sentinel-ai-version",
+ "sentinel-sqlite-journal",
+ "serde_json",
+ "sqlite-vec",
+ "tar",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "windows 0.62.2",
+]
+
+[[package]]
+name = "sentinel-ai-mermaid"
+version = "0.1.0"
+dependencies = [
+ "fontdb",
+ "image",
+ "libc",
+ "mermaid-to-svg",
+ "resvg",
+ "sentinel-tty-utils",
+ "tempfile",
+ "thiserror 2.0.19",
+ "tiny-skia",
+ "tracing",
+ "wait-timeout",
+ "which",
+]
+
+[[package]]
+name = "sentinel-ai-models"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "sentinel-ai-pager"
+version = "1.0.0"
+dependencies = [
+ "agent-client-protocol",
+ "ansi-to-tui",
+ "anyhow",
+ "backon",
+ "base64 0.22.1",
+ "blake3",
+ "chrono",
+ "clap",
+ "clap_complete",
+ "core-foundation",
+ "criterion",
+ "crossterm",
+ "derive_more 2.1.1",
+ "dirs 6.0.0",
+ "dunce",
+ "enum_delegate",
+ "flate2",
+ "git2",
+ "image",
+ "indexmap",
+ "insta",
+ "libc",
+ "nix 0.30.1",
+ "nucleo",
+ "obfstr",
+ "parking_lot",
+ "portable-pty",
+ "pretty_assertions",
+ "rand 0.9.5",
+ "ratatui",
+ "regex",
+ "rustls",
+ "sentinel-acp-lib",
+ "sentinel-ai-agent",
+ "sentinel-ai-announcements",
+ "sentinel-ai-config",
+ "sentinel-ai-markdown",
+ "sentinel-ai-mermaid",
+ "sentinel-ai-pager-pty-harness",
+ "sentinel-ai-pager-render",
+ "sentinel-ai-plugin-marketplace",
+ "sentinel-ai-sandbox",
+ "sentinel-ai-shell",
+ "sentinel-ai-telemetry",
+ "sentinel-ai-test-support",
+ "sentinel-ai-tools",
+ "sentinel-ai-update",
+ "sentinel-ai-version",
+ "sentinel-ai-voice",
+ "sentinel-ai-workspace",
+ "sentinel-crash-handler",
+ "sentinel-fast-worktree",
+ "sentinel-file-utils",
+ "sentinel-hooks-plugins-types",
+ "sentinel-prompt-queue",
+ "sentinel-ratatui-inline",
+ "sentinel-ratatui-textarea",
+ "sentinel-token-estimation",
+ "sentinel-tty-utils",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "shellexpand",
+ "shlex 1.3.0",
+ "signal-hook 0.3.18",
+ "similar",
+ "strip-ansi-escapes",
+ "syntect",
+ "tar",
+ "tempfile",
+ "textwrap",
+ "tokio",
+ "tokio-util",
+ "toml",
+ "toml_edit 0.22.27",
+ "tracing",
+ "tracing-subscriber",
+ "unicode-segmentation",
+ "unicode-width 0.2.0",
+ "url",
+ "urlencoding",
+ "uuid",
+ "wait-timeout",
+ "walkdir",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "sentinel-ai-pager-bin"
+version = "1.0.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "cryptify",
+ "dunce",
+ "libc",
+ "obfstr",
+ "rustls",
+ "semver",
+ "sentinel-acp-lib",
+ "sentinel-ai-config",
+ "sentinel-ai-pager",
+ "sentinel-ai-pager-minimal",
+ "sentinel-ai-sandbox",
+ "sentinel-ai-shell",
+ "sentinel-ai-telemetry",
+ "sentinel-ai-update",
+ "sentinel-ai-version",
+ "sentinel-ai-workspace",
+ "sentinel-crash-handler",
+ "sentinel-tty-utils",
+ "serde_json",
+ "serial_test",
+ "tikv-jemalloc-ctl",
+ "tikv-jemalloc-sys",
+ "tikv-jemallocator",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "sentinel-ai-pager-minimal"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "crossterm",
+ "ratatui",
+ "sentinel-ai-pager",
+ "sentinel-ai-shell",
+ "sentinel-ai-version",
+ "sentinel-ratatui-inline",
+ "sentinel-token-estimation",
+ "similar",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "sentinel-ai-pager-pty-harness"
+version = "0.1.0"
+dependencies = [
+ "alacritty_terminal",
+ "anyhow",
+ "base64 0.22.1",
+ "clap",
+ "dunce",
+ "image",
+ "libc",
+ "portable-pty",
+ "ptyctl",
+ "reqwest 0.12.28",
+ "sentinel-ai-test-support",
+ "sentinel-tty-utils",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "sentinel-ai-pager-render"
+version = "0.1.0"
+dependencies = [
+ "agent-client-protocol",
+ "anstyle",
+ "anyhow",
+ "base64 0.22.1",
+ "crossterm",
+ "dark-light",
+ "dirs 6.0.0",
+ "documented",
+ "dunce",
+ "image",
+ "libc",
+ "linkify",
+ "notify",
+ "pretty_assertions",
+ "ratatui",
+ "ratatui-core",
+ "regex",
+ "sentinel-ai-config",
+ "sentinel-ai-markdown",
+ "sentinel-ai-paths",
+ "sentinel-ai-shared",
+ "sentinel-ai-telemetry",
+ "sentinel-ai-tools",
+ "sentinel-ai-workspace",
+ "sentinel-ratatui-inline",
+ "sentinel-ratatui-textarea",
+ "sentinel-tty-utils",
+ "serde",
+ "serial_test",
+ "shellexpand",
+ "strum 0.27.2",
+ "supports-color",
+ "syntect",
+ "tempfile",
+ "textwrap",
+ "tokio",
+ "toml",
+ "toml_edit 0.22.27",
+ "tracing",
+ "tui-scrollbar",
+ "unicode-segmentation",
+ "unicode-width 0.2.0",
+ "url",
+ "uuid",
+ "vte 0.15.0",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "sentinel-ai-paths"
+version = "0.1.0"
+dependencies = [
+ "camino",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
+]
+
+[[package]]
+name = "sentinel-ai-plugin-marketplace"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "dirs 6.0.0",
+ "dunce",
+ "fs2",
+ "sentinel-ai-agent",
+ "sentinel-ai-config",
+ "sentinel-hooks-plugins-types",
+ "sentinel-tty-utils",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.19",
+ "toml",
+ "tracing",
+ "wait-timeout",
+]
+
+[[package]]
+name = "sentinel-ai-sampler"
+version = "0.1.0"
+dependencies = [
+ "async-openai",
+ "async-stream",
+ "axum 0.8.9",
+ "chrono",
+ "eventsource-stream",
+ "futures-util",
+ "indexmap",
+ "reqwest 0.12.28",
+ "sentinel-ai-auth",
+ "sentinel-ai-extra-ca",
+ "sentinel-ai-sampling-types",
+ "sentinel-ai-test-support",
+ "sentinel-ai-version",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "sentinel-ai-sampling-types"
+version = "0.1.0"
+dependencies = [
+ "assert_matches",
+ "async-openai",
+ "chrono",
+ "indexmap",
+ "reqwest 0.12.28",
+ "schemars 1.2.2",
+ "sentinel-ai-compaction",
+ "sentinel-ai-tools",
+ "sentinel-circuit-breaker",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
+ "tracing",
+]
+
+[[package]]
+name = "sentinel-ai-sandbox"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "dirs 5.0.1",
+ "dunce",
+ "globset",
+ "ignore",
+ "libc",
+ "nono",
+ "regex",
+ "sentinel-ai-config",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "sha2 0.10.9",
+ "thiserror 2.0.19",
+ "toml",
+ "tracing",
+ "url",
+]
+
+[[package]]
+name = "sentinel-ai-secrets"
+version = "0.1.0"
+dependencies = [
+ "regex",
+ "serde_json",
+ "url",
+]
+
+[[package]]
+name = "sentinel-ai-shared"
+version = "0.0.0"
+dependencies = [
+ "agent-client-protocol",
+ "anyhow",
+ "arboard",
+ "base64 0.22.1",
+ "dirs 6.0.0",
+ "dunce",
+ "image",
+ "libc",
+ "objc2 0.6.4",
+ "parking_lot",
+ "prod-mc-cli-chat-proxy-types",
+ "regex",
+ "sentinel-ai-config-types",
+ "sentinel-ai-models",
+ "sentinel-ai-tools",
+ "sentinel-tty-utils",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.19",
+ "tracing",
+ "urlencoding",
+ "uuid",
+ "wl-clipboard-rs",
+]
+
+[[package]]
+name = "sentinel-ai-shell"
+version = "1.0.0"
+dependencies = [
+ "agent-client-protocol",
+ "anyhow",
+ "arc-swap",
+ "async-openai",
+ "async-trait",
+ "axum 0.8.9",
+ "backon",
+ "base64 0.22.1",
+ "blake3",
+ "bm25",
+ "bytes",
+ "chrono",
+ "clap",
+ "criterion",
+ "ctor",
+ "dashmap",
+ "dhat",
+ "dirs 6.0.0",
+ "dunce",
+ "filetime",
+ "flate2",
+ "fs2",
+ "futures",
+ "futures-util",
+ "gcloud-storage",
+ "gethostname",
+ "git2",
+ "glob",
+ "globset",
+ "ignore",
+ "image",
+ "indexmap",
+ "infer 0.15.0",
+ "jsonschema",
+ "jsonwebtoken 10.4.0",
+ "kanal",
+ "libc",
+ "moka",
+ "nix 0.30.1",
+ "notify",
+ "notify-debouncer-mini",
+ "nucleo",
+ "obfstr",
+ "parking_lot",
+ "portable-pty",
+ "pretty_assertions",
+ "process-wrap",
+ "prod-mc-cli-chat-proxy-types",
+ "prost",
+ "rand 0.9.5",
+ "regex",
+ "reqwest 0.12.28",
+ "reqwest-middleware 0.4.2",
+ "ring",
+ "rsa",
+ "rusqlite",
+ "rustls",
+ "rustls-native-certs",
+ "semver",
+ "sentinel-acp-lib",
+ "sentinel-agent-lifecycle",
+ "sentinel-ai-agent",
+ "sentinel-ai-announcements",
+ "sentinel-ai-auth",
+ "sentinel-ai-compaction",
+ "sentinel-ai-config",
+ "sentinel-ai-config-types",
+ "sentinel-ai-extra-ca",
+ "sentinel-ai-hooks",
+ "sentinel-ai-http",
+ "sentinel-ai-mcp",
+ "sentinel-ai-memory",
+ "sentinel-ai-models",
+ "sentinel-ai-paths",
+ "sentinel-ai-plugin-marketplace",
+ "sentinel-ai-sampler",
+ "sentinel-ai-sampling-types",
+ "sentinel-ai-sandbox",
+ "sentinel-ai-shared",
+ "sentinel-ai-shell-base",
+ "sentinel-ai-shell-session-support",
+ "sentinel-ai-subagent-resolution",
+ "sentinel-ai-telemetry",
+ "sentinel-ai-test-support",
+ "sentinel-ai-tools",
+ "sentinel-ai-version",
+ "sentinel-ai-workspace",
+ "sentinel-chat-state",
+ "sentinel-codebase-graph",
+ "sentinel-computer-hub-sdk",
+ "sentinel-fast-worktree",
+ "sentinel-file-utils",
+ "sentinel-fsnotify",
+ "sentinel-hooks-plugins-types",
+ "sentinel-hunk-tracker",
+ "sentinel-interjection-core",
+ "sentinel-prompt-queue",
+ "sentinel-sqlite-journal",
+ "sentinel-system-power",
+ "sentinel-test-utils",
+ "sentinel-token-estimation",
+ "sentinel-tool-protocol",
+ "sentinel-tool-runtime",
+ "sentinel-tool-types",
+ "sentinel-tracing-macros",
+ "sentinel-tty-utils",
+ "sentinel-workflow",
+ "serde",
+ "serde_ignored",
+ "serde_json",
+ "serial_test",
+ "sha2 0.10.9",
+ "shlex 1.3.0",
+ "similar",
+ "siphasher",
+ "strum 0.27.2",
+ "tar",
+ "tdigests",
+ "tempfile",
+ "thiserror 2.0.19",
+ "tokio",
+ "tokio-retry",
+ "tokio-rustls",
+ "tokio-stream",
+ "tokio-tungstenite 0.27.0",
+ "tokio-util",
+ "toml",
+ "toml_edit 0.22.27",
+ "tonic",
+ "tonic-prost",
+ "tower-http 0.6.11",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+ "urlencoding",
+ "uuid",
+ "walkdir",
+ "webbrowser",
+ "windows 0.62.2",
+ "zstd",
+]
+
+[[package]]
+name = "sentinel-ai-shell-base"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "libc",
+ "nix 0.30.1",
+ "pprof",
+ "reqwest 0.12.28",
+ "sentinel-ai-config",
+ "sentinel-ai-env",
+ "sentinel-ai-shared",
+ "sentinel-ai-version",
+ "sentinel-tty-utils",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.19",
+ "tokio",
+ "tracing",
+ "url",
+ "windows 0.62.2",
+]
+
+[[package]]
+name = "sentinel-ai-shell-session-support"
+version = "0.1.0"
+dependencies = [
+ "axum 0.8.9",
+ "reqwest 0.12.28",
+ "sentinel-ai-http",
+ "sentinel-ai-version",
+ "sentinel-file-utils",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "sentinel-ai-subagent-resolution"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "sentinel-ai-agent",
+ "sentinel-ai-sampling-types",
+ "sentinel-ai-tools",
+ "sentinel-tool-types",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.19",
+ "tokio",
+ "toml",
+ "tracing",
+]
+
+[[package]]
+name = "sentinel-ai-telemetry"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "axum 0.8.9",
+ "base64 0.22.1",
+ "bytes",
+ "chrono",
+ "ctor",
+ "dirs 6.0.0",
+ "filetime",
+ "futures-executor",
+ "git2",
+ "http 1.4.2",
+ "mid",
+ "obfstr",
+ "opentelemetry",
+ "opentelemetry-http",
+ "opentelemetry-otlp",
+ "opentelemetry-proto",
+ "opentelemetry_sdk",
+ "parking_lot",
+ "prost",
+ "rcgen",
+ "reqwest 0.12.28",
+ "rustls",
+ "sentinel-ai-auth",
+ "sentinel-ai-config",
+ "sentinel-ai-env",
+ "sentinel-ai-extra-ca",
+ "sentinel-ai-sampler",
+ "sentinel-ai-secrets",
+ "sentinel-file-utils",
+ "sentinel-mixpanel",
+ "sentinel-token-estimation",
+ "sentry",
+ "serde",
+ "serde_json",
+ "strum 0.27.2",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tracing",
+ "tracing-appender",
+ "tracing-chrome",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+ "url",
+ "uuid",
+ "webpki-roots 0.26.11",
+ "whoami",
+]
+
+[[package]]
+name = "sentinel-ai-test-support"
+version = "0.1.0"
+dependencies = [
+ "agent-client-protocol",
+ "anyhow",
+ "async-trait",
+ "axum 0.8.9",
+ "clap",
+ "futures-util",
+ "libc",
+ "portable-pty",
+ "reqwest 0.12.28",
+ "sentinel-acp-lib",
+ "sentinel-tty-utils",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tokio-tungstenite 0.27.0",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+]
+
+[[package]]
+name = "sentinel-ai-tools"
+version = "0.1.220-alpha.4"
+dependencies = [
+ "anyhow",
+ "arc-swap",
+ "async-lsp",
+ "async-openai",
+ "async-stream",
+ "async-trait",
+ "base64 0.22.1",
+ "chrono",
+ "command-fds",
+ "crc32fast",
+ "derive_more 2.1.1",
+ "dhat",
+ "dirs 6.0.0",
+ "dunce",
+ "educe",
+ "encoding_rs",
+ "flate2",
+ "fs2",
+ "futures",
+ "futures-util",
+ "globset",
+ "htmd",
+ "ignore",
+ "image",
+ "indexmap",
+ "infer 0.19.0",
+ "kamadak-exif",
+ "libc",
+ "minijinja",
+ "nix 0.30.1",
+ "parking_lot",
+ "pdf_oxide",
+ "pretty_assertions",
+ "pulldown-cmark",
+ "quick-xml 0.38.4",
+ "regex",
+ "reqwest 0.12.28",
+ "schemars 1.2.2",
+ "scraper",
+ "sentinel-ai-auth",
+ "sentinel-ai-config",
+ "sentinel-ai-env",
+ "sentinel-ai-extra-ca",
+ "sentinel-ai-sandbox",
+ "sentinel-ai-test-support",
+ "sentinel-ai-tools-api",
+ "sentinel-ai-version",
+ "sentinel-ai-workspace-types",
+ "sentinel-computer-hub-core",
+ "sentinel-computer-hub-sdk",
+ "sentinel-file-utils",
+ "sentinel-interjection-core",
+ "sentinel-test-utils",
+ "sentinel-token-estimation",
+ "sentinel-tool-protocol",
+ "sentinel-tool-runtime",
+ "sentinel-tool-types",
+ "sentinel-tty-utils",
+ "serde",
+ "serde_json",
+ "serde_path_to_error",
+ "serde_yaml",
+ "sha2 0.10.9",
+ "shellexpand",
+ "similar",
+ "strip-ansi-escapes",
+ "strum 0.26.3",
+ "tar",
+ "tempfile",
+ "thiserror 2.0.19",
+ "tokio",
+ "tokio-util",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
+ "unicode-normalization",
+ "url",
+ "uuid",
+ "which",
+ "wildmatch",
+ "windows 0.62.2",
+ "wiremock",
+ "zip 3.0.0",
+]
+
+[[package]]
+name = "sentinel-ai-tools-api"
+version = "0.1.220-alpha.4"
+dependencies = [
+ "prost",
+ "sentinel-proto-build",
+ "sentinel-tool-protocol",
+ "serde",
+ "serde_json",
+ "tonic",
+ "tonic-prost",
+]
+
+[[package]]
+name = "sentinel-ai-update"
+version = "0.1.220-alpha.4"
+dependencies = [
+ "anyhow",
+ "dunce",
+ "futures",
+ "indicatif",
+ "reqwest 0.12.28",
+ "semver",
+ "sentinel-ai-shell",
+ "sentinel-ai-tools",
+ "sentinel-ai-version",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "tempfile",
+ "thiserror 2.0.19",
+ "time",
+ "tokio",
+ "tracing",
+ "wiremock",
+]
+
+[[package]]
+name = "sentinel-ai-version"
+version = "1.0.0"
+dependencies = [
+ "semver",
+]
+
+[[package]]
+name = "sentinel-ai-voice"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "cpal",
+ "futures-util",
+ "rustls",
+ "sentinel-tty-utils",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
+ "tokio",
+ "tokio-tungstenite 0.27.0",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "url",
+]
+
+[[package]]
+name = "sentinel-ai-workspace"
+version = "0.1.220-alpha.4"
+dependencies = [
+ "agent-client-protocol",
+ "anyhow",
+ "arc-swap",
+ "async-stream",
+ "async-trait",
+ "axum 0.8.9",
+ "base64 0.22.1",
+ "bstr",
+ "chrono",
+ "clap",
+ "dashmap",
+ "dirs 6.0.0",
+ "dunce",
+ "fastrace",
+ "filetime",
+ "flate2",
+ "fs2",
+ "futures",
+ "git2",
+ "glob",
+ "hashbrown 0.16.1",
+ "humantime-serde",
+ "ignore",
+ "indexmap",
+ "infer 0.19.0",
+ "libc",
+ "md5",
+ "nix 0.30.1",
+ "nohash-hasher",
+ "nucleo",
+ "parking_lot",
+ "prometheus",
+ "regex",
+ "reqwest 0.12.28",
+ "rusqlite",
+ "rustc-hash 2.1.3",
+ "rustls",
+ "sentinel-acp-lib",
+ "sentinel-ai-agent",
+ "sentinel-ai-auth",
+ "sentinel-ai-config",
+ "sentinel-ai-config-types",
+ "sentinel-ai-env",
+ "sentinel-ai-hooks",
+ "sentinel-ai-mcp",
+ "sentinel-ai-paths",
+ "sentinel-ai-sandbox",
+ "sentinel-ai-telemetry",
+ "sentinel-ai-tools",
+ "sentinel-ai-tools-api",
+ "sentinel-ai-version",
+ "sentinel-ai-workspace-client",
+ "sentinel-ai-workspace-types",
+ "sentinel-codebase-graph",
+ "sentinel-computer-hub-mcp-adapter",
+ "sentinel-computer-hub-sdk",
+ "sentinel-fast-worktree",
+ "sentinel-file-utils",
+ "sentinel-fsnotify",
+ "sentinel-hunk-tracker",
+ "sentinel-sqlite-journal",
+ "sentinel-test-utils",
+ "sentinel-tool-protocol",
+ "sentinel-tool-runtime",
+ "sentinel-tool-types",
+ "sentinel-tracing",
+ "sentinel-tty-utils",
+ "serde",
+ "serde_json",
+ "sha1 0.10.7",
+ "sha2 0.10.9",
+ "smallvec",
+ "tar",
+ "tempfile",
+ "thiserror 2.0.19",
+ "tokio",
+ "tokio-tungstenite 0.27.0",
+ "tokio-util",
+ "toml",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
+ "tree-sitter",
+ "tree-sitter-bash",
+ "url",
+ "urlencoding",
+ "uuid",
+ "wait-timeout",
+ "windows 0.62.2",
+ "zip 3.0.0",
+ "zstd",
+]
+
+[[package]]
+name = "sentinel-ai-workspace-client"
+version = "0.1.0"
+dependencies = [
+ "schemars 1.2.2",
+ "sentinel-ai-workspace-types",
+ "sentinel-computer-hub-sdk",
+ "sentinel-tool-protocol",
+ "sentinel-tool-runtime",
+ "sentinel-tool-types",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "sentinel-ai-workspace-types"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "chrono",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
 ]
 
 [[package]]
@@ -9790,6 +11054,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "sentinel-chat-state"
+version = "0.1.0"
+dependencies = [
+ "indexmap",
+ "regex",
+ "sentinel-ai-compaction",
+ "sentinel-ai-sampling-types",
+ "sentinel-token-estimation",
+ "serde",
+ "serde_json",
+ "strum 0.27.2",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
+name = "sentinel-circuit-breaker"
+version = "0.1.0"
+dependencies = [
+ "log",
+ "tonic",
+]
+
+[[package]]
 name = "sentinel-cli"
 version = "0.1.0"
 dependencies = [
@@ -9801,6 +11090,7 @@ dependencies = [
  "hex",
  "reqwest 0.12.28",
  "sentinel-agent-identity",
+ "sentinel-ai-host",
  "sentinel-analytics",
  "sentinel-app-server",
  "sentinel-app-server-client",
@@ -9823,6 +11113,117 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "webbrowser",
+]
+
+[[package]]
+name = "sentinel-codebase-graph"
+version = "0.1.0"
+dependencies = [
+ "ahash",
+ "clap",
+ "crossbeam",
+ "dashmap",
+ "dunce",
+ "git2",
+ "hashbrown 0.15.5",
+ "ignore",
+ "libc",
+ "mimalloc",
+ "nohash-hasher",
+ "num_cpus",
+ "once_cell",
+ "petgraph 0.6.5",
+ "rayon",
+ "rustc-hash 2.1.3",
+ "sentinel-ai-paths",
+ "serde",
+ "serde_json",
+ "smallvec",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tree-sitter",
+ "tree-sitter-go",
+ "tree-sitter-javascript",
+ "tree-sitter-python",
+ "tree-sitter-rust",
+ "tree-sitter-typescript",
+]
+
+[[package]]
+name = "sentinel-computer-hub-core"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "dashmap",
+ "futures",
+ "schemars 1.2.2",
+ "sentinel-tool-protocol",
+ "sentinel-tool-runtime",
+ "sentinel-tool-types",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "sentinel-computer-hub-mcp-adapter"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "futures",
+ "prometheus",
+ "sentinel-computer-hub-sdk",
+ "sentinel-tool-protocol",
+ "sentinel-tool-runtime",
+ "sentinel-tool-types",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "sentinel-computer-hub-sdk"
+version = "0.1.0"
+dependencies = [
+ "arc-swap",
+ "async-trait",
+ "axum 0.8.9",
+ "base64 0.22.1",
+ "chrono",
+ "dashmap",
+ "fastrace",
+ "fastrace-opentelemetry",
+ "futures",
+ "http 1.4.2",
+ "indexmap",
+ "opentelemetry",
+ "opentelemetry-proto",
+ "opentelemetry_sdk",
+ "parking_lot",
+ "prometheus",
+ "prometheus-parse",
+ "prost",
+ "reqwest 0.12.28",
+ "schemars 1.2.2",
+ "sentinel-computer-hub-core",
+ "sentinel-tool-protocol",
+ "sentinel-tool-runtime",
+ "sentinel-tool-types",
+ "sentinel-tracing",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
+ "tokio",
+ "tokio-tungstenite 0.27.0",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+ "url",
 ]
 
 [[package]]
@@ -9870,6 +11271,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "sentinel-crash-handler"
+version = "0.1.0"
+dependencies = [
+ "backtrace",
+ "libc",
+ "tempfile",
+ "tokio",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
 name = "sentinel-exec"
 version = "0.1.0"
 dependencies = [
@@ -9879,6 +11291,112 @@ dependencies = [
  "tokio",
  "tracing",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "sentinel-fast-worktree"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "clap",
+ "crossbeam",
+ "dashmap",
+ "dunce",
+ "gix",
+ "gix-status",
+ "globset",
+ "ignore",
+ "libc",
+ "nix 0.30.1",
+ "num_cpus",
+ "rapidhash",
+ "reflink-copy",
+ "rusqlite",
+ "sentinel-gix-status",
+ "sentinel-sqlite-journal",
+ "sentinel-test-utils",
+ "sentinel-tty-utils",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "sentinel-file-utils"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-compression",
+ "aws-config",
+ "aws-sdk-s3",
+ "aws-smithy-http-client",
+ "axum 0.8.9",
+ "base64 0.22.1",
+ "chrono",
+ "dirs 6.0.0",
+ "dunce",
+ "filetime",
+ "futures",
+ "gcloud-storage",
+ "indexmap",
+ "opentelemetry",
+ "opentelemetry_sdk",
+ "prod-mc-cli-chat-proxy-types",
+ "reflink-copy",
+ "reqwest 0.12.28",
+ "reqwest-middleware 0.4.2",
+ "sentinel-ai-auth",
+ "sentinel-ai-version",
+ "sentinel-circuit-breaker",
+ "sentinel-test-utils",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "strum 0.27.2",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+ "url",
+ "zstd",
+]
+
+[[package]]
+name = "sentinel-fsnotify"
+version = "0.1.0"
+dependencies = [
+ "criterion",
+ "dunce",
+ "git2",
+ "globset",
+ "ignore",
+ "notify",
+ "notify-debouncer-full",
+ "sentinel-tracing-macros",
+ "serde",
+ "serial_test",
+ "tempfile",
+ "thiserror 2.0.19",
+ "tokio",
+ "tokio-util",
+ "tracing",
+]
+
+[[package]]
+name = "sentinel-gix-status"
+version = "0.1.0"
+dependencies = [
+ "gix",
+ "libc",
+ "sentinel-test-utils",
+ "tempfile",
 ]
 
 [[package]]
@@ -9914,6 +11432,42 @@ dependencies = [
 ]
 
 [[package]]
+name = "sentinel-hooks-plugins-types"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "sentinel-hunk-tracker"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "dunce",
+ "gix",
+ "rustc-hash 2.1.3",
+ "sentinel-gix-status",
+ "sentinel-test-utils",
+ "serde",
+ "serde_json",
+ "similar",
+ "tempfile",
+ "thiserror 2.0.19",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "sentinel-interjection-core"
+version = "0.1.0"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "sentinel-mcp"
 version = "0.1.0"
 dependencies = [
@@ -9926,6 +11480,17 @@ dependencies = [
  "thiserror 2.0.19",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "sentinel-mixpanel"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "reqwest 0.12.28",
+ "sentinel-ai-secrets",
+ "serde_json",
+ "thiserror 2.0.19",
 ]
 
 [[package]]
@@ -9942,6 +11507,26 @@ dependencies = [
  "toml",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "sentinel-prompt-queue"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "sentinel-proto-build"
+version = "0.0.0"
+dependencies = [
+ "anyhow",
+ "pbjson-build",
+ "prost-build",
+ "prost-reflect",
+ "tempfile",
+ "tonic-prost-build",
 ]
 
 [[package]]
@@ -9997,6 +11582,114 @@ dependencies = [
 ]
 
 [[package]]
+name = "sentinel-ratatui-inline"
+version = "0.1.0"
+dependencies = [
+ "ansi-width",
+ "anstyle-parse 0.2.7",
+ "anyhow",
+ "colored_json",
+ "criterion",
+ "crossterm",
+ "lipsum",
+ "ratatui",
+ "serde_json",
+ "termwiz",
+ "unicode-width 0.2.0",
+]
+
+[[package]]
+name = "sentinel-ratatui-textarea"
+version = "0.1.0"
+dependencies = [
+ "arboard",
+ "chrono",
+ "crossterm",
+ "fuzzy-matcher",
+ "ignore",
+ "itertools 0.14.0",
+ "pretty_assertions",
+ "rand 0.9.5",
+ "ratatui",
+ "ratatui-core",
+ "textwrap",
+ "tracing",
+ "tui-scrollbar",
+ "unicode-segmentation",
+ "unicode-width 0.2.0",
+]
+
+[[package]]
+name = "sentinel-sqlite-journal"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "rusqlite",
+ "tempfile",
+ "tracing",
+ "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "sentinel-system-power"
+version = "0.1.0"
+dependencies = [
+ "windows-sys 0.59.0",
+ "zbus",
+]
+
+[[package]]
+name = "sentinel-test-utils"
+version = "0.1.0"
+dependencies = [
+ "runfiles",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "sentinel-token-estimation"
+version = "0.1.0"
+
+[[package]]
+name = "sentinel-tool-protocol"
+version = "0.1.0"
+dependencies = [
+ "sentinel-tool-types",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.19",
+ "uuid",
+]
+
+[[package]]
+name = "sentinel-tool-runtime"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "futures",
+ "schemars 1.2.2",
+ "sentinel-ai-tools-api",
+ "sentinel-tool-protocol",
+ "sentinel-tool-types",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-util",
+]
+
+[[package]]
+name = "sentinel-tool-types"
+version = "0.1.0"
+dependencies = [
+ "minijinja",
+ "schemars 1.2.2",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "sentinel-tools"
 version = "0.1.0"
 dependencies = [
@@ -10012,6 +11705,66 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "sentinel-tracing"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "fastrace",
+ "fastrace-opentelemetry",
+ "fastrace-reqwest",
+ "fastrace-tonic",
+ "http 1.4.2",
+ "http-body-util",
+ "log",
+ "opentelemetry",
+ "opentelemetry-http",
+ "opentelemetry-otlp",
+ "opentelemetry_sdk",
+ "reqwest 0.12.28",
+ "reqwest-middleware 0.4.2",
+ "tokio",
+ "tonic",
+ "tower",
+ "tower-http 0.6.11",
+ "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+ "uuid",
+ "wiremock",
+]
+
+[[package]]
+name = "sentinel-tracing-macros"
+version = "0.1.0"
+
+[[package]]
+name = "sentinel-tty-utils"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "nix 0.30.1",
+ "tokio",
+ "windows 0.62.2",
+]
+
+[[package]]
+name = "sentinel-workflow"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "rhai",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "thiserror 2.0.19",
+ "tokio",
+ "tokio-util",
  "tracing",
 ]
 
@@ -13694,1734 +15447,6 @@ dependencies = [
  "cmpv2",
  "cms",
  "der",
-]
-
-[[package]]
-name = "xai-acp-lib"
-version = "0.1.0"
-dependencies = [
- "agent-client-protocol",
- "async-trait",
- "derive_more 2.1.1",
- "futures",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "xai-agent-lifecycle"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "xai-chat-state"
-version = "0.1.0"
-dependencies = [
- "indexmap",
- "regex",
- "serde",
- "serde_json",
- "strum 0.27.2",
- "tokio",
- "tokio-util",
- "tracing",
- "xai-grok-compaction",
- "xai-grok-sampling-types",
- "xai-token-estimation",
-]
-
-[[package]]
-name = "xai-circuit-breaker"
-version = "0.1.0"
-dependencies = [
- "log",
- "tonic",
-]
-
-[[package]]
-name = "xai-codebase-graph"
-version = "0.1.0"
-dependencies = [
- "ahash",
- "clap",
- "crossbeam",
- "dashmap",
- "dunce",
- "git2",
- "hashbrown 0.15.5",
- "ignore",
- "libc",
- "mimalloc",
- "nohash-hasher",
- "num_cpus",
- "once_cell",
- "petgraph 0.6.5",
- "rayon",
- "rustc-hash 2.1.3",
- "serde",
- "serde_json",
- "smallvec",
- "tempfile",
- "tokio",
- "tracing",
- "tree-sitter",
- "tree-sitter-go",
- "tree-sitter-javascript",
- "tree-sitter-python",
- "tree-sitter-rust",
- "tree-sitter-typescript",
- "xai-grok-paths",
-]
-
-[[package]]
-name = "xai-computer-hub-core"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "chrono",
- "dashmap",
- "futures",
- "schemars 1.2.2",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
- "xai-tool-protocol",
- "xai-tool-runtime",
- "xai-tool-types",
-]
-
-[[package]]
-name = "xai-computer-hub-mcp-adapter"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "futures",
- "prometheus",
- "serde",
- "serde_json",
- "thiserror 2.0.19",
- "tokio",
- "tracing",
- "xai-computer-hub-sdk",
- "xai-tool-protocol",
- "xai-tool-runtime",
- "xai-tool-types",
-]
-
-[[package]]
-name = "xai-computer-hub-sdk"
-version = "0.1.0"
-dependencies = [
- "arc-swap",
- "async-trait",
- "axum 0.8.9",
- "base64 0.22.1",
- "chrono",
- "dashmap",
- "fastrace",
- "fastrace-opentelemetry",
- "futures",
- "http 1.4.2",
- "indexmap",
- "opentelemetry",
- "opentelemetry-proto",
- "opentelemetry_sdk",
- "parking_lot",
- "prometheus",
- "prometheus-parse",
- "prost",
- "reqwest 0.12.28",
- "schemars 1.2.2",
- "serde",
- "serde_json",
- "thiserror 2.0.19",
- "tokio",
- "tokio-tungstenite 0.27.0",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
- "url",
- "xai-computer-hub-core",
- "xai-tool-protocol",
- "xai-tool-runtime",
- "xai-tool-types",
- "xai-tracing",
-]
-
-[[package]]
-name = "xai-crash-handler"
-version = "0.1.0"
-dependencies = [
- "backtrace",
- "libc",
- "tempfile",
- "tokio",
- "windows-sys 0.59.0",
-]
-
-[[package]]
-name = "xai-fast-worktree"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bytes",
- "clap",
- "crossbeam",
- "dashmap",
- "dunce",
- "gix",
- "gix-status",
- "globset",
- "ignore",
- "libc",
- "nix 0.30.1",
- "num_cpus",
- "rapidhash",
- "reflink-copy",
- "rusqlite",
- "serde",
- "serde_json",
- "tempfile",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
- "xai-gix-status",
- "xai-sqlite-journal",
- "xai-test-utils",
- "xai-tty-utils",
-]
-
-[[package]]
-name = "xai-file-utils"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-compression",
- "aws-config",
- "aws-sdk-s3",
- "aws-smithy-http-client",
- "axum 0.8.9",
- "base64 0.22.1",
- "chrono",
- "dirs 6.0.0",
- "dunce",
- "filetime",
- "futures",
- "gcloud-storage",
- "indexmap",
- "opentelemetry",
- "opentelemetry_sdk",
- "prod-mc-cli-chat-proxy-types",
- "reflink-copy",
- "reqwest 0.12.28",
- "reqwest-middleware 0.4.2",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "strum 0.27.2",
- "tempfile",
- "tokio",
- "tokio-stream",
- "tokio-util",
- "tracing",
- "tracing-opentelemetry",
- "tracing-subscriber",
- "url",
- "xai-circuit-breaker",
- "xai-grok-auth",
- "xai-grok-version",
- "xai-test-utils",
- "zstd",
-]
-
-[[package]]
-name = "xai-fsnotify"
-version = "0.1.0"
-dependencies = [
- "criterion",
- "dunce",
- "git2",
- "globset",
- "ignore",
- "notify",
- "notify-debouncer-full",
- "serde",
- "serial_test",
- "tempfile",
- "thiserror 2.0.19",
- "tokio",
- "tokio-util",
- "tracing",
- "xai-tracing-macros",
-]
-
-[[package]]
-name = "xai-gix-status"
-version = "0.1.0"
-dependencies = [
- "gix",
- "libc",
- "tempfile",
- "xai-test-utils",
-]
-
-[[package]]
-name = "xai-grok-agent"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "dirs 6.0.0",
- "dunce",
- "git2",
- "ignore",
- "minijinja",
- "regex",
- "serde",
- "serde_json",
- "serde_yaml",
- "serial_test",
- "sha2 0.10.9",
- "strum 0.27.2",
- "tempfile",
- "thiserror 2.0.19",
- "tokio",
- "tracing",
- "xai-grok-config",
- "xai-grok-hooks",
- "xai-grok-sampling-types",
- "xai-grok-tools",
- "xai-token-estimation",
- "xai-tool-types",
- "xai-tty-utils",
- "zeroize",
-]
-
-[[package]]
-name = "xai-grok-announcements"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "serde",
- "serde_json",
- "tokio",
- "tracing",
- "ts-rs",
- "xai-grok-tools",
-]
-
-[[package]]
-name = "xai-grok-auth"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "http 1.4.2",
- "mockito",
- "reqwest 0.12.28",
- "reqwest-middleware 0.4.2",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "xai-grok-compaction"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "serde",
- "serde_json",
- "thiserror 2.0.19",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "xai-grok-config"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "blake3",
- "core-foundation",
- "dunce",
- "prod-mc-cli-chat-proxy-types",
- "ring",
- "semver",
- "serde",
- "serde_json",
- "shellexpand",
- "tempfile",
- "thiserror 2.0.19",
- "toml",
- "tracing",
- "urlencoding",
- "which",
- "xai-grok-version",
- "xai-tty-utils",
-]
-
-[[package]]
-name = "xai-grok-config-types"
-version = "0.1.0"
-dependencies = [
- "agent-client-protocol",
- "indexmap",
- "serde",
- "serde_json",
- "strum 0.27.2",
- "tracing",
- "xai-grok-announcements",
- "xai-grok-config",
- "xai-grok-mcp",
-]
-
-[[package]]
-name = "xai-grok-env"
-version = "0.1.0"
-dependencies = [
- "tracing",
- "url",
-]
-
-[[package]]
-name = "xai-grok-extra-ca"
-version = "0.1.0"
-dependencies = [
- "reqwest 0.12.28",
- "rustls",
- "tempfile",
- "tracing",
-]
-
-[[package]]
-name = "xai-grok-hooks"
-version = "0.1.0"
-dependencies = [
- "fastrand",
- "regex",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "shellexpand",
- "tempfile",
- "thiserror 2.0.19",
- "tokio",
- "toml",
- "tracing",
- "url",
- "xai-grok-config",
- "xai-grok-tools",
-]
-
-[[package]]
-name = "xai-grok-http"
-version = "0.1.0"
-dependencies = [
- "reqwest 0.12.28",
- "reqwest-middleware 0.4.2",
- "serde_json",
- "tracing",
- "xai-grok-auth",
- "xai-grok-extra-ca",
- "xai-grok-sampler",
- "xai-grok-telemetry",
- "xai-grok-version",
- "xai-grok-workspace",
-]
-
-[[package]]
-name = "xai-grok-markdown"
-version = "0.1.0"
-dependencies = [
- "anstyle",
- "anstyle-lossy",
- "anstyle-syntect",
- "criterion",
- "crossterm",
- "html-escape",
- "linkify",
- "pretty_assertions",
- "pulldown-cmark",
- "ratatui",
- "supports-color",
- "syntect",
- "textwrap",
- "two-face",
- "unicode-segmentation",
- "unicode-width 0.2.0",
- "url",
- "xai-grok-markdown-core",
- "xai-ratatui-textarea",
-]
-
-[[package]]
-name = "xai-grok-markdown-core"
-version = "0.1.0"
-dependencies = [
- "pulldown-cmark",
-]
-
-[[package]]
-name = "xai-grok-mcp"
-version = "0.1.0"
-dependencies = [
- "agent-client-protocol",
- "async-trait",
- "axum 0.8.9",
- "futures",
- "http 1.4.2",
- "libc",
- "oauth2",
- "parking_lot",
- "regex",
- "reqwest 0.13.4",
- "rmcp",
- "serde",
- "serde_json",
- "sse-stream",
- "tempfile",
- "thiserror 2.0.19",
- "tokio",
- "tokio-util",
- "tracing",
- "url",
- "webbrowser",
- "which",
- "xai-computer-hub-sdk",
- "xai-file-utils",
- "xai-grok-config",
- "xai-grok-extra-ca",
- "xai-grok-telemetry",
- "xai-grok-tools",
- "xai-grok-version",
- "xai-grok-workspace-types",
- "xai-tool-protocol",
- "xai-tool-runtime",
- "xai-tool-types",
-]
-
-[[package]]
-name = "xai-grok-memory"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "arc-swap",
- "async-trait",
- "blake3",
- "chrono",
- "dunce",
- "filetime",
- "flate2",
- "git2",
- "nix 0.30.1",
- "notify",
- "reqwest 0.12.28",
- "reqwest-middleware 0.4.2",
- "rusqlite",
- "serde_json",
- "sqlite-vec",
- "tar",
- "tempfile",
- "tokio",
- "tracing",
- "windows 0.62.2",
- "xai-grok-auth",
- "xai-grok-config-types",
- "xai-grok-http",
- "xai-grok-telemetry",
- "xai-grok-tools",
- "xai-grok-version",
- "xai-sqlite-journal",
-]
-
-[[package]]
-name = "xai-grok-mermaid"
-version = "0.1.0"
-dependencies = [
- "fontdb",
- "image",
- "libc",
- "mermaid-to-svg",
- "resvg",
- "tempfile",
- "thiserror 2.0.19",
- "tiny-skia",
- "tracing",
- "wait-timeout",
- "which",
- "xai-tty-utils",
-]
-
-[[package]]
-name = "xai-grok-models"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "xai-grok-pager"
-version = "1.0.0"
-dependencies = [
- "agent-client-protocol",
- "ansi-to-tui",
- "anyhow",
- "backon",
- "base64 0.22.1",
- "blake3",
- "chrono",
- "clap",
- "clap_complete",
- "core-foundation",
- "criterion",
- "crossterm",
- "derive_more 2.1.1",
- "dirs 6.0.0",
- "dunce",
- "enum_delegate",
- "flate2",
- "git2",
- "image",
- "indexmap",
- "insta",
- "libc",
- "nix 0.30.1",
- "nucleo",
- "obfstr",
- "parking_lot",
- "portable-pty",
- "pretty_assertions",
- "rand 0.9.5",
- "ratatui",
- "regex",
- "rustls",
- "serde",
- "serde_json",
- "serial_test",
- "shellexpand",
- "shlex 1.3.0",
- "signal-hook 0.3.18",
- "similar",
- "strip-ansi-escapes",
- "syntect",
- "tar",
- "tempfile",
- "textwrap",
- "tokio",
- "tokio-util",
- "toml",
- "toml_edit 0.22.27",
- "tracing",
- "tracing-subscriber",
- "unicode-segmentation",
- "unicode-width 0.2.0",
- "url",
- "urlencoding",
- "uuid",
- "wait-timeout",
- "walkdir",
- "windows-sys 0.59.0",
- "xai-acp-lib",
- "xai-crash-handler",
- "xai-fast-worktree",
- "xai-file-utils",
- "xai-grok-agent",
- "xai-grok-announcements",
- "xai-grok-config",
- "xai-grok-markdown",
- "xai-grok-mermaid",
- "xai-grok-pager-pty-harness",
- "xai-grok-pager-render",
- "xai-grok-plugin-marketplace",
- "xai-grok-sandbox",
- "xai-grok-shell",
- "xai-grok-telemetry",
- "xai-grok-test-support",
- "xai-grok-tools",
- "xai-grok-update",
- "xai-grok-version",
- "xai-grok-voice",
- "xai-grok-workspace",
- "xai-hooks-plugins-types",
- "xai-prompt-queue",
- "xai-ratatui-inline",
- "xai-ratatui-textarea",
- "xai-token-estimation",
- "xai-tty-utils",
-]
-
-[[package]]
-name = "xai-grok-pager-bin"
-version = "1.0.0"
-dependencies = [
- "anyhow",
- "clap",
- "cryptify",
- "dunce",
- "libc",
- "obfstr",
- "rustls",
- "semver",
- "serde_json",
- "serial_test",
- "tikv-jemalloc-ctl",
- "tikv-jemalloc-sys",
- "tikv-jemallocator",
- "tokio",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
- "xai-acp-lib",
- "xai-crash-handler",
- "xai-grok-config",
- "xai-grok-pager",
- "xai-grok-pager-minimal",
- "xai-grok-sandbox",
- "xai-grok-shell",
- "xai-grok-telemetry",
- "xai-grok-update",
- "xai-grok-version",
- "xai-grok-workspace",
- "xai-tty-utils",
-]
-
-[[package]]
-name = "xai-grok-pager-minimal"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "crossterm",
- "ratatui",
- "similar",
- "tracing",
- "uuid",
- "xai-grok-pager",
- "xai-grok-shell",
- "xai-grok-version",
- "xai-ratatui-inline",
- "xai-token-estimation",
-]
-
-[[package]]
-name = "xai-grok-pager-pty-harness"
-version = "0.1.0"
-dependencies = [
- "alacritty_terminal",
- "anyhow",
- "base64 0.22.1",
- "clap",
- "dunce",
- "image",
- "libc",
- "portable-pty",
- "ptyctl",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "serde_yaml",
- "tempfile",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "xai-grok-test-support",
- "xai-tty-utils",
-]
-
-[[package]]
-name = "xai-grok-pager-render"
-version = "0.1.0"
-dependencies = [
- "agent-client-protocol",
- "anstyle",
- "anyhow",
- "base64 0.22.1",
- "crossterm",
- "dark-light",
- "dirs 6.0.0",
- "documented",
- "dunce",
- "image",
- "libc",
- "linkify",
- "notify",
- "pretty_assertions",
- "ratatui",
- "ratatui-core",
- "regex",
- "serde",
- "serial_test",
- "shellexpand",
- "strum 0.27.2",
- "supports-color",
- "syntect",
- "tempfile",
- "textwrap",
- "tokio",
- "toml",
- "toml_edit 0.22.27",
- "tracing",
- "tui-scrollbar",
- "unicode-segmentation",
- "unicode-width 0.2.0",
- "url",
- "uuid",
- "vte 0.15.0",
- "windows-sys 0.59.0",
- "xai-grok-config",
- "xai-grok-markdown",
- "xai-grok-paths",
- "xai-grok-shared",
- "xai-grok-telemetry",
- "xai-grok-tools",
- "xai-grok-workspace",
- "xai-ratatui-inline",
- "xai-ratatui-textarea",
- "xai-tty-utils",
-]
-
-[[package]]
-name = "xai-grok-paths"
-version = "0.1.0"
-dependencies = [
- "camino",
- "serde",
- "serde_json",
- "thiserror 2.0.19",
-]
-
-[[package]]
-name = "xai-grok-plugin-marketplace"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "dirs 6.0.0",
- "dunce",
- "fs2",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.19",
- "toml",
- "tracing",
- "wait-timeout",
- "xai-grok-agent",
- "xai-grok-config",
- "xai-hooks-plugins-types",
- "xai-tty-utils",
-]
-
-[[package]]
-name = "xai-grok-sampler"
-version = "0.1.0"
-dependencies = [
- "async-openai",
- "async-stream",
- "axum 0.8.9",
- "chrono",
- "eventsource-stream",
- "futures-util",
- "indexmap",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "tokio",
- "tokio-util",
- "tracing",
- "uuid",
- "xai-grok-auth",
- "xai-grok-extra-ca",
- "xai-grok-sampling-types",
- "xai-grok-test-support",
- "xai-grok-version",
-]
-
-[[package]]
-name = "xai-grok-sampling-types"
-version = "0.1.0"
-dependencies = [
- "assert_matches",
- "async-openai",
- "chrono",
- "indexmap",
- "reqwest 0.12.28",
- "schemars 1.2.2",
- "serde",
- "serde_json",
- "thiserror 2.0.19",
- "tracing",
- "xai-circuit-breaker",
- "xai-grok-compaction",
- "xai-grok-tools",
-]
-
-[[package]]
-name = "xai-grok-sandbox"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "dirs 5.0.1",
- "dunce",
- "globset",
- "ignore",
- "libc",
- "nono",
- "regex",
- "serde",
- "serde_json",
- "serial_test",
- "sha2 0.10.9",
- "thiserror 2.0.19",
- "toml",
- "tracing",
- "url",
- "xai-grok-config",
-]
-
-[[package]]
-name = "xai-grok-secrets"
-version = "0.1.0"
-dependencies = [
- "regex",
- "serde_json",
- "url",
-]
-
-[[package]]
-name = "xai-grok-shared"
-version = "0.0.0"
-dependencies = [
- "agent-client-protocol",
- "anyhow",
- "arboard",
- "base64 0.22.1",
- "dirs 6.0.0",
- "dunce",
- "image",
- "libc",
- "objc2 0.6.4",
- "parking_lot",
- "prod-mc-cli-chat-proxy-types",
- "regex",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.19",
- "tracing",
- "urlencoding",
- "uuid",
- "wl-clipboard-rs",
- "xai-grok-config-types",
- "xai-grok-models",
- "xai-grok-tools",
- "xai-tty-utils",
-]
-
-[[package]]
-name = "xai-grok-shell"
-version = "1.0.0"
-dependencies = [
- "agent-client-protocol",
- "anyhow",
- "arc-swap",
- "async-openai",
- "async-trait",
- "axum 0.8.9",
- "backon",
- "base64 0.22.1",
- "blake3",
- "bm25",
- "bytes",
- "chrono",
- "clap",
- "criterion",
- "ctor",
- "dashmap",
- "dhat",
- "dirs 6.0.0",
- "dunce",
- "filetime",
- "flate2",
- "fs2",
- "futures",
- "futures-util",
- "gcloud-storage",
- "gethostname",
- "git2",
- "glob",
- "globset",
- "ignore",
- "image",
- "indexmap",
- "infer 0.15.0",
- "jsonschema",
- "jsonwebtoken 10.4.0",
- "kanal",
- "libc",
- "moka",
- "nix 0.30.1",
- "notify",
- "notify-debouncer-mini",
- "nucleo",
- "obfstr",
- "parking_lot",
- "portable-pty",
- "pretty_assertions",
- "process-wrap",
- "prod-mc-cli-chat-proxy-types",
- "prost",
- "rand 0.9.5",
- "regex",
- "reqwest 0.12.28",
- "reqwest-middleware 0.4.2",
- "ring",
- "rsa",
- "rusqlite",
- "rustls",
- "rustls-native-certs",
- "semver",
- "serde",
- "serde_ignored",
- "serde_json",
- "serial_test",
- "sha2 0.10.9",
- "shlex 1.3.0",
- "similar",
- "siphasher",
- "strum 0.27.2",
- "tar",
- "tdigests",
- "tempfile",
- "thiserror 2.0.19",
- "tokio",
- "tokio-retry",
- "tokio-rustls",
- "tokio-stream",
- "tokio-tungstenite 0.27.0",
- "tokio-util",
- "toml",
- "toml_edit 0.22.27",
- "tonic",
- "tonic-prost",
- "tower-http 0.6.11",
- "tracing",
- "tracing-subscriber",
- "url",
- "urlencoding",
- "uuid",
- "walkdir",
- "webbrowser",
- "windows 0.62.2",
- "xai-acp-lib",
- "xai-agent-lifecycle",
- "xai-chat-state",
- "xai-codebase-graph",
- "xai-computer-hub-sdk",
- "xai-fast-worktree",
- "xai-file-utils",
- "xai-fsnotify",
- "xai-grok-agent",
- "xai-grok-announcements",
- "xai-grok-auth",
- "xai-grok-compaction",
- "xai-grok-config",
- "xai-grok-config-types",
- "xai-grok-extra-ca",
- "xai-grok-hooks",
- "xai-grok-http",
- "xai-grok-mcp",
- "xai-grok-memory",
- "xai-grok-models",
- "xai-grok-paths",
- "xai-grok-plugin-marketplace",
- "xai-grok-sampler",
- "xai-grok-sampling-types",
- "xai-grok-sandbox",
- "xai-grok-shared",
- "xai-grok-shell-base",
- "xai-grok-shell-session-support",
- "xai-grok-subagent-resolution",
- "xai-grok-telemetry",
- "xai-grok-test-support",
- "xai-grok-tools",
- "xai-grok-version",
- "xai-grok-workspace",
- "xai-hooks-plugins-types",
- "xai-hunk-tracker",
- "xai-interjection-core",
- "xai-prompt-queue",
- "xai-sqlite-journal",
- "xai-system-power",
- "xai-test-utils",
- "xai-token-estimation",
- "xai-tool-protocol",
- "xai-tool-runtime",
- "xai-tool-types",
- "xai-tracing-macros",
- "xai-tty-utils",
- "xai-workflow",
- "zstd",
-]
-
-[[package]]
-name = "xai-grok-shell-base"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "libc",
- "nix 0.30.1",
- "pprof",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.19",
- "tokio",
- "tracing",
- "url",
- "windows 0.62.2",
- "xai-grok-config",
- "xai-grok-env",
- "xai-grok-shared",
- "xai-grok-version",
- "xai-tty-utils",
-]
-
-[[package]]
-name = "xai-grok-shell-session-support"
-version = "0.1.0"
-dependencies = [
- "axum 0.8.9",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "thiserror 2.0.19",
- "tokio",
- "tracing",
- "xai-file-utils",
- "xai-grok-http",
- "xai-grok-version",
-]
-
-[[package]]
-name = "xai-grok-subagent-resolution"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.19",
- "tokio",
- "toml",
- "tracing",
- "xai-grok-agent",
- "xai-grok-sampling-types",
- "xai-grok-tools",
- "xai-tool-types",
-]
-
-[[package]]
-name = "xai-grok-telemetry"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "axum 0.8.9",
- "base64 0.22.1",
- "bytes",
- "chrono",
- "ctor",
- "dirs 6.0.0",
- "filetime",
- "futures-executor",
- "git2",
- "http 1.4.2",
- "mid",
- "obfstr",
- "opentelemetry",
- "opentelemetry-http",
- "opentelemetry-otlp",
- "opentelemetry-proto",
- "opentelemetry_sdk",
- "parking_lot",
- "prost",
- "rcgen",
- "reqwest 0.12.28",
- "rustls",
- "sentry",
- "serde",
- "serde_json",
- "strum 0.27.2",
- "tempfile",
- "tokio",
- "tokio-stream",
- "tonic",
- "tracing",
- "tracing-appender",
- "tracing-chrome",
- "tracing-opentelemetry",
- "tracing-subscriber",
- "url",
- "uuid",
- "webpki-roots 0.26.11",
- "whoami",
- "xai-file-utils",
- "xai-grok-auth",
- "xai-grok-config",
- "xai-grok-env",
- "xai-grok-extra-ca",
- "xai-grok-sampler",
- "xai-grok-secrets",
- "xai-mixpanel",
- "xai-token-estimation",
-]
-
-[[package]]
-name = "xai-grok-test-support"
-version = "0.1.0"
-dependencies = [
- "agent-client-protocol",
- "anyhow",
- "async-trait",
- "axum 0.8.9",
- "clap",
- "futures-util",
- "libc",
- "portable-pty",
- "reqwest 0.12.28",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tokio-tungstenite 0.27.0",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
- "url",
- "xai-acp-lib",
- "xai-tty-utils",
-]
-
-[[package]]
-name = "xai-grok-tools"
-version = "0.1.220-alpha.4"
-dependencies = [
- "anyhow",
- "arc-swap",
- "async-lsp",
- "async-openai",
- "async-stream",
- "async-trait",
- "base64 0.22.1",
- "chrono",
- "command-fds",
- "crc32fast",
- "derive_more 2.1.1",
- "dhat",
- "dirs 6.0.0",
- "dunce",
- "educe",
- "encoding_rs",
- "flate2",
- "fs2",
- "futures",
- "futures-util",
- "globset",
- "htmd",
- "ignore",
- "image",
- "indexmap",
- "infer 0.19.0",
- "kamadak-exif",
- "libc",
- "minijinja",
- "nix 0.30.1",
- "parking_lot",
- "pdf_oxide",
- "pretty_assertions",
- "pulldown-cmark",
- "quick-xml 0.38.4",
- "regex",
- "reqwest 0.12.28",
- "schemars 1.2.2",
- "scraper",
- "serde",
- "serde_json",
- "serde_path_to_error",
- "serde_yaml",
- "sha2 0.10.9",
- "shellexpand",
- "similar",
- "strip-ansi-escapes",
- "strum 0.26.3",
- "tar",
- "tempfile",
- "thiserror 2.0.19",
- "tokio",
- "tokio-util",
- "tonic",
- "tracing",
- "tracing-subscriber",
- "unicode-normalization",
- "url",
- "uuid",
- "which",
- "wildmatch",
- "windows 0.62.2",
- "wiremock",
- "xai-computer-hub-core",
- "xai-computer-hub-sdk",
- "xai-file-utils",
- "xai-grok-auth",
- "xai-grok-config",
- "xai-grok-env",
- "xai-grok-extra-ca",
- "xai-grok-sandbox",
- "xai-grok-test-support",
- "xai-grok-tools-api",
- "xai-grok-version",
- "xai-grok-workspace-types",
- "xai-interjection-core",
- "xai-test-utils",
- "xai-token-estimation",
- "xai-tool-protocol",
- "xai-tool-runtime",
- "xai-tool-types",
- "xai-tty-utils",
- "zip 3.0.0",
-]
-
-[[package]]
-name = "xai-grok-tools-api"
-version = "0.1.220-alpha.4"
-dependencies = [
- "prost",
- "serde",
- "serde_json",
- "tonic",
- "tonic-prost",
- "xai-proto-build",
- "xai-tool-protocol",
-]
-
-[[package]]
-name = "xai-grok-update"
-version = "0.1.220-alpha.4"
-dependencies = [
- "anyhow",
- "dunce",
- "futures",
- "indicatif",
- "reqwest 0.12.28",
- "semver",
- "serde",
- "serde_json",
- "serial_test",
- "tempfile",
- "thiserror 2.0.19",
- "time",
- "tokio",
- "tracing",
- "wiremock",
- "xai-grok-shell",
- "xai-grok-tools",
- "xai-grok-version",
-]
-
-[[package]]
-name = "xai-grok-version"
-version = "1.0.0"
-dependencies = [
- "semver",
-]
-
-[[package]]
-name = "xai-grok-voice"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "cpal",
- "futures-util",
- "rustls",
- "serde",
- "serde_json",
- "thiserror 2.0.19",
- "tokio",
- "tokio-tungstenite 0.27.0",
- "toml",
- "tracing",
- "tracing-subscriber",
- "url",
- "xai-tty-utils",
-]
-
-[[package]]
-name = "xai-grok-workspace"
-version = "0.1.220-alpha.4"
-dependencies = [
- "agent-client-protocol",
- "anyhow",
- "arc-swap",
- "async-stream",
- "async-trait",
- "axum 0.8.9",
- "base64 0.22.1",
- "bstr",
- "chrono",
- "clap",
- "dashmap",
- "dirs 6.0.0",
- "dunce",
- "fastrace",
- "filetime",
- "flate2",
- "fs2",
- "futures",
- "git2",
- "glob",
- "hashbrown 0.16.1",
- "humantime-serde",
- "ignore",
- "indexmap",
- "infer 0.19.0",
- "libc",
- "md5",
- "nix 0.30.1",
- "nohash-hasher",
- "nucleo",
- "parking_lot",
- "prometheus",
- "regex",
- "reqwest 0.12.28",
- "rusqlite",
- "rustc-hash 2.1.3",
- "rustls",
- "serde",
- "serde_json",
- "sha1 0.10.7",
- "sha2 0.10.9",
- "smallvec",
- "tar",
- "tempfile",
- "thiserror 2.0.19",
- "tokio",
- "tokio-tungstenite 0.27.0",
- "tokio-util",
- "toml",
- "tonic",
- "tracing",
- "tracing-subscriber",
- "tree-sitter",
- "tree-sitter-bash",
- "url",
- "urlencoding",
- "uuid",
- "wait-timeout",
- "windows 0.62.2",
- "xai-acp-lib",
- "xai-codebase-graph",
- "xai-computer-hub-mcp-adapter",
- "xai-computer-hub-sdk",
- "xai-fast-worktree",
- "xai-file-utils",
- "xai-fsnotify",
- "xai-grok-agent",
- "xai-grok-auth",
- "xai-grok-config",
- "xai-grok-config-types",
- "xai-grok-env",
- "xai-grok-hooks",
- "xai-grok-mcp",
- "xai-grok-paths",
- "xai-grok-sandbox",
- "xai-grok-telemetry",
- "xai-grok-tools",
- "xai-grok-tools-api",
- "xai-grok-version",
- "xai-grok-workspace-client",
- "xai-grok-workspace-types",
- "xai-hunk-tracker",
- "xai-sqlite-journal",
- "xai-test-utils",
- "xai-tool-protocol",
- "xai-tool-runtime",
- "xai-tool-types",
- "xai-tracing",
- "xai-tty-utils",
- "zip 3.0.0",
- "zstd",
-]
-
-[[package]]
-name = "xai-grok-workspace-client"
-version = "0.1.0"
-dependencies = [
- "schemars 1.2.2",
- "serde",
- "serde_json",
- "thiserror 2.0.19",
- "tokio",
- "tracing",
- "xai-computer-hub-sdk",
- "xai-grok-workspace-types",
- "xai-tool-protocol",
- "xai-tool-runtime",
- "xai-tool-types",
-]
-
-[[package]]
-name = "xai-grok-workspace-types"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "chrono",
- "serde",
- "serde_json",
- "thiserror 2.0.19",
-]
-
-[[package]]
-name = "xai-hooks-plugins-types"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "xai-hunk-tracker"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "dunce",
- "gix",
- "rustc-hash 2.1.3",
- "serde",
- "serde_json",
- "similar",
- "tempfile",
- "thiserror 2.0.19",
- "tokio",
- "tokio-util",
- "tracing",
- "uuid",
- "xai-gix-status",
- "xai-test-utils",
-]
-
-[[package]]
-name = "xai-interjection-core"
-version = "0.1.0"
-dependencies = [
- "serde",
-]
-
-[[package]]
-name = "xai-mixpanel"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "reqwest 0.12.28",
- "serde_json",
- "thiserror 2.0.19",
- "xai-grok-secrets",
-]
-
-[[package]]
-name = "xai-prompt-queue"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "xai-proto-build"
-version = "0.0.0"
-dependencies = [
- "anyhow",
- "pbjson-build",
- "prost-build",
- "prost-reflect",
- "tempfile",
- "tonic-prost-build",
-]
-
-[[package]]
-name = "xai-ratatui-inline"
-version = "0.1.0"
-dependencies = [
- "ansi-width",
- "anstyle-parse 0.2.7",
- "anyhow",
- "colored_json",
- "criterion",
- "crossterm",
- "lipsum",
- "ratatui",
- "serde_json",
- "termwiz",
- "unicode-width 0.2.0",
-]
-
-[[package]]
-name = "xai-ratatui-textarea"
-version = "0.1.0"
-dependencies = [
- "arboard",
- "chrono",
- "crossterm",
- "fuzzy-matcher",
- "ignore",
- "itertools 0.14.0",
- "pretty_assertions",
- "rand 0.9.5",
- "ratatui",
- "ratatui-core",
- "textwrap",
- "tracing",
- "tui-scrollbar",
- "unicode-segmentation",
- "unicode-width 0.2.0",
-]
-
-[[package]]
-name = "xai-sqlite-journal"
-version = "0.1.0"
-dependencies = [
- "libc",
- "rusqlite",
- "tempfile",
- "tracing",
- "windows-sys 0.59.0",
-]
-
-[[package]]
-name = "xai-system-power"
-version = "0.1.0"
-dependencies = [
- "windows-sys 0.59.0",
- "zbus",
-]
-
-[[package]]
-name = "xai-test-utils"
-version = "0.1.0"
-dependencies = [
- "runfiles",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "xai-token-estimation"
-version = "0.1.0"
-
-[[package]]
-name = "xai-tool-protocol"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "thiserror 2.0.19",
- "uuid",
- "xai-tool-types",
-]
-
-[[package]]
-name = "xai-tool-runtime"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "futures",
- "schemars 1.2.2",
- "serde",
- "serde_json",
- "tokio",
- "tokio-util",
- "xai-grok-tools-api",
- "xai-tool-protocol",
- "xai-tool-types",
-]
-
-[[package]]
-name = "xai-tool-types"
-version = "0.1.0"
-dependencies = [
- "minijinja",
- "schemars 1.2.2",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "xai-tracing"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "bytes",
- "fastrace",
- "fastrace-opentelemetry",
- "fastrace-reqwest",
- "fastrace-tonic",
- "http 1.4.2",
- "http-body-util",
- "log",
- "opentelemetry",
- "opentelemetry-http",
- "opentelemetry-otlp",
- "opentelemetry_sdk",
- "reqwest 0.12.28",
- "reqwest-middleware 0.4.2",
- "tokio",
- "tonic",
- "tower",
- "tower-http 0.6.11",
- "tracing",
- "tracing-opentelemetry",
- "tracing-subscriber",
- "uuid",
- "wiremock",
-]
-
-[[package]]
-name = "xai-tracing-macros"
-version = "0.1.0"
-
-[[package]]
-name = "xai-tty-utils"
-version = "0.1.0"
-dependencies = [
- "libc",
- "nix 0.30.1",
- "tokio",
- "windows 0.62.2",
-]
-
-[[package]]
-name = "xai-workflow"
-version = "0.1.0"
-dependencies = [
- "libc",
- "rhai",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "tempfile",
- "thiserror 2.0.19",
- "tokio",
- "tokio-util",
- "tracing",
 ]
 
 [[package]]
