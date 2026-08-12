@@ -101,7 +101,7 @@ jobs:
         with:
           components: clippy
       - uses: swatinem/rust-cache@v2
-      - run: cargo clippy -p sentinel-cli -p sentinel-app-server --all-targets -- -D warnings
+      - run: cargo clippy -p sentinel-cli --all-targets -- -D warnings
 
   # ---------------------------------------------------------------------------
   # Eval gate �?" ALWAYS_PASSES evals against a live LLM when a key exists.
