@@ -32,7 +32,6 @@ sentinel-app-server-protocol = { workspace = true }
 sentinel-app-server-transport = { workspace = true }
 sentinel-analytics = { workspace = true }
 sentinel-agent-identity = { workspace = true }
-sentinel-agent-graph-store = { workspace = true }
 sentinel-headroom = { workspace = true }
 sentinel-plugin-system = { workspace = true }
 

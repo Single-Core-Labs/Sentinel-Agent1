@@ -476,7 +476,7 @@ mod tests {
         std::fs::write(dir.join("target/b.txt"), "artifact").unwrap();
         let dir_str = dir.to_string_lossy().into_owned();
 
-        let mut mgr = SnapshotManager::new();
+        let mgr = SnapshotManager::new();
         let files = mgr.discover_files(Some(&dir_str), &|_| Some("x".into()));
         let paths: Vec<String> = files
             .iter()

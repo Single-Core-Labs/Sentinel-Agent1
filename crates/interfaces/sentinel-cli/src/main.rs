@@ -7,6 +7,7 @@ mod diagnostics;
 mod display;
 mod exec;
 mod handler;
+mod host;
 mod local;
 mod mcp_setup;
 mod model_selector;
@@ -91,7 +92,7 @@ fn load_dotenv() {
                     if let Some((key, value)) = trimmed.split_once('=') {
                         let key = key.trim();
                         if !key.is_empty() && std::env::var_os(key).is_none() {
-                            std::env::set_var(key, value.trim());
+                            unsafe { std::env::set_var(key, value.trim()) };
                         }
                     }
                 }

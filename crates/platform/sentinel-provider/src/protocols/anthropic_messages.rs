@@ -287,7 +287,7 @@ impl Protocol for AnthropicMessagesProtocol {
                 if let Some(delta) = event.delta {
                     if let Some(text) = delta.text {
                         if let Some(AnthropicResponseContent::Text {
-                            text: ref mut t, ..
+                            text: t, ..
                         }) = state.content.last_mut()
                         {
                             t.push_str(&text);

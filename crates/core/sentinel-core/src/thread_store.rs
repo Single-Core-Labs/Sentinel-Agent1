@@ -61,20 +61,16 @@ impl SavedThread {
         for turn in &mut sanitized.conversation.turns {
             for item in &mut turn.items {
                 match item {
-                    crate::conversation::Item::UserMessage { ref mut text, .. }
-                    | crate::conversation::Item::AssistantText { ref mut text, .. } => {
+                    crate::conversation::Item::UserMessage { text, .. }
+                    | crate::conversation::Item::AssistantText { text, .. } => {
                         let cleaned = sanitizer.sanitize_text(text);
                         *text = cleaned;
                     }
-                    crate::conversation::Item::ToolResult {
-                        ref mut content, ..
-                    } => {
+                    crate::conversation::Item::ToolResult { content, .. } => {
                         let cleaned = sanitizer.sanitize_text(content);
                         *content = cleaned;
                     }
-                    crate::conversation::Item::AssistantToolCall {
-                        ref mut arguments, ..
-                    } => {
+                    crate::conversation::Item::AssistantToolCall { arguments, .. } => {
                         sanitizer.sanitize_value(arguments);
                     }
                 }

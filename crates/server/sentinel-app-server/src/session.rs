@@ -734,8 +734,8 @@ mod tests {
     async fn chat_stream_persists_request_and_response_when_enabled() {
         // Opt-in session message logging into a temp dir.
         let logs_root = std::env::temp_dir().join(format!("sentinel-sess-rw-{}", Uuid::new_v4()));
-        std::env::set_var("SENTINEL_SESSION_LOGS", "1");
-        std::env::set_var("SENTINEL_SESSION_LOGS_DIR", &logs_root);
+        unsafe { std::env::set_var("SENTINEL_SESSION_LOGS", "1") };
+        unsafe { std::env::set_var("SENTINEL_SESSION_LOGS_DIR", &logs_root) };
 
         let (provider, tools, config, analytics) = session_deps();
         let session = AppSession::new(None, provider, tools, config, analytics, Arc::new(PluginRegistry::new()));
@@ -779,8 +779,8 @@ mod tests {
             "no tool calls in the scripted turn"
         );
 
-        std::env::remove_var("SENTINEL_SESSION_LOGS");
-        std::env::remove_var("SENTINEL_SESSION_LOGS_DIR");
+        unsafe { std::env::remove_var("SENTINEL_SESSION_LOGS") };
+        unsafe { std::env::remove_var("SENTINEL_SESSION_LOGS_DIR") };
         let _ = std::fs::remove_dir_all(&logs_root);
     }
 

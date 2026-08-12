@@ -168,16 +168,6 @@ pub struct HeadroomAgentCompressor {
 }
 
 impl HeadroomAgentCompressor {
-    pub fn new(pipeline: Arc<AgentCompressionPipeline>) -> Self {
-        let ccr = Some(Arc::clone(pipeline.ccr()));
-        Self {
-            pipeline,
-            ccr,
-            _config: None,
-            full_compressor: None,
-        }
-    }
-
     pub fn with_config(pipeline: Arc<AgentCompressionPipeline>, config: HeadroomConfig) -> Self {
         let ccr = Some(Arc::clone(pipeline.ccr()));
         let full_compressor = Some(Mutex::new(Compressor::with_ccr(
@@ -196,10 +186,6 @@ impl HeadroomAgentCompressor {
         self.ccr.clone()
     }
 
-    pub fn pipeline(&self) -> &Arc<AgentCompressionPipeline> {
-        &self.pipeline
-    }
-
     pub async fn memory_tools(&self) -> Vec<Arc<dyn sentinel_tools::Tool>> {
         match &self.full_compressor {
             Some(mtx) => {
@@ -212,51 +198,6 @@ impl HeadroomAgentCompressor {
             None => Vec::new(),
         }
     }
-}
-
-pub fn create_headroom_compressor() -> Arc<dyn sentinel_core::ContentCompressor> {
-    let config = HeadroomConfig::default();
-    let content_compressor = Arc::new(ContentCompressor::from_config(&config));
-    let pipeline = Arc::new(AgentCompressionPipeline::new(content_compressor));
-    Arc::new(HeadroomAgentCompressor::with_config(pipeline, config))
-}
-
-pub fn create_headroom_compressor_with_config(
-    config: crate::HeadroomConfig,
-) -> Arc<dyn sentinel_core::ContentCompressor> {
-    let rc = crate::ContentRoutingConfig {
-        min_content_chars: 100,
-        ..config.content_routing.clone()
-    };
-    let headroom_config = crate::config::HeadroomConfig {
-        content_routing: rc,
-        cache_alignment: config.cache_alignment.clone(),
-        cache_optimizer: config.cache_optimizer.clone(),
-        intelligent_context: config.intelligent_context.clone(),
-        ccr: config.ccr.clone(),
-        memory: config.memory.clone(),
-    };
-    let content_compressor = Arc::new(ContentCompressor::from_config(&headroom_config));
-    let pipeline = Arc::new(AgentCompressionPipeline::new(content_compressor));
-    Arc::new(HeadroomAgentCompressor::with_config(
-        pipeline,
-        headroom_config,
-    ))
-}
-
-pub fn create_headroom_compressor_and_tool() -> (
-    Arc<dyn sentinel_core::ContentCompressor>,
-    Arc<HeadroomRetrieveTool>,
-) {
-    let config = HeadroomConfig::default();
-    let content_compressor = Arc::new(ContentCompressor::from_config(&config));
-    let pipeline = Arc::new(AgentCompressionPipeline::new(content_compressor));
-    let retrieve_tool = Arc::new(pipeline.create_retrieve_tool());
-    let agent_compressor = Arc::new(HeadroomAgentCompressor::with_config(pipeline, config));
-    (
-        agent_compressor as Arc<dyn sentinel_core::ContentCompressor>,
-        retrieve_tool,
-    )
 }
 
 pub async fn create_headroom_compressor_with_tools() -> (
@@ -467,12 +408,5 @@ mod tests {
     fn test_content_type_for_tool() {
         assert_eq!(content_type_for_tool("read"), Some(ContentType::SourceCode));
         assert_eq!(content_type_for_tool("bash"), None);
-    }
-
-    #[test]
-    fn test_create_headroom_compressor_and_tool() {
-        let (compressor, tool) = create_headroom_compressor_and_tool();
-        assert_eq!(compressor.name(), "headroom");
-        assert_eq!(tool.name(), "headroom_retrieve");
     }
 }

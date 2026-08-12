@@ -38,7 +38,7 @@ export type ServerEvent =
   | { event: 'log'; level: string; message: string }
   | { event: 'permission'; tool: string; action: 'allow' | 'deny' | 'veto'; reason?: string | null }
 
-/** A pending question from the agent (blocking card, grok-style). */
+/** A pending question from the agent (blocking card, ai-style). */
 export interface PendingDialog {
   requestId: string
   prompt: string

@@ -58,7 +58,7 @@ fn try_spawn_ts_agent(args: &[String]) -> bool {
     // for the config default model. Exported via env so the bun child sees it.
     if let Ok(parsed) = CliArgs::parse(args, "") {
         if !parsed.model_id.is_empty() {
-            std::env::set_var("SENTINEL_REQUESTED_MODEL", &parsed.model_id);
+            unsafe { std::env::set_var("SENTINEL_REQUESTED_MODEL", &parsed.model_id) };
         }
     }
 
@@ -172,6 +172,7 @@ struct CliArgs {
     yolo_mode: bool,
     prompt_arg: Option<String>,
     hook_command: Option<String>,
+    host: String,
 }
 
 impl CliArgs {
@@ -182,6 +183,7 @@ impl CliArgs {
             yolo_mode: false,
             prompt_arg: None,
             hook_command: None,
+            host: "legacy".to_string(),
         };
         let mut resume_or_new_seen = false;
         let mut iter = args.iter();
@@ -207,6 +209,11 @@ impl CliArgs {
                     resume_or_new_seen = true;
                 }
                 "--yolo" => out.yolo_mode = true,
+                "--host" => match iter.next() {
+                    Some(h) if h == "ai" || h == "legacy" => out.host = h.clone(),
+                    Some(_) => return Err("--host must be 'ai' or 'legacy'".into()),
+                    None => return Err("--host requires an argument ('ai' | 'legacy')".into()),
+                },
                 "--model" => match iter.next() {
                     Some(m) if !m.starts_with('-') => out.model_id = m.clone(),
                     _ => return Err("--model requires a model id argument".into()),
@@ -230,7 +237,7 @@ impl CliArgs {
 
 pub async fn run(args: &[String]) -> anyhow::Result<()> {
     if args.iter().any(|a| a == "-h" || a == "--help") {
-        println!("Usage: sentinel ai [model-id] [--resume <session-id> | --new] [--yolo] [--model <id>] [--prompt <text>] [--hook-command <cmd>]");
+        println!("Usage: sentinel ai [model-id] [--resume <session-id> | --new] [--yolo] [--model <id>] [--prompt <text>] [--hook-command <cmd>] [--host <ai|legacy>]");
         println!("  --resume <id>     Continue a previously saved session (mutually exclusive with --new)");
         println!("  --new             Start a fresh session (mutually exclusive with --resume)");
         println!("  --yolo            Auto-approve tool actions");
@@ -240,6 +247,9 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         println!("  --prompt <t>      Run a single turn non-interactively, then exit");
         println!("  --hook-command <c> Policy script gating every tool call:");
         println!("                     stdout: 'allow' | 'deny <reason>' | 'ask' (fail-closed)");
+        println!("  --host <ai|legacy> Agent host for one-shot prompts: 'ai' drives the");
+        println!("                     sentinel-ai agent core via a local Chat Completions backend");
+        println!("                     (Ollama); 'legacy' is the original sentinel loop (default).");
         return Ok(());
     }
     // #61/#63/#64/#66 — validate flags up front so outcomes don't depend on
@@ -311,6 +321,16 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         );
         eprintln!("       sentinel ai <model> --prompt \"<text>\"");
         return Ok(());
+    }
+
+    // --host ai: drive the one-shot prompt through the sentinel-ai agent core
+    // (AgentBuilder + sampler loop in sentinel-ai-host) instead of the
+    // legacy sentinel agent. Deliberately bypasses provider resolution, MCP,
+    // plugins, headroom, and the App/session machinery — proving out the new
+    // architecture in isolation.
+    if parsed.host == "ai" {
+        let prompt = prompt_arg.as_deref().expect("--prompt guarded above");
+        return crate::host::run_one_shot(&model_id, prompt).await;
     }
 
     // #49/#52/#53 — centralized model+provider resolution with validation and
@@ -586,5 +606,18 @@ mod tests {
     #[test]
     fn yolo_flag() {
         assert!(parse(&["--yolo"]).unwrap().yolo_mode);
+    }
+
+    #[test]
+    fn host_defaults_to_legacy() {
+        assert_eq!(parse(&[]).unwrap().host, "legacy");
+    }
+
+    #[test]
+    fn host_ai_flag() {
+        assert_eq!(parse(&["--host", "ai"]).unwrap().host, "ai");
+        assert_eq!(parse(&["--host", "legacy"]).unwrap().host, "legacy");
+        assert!(parse(&["--host", "other"]).is_err());
+        assert!(parse(&["--host"]).is_err());
     }
 }

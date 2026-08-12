@@ -1,0 +1,12 @@
+[package]
+license = "Apache-2.0"
+name = "sentinel-ai-version"
+version = "1.0.0"
+edition.workspace = true
+description = "Lockstepped ai CLI version."
+
+[dependencies]
+semver = { workspace = true }
+
+[lints]
+workspace = true

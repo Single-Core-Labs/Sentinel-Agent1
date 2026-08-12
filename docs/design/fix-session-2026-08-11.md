@@ -19,17 +19,17 @@ clean.
 | X7/M13 | **Retry/backoff wired.** The tested-but-unwired `ModelRouter` (exponential backoff + jitter, error classification, health-aware fallback) now wraps the selected provider in `ai.rs` — every agent-loop call site gets transient-error retries. | `6ba9735` |
 | D-series | **Docs synced.** README: real headless usage (`--prompt`), nonexistent flags removed, real tool names; evals/README: `SENTINEL_YOLO_MODE`/`SENTINEL_SANDBOX`/CI bin path; GAPS_AUDIT: resolution-status table + refreshed fix order. | `c4d0f5a` |
 
-## What the grok-build comparison changed
+## What the ai-build comparison changed
 
-- **Mined as reference, not copied**: grok TUI patterns — blocking question
+- **Mined as reference, not copied**: ai TUI patterns — blocking question
   card (`ask_user`), permission prompt, cancel-turn (Esc) → implemented in
-  the OpenTUI client. Theming (GrokNight/GrokDay/TokyoNight/RosePineMoon/
+  the OpenTUI client. Theming (AiNight/AiDay/TokyoNight/RosePineMoon/
   OscuraMidnight + auto) and vim mode are documented for a future pass.
-- **No prebuilt grok binary exists** (only a shell launcher); all reference
-  was mined from `crates/codegen/xai-grok-pager/docs` (24 user-guide + 9
+- **No prebuilt ai binary exists** (only a shell launcher); all reference
+  was mined from `crates/codegen/sentinel-ai-pager/docs` (24 user-guide + 9
   tutorial chapters).
-- **grok transfer list still open** (needs design, not just ports): mock
-  inference-server harness (`xai-grok-test-support` style), hooks `Stop`
+- **ai transfer list still open** (needs design, not just ports): mock
+  inference-server harness (`sentinel-ai-test-support` style), hooks `Stop`
   gate, plugin marketplace + trust model, standalone compaction crate,
   `/context` budget breakdown, journaled workflow replay (Rhai), prompt
   obfuscation + `Zeroizing`, 3-layer sampler streaming.
@@ -65,7 +65,7 @@ Priority order after this session:
    `--watch`, OIDC — re-prioritize vs launch.
 9. **Evals end-to-end**: needs API keys + `SENTINEL_BIN`; CI gate is armed
    but has not seen a real run (`ALWAYS_PASSES`).
-10. **grok TUI pass 2**: theming, vim mode, command palette, minimal mode.
+10. **ai TUI pass 2**: theming, vim mode, command palette, minimal mode.
 
 ## Verification commands
 

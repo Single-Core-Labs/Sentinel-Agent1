@@ -1,6 +1,6 @@
 use crate::error::ConfigError;
 use sentinel_mcp::McpServerDef;
-use sentinel_provider_info::{default_providers, AuthConfig, ModelEntry, ProviderInfo};
+use sentinel_provider_info::{default_providers, AuthConfig, ProviderInfo};
 use serde::Deserialize;
 use std::sync::{Mutex, OnceLock};
 
@@ -875,6 +875,7 @@ pub fn update_theme(name: &str) -> Result<(), ConfigError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use sentinel_provider_info::ModelEntry;
 
     fn temp_toml(name: &str, content: &str) -> String {
         let path = std::env::temp_dir().join(format!(
@@ -1629,7 +1630,7 @@ command = "other"
         let _guard = persist_lock();
         let path = temp_config_file();
         let _ = std::fs::remove_file(&path);
-        std::env::set_var("SENTINEL_CONFIG_FILE", &path);
+        unsafe { std::env::set_var("SENTINEL_CONFIG_FILE", &path) };
 
         let mut cfg = SentinelConfig::default();
         cfg.update_agent_model("gpt-4o-mini").unwrap();
@@ -1640,7 +1641,7 @@ command = "other"
         assert_eq!(reloaded.agent.default_model, "gpt-4o-mini");
 
         let _ = std::fs::remove_file(&path);
-        std::env::remove_var("SENTINEL_CONFIG_FILE");
+        unsafe { std::env::remove_var("SENTINEL_CONFIG_FILE") };
     }
 
     #[test]
@@ -1648,7 +1649,7 @@ command = "other"
         let _guard = persist_lock();
         let path = temp_config_file();
         std::fs::write(&path, "[agent]\nmax_turns = 3\n").unwrap();
-        std::env::set_var("SENTINEL_CONFIG_FILE", &path);
+        unsafe { std::env::set_var("SENTINEL_CONFIG_FILE", &path) };
 
         let mut cfg = SentinelConfig::default();
         cfg.update_theme("paper").unwrap();
@@ -1671,7 +1672,7 @@ command = "other"
         );
 
         let _ = std::fs::remove_file(&path);
-        std::env::remove_var("SENTINEL_CONFIG_FILE");
+        unsafe { std::env::remove_var("SENTINEL_CONFIG_FILE") };
     }
 
     #[test]
@@ -1679,7 +1680,7 @@ command = "other"
         let _guard = persist_lock();
         let path = temp_config_file();
         let _ = std::fs::remove_file(&path);
-        std::env::set_var("SENTINEL_CONFIG_FILE", &path);
+        unsafe { std::env::set_var("SENTINEL_CONFIG_FILE", &path) };
         assert!(!std::path::Path::new(&path).exists());
 
         let mut cfg = SentinelConfig::default();
@@ -1687,7 +1688,7 @@ command = "other"
         assert!(std::path::Path::new(&path).exists());
 
         let _ = std::fs::remove_file(&path);
-        std::env::remove_var("SENTINEL_CONFIG_FILE");
+        unsafe { std::env::remove_var("SENTINEL_CONFIG_FILE") };
     }
 
     #[test]
@@ -1695,7 +1696,7 @@ command = "other"
         let _guard = persist_lock();
         let path = temp_config_file();
         std::fs::write(&path, "[agent]\ndefault_model = \"gpt-4o\"\n").unwrap();
-        std::env::set_var("SENTINEL_CONFIG_FILE", &path);
+        unsafe { std::env::set_var("SENTINEL_CONFIG_FILE", &path) };
 
         let mut cfg = SentinelConfig::default();
         let err = cfg.update_agent_model("does-not-exist-99").unwrap_err();
@@ -1705,7 +1706,7 @@ command = "other"
         assert!(!content.contains("does-not-exist-99"));
 
         let _ = std::fs::remove_file(&path);
-        std::env::remove_var("SENTINEL_CONFIG_FILE");
+        unsafe { std::env::remove_var("SENTINEL_CONFIG_FILE") };
     }
 
     #[test]
@@ -1733,7 +1734,7 @@ command = "other"
             "[agent]\ndefault_model = \"gpt-4o\"\n[theme]\nname = \"opencode-dark\"\n",
         )
         .unwrap();
-        std::env::set_var("SENTINEL_CONFIG_FILE", &path);
+        unsafe { std::env::set_var("SENTINEL_CONFIG_FILE", &path) };
 
         update_theme("paper").unwrap();
         let name = get().lock().unwrap().theme.name.clone();
@@ -1741,6 +1742,6 @@ command = "other"
         assert!(std::fs::read_to_string(&path).unwrap().contains("paper"));
 
         let _ = std::fs::remove_file(&path);
-        std::env::remove_var("SENTINEL_CONFIG_FILE");
+        unsafe { std::env::remove_var("SENTINEL_CONFIG_FILE") };
     }
 }

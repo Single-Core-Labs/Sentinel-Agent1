@@ -3,6 +3,11 @@ node_modules/
 Dist/
 # Rust
 target/
+# Secrets
+.env
+.env.*
+!.env.example
+
 # OS / editor files
 .DS_Store
 Thumbs.db
@@ -19,7 +24,5 @@ session/
 threads/
 CONTEXT.md
 docs/design/ai-features-doic.md
-CONTEXT.md
-
 events/
 

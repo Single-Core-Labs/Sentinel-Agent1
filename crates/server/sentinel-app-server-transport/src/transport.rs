@@ -291,7 +291,7 @@ impl MessageSink for WsSink {
         let json =
             serde_json::to_string(msg).map_err(|e| TransportError::Protocol(e.to_string()))?;
         self.0
-            .send(Message::Text(json))
+            .send(Message::Text(json.into()))
             .await
             .map_err(|e| TransportError::Protocol(e.to_string()))
     }

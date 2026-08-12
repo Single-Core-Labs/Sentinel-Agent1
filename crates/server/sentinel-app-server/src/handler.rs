@@ -1246,8 +1246,8 @@ mod tests {
     #[tokio::test]
     async fn config_get_reports_api_key_availability() {
         // Ensure the config/get payload flags whether each provider has a key.
-        std::env::set_var("OPENAI_API_KEY", "sk-test-abc");
-        std::env::remove_var("ANTHROPIC_API_KEY");
+        unsafe { std::env::set_var("OPENAI_API_KEY", "sk-test-abc") };
+        unsafe { std::env::remove_var("ANTHROPIC_API_KEY") };
 
         let cfg = Arc::new(SentinelConfig::default());
         let handler = RequestHandler::new(
@@ -1287,7 +1287,7 @@ mod tests {
         // Restore any previous value after the test so parallel tests are not
         // affected by the env mutation.
         let prev = std::env::var("SENTINEL_SERVER_TOKEN").ok();
-        std::env::set_var("SENTINEL_SERVER_TOKEN", "test-token");
+        unsafe { std::env::set_var("SENTINEL_SERVER_TOKEN", "test-token") };
 
         let handler = RequestHandler::new(
             Arc::new(SentinelConfig::default()),
@@ -1334,8 +1334,8 @@ mod tests {
             .expect_err("fs/read_file must require auth after logout");
 
         match prev {
-            Some(v) => std::env::set_var("SENTINEL_SERVER_TOKEN", v),
-            None => std::env::remove_var("SENTINEL_SERVER_TOKEN"),
+            Some(v) => unsafe { std::env::set_var("SENTINEL_SERVER_TOKEN", v) },
+            None => unsafe { std::env::remove_var("SENTINEL_SERVER_TOKEN") },
         }
     }
 

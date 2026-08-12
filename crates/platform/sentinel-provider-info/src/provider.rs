@@ -91,12 +91,12 @@ mod tests {
 
     #[test]
     fn env_key_auth_resolves_from_environment() {
-        std::env::set_var("SENTINEL_TEST_API_KEY", "sk-test-123");
+        unsafe { std::env::set_var("SENTINEL_TEST_API_KEY", "sk-test-123") };
         let p = provider_with_auth(AuthConfig::EnvKey {
             var: "SENTINEL_TEST_API_KEY".into(),
         });
         assert_eq!(p.resolve_api_key().as_deref(), Some("sk-test-123"));
-        std::env::remove_var("SENTINEL_TEST_API_KEY");
+        unsafe { std::env::remove_var("SENTINEL_TEST_API_KEY") };
     }
 
     #[test]

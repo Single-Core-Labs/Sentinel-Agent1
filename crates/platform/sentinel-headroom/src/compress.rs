@@ -180,7 +180,7 @@ impl Compressor {
         let mut ccr_dropped_refs: Vec<(String, usize)> = Vec::new();
 
         let mut final_messages: Vec<Message> = match &intelligence_result {
-            Some(ref scored) if scored.dropped_count > 0 => {
+            Some(scored) if scored.dropped_count > 0 => {
                 let dropped_msgs: Vec<&Message> = {
                     let selected_indices: std::collections::HashSet<usize> =
                         scored.messages.iter().map(|sm| sm.index).collect();

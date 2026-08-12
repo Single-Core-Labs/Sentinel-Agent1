@@ -1,6 +1,5 @@
 use sentinel_core::*;
 use sentinel_core::mock_inference::MockInference;
-use sentinel_protocol::{ContentBlock, Role};
 use sentinel_provider::ModelProvider;
 use sentinel_tools::ToolRegistry;
 use std::sync::Arc;
