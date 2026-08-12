@@ -116,15 +116,15 @@ sentinel ai
 sentinel ai --prompt "debug why the production model deployment on k8s is crash-looping"
 ```
 
-Run `sentinel ai` then `/model` to see the full list of suggested model ids.
+Run `sentinel ai --model <id>` to pick a model (see the table below for prefixes); `sentinel local` then `/show` prints the active model's metadata and capabilities.
 
 #### Local models
 
 Local model support uses OpenAI-compatible HTTP endpoints:
 
 ```bash
-sentinel ai --model ollama/llama3.1:8b "your prompt"
-sentinel ai --model vllm/meta-llama/Llama-3.1-8B-Instruct "your prompt"
+sentinel ai --model ollama/llama3.1:8b
+sentinel ai --model vllm/meta-llama/Llama-3.1-8B-Instruct --prompt "your prompt"
 ```
 
 Supported local prefixes: `ollama/`, `vllm/`, `lm_studio/`, `llamacpp/`.
@@ -180,19 +180,21 @@ LOCAL_LLM_API_KEY=<optional-local-api-key>
 │  │  └──────────────┘  └──────────────┘  └────────────────┘ │    │
 │  └──────────────────────────────────────────────────────────┘    │
 │                                                                  │
-│  Tools: run_shell_command, read, write, edit, apply_patch,       │
-│         glob, grep, web_fetch, web_search, github, plan,         │
-│         fork_sub_agent, explore_docs, fetch_docs, notify         │
+│  Tools: read, view, write, edit, apply_patch, patch, undo, ls,       │
+│         glob, grep, run_shell_command, web_search, web_fetch,       │
+│         sourcegraph, plan, github, git_status, git_diff,            │
+│         git_commit, git_log, notify, explore_docs, fetch_docs,      │
+│         find_api, task                                              │
 └──────────────────────────────────────────────────────────────────┘
                               │
                               ▼
 ┌──────────────────────────────────────────────────────────────────┐
 │                      Rust Crates                                 │
 │                                                                  │
-│  20 crates: sentinel-core, sentinel-cli, sentinel-provider,     │
-│  sentinel-tools, sentinel-mcp, sentinel-config, sentinel-exec,  │
-│  sentinel-analytics, sentinel-headroom, sentinel-app-server,    │
-│  sentinel-plugin-system, ...                                    │
+│  49 crates: sentinel-core, sentinel-cli, sentinel-provider,       │
+│  sentinel-tools, sentinel-mcp, sentinel-config, sentinel-exec,   │
+│  sentinel-analytics, sentinel-headroom, sentinel-app-server,     │
+│  sentinel-plugin-system, ...                                     │
 │                                                                  │
 │  Build system: Cargo (single workspace)                          │
 └──────────────────────────────────────────────────────────────────┘
@@ -210,7 +212,7 @@ User Message
      ║                                           ║
      ║  Get messages + tool specs                ║
      ║         ↓                                 ║
-     ║  litellm.acompletion()                    ║
+     ║  ModelProvider.complete()               ║
      ║         ↓                                 ║
      ║  Has tool_calls? ──No──> Done             ║
      ║         │                                 ║

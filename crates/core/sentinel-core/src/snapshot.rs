@@ -185,15 +185,14 @@ impl SnapshotManager {
                     if !IGNORE_DIRS.contains(&name.as_str()) {
                         stack.push(path);
                     }
-                } else if path.is_file() {
-                    if let Some(path_str) = path.to_str() {
-                        if let Some(content) = reader(path_str) {
-                            files.push(FileSnapshot {
-                                path: path_str.to_string(),
-                                content,
-                            });
-                        }
-                    }
+                } else if path.is_file()
+                    && let Some(path_str) = path.to_str()
+                    && let Some(content) = reader(path_str)
+                {
+                    files.push(FileSnapshot {
+                        path: path_str.to_string(),
+                        content,
+                    });
                 }
             }
         }
@@ -290,11 +289,7 @@ pub fn restore_snapshot(snapshot: &Snapshot, workspace_dir: &str) -> Result<Vec<
     let dir = Path::new(workspace_dir);
     let mut touched = Vec::new();
 
-    let before_paths: HashSet<&str> = snapshot
-        .before
-        .iter()
-        .map(|f| f.path.as_str())
-        .collect();
+    let before_paths: HashSet<&str> = snapshot.before.iter().map(|f| f.path.as_str()).collect();
 
     for file in &snapshot.after {
         if before_paths.contains(file.path.as_str()) {
@@ -302,20 +297,19 @@ pub fn restore_snapshot(snapshot: &Snapshot, workspace_dir: &str) -> Result<Vec<
         }
         let path = resolve_path(dir, &file.path);
         if path.exists() {
-            std::fs::remove_file(&path).map_err(|e| {
-                format!("Failed to delete {}: {}", path.display(), e)
-            })?;
+            std::fs::remove_file(&path)
+                .map_err(|e| format!("Failed to delete {}: {}", path.display(), e))?;
             touched.push(format!("deleted {}", file.path));
         }
     }
 
     for file in &snapshot.before {
         let path = resolve_path(dir, &file.path);
-        if let Some(parent) = path.parent() {
-            if !parent.exists() {
-                std::fs::create_dir_all(parent)
-                    .map_err(|e| format!("Failed to create {}: {}", parent.display(), e))?;
-            }
+        if let Some(parent) = path.parent()
+            && !parent.exists()
+        {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create {}: {}", parent.display(), e))?;
         }
         std::fs::write(&path, &file.content)
             .map_err(|e| format!("Failed to restore {}: {}", path.display(), e))?;
@@ -478,10 +472,7 @@ mod tests {
 
         let mgr = SnapshotManager::new();
         let files = mgr.discover_files(Some(&dir_str), &|_| Some("x".into()));
-        let paths: Vec<String> = files
-            .iter()
-            .map(|f| f.path.replace('\\', "/"))
-            .collect();
+        let paths: Vec<String> = files.iter().map(|f| f.path.replace('\\', "/")).collect();
         assert!(
             paths.iter().any(|p| p.ends_with("src/nested/a.txt")),
             "paths: {:?}",

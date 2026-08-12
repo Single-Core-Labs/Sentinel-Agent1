@@ -92,7 +92,10 @@ impl FileContext {
         let mut out = String::new();
         out.push_str("## File Context (configured paths)\n");
         for file in &self.files {
-            out.push_str(&format!("### {}\n```text\n{}\n```\n", file.path, file.content));
+            out.push_str(&format!(
+                "### {}\n```text\n{}\n```\n",
+                file.path, file.content
+            ));
         }
         out
     }
@@ -124,10 +127,10 @@ fn resolve_entry(raw: &str, cwd: Option<&Path>) -> Option<PathBuf> {
 
 /// Path relative to cwd when possible, else absolute.
 fn display_path(path: &Path, cwd: Option<&Path>) -> String {
-    if let Some(cwd) = cwd {
-        if let Ok(rel) = path.strip_prefix(cwd) {
-            return rel.to_string_lossy().into_owned();
-        }
+    if let Some(cwd) = cwd
+        && let Ok(rel) = path.strip_prefix(cwd)
+    {
+        return rel.to_string_lossy().into_owned();
     }
     path.to_string_lossy().into_owned()
 }
@@ -143,10 +146,8 @@ mod tests {
 
     impl Sandbox {
         fn new(name: &str) -> Self {
-            let dir = std::env::temp_dir().join(format!(
-                "sentinel-file-ctx-{}-{name}",
-                std::process::id()
-            ));
+            let dir = std::env::temp_dir()
+                .join(format!("sentinel-file-ctx-{}-{name}", std::process::id()));
             let _ = std::fs::remove_dir_all(&dir);
             std::fs::create_dir_all(&dir).unwrap();
             Self { dir }
@@ -218,7 +219,10 @@ mod tests {
         let cfg = config_with(
             vec![
                 sb.dir.join("src/keep.rs").to_string_lossy().into_owned(),
-                sb.dir.join("src/skip_gen.rs").to_string_lossy().into_owned(),
+                sb.dir
+                    .join("src/skip_gen.rs")
+                    .to_string_lossy()
+                    .into_owned(),
             ],
             vec!["skip_gen".into()],
         );
@@ -278,7 +282,11 @@ mod tests {
             vec![],
         );
         let ctx = FileContext::load(&cfg);
-        let big_file = ctx.files.iter().find(|f| f.path.ends_with("big.txt")).unwrap();
+        let big_file = ctx
+            .files
+            .iter()
+            .find(|f| f.path.ends_with("big.txt"))
+            .unwrap();
         assert!(
             big_file.content.chars().count() <= FILE_MAX_CHARS,
             "per-file cap must hold"

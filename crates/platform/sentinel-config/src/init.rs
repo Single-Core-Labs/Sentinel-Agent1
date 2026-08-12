@@ -41,10 +41,8 @@ mod tests {
 
     #[test]
     fn missing_flag_means_show_dialog() {
-        let dir = std::env::temp_dir().join(format!(
-            "sentinel-init-test-{}-missing",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("sentinel-init-test-{}-missing", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         assert!(should_show_init_dialog(&dir));
         let _ = std::fs::remove_dir_all(&dir);
@@ -52,10 +50,8 @@ mod tests {
 
     #[test]
     fn mark_creates_flag_and_dir() {
-        let dir = std::env::temp_dir().join(format!(
-            "sentinel-init-test-{}-mark",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("sentinel-init-test-{}-mark", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         mark_project_initialized(&dir).unwrap();
         assert!(dir.join(INIT_FLAG_FILE).exists());
@@ -65,10 +61,8 @@ mod tests {
 
     #[test]
     fn mark_is_idempotent() {
-        let dir = std::env::temp_dir().join(format!(
-            "sentinel-init-test-{}-idem",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("sentinel-init-test-{}-idem", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         mark_project_initialized(&dir).unwrap();
         mark_project_initialized(&dir).unwrap();

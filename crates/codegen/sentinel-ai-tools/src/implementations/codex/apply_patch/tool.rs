@@ -138,7 +138,9 @@ enum FileChange {
 // ─── Helpers ─────────────────────────────────────────────────────────
 
 /// Create parent directories for a file path if they don't exist.
-async fn ensure_parent_dirs(path: &std::path::Path) -> Result<(), sentinel_tool_runtime::ToolError> {
+async fn ensure_parent_dirs(
+    path: &std::path::Path,
+) -> Result<(), sentinel_tool_runtime::ToolError> {
     if let Some(parent) = path.parent()
         && !parent.as_os_str().is_empty()
     {

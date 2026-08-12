@@ -82,18 +82,18 @@ fn load_dotenv() {
         .collect::<Vec<_>>();
 
     for path in candidates {
-        if path.exists() {
-            if let Ok(contents) = std::fs::read_to_string(&path) {
-                for line in contents.lines() {
-                    let trimmed = line.trim();
-                    if trimmed.is_empty() || trimmed.starts_with('#') {
-                        continue;
-                    }
-                    if let Some((key, value)) = trimmed.split_once('=') {
-                        let key = key.trim();
-                        if !key.is_empty() && std::env::var_os(key).is_none() {
-                            unsafe { std::env::set_var(key, value.trim()) };
-                        }
+        if path.exists()
+            && let Ok(contents) = std::fs::read_to_string(&path)
+        {
+            for line in contents.lines() {
+                let trimmed = line.trim();
+                if trimmed.is_empty() || trimmed.starts_with('#') {
+                    continue;
+                }
+                if let Some((key, value)) = trimmed.split_once('=') {
+                    let key = key.trim();
+                    if !key.is_empty() && std::env::var_os(key).is_none() {
+                        unsafe { std::env::set_var(key, value.trim()) };
                     }
                 }
             }
@@ -108,10 +108,14 @@ fn print_help() {
     println!("  sentinel <command> [args]");
     println!();
     println!("{}", "Subcommands:".yellow().bold());
-    println!("  ai [model]            Interactive agent session (requires bun; use --prompt for one-shot mode without it)");
+    println!(
+        "  ai [model]            Interactive agent session (requires bun; use --prompt for one-shot mode without it)"
+    );
     println!("  local [model]         Run a local model via Ollama");
     println!("  exec <model> <prompt>  Run the agent with a prompt (Rust native)");
-    println!("  completion [--model <id>] [--system-prompt <text>] <prompt>  One-shot completion (LLM judge)");
+    println!(
+        "  completion [--model <id>] [--system-prompt <text>] <prompt>  One-shot completion (LLM judge)"
+    );
     println!("  auth login|logout|status Authentication management");
     println!("  server start|stop|status App server control");
     println!("  plugin install|list|remove Plugin management (tools + policy hooks)");
@@ -119,11 +123,15 @@ fn print_help() {
     println!("  web [--port <n>]        Start HTTP server with Web UI");
     println!("  proxy                  Headroom HTTP compression proxy");
     println!("  diagnostics            System diagnostic checks");
-    println!("  schema                 Print JSON Schema for sentinel.toml (IDE validation/autocompletion)");
+    println!(
+        "  schema                 Print JSON Schema for sentinel.toml (IDE validation/autocompletion)"
+    );
     println!("  tui [--port <n>]        Terminal UI for app server");
     println!();
     println!("{}", "Common flags:".yellow().bold());
-    println!("  --model <id>          Pick a model (e.g. gpt-4o, claude-sonnet-4, gemini-2.5-flash, ollama/qwen3:8b)");
+    println!(
+        "  --model <id>          Pick a model (e.g. gpt-4o, claude-sonnet-4, gemini-2.5-flash, ollama/qwen3:8b)"
+    );
     println!("  --prompt <text>      Run one non-interactive turn, then exit");
     println!("  --resume <session-id> Continue a previous session");
     println!("  --new                Start a fresh session");

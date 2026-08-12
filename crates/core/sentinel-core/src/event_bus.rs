@@ -134,7 +134,6 @@ impl PolicyEngine for ScriptPolicyEngine {
 mod tests {
     use super::*;
 
-
     #[test]
     fn test_allow_all_policy() {
         let policy = AllowAllPolicy;

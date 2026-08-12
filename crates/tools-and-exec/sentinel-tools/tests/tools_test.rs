@@ -238,7 +238,7 @@ async fn test_ls_fuzzy_filters_and_ranks() {
     let ctx = ToolContext::new();
 
     let tmp_dir = std::env::temp_dir().join("sentinel-ls-fuzzy-test");
-    let _ = std::fs::create_dir_all(&tmp_dir.join("src"));
+    let _ = std::fs::create_dir_all(tmp_dir.join("src"));
     std::fs::write(tmp_dir.join("README.md"), "r").unwrap();
     std::fs::write(tmp_dir.join("src/main.rs"), "m").unwrap();
     std::fs::write(tmp_dir.join("src/helpers.rs"), "h").unwrap();
@@ -377,8 +377,8 @@ async fn test_tool_defs() {
     assert!(names.contains(&"undo"), "undo tool missing");
     assert_eq!(
         defs.len(),
-        24,
-        "expected 24 built-in tools, got {}",
+        25,
+        "expected 25 built-in tools, got {}",
         defs.len()
     );
 }
@@ -430,5 +430,9 @@ async fn test_undo_restores_from_checkpoint_store() {
     // Second call hits the exhausted store → error surfaced.
     let result = registry.execute("undo", serde_json::json!({}), &ctx).await;
     assert!(result.is_error, "second undo should fail: {}", result.text);
-    assert!(result.text.contains("nothing to undo"), "got {}", result.text);
+    assert!(
+        result.text.contains("nothing to undo"),
+        "got {}",
+        result.text
+    );
 }

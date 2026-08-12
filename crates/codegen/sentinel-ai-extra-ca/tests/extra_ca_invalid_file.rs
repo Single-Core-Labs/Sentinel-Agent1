@@ -4,10 +4,10 @@
 fn missing_bundle_path_builds_clients_without_panic() {
     // Safety: sole test in this binary; set before any OnceLock resolve.
     unsafe {
-        unsafe { std::env::set_var(
+        std::env::set_var(
             sentinel_ai_extra_ca::ENV_AI_EXTRA_CA_BUNDLE,
             "/nonexistent/ai-extra-ca-bundle-invalid-file.pem",
-        ) };
+        );
     }
 
     assert!(sentinel_ai_extra_ca::extra_root_ders().is_empty());
@@ -16,7 +16,9 @@ fn missing_bundle_path_builds_clients_without_panic() {
         .build()
         .expect("async client builds when bundle is unreadable");
 
-    sentinel_ai_extra_ca::with_extra_root_certificates_blocking(reqwest::blocking::Client::builder())
-        .build()
-        .expect("blocking client builds when bundle is unreadable");
+    sentinel_ai_extra_ca::with_extra_root_certificates_blocking(
+        reqwest::blocking::Client::builder(),
+    )
+    .build()
+    .expect("blocking client builds when bundle is unreadable");
 }

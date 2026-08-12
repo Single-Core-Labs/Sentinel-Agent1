@@ -25,8 +25,8 @@
 use colored::Colorize;
 use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use sentinel_config::SentinelConfig;
-use std::io;
 use std::collections::HashMap;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
@@ -163,7 +163,12 @@ impl DiagnosticsStore {
 
     /// Diagnostics for the given `file://` URI.
     pub async fn snapshot(&self, uri: &str) -> Vec<LspDiagnostic> {
-        self.inner.read().await.get(uri).cloned().unwrap_or_default()
+        self.inner
+            .read()
+            .await
+            .get(uri)
+            .cloned()
+            .unwrap_or_default()
     }
 
     /// Diagnostics for a filesystem path, normalized to the same URI form
@@ -318,9 +323,10 @@ async fn run_client(handle: Arc<Mutex<LspClientHandle>>, diagnostics: Arc<Diagno
                     return;
                 }
                 guard.child = None;
-                let restart_reason = guard.last_error.clone().unwrap_or_else(|| {
-                    "exited unexpectedly".to_string()
-                });
+                let restart_reason = guard
+                    .last_error
+                    .clone()
+                    .unwrap_or_else(|| "exited unexpectedly".to_string());
                 guard.restarts += 1;
                 if guard.started_at.elapsed() >= STABLE_UPTIME {
                     guard.restarts = 0;
@@ -612,10 +618,7 @@ async fn spawn_and_handshake(
 
     let stdin = child.stdin.take().ok_or_else(|| "no stdin".to_string())?;
     let stdin = Arc::new(Mutex::new(stdin));
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| "no stdout".to_string())?;
+    let stdout = child.stdout.take().ok_or_else(|| "no stdout".to_string())?;
     let mut reader = BufReader::new(stdout);
 
     let root_uri = path_to_file_uri(&workspace_root);
@@ -951,18 +954,12 @@ mod tests {
     fn change_kinds_map_to_lsp_types() {
         use notify::event::{AccessKind, CreateKind, DataChange, ModifyKind, RemoveKind};
 
-        assert_eq!(
-            change_kind(&EventKind::Create(CreateKind::File)),
-            Some(1)
-        );
+        assert_eq!(change_kind(&EventKind::Create(CreateKind::File)), Some(1));
         assert_eq!(
             change_kind(&EventKind::Modify(ModifyKind::Data(DataChange::Any))),
             Some(2)
         );
-        assert_eq!(
-            change_kind(&EventKind::Remove(RemoveKind::File)),
-            Some(3)
-        );
+        assert_eq!(change_kind(&EventKind::Remove(RemoveKind::File)), Some(3));
         assert_eq!(change_kind(&EventKind::Access(AccessKind::Read)), None);
     }
 
@@ -994,8 +991,12 @@ mod tests {
         assert_eq!(store.total().await, 0);
         assert!(store.per_file().await.is_empty());
 
-        store.record("file:///a.rs", vec![diag("file:///a.rs", "boom")]).await;
-        store.record("file:///b.rs", vec![diag("file:///b.rs", "warn")]).await;
+        store
+            .record("file:///a.rs", vec![diag("file:///a.rs", "boom")])
+            .await;
+        store
+            .record("file:///b.rs", vec![diag("file:///b.rs", "warn")])
+            .await;
         assert_eq!(store.total().await, 2);
         assert_eq!(store.snapshot("file:///a.rs").await.len(), 1);
         assert_eq!(store.snapshot("file:///nope.rs").await.len(), 0);
@@ -1026,7 +1027,10 @@ mod tests {
             "path lookup must normalize to the same URI"
         );
         assert_eq!(
-            store.snapshot_for_path(Path::new("src/other.rs")).await.len(),
+            store
+                .snapshot_for_path(Path::new("src/other.rs"))
+                .await
+                .len(),
             0
         );
     }
@@ -1117,12 +1121,8 @@ mod tests {
             }
             let mut body = vec![0u8; length.expect("Content-Length")];
             stdin.read_exact(&mut body).expect("read body");
-            let message: serde_json::Value =
-                serde_json::from_slice(&body).expect("parse body");
-            let method = message
-                .get("method")
-                .and_then(|m| m.as_str())
-                .unwrap_or("");
+            let message: serde_json::Value = serde_json::from_slice(&body).expect("parse body");
+            let method = message.get("method").and_then(|m| m.as_str()).unwrap_or("");
             let has_id = message.get("id").is_some();
 
             match (method, has_id) {

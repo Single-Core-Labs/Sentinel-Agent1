@@ -114,9 +114,7 @@ pub fn change_count(result: &DiffResult) -> usize {
 /// lines. `\ No newline at end of file` markers and git rename/mode metadata
 /// are ignored. After parsing, one-to-one replaced lines are annotated with
 /// intra-line segments.
-pub fn parse_unified_diff(
-    diff: &str,
-) -> Result<DiffResult, crate::apply_patch::PatchError> {
+pub fn parse_unified_diff(diff: &str) -> Result<DiffResult, crate::apply_patch::PatchError> {
     let mut files: Vec<FileDiff> = Vec::new();
     let mut current: Option<FileDiff> = None;
 
@@ -139,8 +137,7 @@ pub fn parse_unified_diff(
         } else if raw_line.starts_with("@@") {
             match current.as_mut() {
                 Some(f) => {
-                    let (old_start, old_lines, new_start, new_lines) =
-                        parse_hunk_header(raw_line)?;
+                    let (old_start, old_lines, new_start, new_lines) = parse_hunk_header(raw_line)?;
                     f.hunks.push(Hunk {
                         old_start,
                         old_lines,
@@ -298,10 +295,8 @@ fn split_intraline(hunk: &mut Hunk) {
         let added_count = added_end - added_start;
         if removed_count == added_count && removed_count > 0 {
             for k in 0..removed_count {
-                let (rem_segs, add_segs) = split_pair(
-                    &lines[i + k].content,
-                    &lines[added_start + k].content,
-                );
+                let (rem_segs, add_segs) =
+                    split_pair(&lines[i + k].content, &lines[added_start + k].content);
                 lines[i + k].segments = rem_segs;
                 lines[added_start + k].segments = add_segs;
             }
@@ -570,7 +565,7 @@ pub fn highlight_code(lang: &str, code: &str, color: bool) -> String {
             while i < n && chars[i] != '\n' {
                 i += 1;
             }
-            out.push_str(&dim(&code[start..i].to_string(), color));
+            out.push_str(&dim(&code[start..i], color));
             continue;
         }
         if c == '/' && i + 1 < n && chars[i + 1] == '*' {
@@ -580,7 +575,7 @@ pub fn highlight_code(lang: &str, code: &str, color: bool) -> String {
                 i += 1;
             }
             i = (i + 2).min(n);
-            out.push_str(&dim(&code[start..i].to_string(), color));
+            out.push_str(&dim(&code[start..i], color));
             continue;
         }
         if c == '"' || c == '\'' || c == '`' {
@@ -593,7 +588,7 @@ pub fn highlight_code(lang: &str, code: &str, color: bool) -> String {
                 i += 1;
             }
             i = (i + 1).min(n);
-            out.push_str(&yellow(&code[start..i].to_string(), color));
+            out.push_str(&yellow(&code[start..i], color));
             continue;
         }
         if c.is_ascii_digit() {
@@ -601,7 +596,7 @@ pub fn highlight_code(lang: &str, code: &str, color: bool) -> String {
             while i < n && (chars[i].is_ascii_alphanumeric() || chars[i] == '.') {
                 i += 1;
             }
-            out.push_str(&cyan(&code[start..i].to_string(), color));
+            out.push_str(&cyan(&code[start..i], color));
             continue;
         }
         if c.is_alphabetic() || c == '_' {
@@ -636,26 +631,93 @@ fn keyword_set(lang: &str) -> std::collections::HashSet<String> {
         ],
         "python" | "py" => &[
             "def", "return", "if", "elif", "else", "for", "while", "in", "not", "and", "or",
-            "import", "from", "as", "class", "with", "try", "except", "finally", "lambda",
-            "yield", "raise", "break", "continue", "pass", "global", "nonlocal", "assert", "del",
-            "True", "False", "None",
+            "import", "from", "as", "class", "with", "try", "except", "finally", "lambda", "yield",
+            "raise", "break", "continue", "pass", "global", "nonlocal", "assert", "del", "True",
+            "False", "None",
         ],
         "js" | "javascript" | "typescript" | "ts" | "tsx" | "jsx" => &[
-            "function", "const", "let", "var", "return", "if", "else", "for", "while", "import",
-            "export", "from", "default", "class", "extends", "new", "async", "await", "try",
-            "catch", "finally", "throw", "typeof", "instanceof", "in", "of", "break", "continue",
-            "this", "true", "false", "null", "undefined", "interface", "type", "enum", "switch",
-            "case", "yield", "static", "private", "public", "readonly",
+            "function",
+            "const",
+            "let",
+            "var",
+            "return",
+            "if",
+            "else",
+            "for",
+            "while",
+            "import",
+            "export",
+            "from",
+            "default",
+            "class",
+            "extends",
+            "new",
+            "async",
+            "await",
+            "try",
+            "catch",
+            "finally",
+            "throw",
+            "typeof",
+            "instanceof",
+            "in",
+            "of",
+            "break",
+            "continue",
+            "this",
+            "true",
+            "false",
+            "null",
+            "undefined",
+            "interface",
+            "type",
+            "enum",
+            "switch",
+            "case",
+            "yield",
+            "static",
+            "private",
+            "public",
+            "readonly",
         ],
         "go" | "golang" => &[
-            "func", "package", "import", "return", "if", "else", "for", "switch", "case",
-            "default", "range", "go", "defer", "var", "const", "type", "struct", "interface",
-            "map", "chan", "break", "continue", "fallthrough", "select", "goto", "true", "false",
-            "nil", "make", "new", "len", "cap", "append",
+            "func",
+            "package",
+            "import",
+            "return",
+            "if",
+            "else",
+            "for",
+            "switch",
+            "case",
+            "default",
+            "range",
+            "go",
+            "defer",
+            "var",
+            "const",
+            "type",
+            "struct",
+            "interface",
+            "map",
+            "chan",
+            "break",
+            "continue",
+            "fallthrough",
+            "select",
+            "goto",
+            "true",
+            "false",
+            "nil",
+            "make",
+            "new",
+            "len",
+            "cap",
+            "append",
         ],
         _ => &[
-            "function", "const", "if", "else", "return", "import", "export", "class", "let",
-            "var", "true", "false", "null", "new", "for", "while", "try", "catch",
+            "function", "const", "if", "else", "return", "import", "export", "class", "let", "var",
+            "true", "false", "null", "new", "for", "while", "try", "catch",
         ],
     };
     list.iter().map(|s| s.to_string()).collect()
@@ -806,7 +868,7 @@ fn change_blocks(steps: &[Align]) -> Vec<ChangeBlock> {
                 j += 1;
             }
             Align::Remove => {
-                let c = cur.get_or_insert_with(|| ChangeBlock {
+                let c = cur.get_or_insert(ChangeBlock {
                     a0: i,
                     a1: i,
                     b0: j,
@@ -817,7 +879,7 @@ fn change_blocks(steps: &[Align]) -> Vec<ChangeBlock> {
                 i += 1;
             }
             Align::Insert => {
-                let c = cur.get_or_insert_with(|| ChangeBlock {
+                let c = cur.get_or_insert(ChangeBlock {
                     a0: i,
                     a1: i,
                     b0: j,
@@ -861,12 +923,7 @@ fn build_hunks(changes: &[ChangeBlock], n_a: usize, n_b: usize) -> Vec<ChangeBlo
 }
 
 /// Render one hunk of the diff text (`@@` header + body lines).
-fn render_hunk_text(
-    a: &[&str],
-    b: &[&str],
-    steps: &[Align],
-    hunk: &ChangeBlock,
-) -> String {
+fn render_hunk_text(a: &[&str], b: &[&str], steps: &[Align], hunk: &ChangeBlock) -> String {
     // Mark which lines are removed/added according to the alignment.
     let mut removed: Vec<bool> = vec![false; a.len()];
     let mut inserted: Vec<bool> = vec![false; b.len()];
@@ -954,10 +1011,8 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!(
-            "sentinel-diff-test-{}-{nanos}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("sentinel-diff-test-{}-{nanos}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         dir
     }
@@ -989,7 +1044,15 @@ index 0000000..1111111 100644
         assert_eq!(file.new_path, "old.rs");
         assert_eq!(file.hunks.len(), 1);
         let hunk = &file.hunks[0];
-        assert_eq!((hunk.old_start, hunk.old_lines, hunk.new_start, hunk.new_lines), (1, 3, 1, 3));
+        assert_eq!(
+            (
+                hunk.old_start,
+                hunk.old_lines,
+                hunk.new_start,
+                hunk.new_lines
+            ),
+            (1, 3, 1, 3)
+        );
         let kinds: Vec<LineKind> = hunk.lines.iter().map(|l| l.kind).collect();
         assert_eq!(
             kinds,
@@ -1048,17 +1111,35 @@ index 0000000..1111111 100644
         assert_eq!(
             removed.segments,
             vec![
-                DiffSegment { text: "    let x = ".into(), kind: SegmentKind::Same },
-                DiffSegment { text: "1".into(), kind: SegmentKind::Removed },
-                DiffSegment { text: ";".into(), kind: SegmentKind::Same },
+                DiffSegment {
+                    text: "    let x = ".into(),
+                    kind: SegmentKind::Same
+                },
+                DiffSegment {
+                    text: "1".into(),
+                    kind: SegmentKind::Removed
+                },
+                DiffSegment {
+                    text: ";".into(),
+                    kind: SegmentKind::Same
+                },
             ]
         );
         assert_eq!(
             added.segments,
             vec![
-                DiffSegment { text: "    let x = ".into(), kind: SegmentKind::Same },
-                DiffSegment { text: "2".into(), kind: SegmentKind::Inserted },
-                DiffSegment { text: ";".into(), kind: SegmentKind::Same },
+                DiffSegment {
+                    text: "    let x = ".into(),
+                    kind: SegmentKind::Same
+                },
+                DiffSegment {
+                    text: "2".into(),
+                    kind: SegmentKind::Inserted
+                },
+                DiffSegment {
+                    text: ";".into(),
+                    kind: SegmentKind::Same
+                },
             ]
         );
     }
@@ -1101,7 +1182,9 @@ index 0000000..1111111 100644
         assert!(out.contains("@@ -1,3 +1,3 @@"), "header: {out}");
         let lines: Vec<&str> = out.lines().collect();
         assert!(
-            lines.iter().any(|l| l.starts_with("  fn main() {") && l.contains('|')),
+            lines
+                .iter()
+                .any(|l| l.starts_with("  fn main() {") && l.contains('|')),
             "context row must appear on both columns: {out}"
         );
         assert!(
@@ -1131,10 +1214,7 @@ index 0000000..1111111 100644
         assert!(out.contains("\x1b[1mfn\x1b[0m"), "keyword bold: {out}");
         assert!(out.contains("\x1b[36m1\x1b[0m"), "number cyan: {out}");
         assert!(out.contains("\x1b[2m// hi"), "comment dim: {out}");
-        assert_eq!(
-            highlight_code("rust", "fn main() {", false),
-            "fn main() {"
-        );
+        assert_eq!(highlight_code("rust", "fn main() {", false), "fn main() {");
     }
 
     #[test]
@@ -1163,7 +1243,10 @@ index 0000000..1111111 100644
 
         let root = tmp_dir();
         apply_patch(&root, Path::new("b.txt"), &diff).expect("new-file diff must apply");
-        assert_eq!(fs::read_to_string(root.join("b.txt")).unwrap(), "one\ntwo\n");
+        assert_eq!(
+            fs::read_to_string(root.join("b.txt")).unwrap(),
+            "one\ntwo\n"
+        );
     }
 
     #[test]

@@ -1,6 +1,6 @@
 use crate::agent::AgentOutput;
 use crate::compression::ContentCompressor;
-use crate::sub_agent::{run_sub_agent_team, SubTask};
+use crate::sub_agent::{SubTask, run_sub_agent_team};
 use crate::thread::AgentThread;
 use async_trait::async_trait;
 use sentinel_config::SentinelConfig;
@@ -136,14 +136,18 @@ mod tests {
         assert_eq!(tool.name(), "fork_sub_agent");
         assert!(!tool.description().is_empty());
         let schema = tool.input_schema();
-        assert!(schema["required"]
-            .as_array()
-            .unwrap()
-            .contains(&json!("id")));
-        assert!(schema["required"]
-            .as_array()
-            .unwrap()
-            .contains(&json!("instruction")));
+        assert!(
+            schema["required"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("id"))
+        );
+        assert!(
+            schema["required"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("instruction"))
+        );
     }
 
     #[test]

@@ -230,9 +230,10 @@ mod tests {
     /// is the precedent this follows.
     #[test]
     fn apply_to_schema_bounds_the_real_optional_u64_property() {
-        let generated =
-            serde_json::to_value(schemars::schema_for!(sentinel_tool_types::TaskOutputToolInput))
-                .unwrap();
+        let generated = serde_json::to_value(schemars::schema_for!(
+            sentinel_tool_types::TaskOutputToolInput
+        ))
+        .unwrap();
         let timeout = &generated["properties"]["timeout_ms"];
         assert!(
             timeout.get("anyOf").is_none(),

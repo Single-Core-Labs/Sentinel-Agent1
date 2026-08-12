@@ -11,17 +11,17 @@
 use std::sync::Arc;
 
 use schemars::JsonSchema;
-use serde::Deserialize;
 use sentinel_ai_tools::types::tool::{ToolKind, ToolNamespace};
 use sentinel_ai_tools::types::tool_metadata::ToolMetadata;
 use sentinel_tool_protocol::ToolId;
 use sentinel_tool_runtime::{ListToolsContext, ToolCallContext, ToolError};
 use sentinel_tool_types::ToolDescription;
+use serde::Deserialize;
 
-use sentinel_tools::Tool as SentinelTool;
 use sentinel_headroom::config::HeadroomConfig;
 use sentinel_headroom::integration::{AgentCompressionPipeline, HeadroomRetrieveTool};
 use sentinel_headroom::orchestrator::ContentCompressor;
+use sentinel_tools::Tool as SentinelTool;
 
 /// Wrapper that exposes the sentinel headroom retrieve tool to the ai
 /// registry. The inner tool does the actual cache lookup.
@@ -122,7 +122,8 @@ pub struct HeadroomHost {
 
 impl HeadroomHost {
     pub async fn new() -> Self {
-        let content_compressor = Arc::new(ContentCompressor::from_config(&HeadroomConfig::default()));
+        let content_compressor =
+            Arc::new(ContentCompressor::from_config(&HeadroomConfig::default()));
         let pipeline = Arc::new(AgentCompressionPipeline::new(content_compressor));
         let inner = pipeline.create_retrieve_tool();
         Self {

@@ -145,7 +145,10 @@ pub async fn resolve_cwd(
     res.get::<crate::types::resources::Cwd>()
         .map(|c| c.0.clone())
         .ok_or_else(|| {
-            sentinel_tool_runtime::ToolError::custom("missing_cwd", "Cwd not available in Resources")
+            sentinel_tool_runtime::ToolError::custom(
+                "missing_cwd",
+                "Cwd not available in Resources",
+            )
         })
 }
 

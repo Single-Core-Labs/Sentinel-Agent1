@@ -5,7 +5,7 @@ $raw = [Console]::In.ReadToEnd()
 if ([string]::IsNullOrWhiteSpace($raw)) { Write-Output "allow"; exit 0 }
 try { $j = $raw | ConvertFrom-Json } catch { Write-Output "allow"; exit 0 }
 $tool = [string]$j.tool_name
-if ($tool -notin @('write', 'edit', 'apply_patch')) { Write-Output "allow"; exit 0 }
+if ($tool -notin @('write', 'edit', 'apply_patch', 'patch')) { Write-Output "allow"; exit 0 }
 
 $cwd = [Environment]::CurrentDirectory
 if ([string]::IsNullOrWhiteSpace($cwd)) { Write-Output "allow"; exit 0 }
@@ -33,7 +33,7 @@ foreach ($line in (([string]$j.args.diff) -split "`n")) {
         $p = $Matches[1].Trim()
         if ($p -eq '/dev/null') { continue }
         $p = $p -replace '^b/', ''
-        if ([IO.Path]::IsPathRooted($p) -and -not (Test-Allowed $p)) {
+        if (-not (Test-Allowed $p)) {
             Write-Output ("veto apply_patch target escapes workspace: " + $p)
             exit 0
         }

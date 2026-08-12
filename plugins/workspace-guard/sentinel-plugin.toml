@@ -1,7 +1,7 @@
 id = "workspace-guard"
 name = "Workspace Guard"
 version = "1.0.0"
-description = "Fail-closed: veto write/edit/apply_patch when the target path escapes the workspace root"
+description = "Fail-closed: veto write/edit/apply_patch/patch when the target path escapes the workspace root"
 author = "Sentinel"
 
 [hooks]

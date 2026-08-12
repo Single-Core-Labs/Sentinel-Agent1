@@ -321,10 +321,12 @@ mod tests {
         let ccr = Arc::new(CcrStore::new(100));
         let tool = HeadroomRetrieveTool::new(ccr);
         assert_eq!(tool.name(), "headroom_retrieve");
-        assert!(tool.input_schema()["required"]
-            .as_array()
-            .unwrap()
-            .contains(&json!("hash")));
+        assert!(
+            tool.input_schema()["required"]
+                .as_array()
+                .unwrap()
+                .contains(&json!("hash"))
+        );
         assert!(tool.input_schema()["properties"].get("query").is_some());
     }
 

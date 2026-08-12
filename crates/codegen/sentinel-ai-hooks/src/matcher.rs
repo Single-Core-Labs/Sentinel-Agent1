@@ -1,5 +1,5 @@
 use regex::Regex;
-use sentinel_ai_tools::types::{claude_names_for, ai_names_for};
+use sentinel_ai_tools::types::{ai_names_for, claude_names_for};
 
 /// A compiled hook matcher for tool names. The pattern semantics are chosen so that
 /// `matcher` entries in hooks migrated from other agent CLIs keep firing unchanged:

@@ -67,10 +67,10 @@ mod tests {
     use crate::events::SamplingChannel;
     use crate::stream::stream_chat_completions;
     use crate::types::RequestId;
-    use std::time::Duration;
     use sentinel_ai_sampling_types::{
         ChatChunkChoice, ChatChunkDelta, ChatCompletionChunk, FinishReason, Role,
     };
+    use std::time::Duration;
 
     fn rid() -> RequestId {
         RequestId::from("collect-test")

@@ -10,19 +10,18 @@ fn activity_log_path() -> Option<String> {
 }
 
 fn append_activity(record: &serde_json::Value) {
-    if let Some(path) = activity_log_path() {
-        if let Ok(mut file) = std::fs::OpenOptions::new()
+    if let Some(path) = activity_log_path()
+        && let Ok(mut file) = std::fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(path)
-        {
-            use std::io::Write;
-            let _ = writeln!(
-                file,
-                "{}",
-                serde_json::to_string(record).unwrap_or_default()
-            );
-        }
+    {
+        use std::io::Write;
+        let _ = writeln!(
+            file,
+            "{}",
+            serde_json::to_string(record).unwrap_or_default()
+        );
     }
 }
 
@@ -339,12 +338,12 @@ fn highlight_line(line: &str, lang: &str) -> colored::ColoredString {
         _ => None,
     };
 
-    if let Some(comment) = comment_prefixes {
-        if let Some(pos) = trimmed.find(comment) {
-            let before = &trimmed[..pos];
-            let after = &trimmed[pos..];
-            return format!("{}{}", before, after.dimmed()).normal();
-        }
+    if let Some(comment) = comment_prefixes
+        && let Some(pos) = trimmed.find(comment)
+    {
+        let before = &trimmed[..pos];
+        let after = &trimmed[pos..];
+        return format!("{}{}", before, after.dimmed()).normal();
     }
 
     // Strings (simple double-quoted detection)

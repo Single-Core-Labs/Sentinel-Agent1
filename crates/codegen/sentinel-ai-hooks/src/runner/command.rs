@@ -1,8 +1,8 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use tokio::io::AsyncWriteExt;
 use sentinel_ai_tools::util::ProcessGroup;
+use tokio::io::AsyncWriteExt;
 
 use crate::config::HookSpec;
 use crate::event::HookEventEnvelope;
@@ -890,9 +890,7 @@ mod tests {
                 Some("bin/check.sh"),
                 "/project/.ai/hooks"
             )),
-            Some(std::path::PathBuf::from(
-                "/project/.ai/hooks/bin/check.sh"
-            ))
+            Some(std::path::PathBuf::from("/project/.ai/hooks/bin/check.sh"))
         );
         assert_eq!(
             resolve_command_path(&spec(HandlerType::Http, None, "/project")),
@@ -950,6 +948,7 @@ mod tests {
         }
     }
 
+    #[cfg_attr(not(unix), allow(dead_code))]
     fn make_scoped_ctx(scope: sentinel_ai_tools::util::ProcessScope) -> RunContext<'static> {
         RunContext {
             process_scope: Some(scope),

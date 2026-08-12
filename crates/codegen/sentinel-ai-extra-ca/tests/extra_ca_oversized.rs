@@ -20,10 +20,10 @@ fn oversized_bundle_ignored_clients_build() {
 
     // Safety: sole test in this binary; set before any OnceLock resolve.
     unsafe {
-        unsafe { std::env::set_var(
+        std::env::set_var(
             sentinel_ai_extra_ca::ENV_AI_EXTRA_CA_BUNDLE,
             path.as_os_str(),
-        ) };
+        );
     }
 
     assert!(sentinel_ai_extra_ca::extra_root_ders().is_empty());

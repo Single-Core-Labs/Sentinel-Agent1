@@ -62,9 +62,9 @@ pub use managed_cache::{
     mark_managed_config_synced, mark_managed_config_synced_at, normalize_identity,
 };
 pub use paths::{
-    claude_managed_settings_path, claude_managed_settings_probe_path, decode_cwd_from_dirname,
-    default_ai_home, encode_cwd_dirname, ensure_sessions_cwd_dir, ai_application,
-    ai_application_in, ai_home, sessions_cwd_dir, system_config_dir, user_ai_home,
+    ai_application, ai_application_in, ai_home, claude_managed_settings_path,
+    claude_managed_settings_probe_path, decode_cwd_from_dirname, default_ai_home,
+    encode_cwd_dirname, ensure_sessions_cwd_dir, sessions_cwd_dir, system_config_dir, user_ai_home,
 };
 pub use validation::{
     RequirementsError, RequirementsLayer, RequirementsSource, load_merged_requirements,

@@ -99,12 +99,12 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     // of the working directory the process was launched from.
     let dir = static_dir.unwrap_or_else(|| {
         // 1) Prefer a `public/` sibling of the running executable (installed layout).
-        if let Ok(exe) = std::env::current_exe() {
-            if let Some(exe_dir) = exe.parent() {
-                let candidate = exe_dir.join("public");
-                if candidate.join("index.html").exists() {
-                    return candidate.to_string_lossy().to_string();
-                }
+        if let Ok(exe) = std::env::current_exe()
+            && let Some(exe_dir) = exe.parent()
+        {
+            let candidate = exe_dir.join("public");
+            if candidate.join("index.html").exists() {
+                return candidate.to_string_lossy().to_string();
             }
         }
         // 2) Walk up from cwd looking for a `public/index.html` (dev layout).

@@ -152,9 +152,10 @@ mod tests {
         let resources = test_resources(tmp.path());
 
         let input = make_input("test.txt", "hello", "goodbye");
-        let result = sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
-            .await
-            .unwrap();
+        let result =
+            sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
+                .await
+                .unwrap();
 
         match result {
             SearchReplaceOutput::EditsApplied(applied) => {
@@ -183,9 +184,10 @@ mod tests {
             new_string: "ccc".to_string(),
             replace_all: true,
         };
-        let result = sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
-            .await
-            .unwrap();
+        let result =
+            sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
+                .await
+                .unwrap();
 
         match result {
             SearchReplaceOutput::EditsApplied(applied) => {

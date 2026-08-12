@@ -80,13 +80,15 @@ impl crate::types::tool_metadata::ToolMetadata for KillTaskTool {
         // renders it context-aware from the finalized toolset. This static
         // fallback mirrors the default ai-build toolset on the current OS.
         static DESC: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
-            sentinel_tool_types::build_kill_task_description(&sentinel_tool_types::KillTaskToolNaming {
-                monitor_tool: Some("monitor"),
-                subagent_present: true,
-                bash_present: true,
-                is_windows: cfg!(not(unix)),
-                task_id_param: "task_id",
-            })
+            sentinel_tool_types::build_kill_task_description(
+                &sentinel_tool_types::KillTaskToolNaming {
+                    monitor_tool: Some("monitor"),
+                    subagent_present: true,
+                    bash_present: true,
+                    is_windows: cfg!(not(unix)),
+                    task_id_param: "task_id",
+                },
+            )
         });
         &DESC
     }

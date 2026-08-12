@@ -81,35 +81,35 @@ impl BudgetGuard {
     /// Reconcile a reservation with the actual cost.
     /// Adjusts reserved_spend_usd by the difference between estimate and actual.
     pub fn reconcile(&mut self, reservation_id: &str, actual_cost_usd: f64) {
-        if let Some(reservation) = self.reservations.get_mut(reservation_id) {
-            if !reservation.reconciled {
-                let diff = actual_cost_usd - reservation.estimated_cost_usd;
-                self.reserved_spend_usd = (self.reserved_spend_usd + diff).max(0.0);
-                reservation.actual_cost_usd = Some(actual_cost_usd);
-                reservation.reconciled = true;
-            }
+        if let Some(reservation) = self.reservations.get_mut(reservation_id)
+            && !reservation.reconciled
+        {
+            let diff = actual_cost_usd - reservation.estimated_cost_usd;
+            self.reserved_spend_usd = (self.reserved_spend_usd + diff).max(0.0);
+            reservation.actual_cost_usd = Some(actual_cost_usd);
+            reservation.reconciled = true;
         }
     }
 
     /// Confirm a reservation as final spend — moves it from reserved to confirmed.
     pub fn confirm(&mut self, reservation_id: &str, final_cost_usd: f64) {
         self.reconcile(reservation_id, final_cost_usd);
-        if let Some(reservation) = self.reservations.get(reservation_id) {
-            if reservation.reconciled {
-                self.reserved_spend_usd = (self.reserved_spend_usd - final_cost_usd).max(0.0);
-                self.total_spend_usd += final_cost_usd;
-                self.reservations.remove(reservation_id);
-            }
+        if let Some(reservation) = self.reservations.get(reservation_id)
+            && reservation.reconciled
+        {
+            self.reserved_spend_usd = (self.reserved_spend_usd - final_cost_usd).max(0.0);
+            self.total_spend_usd += final_cost_usd;
+            self.reservations.remove(reservation_id);
         }
     }
 
     /// Record confirmed spend directly (no prior reservation).
     pub fn record_spend(&mut self, cost_usd: f64) {
         self.total_spend_usd += cost_usd;
-        if let Some(cap) = self.cost_cap_usd {
-            if self.total_spend_usd >= cap {
-                self.exhausted = true;
-            }
+        if let Some(cap) = self.cost_cap_usd
+            && self.total_spend_usd >= cap
+        {
+            self.exhausted = true;
         }
     }
 

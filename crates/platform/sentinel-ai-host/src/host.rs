@@ -4,15 +4,15 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use sentinel_plugin_system::{PluginAction, PluginEvent, PluginRegistry};
 use sentinel_ai_agent::{Agent, AgentBuilder};
 use sentinel_ai_sampler::{ApiBackend, AuthScheme, SamplerConfig, SamplingClient};
 use sentinel_ai_sampling_types::{
-    ConversationItem, ConversationRequest, ContentPart, SystemItem, ToolResultItem, ToolSpec,
+    ContentPart, ConversationItem, ConversationRequest, SystemItem, ToolResultItem, ToolSpec,
     UserItem,
 };
 use sentinel_ai_tools::computer::local::LocalTerminalBackend;
 use sentinel_ai_tools::notification::ToolNotificationHandle;
+use sentinel_plugin_system::{PluginAction, PluginEvent, PluginRegistry};
 
 use crate::headroom::HeadroomHost;
 
@@ -92,8 +92,7 @@ impl AiHost {
         // Guard plugins load before the loop so hooks are always present.
         let plugins = Arc::new(PluginRegistry::new());
         if options.plugins {
-            let (loaded, failures) =
-                sentinel_plugin_system::load_default_plugins(&plugins).await;
+            let (loaded, failures) = sentinel_plugin_system::load_default_plugins(&plugins).await;
             if loaded > 0 {
                 tracing::info!(loaded, "guard plugins loaded");
             }
@@ -266,11 +265,7 @@ impl AiHost {
 
                 tracing::debug!(tool = %name, call_id = %call_id, "dispatching tool call");
 
-                let (ok, content) = match self
-                    .agent
-                    .tool_bridge()
-                    .call(&name, args, &call_id)
-                    .await
+                let (ok, content) = match self.agent.tool_bridge().call(&name, args, &call_id).await
                 {
                     Ok(result) => (true, result.prompt_text),
                     Err(e) => (false, format!("tool error: {e}")),

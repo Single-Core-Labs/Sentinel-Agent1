@@ -61,11 +61,10 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         .or_else(|_| std::env::var("LOCAL_ENDPOINT"))
         .map(|v| !v.trim().is_empty())
         .unwrap_or(false);
-    let is_local_spec =
-        model_id.starts_with("ollama/")
-            || model_id.starts_with("vllm/")
-            || model_id.starts_with("lm-studio/")
-            || model_id.starts_with("llamacpp/");
+    let is_local_spec = model_id.starts_with("ollama/")
+        || model_id.starts_with("vllm/")
+        || model_id.starts_with("lm-studio/")
+        || model_id.starts_with("llamacpp/");
     let model_to_resolve = if local_endpoint && !user_explicit_model && !is_local_spec {
         "ollama/auto".to_string()
     } else {
@@ -117,10 +116,7 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     let (loaded_count, failed_plugins) =
         sentinel_plugin_system::load_default_plugins(&plugin_registry).await;
     if loaded_count > 0 {
-        println!(
-            " {} plugins loaded",
-            format!("{}", loaded_count).yellow()
-        );
+        println!(" {} plugins loaded", format!("{}", loaded_count).yellow());
     }
     if !failed_plugins.is_empty() {
         eprintln!(
@@ -146,7 +142,9 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
 
     let agent = sentinel_core::Agent::new(provider, tools, config.clone())
         .with_event_handler(Arc::new(CliEventHandler))
-        .with_prompt_manager(sentinel_core::ProjectContext::inject_into_prompt_manager(&config))
+        .with_prompt_manager(sentinel_core::ProjectContext::inject_into_prompt_manager(
+            &config,
+        ))
         .with_event_store(sentinel_core::create_event_store_in(
             &sentinel_core::default_events_dir(),
         ))
@@ -173,7 +171,11 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
                 agent.with_sandbox(sb)
             }
             Err(e) => {
-                eprintln!(" {} sandbox init failed: {}; continuing unsandboxed", "W".yellow(), e);
+                eprintln!(
+                    " {} sandbox init failed: {}; continuing unsandboxed",
+                    "W".yellow(),
+                    e
+                );
                 agent
             }
         }

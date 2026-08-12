@@ -20,15 +20,6 @@
 use async_trait::async_trait;
 use dashmap::DashMap;
 use futures::StreamExt;
-use serde_json::Value;
-use std::collections::HashMap;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
-use tokio::sync::broadcast::error::RecvError;
-use tokio::sync::mpsc;
-use tokio_util::sync::CancellationToken;
-use tracing::{debug, warn};
-use url::Url;
 use sentinel_tool_protocol::{
     ConnectionKind, HookEvent, HookFrame, HookReplyFrame, JsonRpcError, JsonRpcId,
     JsonRpcNotification, JsonRpcResponse, JsonRpcVersion, Method, ResponseOutcome, SessionId,
@@ -40,6 +31,15 @@ use sentinel_tool_runtime::{
     ToolStreamItem, TraceContext, TypedToolOutput,
 };
 use sentinel_tool_types::ToolDescription;
+use serde_json::Value;
+use std::collections::HashMap;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use tokio::sync::broadcast::error::RecvError;
+use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
+use tracing::{debug, warn};
+use url::Url;
 
 use crate::auth::{AuthCredential, AuthProvider};
 use crate::cancel::CancelRegistry;
@@ -1430,11 +1430,12 @@ impl ToolServer {
                             if let Some(id) = request_id {
                                 let response = match result {
                                     Ok(()) => {
-                                        let tools: Vec<sentinel_tool_types::ToolDescription> = server
-                                            .handlers_for_session(&sid)
-                                            .iter()
-                                            .map(|h| h.description())
-                                            .collect();
+                                        let tools: Vec<sentinel_tool_types::ToolDescription> =
+                                            server
+                                                .handlers_for_session(&sid)
+                                                .iter()
+                                                .map(|h| h.description())
+                                                .collect();
                                         let result = sentinel_tool_protocol::SessionBindResult {
                                             tools,
                                             binary_version: server.inner().binary_version.clone(),
@@ -1785,7 +1786,9 @@ async fn teardown_sessions(inner: &ToolServerInner) {
 /// Must be called before `unregister_session` (the server needs the
 /// session bindings to route the notification).
 async fn push_disconnect_status(connection: &HubConnection, sessions: &[SessionId]) {
-    use sentinel_tool_protocol::{JsonRpcRequest, ToolServerLifecycleStatus, ToolServerStatusPayload};
+    use sentinel_tool_protocol::{
+        JsonRpcRequest, ToolServerLifecycleStatus, ToolServerStatusPayload,
+    };
 
     for sid in sessions {
         let mut payload =

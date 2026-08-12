@@ -22,7 +22,9 @@ use tokio_util::sync::CancellationToken;
 use sentinel_ai_test_support::env::env_parse;
 use sentinel_ai_test_support::resources::{ResourceGrowth, ResourceSnapshot};
 use sentinel_ai_tools::implementations::ai_build::task::admission::SubagentLimits;
-use sentinel_ai_tools::implementations::ai_build::task::backend::{ChannelBackend, SubagentBackend};
+use sentinel_ai_tools::implementations::ai_build::task::backend::{
+    ChannelBackend, SubagentBackend,
+};
 use sentinel_ai_tools::implementations::ai_build::task::coordinator::{
     ChildCompletion, ChildControl, ChildRunOutput, ChildRunRequest, ChildRunner, CoordinatorConfig,
     LocalBoxFuture, MAX_COMPLETED_ENTRIES, StartedChild, SubagentCoordinator, SubagentProgress,

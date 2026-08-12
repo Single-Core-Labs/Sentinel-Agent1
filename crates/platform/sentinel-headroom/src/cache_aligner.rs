@@ -392,22 +392,20 @@ fn build_dynamic_suffix(
     previous: Option<&DynamicContext>,
     delta_tracking: bool,
 ) -> String {
-    if delta_tracking {
-        if let Some(prev) = previous {
-            let delta = ctx.delta(prev);
-            if !delta.has_changes {
-                return "[Context: no change]".into();
-            }
-            let mut out = "[Context changed: ".to_string();
-            let parts: Vec<String> = delta
-                .changed
-                .iter()
-                .map(|(key, val)| format!("{} → {}", key, val))
-                .collect();
-            out.push_str(&parts.join(", "));
-            out.push(']');
-            return out;
+    if delta_tracking && let Some(prev) = previous {
+        let delta = ctx.delta(prev);
+        if !delta.has_changes {
+            return "[Context: no change]".into();
         }
+        let mut out = "[Context changed: ".to_string();
+        let parts: Vec<String> = delta
+            .changed
+            .iter()
+            .map(|(key, val)| format!("{} → {}", key, val))
+            .collect();
+        out.push_str(&parts.join(", "));
+        out.push(']');
+        return out;
     }
 
     if ctx.is_empty() {

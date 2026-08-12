@@ -110,6 +110,7 @@ impl<R: ChildRunner> SubagentCoordinator<R> {
     /// Re-key a nested spawn (its parent is itself a subagent) to the root
     /// session, inheriting workflow lineage and loop identity; rejects the
     /// spawn when its parent subagent is already being torn down.
+    #[allow(clippy::result_large_err)]
     fn reparent_nested_spawn(&self, request: &mut SubagentRequest) -> Result<(), SubagentResult> {
         let Some((root_parent, loop_task_id, spawner_cancelled, spawner_owner)) = self
             .active

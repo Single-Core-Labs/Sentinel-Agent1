@@ -7,14 +7,14 @@ use crate::discovery::{SubagentEntry, SubagentSource};
 use crate::error::AgentBuildError;
 use crate::prompt::context::PromptContext;
 use crate::system_reminder::ReminderPolicy;
-use std::collections::HashMap;
-use std::path::PathBuf;
-use std::sync::Arc;
 use sentinel_ai_tools::bridge::ToolBridge;
 use sentinel_ai_tools::computer::types::{AsyncFileSystem, TerminalBackend};
 use sentinel_ai_tools::notification::ToolNotificationHandle;
 use sentinel_ai_tools::registry::types::SessionContext;
 use sentinel_ai_tools::types::tool::ToolKind;
+use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::Arc;
 /// The Ai [`ToolKind`] a vendor-compat `tools:` allowlist entry resolves to, so
 /// a plugin's upstream allowlist still binds. Backed by the shared vendor-to-Ai
 /// tool registry in `sentinel-ai-tools` (also used by the hook matcher).
@@ -151,9 +151,7 @@ fn ensure_plan_mode_tools(tool_config: &mut sentinel_ai_tools::registry::types::
             .push((&ai_build::EnterPlanModeTool).into());
     }
     if missing_exit {
-        tool_config
-            .tools
-            .push((&ai_build::ExitPlanModeTool).into());
+        tool_config.tools.push((&ai_build::ExitPlanModeTool).into());
     }
     if missing_ask {
         tool_config
@@ -761,9 +759,9 @@ impl AgentBuilder {
                 .iter()
                 .any(|tc| tc.id.ends_with(":write") || tc.id.ends_with(":Write"));
             if self.write_file_enabled && !has_write_tool {
-                tool_config
-                    .tools
-                    .push((&sentinel_ai_tools::implementations::opencode::OpenCodeWriteTool).into());
+                tool_config.tools.push(
+                    (&sentinel_ai_tools::implementations::opencode::OpenCodeWriteTool).into(),
+                );
             }
             ensure_plan_mode_tools(&mut tool_config);
         }
@@ -868,11 +866,7 @@ impl AgentBuilder {
             );
         }
         if let Some(ref ask_params) = self.ask_user_question_params_json {
-            merge_tool_params(
-                &mut tool_config,
-                &["AiBuild:ask_user_question"],
-                ask_params,
-            );
+            merge_tool_params(&mut tool_config, &["AiBuild:ask_user_question"], ask_params);
         }
         if self.is_non_interactive {
             let mut ni = serde_json::Map::new();
@@ -1198,10 +1192,12 @@ impl AgentBuilder {
         let mut hosted_tools = Vec::new();
         if use_backend_search {
             if web_search_enabled && definition.hosted_tool_allowed("web_search") {
-                hosted_tools.push(sentinel_ai_sampling_types::HostedTool::WebSearch { options: None });
+                hosted_tools
+                    .push(sentinel_ai_sampling_types::HostedTool::WebSearch { options: None });
             }
             if definition.hosted_tool_allowed("x_search") {
-                hosted_tools.push(sentinel_ai_sampling_types::HostedTool::XSearch { options: None });
+                hosted_tools
+                    .push(sentinel_ai_sampling_types::HostedTool::XSearch { options: None });
             }
             sentinel_ai_sampling_types::apply_tool_overrides(
                 &mut hosted_tools,
@@ -1223,14 +1219,15 @@ impl AgentBuilder {
     }
 }
 /// CLI naming for the shared [`sentinel_tool_types::build_task_description`] builder.
-const TASK_TOOL_NAMING: sentinel_tool_types::TaskToolNaming<'static> = sentinel_tool_types::TaskToolNaming {
-    task_tool: "${{ tools.by_kind.task }}",
-    subagent_type_param: "${{ params.task.subagent_type }}",
-    run_in_background_param: "${{ params.task.run_in_background }}",
-    resume_from_param: "${{ params.task.resume_from }}",
-    background_retrieval_tool: "${{ tools.by_kind.background_task_action }}",
-    isolation_param: "${{ params.task.isolation }}",
-};
+const TASK_TOOL_NAMING: sentinel_tool_types::TaskToolNaming<'static> =
+    sentinel_tool_types::TaskToolNaming {
+        task_tool: "${{ tools.by_kind.task }}",
+        subagent_type_param: "${{ params.task.subagent_type }}",
+        run_in_background_param: "${{ params.task.run_in_background }}",
+        resume_from_param: "${{ params.task.resume_from }}",
+        background_retrieval_tool: "${{ tools.by_kind.background_task_action }}",
+        isolation_param: "${{ params.task.isolation }}",
+    };
 /// Concise task-tool description for child sessions. Delegation from a child
 /// is possible but discouraged — prefer doing the work directly.
 ///
@@ -1322,7 +1319,8 @@ pub(crate) fn build_task_description(
             }
         })
         .collect();
-    let mut description = sentinel_tool_types::build_task_description(&descriptors, &TASK_TOOL_NAMING);
+    let mut description =
+        sentinel_tool_types::build_task_description(&descriptors, &TASK_TOOL_NAMING);
     description.push_str(&task_model_guidance(model_slugs));
     description
 }

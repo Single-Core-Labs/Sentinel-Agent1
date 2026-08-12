@@ -14,7 +14,9 @@ use futures::FutureExt;
 use sentinel_app_server::lsp::LspManager;
 use sentinel_config::{SentinelConfig, ThemeSettings};
 use sentinel_core::thread_store::{JsonFileThreadStore, ThreadStore, ThreadStoreError};
-use sentinel_core::{Agent, AgentOutput, AgentThread, ApprovalGate, AutoApprovalGate, PolicyEngine};
+use sentinel_core::{
+    Agent, AgentOutput, AgentThread, ApprovalGate, AutoApprovalGate, PolicyEngine,
+};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::watch;
@@ -144,7 +146,9 @@ impl App {
     pub async fn save_session(&self, thread: &AgentThread) -> Result<(), ThreadStoreError> {
         match &self.store {
             Some(s) => s.save_thread(thread).await,
-            None => Err(ThreadStoreError::Store("no session store configured".into())),
+            None => Err(ThreadStoreError::Store(
+                "no session store configured".into(),
+            )),
         }
     }
 
@@ -171,9 +175,12 @@ impl App {
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("no agent attached to app"))?;
 
-        let result = match std::panic::AssertUnwindSafe(
-            agent.run_with_approval(thread, prompt, &AutoApprovalGate, &policy),
-        )
+        let result = match std::panic::AssertUnwindSafe(agent.run_with_approval(
+            thread,
+            prompt,
+            &AutoApprovalGate,
+            &policy,
+        ))
         .catch_unwind()
         .await
         {
@@ -184,10 +191,10 @@ impl App {
             }
         };
 
-        if let Some(store) = &self.store {
-            if let Err(e) = store.save_thread(thread).await {
-                eprintln!("{} Failed to save session: {}", "W".yellow(), e);
-            }
+        if let Some(store) = &self.store
+            && let Err(e) = store.save_thread(thread).await
+        {
+            eprintln!("{} Failed to save session: {}", "W".yellow(), e);
         }
 
         match result {
@@ -408,8 +415,10 @@ mod tests {
 
     #[test]
     fn store_none_when_disabled() {
-        let mut cfg = SentinelConfig::default();
-        cfg.thread_store = "none".into();
+        let cfg = SentinelConfig {
+            thread_store: "none".into(),
+            ..SentinelConfig::default()
+        };
         assert!(App::new(cfg).store().is_none());
     }
 
@@ -451,9 +460,10 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ));
-        let mut app = App::new(SentinelConfig::default()).with_store(Some(
-            Arc::new(JsonFileThreadStore::new(&dir)) as Arc<dyn ThreadStore>
-        ));
+        let mut app = App::new(SentinelConfig::default())
+            .with_store(Some(
+                Arc::new(JsonFileThreadStore::new(&dir)) as Arc<dyn ThreadStore>
+            ));
         app.attach_agent(test_agent());
 
         let mut thread = app.new_session(true);
@@ -474,13 +484,15 @@ mod tests {
 
     #[tokio::test]
     async fn shutdown_signals_and_terminates_lsp() {
-        let mut cfg = SentinelConfig::default();
-        cfg.lsp_servers = vec![sentinel_config::LspServerDef {
-            id: "fake".into(),
-            command: "nonexistent-lsp-binary".into(),
-            args: vec![],
-            languages: vec![],
-        }];
+        let cfg = SentinelConfig {
+            lsp_servers: vec![sentinel_config::LspServerDef {
+                id: "fake".into(),
+                command: "nonexistent-lsp-binary".into(),
+                args: vec![],
+                languages: vec![],
+            }],
+            ..SentinelConfig::default()
+        };
         let app = App::new(cfg);
         assert!(!app.shutdown_requested());
         app.start_background();

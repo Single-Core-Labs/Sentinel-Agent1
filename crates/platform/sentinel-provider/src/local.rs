@@ -77,17 +77,19 @@ impl LocalProvider {
             body["stop"] = serde_json::json!(stop);
         }
         if let Some(tools) = &req.tools {
-            body["tools"] = serde_json::json!(tools
-                .iter()
-                .map(|t| serde_json::json!({
-                    "type": "function",
-                    "function": {
-                        "name": t.name,
-                        "description": t.description,
-                        "parameters": t.input_schema,
-                    }
-                }))
-                .collect::<Vec<_>>());
+            body["tools"] = serde_json::json!(
+                tools
+                    .iter()
+                    .map(|t| serde_json::json!({
+                        "type": "function",
+                        "function": {
+                            "name": t.name,
+                            "description": t.description,
+                            "parameters": t.input_schema,
+                        }
+                    }))
+                    .collect::<Vec<_>>()
+            );
         }
         body["stream"] = serde_json::json!(false);
         body
@@ -179,12 +181,12 @@ impl LocalProvider {
                         let msg = &ch["message"];
                         let mut content = Vec::new();
 
-                        if let Some(text) = msg["content"].as_str() {
-                            if !text.is_empty() {
-                                content.push(ContentBlock::Text {
-                                    text: text.to_string(),
-                                });
-                            }
+                        if let Some(text) = msg["content"].as_str()
+                            && !text.is_empty()
+                        {
+                            content.push(ContentBlock::Text {
+                                text: text.to_string(),
+                            });
                         }
 
                         if let Some(tool_calls) = msg["tool_calls"].as_array() {

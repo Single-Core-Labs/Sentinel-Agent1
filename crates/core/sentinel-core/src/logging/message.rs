@@ -26,7 +26,7 @@ impl LogLevel {
     }
 
     /// Parse a level name (case-insensitive). Unrecognized names → `None`.
-    pub fn from_str(s: &str) -> Option<LogLevel> {
+    pub fn parse(s: &str) -> Option<LogLevel> {
         match s.to_ascii_uppercase().as_str() {
             "TRACE" => Some(LogLevel::Trace),
             "DEBUG" => Some(LogLevel::Debug),
@@ -126,9 +126,7 @@ pub fn parse_persist_duration(s: &str) -> Option<std::time::Duration> {
     let mut total_ns: u128 = 0;
     let mut rest = s;
     while !rest.is_empty() {
-        let split = rest
-            .find(|c: char| c.is_alphabetic())
-            .unwrap_or(rest.len());
+        let split = rest.find(|c: char| c.is_alphabetic()).unwrap_or(rest.len());
         let num_part = &rest[..split];
         if num_part.is_empty() {
             return None;
@@ -164,9 +162,9 @@ mod tests {
     #[test]
     fn level_strings_roundtrip() {
         assert_eq!(LogLevel::Info.as_str(), "INFO");
-        assert_eq!(LogLevel::from_str("info"), Some(LogLevel::Info));
-        assert_eq!(LogLevel::from_str("WARNING"), Some(LogLevel::Warn));
-        assert_eq!(LogLevel::from_str("bogus"), None);
+        assert_eq!(LogLevel::parse("info"), Some(LogLevel::Info));
+        assert_eq!(LogLevel::parse("WARNING"), Some(LogLevel::Warn));
+        assert_eq!(LogLevel::parse("bogus"), None);
     }
 
     #[test]
@@ -184,7 +182,9 @@ mod tests {
         let msg = LogMessage::new("1", Utc::now(), LogLevel::Info, "x");
         assert!(!msg.persist);
         assert!(msg.persist_time.is_none());
-        let msg = msg.with_persist(true).with_persist_time(std::time::Duration::from_secs(60));
+        let msg = msg
+            .with_persist(true)
+            .with_persist_time(std::time::Duration::from_secs(60));
         assert!(msg.persist);
         assert_eq!(msg.persist_time, Some(std::time::Duration::from_secs(60)));
     }
@@ -194,7 +194,10 @@ mod tests {
         use std::time::Duration;
         assert_eq!(parse_persist_duration("30s"), Some(Duration::from_secs(30)));
         assert_eq!(parse_persist_duration("5m"), Some(Duration::from_secs(300)));
-        assert_eq!(parse_persist_duration("2h"), Some(Duration::from_secs(7200)));
+        assert_eq!(
+            parse_persist_duration("2h"),
+            Some(Duration::from_secs(7200))
+        );
         assert_eq!(
             parse_persist_duration("250ms"),
             Some(Duration::from_millis(250))

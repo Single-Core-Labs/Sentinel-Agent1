@@ -19,10 +19,12 @@ fn test_agent_identity_new_creates_bom() {
     let identity = AgentIdentity::new();
     assert_eq!(identity.bom.agent_id, identity.agent_id);
     assert_eq!(identity.bom.public_key, identity.keypair.public_key_bytes());
-    assert!(identity
-        .bom
-        .capabilities
-        .contains(&"agent.chat".to_string()));
+    assert!(
+        identity
+            .bom
+            .capabilities
+            .contains(&"agent.chat".to_string())
+    );
 }
 
 #[test]

@@ -22,7 +22,10 @@ pub(super) fn validate_temp(
 }
 
 trait ProcessOps {
-    fn attach_group(&self, child: &Child) -> Result<sentinel_tty_utils::ProcessGroup, std::io::Error>;
+    fn attach_group(
+        &self,
+        child: &Child,
+    ) -> Result<sentinel_tty_utils::ProcessGroup, std::io::Error>;
     fn try_wait(&self, child: &mut Child) -> std::io::Result<Option<ExitStatus>>;
     fn teardown(
         &self,
@@ -33,7 +36,10 @@ trait ProcessOps {
 
 struct RealProcessOps;
 impl ProcessOps for RealProcessOps {
-    fn attach_group(&self, child: &Child) -> Result<sentinel_tty_utils::ProcessGroup, std::io::Error> {
+    fn attach_group(
+        &self,
+        child: &Child,
+    ) -> Result<sentinel_tty_utils::ProcessGroup, std::io::Error> {
         let mut group = sentinel_tty_utils::ProcessGroup::new()?;
         group.attach_std(child)?;
         Ok(group)
@@ -165,6 +171,7 @@ mod tests {
 
     use super::*;
 
+    #[cfg_attr(not(unix), allow(dead_code))]
     struct InjectedOps {
         attach_fails: bool,
         wait_fails: bool,

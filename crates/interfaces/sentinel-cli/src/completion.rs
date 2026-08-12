@@ -26,7 +26,9 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
                 "--model" => model_id = iter.next().cloned(),
                 "--system-prompt" => system_prompt = iter.next().cloned(),
                 "-h" | "--help" => {
-                    println!("Usage: sentinel completion [--model <id>] [--system-prompt <text>] [prompt...]");
+                    println!(
+                        "Usage: sentinel completion [--model <id>] [--system-prompt <text>] [prompt...]"
+                    );
                     return Ok(());
                 }
                 _ if arg.starts_with('-') => {

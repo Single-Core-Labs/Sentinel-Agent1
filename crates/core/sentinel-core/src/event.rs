@@ -121,7 +121,6 @@ impl EventStore for NullEventStore {
     }
 }
 
-
 pub type SharedEventStore = Arc<dyn EventStore>;
 
 /// Dependency-free file-backed event store: one JSON Lines file per session
@@ -189,9 +188,7 @@ impl EventStore for JsonFileEventStore {
 pub fn create_event_store_in(dir: &std::path::Path) -> SharedEventStore {
     #[cfg(feature = "sqlite")]
     {
-        if let Ok(store) = SqliteEventStore::new(
-            &dir.join("session_events.db").to_string_lossy(),
-        ) {
+        if let Ok(store) = SqliteEventStore::new(&dir.join("session_events.db").to_string_lossy()) {
             return store;
         }
     }
@@ -256,9 +253,7 @@ impl EventStore for SqliteEventStore {
     async fn read(&self, session_id: &str) -> Vec<SessionEvent> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn
-            .prepare_cached(
-                "SELECT payload FROM session_events WHERE session_id = ?1 ORDER BY id",
-            )
+            .prepare_cached("SELECT payload FROM session_events WHERE session_id = ?1 ORDER BY id")
             .unwrap();
         let rows = stmt
             .query_map(rusqlite::params![session_id], |row| {
@@ -298,7 +293,6 @@ mod tests {
         let events = store.read("s1").await;
         assert!(events.is_empty());
     }
-
 
     #[tokio::test]
     async fn test_event_session_id_accessor() {
@@ -381,7 +375,9 @@ mod tests {
         let events = reopened.read("s10").await;
         assert_eq!(events.len(), 1);
         match &events[0] {
-            SessionEvent::TurnEnd { turn, iteration, .. } => {
+            SessionEvent::TurnEnd {
+                turn, iteration, ..
+            } => {
                 assert_eq!(*turn, 2);
                 assert_eq!(*iteration, 3);
             }

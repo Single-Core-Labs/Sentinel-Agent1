@@ -271,10 +271,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_skips_small_content() {
-        assert!(LLMLinguaCompressor::new()
-            .compress("short text")
-            .await
-            .is_none());
+        assert!(
+            LLMLinguaCompressor::new()
+                .compress("short text")
+                .await
+                .is_none()
+        );
     }
 
     #[tokio::test]

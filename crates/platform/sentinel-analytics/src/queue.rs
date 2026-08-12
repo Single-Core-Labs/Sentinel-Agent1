@@ -1,7 +1,7 @@
 use std::collections::{HashSet, VecDeque};
 use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex};
-use tokio::time::{interval, Duration};
+use tokio::sync::{Mutex, mpsc};
+use tokio::time::{Duration, interval};
 
 use crate::capture::AnalyticsDestination;
 use crate::fact::AnalyticsFact;
@@ -111,11 +111,10 @@ impl AnalyticsEventsQueue {
                     if !buffer.is_empty() {
                         let events = reducer.apply_batch(std::mem::take(&mut buffer));
                         dedup_window.clear();
-                        if !events.is_empty() {
-                            if let Err(e) = destination.dispatch(&events).await {
+                        if !events.is_empty()
+                            && let Err(e) = destination.dispatch(&events).await {
                                 tracing::warn!(error = %e, "analytics dispatch failed");
                             }
-                        }
                     }
                 }
                 fact = rx.recv() => {
@@ -129,11 +128,10 @@ impl AnalyticsEventsQueue {
                             if buffer.len() >= config.batch_size {
                                 let events = reducer.apply_batch(std::mem::take(&mut buffer));
                                 dedup_window.clear();
-                                if !events.is_empty() {
-                                    if let Err(e) = destination.dispatch(&events).await {
+                                if !events.is_empty()
+                                    && let Err(e) = destination.dispatch(&events).await {
                                         tracing::warn!(error = %e, "analytics dispatch failed");
                                     }
-                                }
                             }
                         }
                         None => break,
@@ -143,11 +141,10 @@ impl AnalyticsEventsQueue {
                     // Flush remaining facts on shutdown
                     if !buffer.is_empty() {
                         let events = reducer.apply_batch(std::mem::take(&mut buffer));
-                        if !events.is_empty() {
-                            if let Err(e) = destination.dispatch(&events).await {
+                        if !events.is_empty()
+                            && let Err(e) = destination.dispatch(&events).await {
                                 tracing::warn!(error = %e, "analytics flush on shutdown failed");
                             }
-                        }
                     }
                     break;
                 }

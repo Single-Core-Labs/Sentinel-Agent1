@@ -5,7 +5,9 @@
 use std::path::Path;
 use std::path::PathBuf;
 
-use sentinel_ai_config::{GlobalHookSource, missing_configured_sources, resolve_global_hook_sources};
+use sentinel_ai_config::{
+    GlobalHookSource, missing_configured_sources, resolve_global_hook_sources,
+};
 
 #[cfg(unix)]
 use sentinel_ai_config::validated_hook_json_files_for_sources;
@@ -126,8 +128,8 @@ pub fn revalidate_path_identity(id: &PathIdentity) -> Result<(), HookWriteDenyEr
 
 #[cfg(unix)]
 fn reject_hardlinked_files(sources: &[GlobalHookSource]) -> Result<(), HookWriteDenyError> {
-    use std::os::unix::fs::MetadataExt;
     use sentinel_ai_config::GlobalHookSourceKind;
+    use std::os::unix::fs::MetadataExt;
     for s in sources {
         let is_file_slot = matches!(
             s.kind,

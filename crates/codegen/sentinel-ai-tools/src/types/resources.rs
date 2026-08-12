@@ -33,6 +33,7 @@ pub trait ResourceType: Any + 'static {
     /// Unique identifier, e.g. `"ai_build.ReadFile"`.
     const ID: &'static str;
     /// Additional semantic validation for finalize-time params.
+    #[allow(clippy::result_large_err)]
     fn validate_params_value(
         _: &Self,
     ) -> Result<(), crate::types::params_validation::ParamValidationError> {
@@ -204,7 +205,9 @@ impl Resources {
     }
     /// Get a shared reference to a stored value, or return
     /// a `custom("missing_resource", ...)` error with the type name if absent.
-    pub fn require<T: Send + Sync + 'static>(&self) -> Result<&T, sentinel_tool_runtime::ToolError> {
+    pub fn require<T: Send + Sync + 'static>(
+        &self,
+    ) -> Result<&T, sentinel_tool_runtime::ToolError> {
         self.get::<T>().ok_or_else(|| {
             sentinel_tool_runtime::ToolError::custom(
                 "missing_resource",

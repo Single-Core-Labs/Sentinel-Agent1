@@ -129,10 +129,10 @@ impl OpenAIChatProtocol {
         if !text_parts.is_empty() {
             json["content"] = serde_json::Value::String(text_parts.join(""));
         }
-        if matches!(msg.role, sentinel_protocol::Role::Tool) {
-            if let Some(tci) = tool_call_id {
-                json["tool_call_id"] = serde_json::Value::String(tci.to_string());
-            }
+        if matches!(msg.role, sentinel_protocol::Role::Tool)
+            && let Some(tci) = tool_call_id
+        {
+            json["tool_call_id"] = serde_json::Value::String(tci.to_string());
         }
         json
     }
@@ -230,20 +230,20 @@ impl Protocol for OpenAIChatProtocol {
             if choice.finish_reason.is_some() {
                 state.finish_reason = choice.finish_reason;
             }
-            if state.id.is_empty() {
-                if let Some(id) = &event.id {
-                    state.id = id.clone();
-                }
+            if state.id.is_empty()
+                && let Some(id) = &event.id
+            {
+                state.id = id.clone();
             }
-            if state.model.is_empty() {
-                if let Some(model) = &event.model {
-                    state.model = model.clone();
-                }
+            if state.model.is_empty()
+                && let Some(model) = &event.model
+            {
+                state.model = model.clone();
             }
-            if state.created == 0 {
-                if let Some(created) = event.created {
-                    state.created = created;
-                }
+            if state.created == 0
+                && let Some(created) = event.created
+            {
+                state.created = created;
             }
         }
     }
@@ -378,9 +378,11 @@ mod tests {
         let resp = proto.finalize(state);
         assert_eq!(resp.id, "resp1");
         assert_eq!(resp.choices.len(), 1);
-        assert!(resp.choices[0]
-            .message
-            .extract_text()
-            .contains("Hello world"));
+        assert!(
+            resp.choices[0]
+                .message
+                .extract_text()
+                .contains("Hello world")
+        );
     }
 }

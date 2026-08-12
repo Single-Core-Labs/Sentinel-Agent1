@@ -1,10 +1,10 @@
+pub mod ai_home;
 pub mod base64_images;
 pub mod binary;
 pub mod command_display;
 pub mod env;
 pub mod fs;
 pub mod git_detect;
-pub mod ai_home;
 pub mod hash;
 pub mod image_compress;
 pub mod image_validate;
@@ -18,15 +18,16 @@ pub mod spawn;
 pub mod truncate;
 pub mod unicode_confusables;
 
+pub use ai_home::{ai_application, ai_home};
 pub use command_display::strip_redundant_session_cd;
 #[cfg(unix)]
 pub use env::detach_from_tty;
 pub use env::substitute_plugin_tokens;
 pub use env::{AI_AGENT_ENV, AI_AGENT_ENV_VALUE, apply_ai_agent_marker, pager_env};
 pub use fs::{UnicodePathMatch, canonicalize_with_timeout, try_resolve_unicode_filename};
-pub use ai_home::{ai_application, ai_home};
 pub use path_suggestions::format_not_found_error;
 pub use remap::{remap_json_keys, remap_schema_properties, reverse_map};
+pub use sentinel_tty_utils::detach_std_command;
 pub use shell_env_policy::{
     EnvironmentVariablePattern, ShellEnvironmentPolicy, ShellEnvironmentPolicyInherit,
     apply_shell_environment_policy,
@@ -39,4 +40,3 @@ pub use truncate::{
     format_bytes, soft_wrap_line, soft_wrap_lines, truncate_line, truncate_str,
     truncate_str_with_marker,
 };
-pub use sentinel_tty_utils::detach_std_command;

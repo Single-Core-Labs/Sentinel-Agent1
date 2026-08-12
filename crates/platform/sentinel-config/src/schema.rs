@@ -1,4 +1,4 @@
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// Build the JSON Schema describing `SentinelConfig` (sentinel.toml).
 ///
@@ -224,10 +224,7 @@ mod tests {
     fn schema_is_valid_object_with_draft_meta() {
         let s = config_json_schema();
         assert_eq!(s["type"], "object");
-        assert_eq!(
-            s["$schema"],
-            "https://json-schema.org/draft/2020-12/schema"
-        );
+        assert_eq!(s["$schema"], "https://json-schema.org/draft/2020-12/schema");
         assert!(s["properties"]["agent"].is_object());
         assert_eq!(s["properties"]["providers"]["type"], "array");
     }
@@ -275,7 +272,11 @@ mod tests {
             .filter_map(|props| props.get("api_key"))
             .map(|_| "api_key")
             .collect();
-        assert_eq!(auth_forms, vec!["api_key"], "auth must accept inline api_key");
+        assert_eq!(
+            auth_forms,
+            vec!["api_key"],
+            "auth must accept inline api_key"
+        );
     }
 
     #[test]
@@ -294,7 +295,10 @@ mod tests {
             .map(|v| v.as_str().unwrap())
             .collect();
         assert_eq!(stdio_required, vec!["type", "command"]);
-        assert_eq!(stdio["properties"]["command"]["description"], "Command to execute for the MCP server");
+        assert_eq!(
+            stdio["properties"]["command"]["description"],
+            "Command to execute for the MCP server"
+        );
 
         let remote = &forms[1];
         let remote_required: Vec<&str> = remote["required"]

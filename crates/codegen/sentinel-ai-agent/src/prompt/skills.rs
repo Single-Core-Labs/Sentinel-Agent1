@@ -555,10 +555,12 @@ fn stamp_plugin_fields(skills: &mut [SkillInfo], plugin: &crate::plugins::Loaded
                 skill.display_name = Some(std::mem::replace(&mut skill.name, dir));
             }
         }
-        skill.config_source = Some(sentinel_ai_tools::types::config_source::ConfigSource::Plugin {
-            plugin_name: plugin.name.clone(),
-            path: PathBuf::from(&skill.path),
-        });
+        skill.config_source = Some(
+            sentinel_ai_tools::types::config_source::ConfigSource::Plugin {
+                plugin_name: plugin.name.clone(),
+                path: PathBuf::from(&skill.path),
+            },
+        );
     }
 }
 
@@ -711,11 +713,11 @@ pub(crate) async fn resolve_preloaded_skills(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
     use sentinel_ai_tools::implementations::skills::discovery::{
         MAX_BODY_PEEK_BYTES, MAX_SKILL_WALK_DEPTH, SkillParseError, extract_first_paragraph,
         is_valid_skill_name, normalize_skill_name, parse_skill_frontmatter,
     };
+    use std::fs;
 
     /// Helper: create a minimal valid SKILL.md with the given name.
     fn write_skill_md(dir: &Path, name: &str) {
@@ -1974,13 +1976,7 @@ mod tests {
         // Ignore the local skill path. Repo fallback should remain visible.
         let config = SkillsConfig {
             paths: vec![],
-            ignore: vec![
-                cwd.join(".ai")
-                    .join("skills")
-                    .to_str()
-                    .unwrap()
-                    .to_string(),
-            ],
+            ignore: vec![cwd.join(".ai").join("skills").to_str().unwrap().to_string()],
             disabled: vec![],
             server_skill_dirs: vec![],
             bundled_skill_dirs: vec![],
@@ -2565,11 +2561,7 @@ mod tests {
         // A `.claude` skill claiming a `.ai`-owned name (both User scope)
         // was silently hidden before; it now re-keys to its dir basename.
         let out = dedupe_skills(vec![
-            named_skill(
-                "review",
-                "/u/.ai/skills/review/SKILL.md",
-                SkillScope::User,
-            ),
+            named_skill("review", "/u/.ai/skills/review/SKILL.md", SkillScope::User),
             named_skill(
                 "review",
                 "/u/.claude/skills/my-review/SKILL.md",

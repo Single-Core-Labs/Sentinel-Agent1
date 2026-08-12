@@ -347,8 +347,8 @@ minimum_version = "not-a-version"
 
         unsafe {
             match prior {
-                Some(p) => unsafe { std::env::set_var(FAIL_CLOSED_ENV, p) },
-                None => unsafe { std::env::remove_var(FAIL_CLOSED_ENV) },
+                Some(p) => std::env::set_var(FAIL_CLOSED_ENV, p),
+                None => std::env::remove_var(FAIL_CLOSED_ENV),
             }
         }
     }

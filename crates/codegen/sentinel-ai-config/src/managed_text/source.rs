@@ -128,6 +128,7 @@ impl ParentPlan {
 pub(super) struct ParentAnchor {
     path: PathBuf,
     identity: FileIdentity,
+    #[allow(dead_code)]
     directory: fs::File,
 }
 

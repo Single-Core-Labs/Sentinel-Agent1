@@ -135,7 +135,8 @@ impl TestSandbox {
         let mut cmd = Command::new(git);
         self.apply_to_std_command(&mut cmd);
         sentinel_tty_utils::detach_std_command(&mut cmd);
-        cmd.stdin(Stdio::null()).envs(sentinel_tty_utils::pager_env());
+        cmd.stdin(Stdio::null())
+            .envs(sentinel_tty_utils::pager_env());
         for &(key, value) in &sentinel_tty_utils::GIT_AUTH_SUPPRESSION_ENVS {
             cmd.env(key, value);
         }

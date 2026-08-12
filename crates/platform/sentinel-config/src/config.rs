@@ -1,6 +1,6 @@
 use crate::error::ConfigError;
 use sentinel_mcp::McpServerDef;
-use sentinel_provider_info::{default_providers, AuthConfig, ProviderInfo};
+use sentinel_provider_info::{AuthConfig, ProviderInfo, default_providers};
 use serde::Deserialize;
 use std::sync::{Mutex, OnceLock};
 
@@ -149,16 +149,20 @@ pub fn global_config_path() -> Option<std::path::PathBuf> {
     std::env::var("USERPROFILE")
         .or_else(|_| std::env::var("HOME"))
         .ok()
-        .map(|h| std::path::PathBuf::from(h).join(".sentinel").join("sentinel.toml"))
+        .map(|h| {
+            std::path::PathBuf::from(h)
+                .join(".sentinel")
+                .join("sentinel.toml")
+        })
 }
 
 /// Target file for in-place updates: `$SENTINEL_CONFIG_FILE` when set, else
 /// the first existing local config file, else `sentinel.toml` (created).
 fn local_config_path() -> std::path::PathBuf {
-    if let Ok(path) = std::env::var("SENTINEL_CONFIG_FILE") {
-        if !path.trim().is_empty() {
-            return std::path::PathBuf::from(path);
-        }
+    if let Ok(path) = std::env::var("SENTINEL_CONFIG_FILE")
+        && !path.trim().is_empty()
+    {
+        return std::path::PathBuf::from(path);
     }
     LOCAL_CONFIG_PATHS
         .iter()
@@ -188,7 +192,9 @@ fn table_or_insert(value: &mut toml::Value) -> &mut toml::map::Map<String, toml:
     if !value.is_table() {
         *value = toml::Value::Table(toml::map::Map::new());
     }
-    value.as_table_mut().expect("value was just replaced by a table")
+    value
+        .as_table_mut()
+        .expect("value was just replaced by a table")
 }
 
 /// A minimal cloud provider entry created by env-var discovery (e.g. OpenRouter).
@@ -324,12 +330,12 @@ impl SentinelConfig {
         let mut config = SentinelConfig::default();
         config.apply_env(get_env);
 
-        if let Some(path) = global {
-            if let Ok(content) = std::fs::read_to_string(path) {
-                let file_config: SentinelConfig =
-                    toml::from_str(&content).map_err(ConfigError::from)?;
-                config.merge(file_config);
-            }
+        if let Some(path) = global
+            && let Ok(content) = std::fs::read_to_string(path)
+        {
+            let file_config: SentinelConfig =
+                toml::from_str(&content).map_err(ConfigError::from)?;
+            config.merge(file_config);
         }
 
         for path in local_paths {
@@ -344,12 +350,11 @@ impl SentinelConfig {
         // The explicit env allowlist wins over file-configured rules: it is
         // set per invocation and must not be silently overridden by a repo or
         // global config file.
-        if let Some(v) = get_env("SENTINEL_PERMISSIONS") {
-            if !v.trim().is_empty() {
-                if let Some(rules) = Self::parse_permissions_env(&v) {
-                    config.permissions.rules = rules;
-                }
-            }
+        if let Some(v) = get_env("SENTINEL_PERMISSIONS")
+            && !v.trim().is_empty()
+            && let Some(rules) = Self::parse_permissions_env(&v)
+        {
+            config.permissions.rules = rules;
         }
 
         config.discover_providers(get_env);
@@ -361,10 +366,10 @@ impl SentinelConfig {
     /// Only non-empty variables override.
     fn apply_env(&mut self, get_env: &impl Fn(&str) -> Option<String>) {
         let set = |var: &str, f: &mut dyn FnMut(&str)| {
-            if let Some(v) = get_env(var) {
-                if !v.is_empty() {
-                    f(&v);
-                }
+            if let Some(v) = get_env(var)
+                && !v.is_empty()
+            {
+                f(&v);
             }
         };
         set("SENTINEL_DEFAULT_MODEL", &mut |v| {
@@ -389,9 +394,8 @@ impl SentinelConfig {
             self.agent.reasoning_effort = Some(v.to_string());
         });
         set("SENTINEL_YOLO_MODE", &mut |v| {
-            self.agent.yolo_mode = v.eq_ignore_ascii_case("true")
-                || v == "1"
-                || v.eq_ignore_ascii_case("yes");
+            self.agent.yolo_mode =
+                v.eq_ignore_ascii_case("true") || v == "1" || v.eq_ignore_ascii_case("yes");
         });
         set("SENTINEL_VERBOSE", &mut |v| {
             self.agent.verbose =
@@ -445,11 +449,7 @@ impl SentinelConfig {
                 reason: Some("configured via SENTINEL_PERMISSIONS".into()),
             });
         }
-        if rules.is_empty() {
-            None
-        } else {
-            Some(rules)
-        }
+        if rules.is_empty() { None } else { Some(rules) }
     }
 
     /// Discover and configure LLM providers from environment variables.
@@ -482,15 +482,17 @@ impl SentinelConfig {
                 Some(var) => match self.providers.iter_mut().find(|p| p.id == *kind) {
                     Some(p) => {
                         p.disabled = false;
-                        p.auth = AuthConfig::EnvKey { var: var.to_string() };
+                        p.auth = AuthConfig::EnvKey {
+                            var: var.to_string(),
+                        };
                     }
                     None => self.providers.push(Self::discovered_provider(kind, var)),
                 },
                 None => {
-                    if let Some(p) = self.providers.iter_mut().find(|p| p.id == *kind) {
-                        if p.resolve_api_key().is_none() {
-                            p.disabled = true;
-                        }
+                    if let Some(p) = self.providers.iter_mut().find(|p| p.id == *kind)
+                        && p.resolve_api_key().is_none()
+                    {
+                        p.disabled = true;
                     }
                 }
             }
@@ -502,14 +504,12 @@ impl SentinelConfig {
         // provider must declare `auth = { var = "GITHUB_TOKEN" }`.
         const GENERIC_TOKENS: &[&str] = &["GITHUB_TOKEN"];
         for var in GENERIC_TOKENS {
-            let has_token = get_env(var)
-                .map(|v| !v.trim().is_empty())
-                .unwrap_or(false);
+            let has_token = get_env(var).map(|v| !v.trim().is_empty()).unwrap_or(false);
             for p in &mut self.providers {
-                if let AuthConfig::EnvKey { var: pvar } = &p.auth {
-                    if pvar == var {
-                        p.disabled = !has_token;
-                    }
+                if let AuthConfig::EnvKey { var: pvar } = &p.auth
+                    && pvar == var
+                {
+                    p.disabled = !has_token;
                 }
             }
         }
@@ -526,8 +526,18 @@ impl SentinelConfig {
         const LOCAL_ENGINES: &[(&str, &str, &str, &str)] = &[
             ("ollama", "Ollama", "OLLAMA_BASE_URL", "OLLAMA_API_KEY"),
             ("vllm", "vLLM", "VLLM_BASE_URL", "VLLM_API_KEY"),
-            ("lm-studio", "LM Studio", "LMSTUDIO_BASE_URL", "LMSTUDIO_API_KEY"),
-            ("llamacpp", "llama.cpp", "LLAMACPP_BASE_URL", "LLAMACPP_API_KEY"),
+            (
+                "lm-studio",
+                "LM Studio",
+                "LMSTUDIO_BASE_URL",
+                "LMSTUDIO_API_KEY",
+            ),
+            (
+                "llamacpp",
+                "llama.cpp",
+                "LLAMACPP_BASE_URL",
+                "LLAMACPP_API_KEY",
+            ),
         ];
         for (kind, name, url_var, key_var) in LOCAL_ENGINES {
             let named_url = get_env(url_var).filter(|v| !v.trim().is_empty());
@@ -551,7 +561,9 @@ impl SentinelConfig {
                     name: (*name).into(),
                     base_url,
                     auth: if has_key {
-                        AuthConfig::EnvKey { var: (*key_var).into() }
+                        AuthConfig::EnvKey {
+                            var: (*key_var).into(),
+                        }
                     } else {
                         AuthConfig::None
                     },
@@ -583,9 +595,8 @@ impl SentinelConfig {
                 p.disabled = true;
             }
         }
-        self.lsp_servers.retain(|l| {
-            !l.id.trim().is_empty() && !l.command.trim().is_empty()
-        });
+        self.lsp_servers
+            .retain(|l| !l.id.trim().is_empty() && !l.command.trim().is_empty());
     }
 
     pub fn load_from(path: &str) -> Result<Self, ConfigError> {
@@ -667,21 +678,21 @@ impl SentinelConfig {
                 self.thread_store
             )));
         }
-        if let Some(effort) = &self.agent.reasoning_effort {
-            if !matches!(effort.as_str(), "low" | "medium" | "high") {
-                return Err(ConfigError::Validation(format!(
-                    "agent.reasoning_effort must be one of low|medium|high, got '{}'",
-                    effort
-                )));
-            }
+        if let Some(effort) = &self.agent.reasoning_effort
+            && !matches!(effort.as_str(), "low" | "medium" | "high")
+        {
+            return Err(ConfigError::Validation(format!(
+                "agent.reasoning_effort must be one of low|medium|high, got '{}'",
+                effort
+            )));
         }
-        if let Some(level) = &self.permissions.default_level {
-            if !matches!(level.as_str(), "allow" | "ask" | "deny") {
-                return Err(ConfigError::Validation(format!(
-                    "permissions.default_level must be one of allow|ask|deny, got '{}'",
-                    level
-                )));
-            }
+        if let Some(level) = &self.permissions.default_level
+            && !matches!(level.as_str(), "allow" | "ask" | "deny")
+        {
+            return Err(ConfigError::Validation(format!(
+                "permissions.default_level must be one of allow|ask|deny, got '{}'",
+                level
+            )));
         }
         for rule in &self.permissions.rules {
             if rule.pattern.trim().is_empty() {
@@ -704,15 +715,15 @@ impl SentinelConfig {
                     "provider id must not be empty".into(),
                 ));
             }
-            if let Some(kind) = &p.provider {
-                if !KNOWN_PROVIDER_KINDS.contains(&kind.as_str()) {
-                    return Err(ConfigError::Validation(format!(
-                        "provider '{}' has unknown provider type '{}' (expected one of {})",
-                        p.id,
-                        kind,
-                        KNOWN_PROVIDER_KINDS.join(", ")
-                    )));
-                }
+            if let Some(kind) = &p.provider
+                && !KNOWN_PROVIDER_KINDS.contains(&kind.as_str())
+            {
+                return Err(ConfigError::Validation(format!(
+                    "provider '{}' has unknown provider type '{}' (expected one of {})",
+                    p.id,
+                    kind,
+                    KNOWN_PROVIDER_KINDS.join(", ")
+                )));
             }
             if !provider_ids.insert(p.id.clone()) {
                 return Err(ConfigError::Validation(format!(
@@ -796,14 +807,19 @@ impl SentinelConfig {
         }
         self.agent.default_model = model.to_string();
         self.validate()?;
-        self.persist_field(&["agent", "default_model"], toml::Value::String(model.to_string()))
+        self.persist_field(
+            &["agent", "default_model"],
+            toml::Value::String(model.to_string()),
+        )
     }
 
     /// Set `theme.name` and persist the change to the local config file.
     pub fn update_theme(&mut self, name: &str) -> Result<(), ConfigError> {
         let name = name.trim();
         if name.is_empty() {
-            return Err(ConfigError::Validation("theme.name must not be empty".into()));
+            return Err(ConfigError::Validation(
+                "theme.name must not be empty".into(),
+            ));
         }
         self.theme.name = name.to_string();
         self.persist_field(&["theme", "name"], toml::Value::String(name.to_string()))
@@ -855,9 +871,7 @@ static GLOBAL_CONFIG: OnceLock<Mutex<SentinelConfig>> = OnceLock::new();
 /// initializes it from [`SentinelConfig::load`] (falling back to defaults);
 /// every call returns the same instance for the lifetime of the process.
 pub fn get() -> &'static Mutex<SentinelConfig> {
-    GLOBAL_CONFIG.get_or_init(|| {
-        Mutex::new(SentinelConfig::load().unwrap_or_default())
-    })
+    GLOBAL_CONFIG.get_or_init(|| Mutex::new(SentinelConfig::load().unwrap_or_default()))
 }
 
 /// Update `agent.default_model` on the global configuration and persist the
@@ -1084,7 +1098,10 @@ reason = "sandbox it"
         assert_eq!(cfg.permissions.rules[0].level, "allow");
         assert_eq!(cfg.permissions.rules[1].pattern, "run_shell_command");
         assert_eq!(cfg.permissions.rules[1].level, "deny");
-        assert_eq!(cfg.permissions.rules[1].reason.as_deref(), Some("sandbox it"));
+        assert_eq!(
+            cfg.permissions.rules[1].reason.as_deref(),
+            Some("sandbox it")
+        );
         assert!(cfg.validate().is_ok());
     }
 
@@ -1133,9 +1150,8 @@ pattern = "read"
 level = "allow"
 "#,
         );
-        let cfg =
-            SentinelConfig::load_from_sources(&env, Some(std::path::Path::new(&global)), &[])
-                .unwrap();
+        let cfg = SentinelConfig::load_from_sources(&env, Some(std::path::Path::new(&global)), &[])
+            .unwrap();
         let _ = std::fs::remove_file(&global);
         assert_eq!(cfg.permissions.rules.len(), 1);
         assert_eq!(cfg.permissions.rules[0].pattern, "*");
@@ -1214,10 +1230,7 @@ name = "M"
 
     #[test]
     fn invalid_reasoning_effort_fails_validation() {
-        let path = temp_toml(
-            "badeffort",
-            "[agent]\nreasoning_effort = \"ultra\"\n",
-        );
+        let path = temp_toml("badeffort", "[agent]\nreasoning_effort = \"ultra\"\n");
         let cfg = SentinelConfig::load_from(&path).unwrap();
         let _ = std::fs::remove_file(&path);
         let err = cfg.validate().unwrap_err();
@@ -1330,7 +1343,11 @@ command = "other"
     }
 
     fn env_of(map: &'static [(&'static str, &'static str)]) -> impl Fn(&str) -> Option<String> {
-        move |k| map.iter().find(|(key, _)| *key == k).map(|(_, v)| v.to_string())
+        move |k| {
+            map.iter()
+                .find(|(key, _)| *key == k)
+                .map(|(_, v)| v.to_string())
+        }
     }
 
     #[test]
@@ -1418,11 +1435,12 @@ command = "other"
     fn global_then_local_file_layering() {
         let global = temp_toml("global", "[agent]\ndefault_model = \"gpt-4o-mini\"\n");
         let local = temp_toml("local", "[agent]\nmax_turns = 3\n");
-        let cfg =
-            SentinelConfig::load_from_sources(&empty_env, Some(std::path::Path::new(&global)), &[
-                &local,
-            ])
-            .unwrap();
+        let cfg = SentinelConfig::load_from_sources(
+            &empty_env,
+            Some(std::path::Path::new(&global)),
+            &[&local],
+        )
+        .unwrap();
         let _ = std::fs::remove_file(&global);
         let _ = std::fs::remove_file(&local);
 
@@ -1471,24 +1489,26 @@ command = "other"
         // builtin list; an env key discovered afterwards must still produce a
         // provider with the builtin base_url and model catalog, otherwise
         // session/create can never resolve a cloud model.
-        let mut cfg = SentinelConfig::default();
-        cfg.providers = vec![ProviderInfo {
-            id: "ollama-local".into(),
-            name: "Ollama Local".into(),
-            base_url: "http://localhost:11434/v1".into(),
-            auth: AuthConfig::None,
-            models: vec![ModelEntry {
-                id: "qwen3:8b".into(),
-                name: "Qwen3 8B".into(),
-                context_window: 32768,
-                supports_streaming: true,
-                supports_tools: true,
+        let mut cfg = SentinelConfig {
+            providers: vec![ProviderInfo {
+                id: "ollama-local".into(),
+                name: "Ollama Local".into(),
+                base_url: "http://localhost:11434/v1".into(),
+                auth: AuthConfig::None,
+                models: vec![ModelEntry {
+                    id: "qwen3:8b".into(),
+                    name: "Qwen3 8B".into(),
+                    context_window: 32768,
+                    supports_streaming: true,
+                    supports_tools: true,
+                }],
+                timeout_secs: 120,
+                extra_headers: Default::default(),
+                disabled: false,
+                provider: None,
             }],
-            timeout_secs: 120,
-            extra_headers: Default::default(),
-            disabled: false,
-            provider: None,
-        }];
+            ..SentinelConfig::default()
+        };
         let env = env_of(&[("GOOGLE_AI_STUDIO_API_KEY", "sk-google")]);
         cfg.discover_providers(&env);
 
@@ -1562,7 +1582,10 @@ command = "other"
             matches!(ollama.auth, AuthConfig::None),
             "local backends don't require an API key"
         );
-        assert!(ollama.models.is_empty(), "catalog discovered at construction");
+        assert!(
+            ollama.models.is_empty(),
+            "catalog discovered at construction"
+        );
     }
 
     #[test]
@@ -1663,11 +1686,15 @@ command = "other"
         );
         let doc: toml::Value = toml::from_str(&content).unwrap();
         assert_eq!(
-            doc.get("theme").and_then(|t| t.get("name")).and_then(toml::Value::as_str),
+            doc.get("theme")
+                .and_then(|t| t.get("name"))
+                .and_then(toml::Value::as_str),
             Some("paper")
         );
         assert_eq!(
-            doc.get("agent").and_then(|a| a.get("max_turns")).and_then(toml::Value::as_integer),
+            doc.get("agent")
+                .and_then(|a| a.get("max_turns"))
+                .and_then(toml::Value::as_integer),
             Some(3)
         );
 

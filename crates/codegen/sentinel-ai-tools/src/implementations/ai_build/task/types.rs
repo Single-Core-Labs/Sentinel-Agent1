@@ -21,9 +21,9 @@
 use std::sync::Arc;
 
 use educe::Educe;
+use sentinel_tool_types::{SubagentCapabilityMode, SubagentIsolationMode, WaitMode};
 use tokio::sync::{mpsc, oneshot};
 use tokio_util::sync::CancellationToken;
-use sentinel_tool_types::{SubagentCapabilityMode, SubagentIsolationMode, WaitMode};
 
 use crate::register_resource;
 
@@ -134,6 +134,7 @@ impl SubagentSpawnRequest {
     ///
     /// Primarily useful for channel adapters and deterministic test harnesses;
     /// production lifecycle replies are owned by `SubagentCoordinator`.
+    #[allow(clippy::result_large_err)]
     pub fn respond_with(
         self,
         build: impl FnOnce(&SubagentRequest) -> SubagentResult,
@@ -1002,11 +1003,7 @@ impl std::fmt::Debug for SubagentForegroundWait {
     }
 }
 
-register_resource!(
-    "ai_build",
-    "SubagentForegroundWait",
-    SubagentForegroundWait
-);
+register_resource!("ai_build", "SubagentForegroundWait", SubagentForegroundWait);
 
 /// Carries the current parent prompt/turn ID for TaskTool subagent scoping.
 ///
@@ -1140,11 +1137,7 @@ mod tests {
         let ids: Vec<&str> = config.tools.iter().map(|tc| tc.id.as_str()).collect();
         assert_eq!(
             ids,
-            vec![
-                "AiBuild:read_file",
-                "AiBuild:list_dir",
-                "AiBuild:grep",
-            ]
+            vec!["AiBuild:read_file", "AiBuild:list_dir", "AiBuild:grep",]
         );
     }
 

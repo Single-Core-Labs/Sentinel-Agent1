@@ -15,7 +15,7 @@ use sentinel_core::{LogLevel, LogMessage};
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
 use tokio::sync::broadcast;
-use tracing::{field::Visit, Event, Subscriber};
+use tracing::{Event, Subscriber, field::Visit};
 use tracing_subscriber::Layer;
 
 #[derive(Debug, Clone)]
@@ -126,7 +126,7 @@ pub fn publish_log(level: impl Into<String>, message: impl Into<String>) {
     sentinel_core::default_log_store().log(LogMessage::new(
         uuid::Uuid::new_v4().to_string(),
         chrono::Utc::now(),
-        LogLevel::from_str(&level).unwrap_or(LogLevel::Info),
+        LogLevel::parse(&level).unwrap_or(LogLevel::Info),
         message.clone(),
     ));
     let _ = sender().send(LogLine { level, message });
@@ -134,7 +134,7 @@ pub fn publish_log(level: impl Into<String>, message: impl Into<String>) {
 
 /// Map a level string to a [`tracing::Level`] for filtering.
 pub fn level_from_str(level: &str) -> tracing::Level {
-    level_to_tracing(LogLevel::from_str(level).unwrap_or(LogLevel::Error))
+    level_to_tracing(LogLevel::parse(level).unwrap_or(LogLevel::Error))
 }
 
 /// Tracing layer that forwards events into the structured log store and the
@@ -249,7 +249,7 @@ mod tests {
         assert_eq!(line.message, "disk almost full");
     }
 
-#[test]
+    #[test]
     fn publish_log_also_reaches_structured_store() {
         let _guard = test_lock().lock().unwrap();
         let store = sentinel_core::default_log_store();

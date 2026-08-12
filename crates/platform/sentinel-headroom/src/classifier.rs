@@ -87,12 +87,12 @@ pub fn classify(content: &str) -> ContentType {
     }
 
     if json_re().is_match(first_2k) {
-        if let Ok(val) = serde_json::from_str::<serde_json::Value>(content) {
-            if val.is_array() {
-                let arr = val.as_array().unwrap();
-                if arr.len() >= 3 && arr.iter().all(|v| v.is_object()) {
-                    return ContentType::JsonArray;
-                }
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(content)
+            && val.is_array()
+        {
+            let arr = val.as_array().unwrap();
+            if arr.len() >= 3 && arr.iter().all(|v| v.is_object()) {
+                return ContentType::JsonArray;
             }
         }
         return ContentType::Json;

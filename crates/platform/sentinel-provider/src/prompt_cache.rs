@@ -99,10 +99,10 @@ fn tools_with_cache_control(tools: &[serde_json::Value]) -> Vec<serde_json::Valu
 
     let mut cached = tools.to_vec();
     let cache_control = serde_json::json!({"type": "ephemeral"});
-    if let Some(last) = cached.last_mut() {
-        if let Some(obj) = last.as_object_mut() {
-            obj.insert("cache_control".into(), cache_control);
-        }
+    if let Some(last) = cached.last_mut()
+        && let Some(obj) = last.as_object_mut()
+    {
+        obj.insert("cache_control".into(), cache_control);
     }
     cached
 }

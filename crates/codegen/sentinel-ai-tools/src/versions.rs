@@ -535,12 +535,8 @@ mod tests {
 
     #[test]
     fn per_tool_override_wins() {
-        let v = resolve_version(
-            "current",
-            "AiBuild:run_terminal_cmd",
-            Some("legacy-0.4.10"),
-        )
-        .unwrap();
+        let v =
+            resolve_version("current", "AiBuild:run_terminal_cmd", Some("legacy-0.4.10")).unwrap();
         assert_eq!(v, Some("legacy-0.4.10".to_string()));
     }
 
@@ -565,8 +561,7 @@ mod tests {
 
     #[test]
     fn unknown_override_version_errors() {
-        let err =
-            resolve_version("current", "AiBuild:run_terminal_cmd", Some("v999")).unwrap_err();
+        let err = resolve_version("current", "AiBuild:run_terminal_cmd", Some("v999")).unwrap_err();
         assert!(
             err.contains("is not supported for tool"),
             "expected 'is not supported' error, got: {err}"
@@ -620,9 +615,8 @@ mod tests {
 
     #[test]
     fn active_bundle_produces_no_bundle_level_warning() {
-        let res =
-            resolve_version_with_warnings("legacy-0.4.10", "AiBuild:run_terminal_cmd", None)
-                .unwrap();
+        let res = resolve_version_with_warnings("legacy-0.4.10", "AiBuild:run_terminal_cmd", None)
+            .unwrap();
         assert!(
             res.warnings.iter().all(|w| !w.fq_tool_id.is_empty()),
             "no bundle-level warning expected for Active bundle, got: {:?}",
@@ -665,9 +659,8 @@ mod tests {
 
     #[test]
     fn resolve_with_warnings_returns_correct_version() {
-        let res =
-            resolve_version_with_warnings("legacy-0.4.10", "AiBuild:run_terminal_cmd", None)
-                .unwrap();
+        let res = resolve_version_with_warnings("legacy-0.4.10", "AiBuild:run_terminal_cmd", None)
+            .unwrap();
         assert_eq!(res.contract_version, Some("legacy-0.4.10".to_string()));
     }
 

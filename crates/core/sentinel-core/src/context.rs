@@ -40,9 +40,7 @@ impl ContextManager {
 
     pub fn needs_compaction(&self) -> bool {
         !self.messages.is_empty()
-            && self
-                .estimated_tokens()
-                .saturating_mul(100)
+            && self.estimated_tokens().saturating_mul(100)
                 >= self.max_tokens.saturating_mul(COMPACTION_RATIO_PCT)
     }
 
@@ -171,8 +169,8 @@ mod tests {
         // Ai-style pre-fire: compaction triggers once estimated usage
         // crosses 85% of the window, well before the hard limit.
         let mut ctx = ContextManager::new(160);
-        let msg = |i: usize| Message::user(format!("{}", "m".repeat(100) + &i.to_string()));
-        let resp = |i: usize| Message::assistant(format!("{}", "r".repeat(100) + &i.to_string()));
+        let msg = |i: usize| Message::user("m".repeat(100) + &i.to_string());
+        let resp = |i: usize| Message::assistant("r".repeat(100) + &i.to_string());
         for i in 0..2 {
             ctx.add(msg(i));
             ctx.add(resp(i));

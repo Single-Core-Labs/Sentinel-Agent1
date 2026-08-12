@@ -56,10 +56,10 @@ fn try_spawn_ts_agent(args: &[String]) -> bool {
     // #67 — an explicitly requested model (`sentinel ai <model>` / --model)
     // must reach the OpenTUI frontend, which otherwise always asks the server
     // for the config default model. Exported via env so the bun child sees it.
-    if let Ok(parsed) = CliArgs::parse(args, "") {
-        if !parsed.model_id.is_empty() {
-            unsafe { std::env::set_var("SENTINEL_REQUESTED_MODEL", &parsed.model_id) };
-        }
+    if let Ok(parsed) = CliArgs::parse(args, "")
+        && !parsed.model_id.is_empty()
+    {
+        unsafe { std::env::set_var("SENTINEL_REQUESTED_MODEL", &parsed.model_id) };
     }
 
     let (agent_path, cwd) = match resolve_ts_agent() {
@@ -237,8 +237,12 @@ impl CliArgs {
 
 pub async fn run(args: &[String]) -> anyhow::Result<()> {
     if args.iter().any(|a| a == "-h" || a == "--help") {
-        println!("Usage: sentinel ai [model-id] [--resume <session-id> | --new] [--yolo] [--model <id>] [--prompt <text>] [--hook-command <cmd>] [--host <ai|legacy>]");
-        println!("  --resume <id>     Continue a previously saved session (mutually exclusive with --new)");
+        println!(
+            "Usage: sentinel ai [model-id] [--resume <session-id> | --new] [--yolo] [--model <id>] [--prompt <text>] [--hook-command <cmd>] [--host <ai|legacy>]"
+        );
+        println!(
+            "  --resume <id>     Continue a previously saved session (mutually exclusive with --new)"
+        );
         println!("  --new             Start a fresh session (mutually exclusive with --resume)");
         println!("  --yolo            Auto-approve tool actions");
         println!(
@@ -248,8 +252,12 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         println!("  --hook-command <c> Policy script gating every tool call:");
         println!("                     stdout: 'allow' | 'deny <reason>' | 'ask' (fail-closed)");
         println!("  --host <ai|legacy> Agent host for one-shot prompts: 'ai' drives the");
-        println!("                     sentinel-ai agent core via a local Chat Completions backend");
-        println!("                     (Ollama); 'legacy' is the original sentinel loop (default).");
+        println!(
+            "                     sentinel-ai agent core via a local Chat Completions backend"
+        );
+        println!(
+            "                     (Ollama); 'legacy' is the original sentinel loop (default)."
+        );
         return Ok(());
     }
     // #61/#63/#64/#66 — validate flags up front so outcomes don't depend on
@@ -298,11 +306,10 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         .or_else(|_| std::env::var("LOCAL_ENDPOINT"))
         .map(|v| !v.trim().is_empty())
         .unwrap_or(false);
-    let is_local_spec =
-        model_id.starts_with("ollama/")
-            || model_id.starts_with("vllm/")
-            || model_id.starts_with("lm-studio/")
-            || model_id.starts_with("llamacpp/");
+    let is_local_spec = model_id.starts_with("ollama/")
+        || model_id.starts_with("vllm/")
+        || model_id.starts_with("lm-studio/")
+        || model_id.starts_with("llamacpp/");
     let model_to_resolve = if local_endpoint && !user_explicit_model && !is_local_spec {
         "ollama/auto".to_string()
     } else {
@@ -345,7 +352,11 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     // Live local-model discovery (LOCAL_ENDPOINT / local engines).
     match crate::model_selector::apply_local_discovery(&mut selected, user_explicit_model).await {
         Ok(Some(adopted)) => {
-            println!(" {} local default model: {} (LOCAL_ENDPOINT)", "·".green(), adopted);
+            println!(
+                " {} local default model: {} (LOCAL_ENDPOINT)",
+                "·".green(),
+                adopted
+            );
         }
         Ok(None) => {}
         Err(e) => {
@@ -358,7 +369,9 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     // aware fallback) transparently at every call site in the agent loop.
     let provider: Arc<dyn sentinel_provider::ModelProvider> =
         match sentinel_provider::ProviderKind::from_info(selected.provider.clone()) {
-            Ok(provider) => Arc::new(sentinel_provider::ModelRouter::new(vec![Box::new(provider)])),
+            Ok(provider) => Arc::new(sentinel_provider::ModelRouter::new(vec![Box::new(
+                provider,
+            )])),
             Err(e) => {
                 eprintln!("✖ Provider '{}' needs setup: {}", selected.provider.name, e);
                 eprintln!("   → Run: sentinel auth login");
@@ -418,7 +431,9 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     mcp_fetchers.join(&tools).await;
 
     let agent = sentinel_core::Agent::new(provider, tools, config.clone())
-        .with_prompt_manager(sentinel_core::ProjectContext::inject_into_prompt_manager(&config))
+        .with_prompt_manager(sentinel_core::ProjectContext::inject_into_prompt_manager(
+            &config,
+        ))
         .with_event_store(sentinel_core::create_event_store_in(
             &sentinel_core::default_events_dir(),
         ))
@@ -530,7 +545,9 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     // Non-interactive single-shot mode (used by the eval harness)
     if let Some(one_shot) = prompt_arg {
         app.start_background();
-        let result = app.run_non_interactive(&mut thread, &one_shot, policy).await;
+        let result = app
+            .run_non_interactive(&mut thread, &one_shot, policy)
+            .await;
         app.shutdown().await;
         if result.is_err() {
             std::process::exit(1);

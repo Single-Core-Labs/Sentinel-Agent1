@@ -285,13 +285,11 @@ impl Protocol for AnthropicMessagesProtocol {
             }
             "content_block_delta" => {
                 if let Some(delta) = event.delta {
-                    if let Some(text) = delta.text {
-                        if let Some(AnthropicResponseContent::Text {
-                            text: t, ..
-                        }) = state.content.last_mut()
-                        {
-                            t.push_str(&text);
-                        }
+                    if let Some(text) = delta.text
+                        && let Some(AnthropicResponseContent::Text { text: t, .. }) =
+                            state.content.last_mut()
+                    {
+                        t.push_str(&text);
                     }
                     if delta.stop_reason.is_some() {
                         state.stop_reason = delta.stop_reason;
@@ -299,10 +297,10 @@ impl Protocol for AnthropicMessagesProtocol {
                 }
             }
             "message_delta" => {
-                if let Some(delta) = event.delta {
-                    if delta.stop_reason.is_some() {
-                        state.stop_reason = delta.stop_reason;
-                    }
+                if let Some(delta) = event.delta
+                    && delta.stop_reason.is_some()
+                {
+                    state.stop_reason = delta.stop_reason;
                 }
             }
             "message_stop" => {}

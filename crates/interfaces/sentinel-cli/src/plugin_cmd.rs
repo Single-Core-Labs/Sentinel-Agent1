@@ -33,7 +33,9 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
             println!("    description = \"...\"");
             println!();
             println!("    [hooks]");
-            println!("    before_tool_call = \"./policy.sh\"  # stdout: allow | veto <reason> | deny <reason>");
+            println!(
+                "    before_tool_call = \"./policy.sh\"  # stdout: allow | veto <reason> | deny <reason>"
+            );
             println!("    after_tool_call = \"./log.sh\"");
             Ok(())
         }

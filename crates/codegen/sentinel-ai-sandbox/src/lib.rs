@@ -609,8 +609,8 @@ mod tests {
     impl Drop for EnvGuard {
         fn drop(&mut self) {
             match &self.prev {
-                Some(v) => unsafe {  std::env::set_var(self.key, v)  },
-                None => unsafe {  std::env::remove_var(self.key)  },
+                Some(v) => unsafe { std::env::set_var(self.key, v) },
+                None => unsafe { std::env::remove_var(self.key) },
             }
         }
     }

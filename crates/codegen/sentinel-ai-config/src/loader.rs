@@ -984,8 +984,8 @@ mod tests {
         assert!(!campaigns_application_disabled(&empty));
 
         match prior {
-            Some(v) => unsafe {  std::env::set_var("AI_CAMPAIGNS", v)  },
-            None => unsafe {  std::env::remove_var("AI_CAMPAIGNS")  },
+            Some(v) => unsafe { std::env::set_var("AI_CAMPAIGNS", v) },
+            None => unsafe { std::env::remove_var("AI_CAMPAIGNS") },
         }
     }
 }

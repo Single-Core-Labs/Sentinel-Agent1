@@ -1,12 +1,12 @@
-use crate::ccr::{generate_retrieval_marker, generate_tool_schema, CcrStore};
+use crate::ccr::{CcrStore, generate_retrieval_marker, generate_tool_schema};
 use crate::ccr_tracker::CcrContextTracker;
 use crate::classifier::{self, ContentType};
 use crate::metrics::CompressionMetrics;
 use crate::strategies::{
-    code::CodeCompressor, code_aware::CodeAwareCompressor, diff::DiffCompressor,
-    html::HtmlCompressor, image::ImageCompressor, image_aware::ImageAwareCompressor,
-    json::JsonCompressor, llmlingua::LLMLinguaCompressor, logs::LogCompressor,
-    search::SearchCompressor, text::TextCompressor, CompressionResult, CompressionStrategy,
+    CompressionResult, CompressionStrategy, code::CodeCompressor, code_aware::CodeAwareCompressor,
+    diff::DiffCompressor, html::HtmlCompressor, image::ImageCompressor,
+    image_aware::ImageAwareCompressor, json::JsonCompressor, llmlingua::LLMLinguaCompressor,
+    logs::LogCompressor, search::SearchCompressor, text::TextCompressor,
 };
 use std::sync::Arc;
 

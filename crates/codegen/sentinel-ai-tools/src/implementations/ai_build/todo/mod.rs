@@ -392,7 +392,10 @@ mod tests {
     fn name_and_description() {
         use crate::types::tool_metadata::ToolMetadata;
         let tool = TodoWriteTool;
-        assert_eq!(sentinel_tool_runtime::Tool::id(&tool).as_str(), "todo_write");
+        assert_eq!(
+            sentinel_tool_runtime::Tool::id(&tool).as_str(),
+            "todo_write"
+        );
         assert!(ToolMetadata::description_template(&tool).contains("task list"));
     }
 
@@ -538,9 +541,10 @@ mod tests {
                 make_update("dup", Some("B"), Some(TodoStatus::Pending)),
             ],
         };
-        let result = sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
-            .await
-            .unwrap();
+        let result =
+            sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
+                .await
+                .unwrap();
         assert!(
             matches!(result, TodoWriteOutput::DuplicateId(ref msg) if msg.contains("dup")),
             "expected DuplicateId variant, got {result:?}"

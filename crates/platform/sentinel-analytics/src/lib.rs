@@ -22,8 +22,8 @@ pub use queue::*;
 pub use reducer::*;
 
 // accepted_lines re-exports LineStats manually (ambiguous with events::LineStats)
+pub use accepted_lines::DiffHunk;
 pub use accepted_lines::fingerprint_diff;
 pub use accepted_lines::fingerprint_lines;
 pub use accepted_lines::line_stats;
 pub use accepted_lines::parse_unified_diff;
-pub use accepted_lines::DiffHunk;

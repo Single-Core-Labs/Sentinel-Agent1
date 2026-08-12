@@ -7,10 +7,10 @@
 //! (`sentinel-ai-tools`, etc.).
 
 use indexmap::IndexMap;
-use serde::{Deserialize, Serialize};
 use sentinel_ai_sampling_types::{
     ApiBackend, CompactionAtTokens, CompactionsRemaining, DoomLoopRecoveryPolicy, ReasoningEffort,
 };
+use serde::{Deserialize, Serialize};
 
 use crate::attribution::SharedAttributionCallback;
 use crate::retry::{DEFAULT_MAX_RETRIES, RATE_LIMIT_RETRY_THRESHOLD};

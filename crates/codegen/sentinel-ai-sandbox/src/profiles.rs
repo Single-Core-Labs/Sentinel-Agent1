@@ -136,8 +136,7 @@ pub fn load_sandbox_config(workspace: &Path) -> SandboxConfig {
 
 pub fn sandbox_profile_conflicts(workspace: &Path) -> Vec<String> {
     let global = load_config_file(&ai_home().join("sandbox.toml")).unwrap_or_default();
-    let project =
-        load_config_file(&workspace.join(".ai").join("sandbox.toml")).unwrap_or_default();
+    let project = load_config_file(&workspace.join(".ai").join("sandbox.toml")).unwrap_or_default();
     mismatched_profile_names(&global, &project)
 }
 

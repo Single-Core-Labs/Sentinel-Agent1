@@ -142,8 +142,8 @@ impl EnvVarGuard {
 impl Drop for EnvVarGuard {
     fn drop(&mut self) {
         match self.prev.take() {
-            Some(prev) => unsafe {  std::env::set_var(self.key, prev)  },
-            None => unsafe {  std::env::remove_var(self.key)  },
+            Some(prev) => unsafe { std::env::set_var(self.key, prev) },
+            None => unsafe { std::env::remove_var(self.key) },
         }
     }
 }
@@ -153,10 +153,7 @@ mod tests {
     /// The env-var prefixes are an operator interface; do not rename.
     #[test]
     fn test_env_prefix() {
-        assert_eq!(
-            AiBuildEnvironment::Production.env_prefix(),
-            "AI_PRODUCTION"
-        );
+        assert_eq!(AiBuildEnvironment::Production.env_prefix(), "AI_PRODUCTION");
     }
     #[test]
     fn env_var_guard_set_value_updates_then_restores_on_drop() {

@@ -10,10 +10,10 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
+use sentinel_tool_protocol::ConnectionKind;
 use tokio::sync::OnceCell;
 use tokio::task::JoinHandle;
 use url::Url;
-use sentinel_tool_protocol::ConnectionKind;
 
 use crate::auth::AuthProvider;
 use crate::connection::{

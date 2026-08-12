@@ -41,7 +41,7 @@ impl Tool for UndoTool {
             None => {
                 return ToolOutput::err(
                     "undo is not available in this context (no checkpoint store attached)",
-                )
+                );
             }
         };
         let count = args["count"].as_u64().unwrap_or(1).clamp(1, 10) as usize;

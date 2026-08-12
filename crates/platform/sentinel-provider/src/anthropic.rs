@@ -98,14 +98,16 @@ impl AnthropicProvider {
         }
 
         if let Some(tools) = &req.tools {
-            body["tools"] = serde_json::json!(tools
-                .iter()
-                .map(|t| serde_json::json!({
-                    "name": t.name,
-                    "description": t.description,
-                    "input_schema": t.input_schema,
-                }))
-                .collect::<Vec<_>>());
+            body["tools"] = serde_json::json!(
+                tools
+                    .iter()
+                    .map(|t| serde_json::json!({
+                        "name": t.name,
+                        "description": t.description,
+                        "input_schema": t.input_schema,
+                    }))
+                    .collect::<Vec<_>>()
+            );
         }
 
         body

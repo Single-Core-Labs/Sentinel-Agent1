@@ -8,10 +8,10 @@ fn configured_garbage_file_yields_zero_roots_and_builds() {
 
     // Safety: sole test in this binary; set before any OnceLock resolve.
     unsafe {
-        unsafe { std::env::set_var(
+        std::env::set_var(
             sentinel_ai_extra_ca::ENV_AI_EXTRA_CA_BUNDLE,
             path.as_os_str(),
-        ) };
+        );
     }
 
     assert!(sentinel_ai_extra_ca::extra_root_ders().is_empty());

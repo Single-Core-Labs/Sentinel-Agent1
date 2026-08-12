@@ -2,19 +2,19 @@
 use crate::error::AgentBuildError;
 use crate::prompt::context::TemplateOverride;
 use crate::prompt::user_message::UserMessageTemplate;
-use serde::Deserialize;
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::sync::{Mutex, OnceLock};
-use strum::{AsRefStr, Display, EnumIter, EnumString, IntoStaticStr};
-use sentinel_ai_tools::implementations::codex;
 use sentinel_ai_tools::implementations::ai_build;
 use sentinel_ai_tools::implementations::ai_build_concise;
+use sentinel_ai_tools::implementations::codex;
 use sentinel_ai_tools::implementations::memory;
 use sentinel_ai_tools::implementations::opencode;
 use sentinel_ai_tools::implementations::search_tool;
 use sentinel_ai_tools::implementations::use_tool;
 use sentinel_ai_tools::registry::types::{ToolConfig, ToolServerConfig};
+use serde::Deserialize;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::{Mutex, OnceLock};
+use strum::{AsRefStr, Display, EnumIter, EnumString, IntoStaticStr};
 /// Process-global registry of externally-provided toolset presets.
 ///
 /// # Visibility
@@ -1158,9 +1158,7 @@ impl MemoryScope {
                 is_project_scoped: true,
             },
             Self::Local => ResolvedMemoryDir {
-                path: project_cwd
-                    .join(".ai/agent-memory-local")
-                    .join(agent_name),
+                path: project_cwd.join(".ai/agent-memory-local").join(agent_name),
                 is_project_scoped: true,
             },
         }
@@ -1378,9 +1376,7 @@ impl AgentDefinition {
         if path_str.contains(".ai/agents/") || path_str.contains(".ai\\agents\\") {
             return AgentScope::Project;
         }
-        if path_str.contains(".ai/bundled/agents/")
-            || path_str.contains(".ai\\bundled\\agents\\")
-        {
+        if path_str.contains(".ai/bundled/agents/") || path_str.contains(".ai\\bundled\\agents\\") {
             return AgentScope::Bundled;
         }
         AgentScope::BuiltIn
@@ -1456,10 +1452,7 @@ impl AgentDefinition {
     ) {
         const FILE_TOOL_SLOTS: &[[&str; 2]] = &[
             ["AiBuild:read_file", "AiBuildHashline:hashline_read"],
-            [
-                "AiBuild:search_replace",
-                "AiBuildHashline:hashline_edit",
-            ],
+            ["AiBuild:search_replace", "AiBuildHashline:hashline_edit"],
             ["AiBuild:grep", "AiBuildHashline:hashline_grep"],
         ];
         for tool in self.tool_config.tools.iter_mut() {
@@ -1596,7 +1589,9 @@ impl AgentDefinition {
     pub fn explore() -> Self {
         use crate::prompt::subagent_prompts;
         Self {
-            description: sentinel_tool_types::EXPLORE_SUBAGENT.description.to_string(),
+            description: sentinel_tool_types::EXPLORE_SUBAGENT
+                .description
+                .to_string(),
             tool_config: explore_toolset(),
             permission_mode: PermissionMode::Plan,
             prompt_body: Some(subagent_prompts::EXPLORE_PROMPT.to_string()),
@@ -2481,10 +2476,7 @@ description: Test default tool config
     fn test_model_override_in_frontmatter() {
         let content = "---\nname: test\ndescription: Test\nmodel: ai-3-fast\n---\n";
         let def = AgentDefinition::parse(content).unwrap();
-        assert_eq!(
-            def.model,
-            ModelOverride::Override("ai-3-fast".to_string())
-        );
+        assert_eq!(def.model, ModelOverride::Override("ai-3-fast".to_string()));
     }
     #[test]
     fn test_model_override_in_frontmatter_inherit() {

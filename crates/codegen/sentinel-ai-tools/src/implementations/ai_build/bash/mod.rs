@@ -321,7 +321,9 @@ pub enum BashToolOutput {
 impl sentinel_tool_runtime::ToolOutput for BashToolOutput {
     fn chat_completion_output(&self) -> Option<sentinel_tool_runtime::ToolChatCompletionResponse> {
         match self {
-            Self::Foreground(bash) => sentinel_tool_runtime::ToolOutput::chat_completion_output(bash),
+            Self::Foreground(bash) => {
+                sentinel_tool_runtime::ToolOutput::chat_completion_output(bash)
+            }
             Self::Background(_) => None,
         }
     }
@@ -3320,9 +3322,12 @@ mod tests {
         // No Terminal inserted
         let tool = BashTool;
 
-        let result =
-            sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), make_input("ls"))
-                .await;
+        let result = sentinel_tool_runtime::Tool::run(
+            &tool,
+            test_ctx(resources.into_shared()),
+            make_input("ls"),
+        )
+        .await;
         assert!(result.is_err());
         assert!(
             result
@@ -4711,12 +4716,14 @@ mod tests {
         fn legacy_rt_ctx(
             resources: crate::types::resources::SharedResources,
         ) -> sentinel_tool_runtime::ToolCallContext {
-            let mut ctx =
-                sentinel_tool_runtime::ToolCallContext::new(sentinel_tool_protocol::ToolCallId::new_v7());
+            let mut ctx = sentinel_tool_runtime::ToolCallContext::new(
+                sentinel_tool_protocol::ToolCallId::new_v7(),
+            );
             ctx.extensions.insert(resources);
-            ctx.extensions.insert(sentinel_tool_runtime::BehaviorVersion(
-                "legacy-0.4.10".to_string(),
-            ));
+            ctx.extensions
+                .insert(sentinel_tool_runtime::BehaviorVersion(
+                    "legacy-0.4.10".to_string(),
+                ));
             ctx
         }
 

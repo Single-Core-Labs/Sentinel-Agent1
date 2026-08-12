@@ -41,6 +41,7 @@ impl ParamValidationError {
     }
 }
 
+#[allow(clippy::result_large_err)]
 pub fn validate_params_json<T>(json: &serde_json::Value) -> Result<(), ParamValidationError>
 where
     T: DeserializeOwned + ResourceType,

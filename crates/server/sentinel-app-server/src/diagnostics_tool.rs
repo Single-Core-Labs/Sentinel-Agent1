@@ -61,10 +61,7 @@ impl Tool for DiagnosticsTool {
 
     async fn execute(&self, args: serde_json::Value, _ctx: &ToolContext) -> ToolOutput {
         let file_path = args["file_path"].as_str().filter(|s| !s.is_empty());
-        let severity = args["severity"]
-            .as_str()
-            .map(severity_filter)
-            .flatten();
+        let severity = args["severity"].as_str().and_then(severity_filter);
 
         let mut out = String::new();
         let mut total = 0usize;
@@ -77,10 +74,10 @@ impl Tool for DiagnosticsTool {
                     .await;
                 out.push_str(&format!("{} — {} diagnostic(s)\n", path, diags.len()));
                 for d in diags {
-                    if let Some(s) = severity {
-                        if d.severity != Some(s) {
-                            continue;
-                        }
+                    if let Some(s) = severity
+                        && d.severity != Some(s)
+                    {
+                        continue;
                     }
                     let line = d.start_line.map(|l| l + 1).unwrap_or(0);
                     let col = d.start_char.map(|c| c + 1).unwrap_or(0);
@@ -176,7 +173,10 @@ mod tests {
 
         let tool = DiagnosticsTool::new(store.clone());
         let all = tool
-            .execute(serde_json::json!({ "file_path": path }), &ToolContext::new())
+            .execute(
+                serde_json::json!({ "file_path": path }),
+                &ToolContext::new(),
+            )
             .await;
         assert!(!all.is_error, "{}", all.text);
         assert!(all.text.contains("unused variable"), "{}", all.text);

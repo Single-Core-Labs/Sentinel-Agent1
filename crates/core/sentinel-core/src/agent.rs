@@ -1,3 +1,4 @@
+use crate::checkpoint::CheckpointManager;
 use crate::compression::{ContentCompressor, NullCompressor};
 use crate::diff_capture::DiffCapture;
 use crate::event::{SessionEvent, SharedEventStore};
@@ -5,7 +6,6 @@ use crate::event_bus::{PolicyDecision, PolicyEngine};
 use crate::prompt::SystemPromptManager;
 use crate::thread::{AgentThread, ApprovalRequest, ThreadStatus};
 use crate::uploader::{NullUploader, SessionPayload, SessionUploader};
-use crate::checkpoint::CheckpointManager;
 use futures::StreamExt;
 use sentinel_config::SentinelConfig;
 use sentinel_plugin_system::{PluginAction, PluginEvent, PluginRegistry};
@@ -15,9 +15,9 @@ use sentinel_tools::{CheckpointStore, ToolContext, ToolRegistry};
 use std::collections::BTreeMap;
 use std::fmt;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::sync::RwLock;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 use tokio::task::JoinSet;
 use tokio_util::sync::CancellationToken;
@@ -275,9 +275,9 @@ impl Agent {
         approval: &dyn ApprovalGate,
         policy: &Option<Arc<dyn PolicyEngine>>,
     ) -> AgentResult {
-        let result =
-            self.run_with_approval_inner(thread, user_input, system, approval, policy)
-                .await;
+        let result = self
+            .run_with_approval_inner(thread, user_input, system, approval, policy)
+            .await;
         self.dispatch_plugin_event(&PluginEvent::SessionEnded {
             session_id: thread.id.to_string(),
         })
@@ -312,9 +312,10 @@ impl Agent {
         })
         .await;
 
-        self.hooks.dispatch(&crate::hooks::HookEvent::SessionStarted {
-            session_id: sid.to_string(),
-        });
+        self.hooks
+            .dispatch(&crate::hooks::HookEvent::SessionStarted {
+                session_id: sid.to_string(),
+            });
 
         self.event_store
             .append(SessionEvent::UserMessage {
@@ -349,10 +350,9 @@ impl Agent {
                 return Ok(AgentOutput::error("Max iterations reached"));
             }
 
-            self.hooks
-                .dispatch(&crate::hooks::HookEvent::BeforeTurn {
-                    turn: thread.iterations,
-                });
+            self.hooks.dispatch(&crate::hooks::HookEvent::BeforeTurn {
+                turn: thread.iterations,
+            });
 
             if self.cancellation.is_cancelled() {
                 thread.status = ThreadStatus::Cancelled;
@@ -447,20 +447,23 @@ impl Agent {
                         .content
                         .iter()
                         .filter_map(|b| match b {
-                            ContentBlock::ToolCall { id, name, arguments } => {
-                                Some((name.clone(), id.clone(), arguments.clone()))
-                            }
+                            ContentBlock::ToolCall {
+                                id,
+                                name,
+                                arguments,
+                            } => Some((name.clone(), id.clone(), arguments.clone())),
                             _ => None,
                         })
                         .collect::<Vec<_>>();
                     (text, calls)
                 })
                 .unwrap_or_default();
-            self.hooks.dispatch(&crate::hooks::HookEvent::AfterModelResponse {
-                model: self.effective_model().to_string(),
-                text: hook_text,
-                tool_calls: hook_tool_calls,
-            });
+            self.hooks
+                .dispatch(&crate::hooks::HookEvent::AfterModelResponse {
+                    model: self.effective_model().to_string(),
+                    text: hook_text,
+                    tool_calls: hook_tool_calls,
+                });
 
             if let Some(ref usage) = response.usage {
                 self.total_prompt_tokens
@@ -468,7 +471,7 @@ impl Agent {
                 self.total_completion_tokens
                     .fetch_add(usage.completion_tokens as u64, Ordering::Relaxed);
                 let cost = crate::cost::estimate_llm_cost(
-                    &self.effective_model(),
+                    self.effective_model(),
                     &crate::cost::Usage::new(usage.prompt_tokens, usage.completion_tokens),
                 );
                 thread.budget.record_usage(
@@ -530,17 +533,17 @@ impl Agent {
                 .collect();
 
             // Malformed tool call recovery
-            if !tool_calls.is_empty() {
-                if let Err(validation_errors) = validate_tool_calls(&tool_calls) {
-                    tracing::warn!("Malformed tool calls detected: {:?}", validation_errors,);
-                    let error_detail = validation_errors.join("; ");
-                    let hint = Message::user(format!(
-                        "[SYSTEM: Malformed tool calls detected — {}]\n\n{}",
-                        error_detail, MALFORMED_TOOL_CALL_HINT,
-                    ));
-                    thread.add_message(hint);
-                    continue;
-                }
+            if !tool_calls.is_empty()
+                && let Err(validation_errors) = validate_tool_calls(&tool_calls)
+            {
+                tracing::warn!("Malformed tool calls detected: {:?}", validation_errors,);
+                let error_detail = validation_errors.join("; ");
+                let hint = Message::user(format!(
+                    "[SYSTEM: Malformed tool calls detected — {}]\n\n{}",
+                    error_detail, MALFORMED_TOOL_CALL_HINT,
+                ));
+                thread.add_message(hint);
+                continue;
             }
 
             // Truncation recovery: finish_reason=length with partial tool calls
@@ -654,11 +657,10 @@ impl Agent {
                 })
                 .await;
 
-            self.hooks
-                .dispatch(&crate::hooks::HookEvent::AfterTurn {
-                    turn: thread.turn,
-                    iteration: thread.iterations,
-                });
+            self.hooks.dispatch(&crate::hooks::HookEvent::AfterTurn {
+                turn: thread.turn,
+                iteration: thread.iterations,
+            });
 
             if thread.is_doom_loop() {
                 return Ok(AgentOutput::error("Doom loop detected"));
@@ -666,10 +668,10 @@ impl Agent {
 
             if thread.context.needs_compaction() {
                 thread.context.compact();
-                if thread.context.should_summarize() {
-                    if let Ok(summary) = self.summarize_context(thread).await {
-                        thread.context.insert_summary(&summary);
-                    }
+                if thread.context.should_summarize()
+                    && let Ok(summary) = self.summarize_context(thread).await
+                {
+                    thread.context.insert_summary(&summary);
                 }
             }
         }
@@ -730,7 +732,7 @@ impl Agent {
             self.total_completion_tokens
                 .fetch_add(usage.completion_tokens as u64, Ordering::Relaxed);
             let cost = crate::cost::estimate_llm_cost(
-                &self.effective_model(),
+                self.effective_model(),
                 &crate::cost::Usage::new(usage.prompt_tokens, usage.completion_tokens),
             );
             thread.budget.record_usage(
@@ -910,20 +912,18 @@ impl Agent {
                 .await;
 
             // Malformed tool call recovery
-            if is_tool_call {
-                if let Err(validation_errors) = validate_tool_calls(&tool_calls) {
-                    tracing::warn!(
-                        "Malformed tool calls in streaming response: {:?}",
-                        validation_errors,
-                    );
-                    let error_detail = validation_errors.join("; ");
-                    let hint = Message::user(format!(
-                        "[SYSTEM: Malformed tool calls detected — {}]\n\n{}",
-                        error_detail, MALFORMED_TOOL_CALL_HINT,
-                    ));
-                    thread.add_message(hint);
-                    continue;
-                }
+            if is_tool_call && let Err(validation_errors) = validate_tool_calls(&tool_calls) {
+                tracing::warn!(
+                    "Malformed tool calls in streaming response: {:?}",
+                    validation_errors,
+                );
+                let error_detail = validation_errors.join("; ");
+                let hint = Message::user(format!(
+                    "[SYSTEM: Malformed tool calls detected — {}]\n\n{}",
+                    error_detail, MALFORMED_TOOL_CALL_HINT,
+                ));
+                thread.add_message(hint);
+                continue;
             }
 
             // Truncation recovery: if tool calls exist but output was truncated,
@@ -1021,11 +1021,10 @@ impl Agent {
                 })
                 .await;
 
-            self.hooks
-                .dispatch(&crate::hooks::HookEvent::AfterTurn {
-                    turn: thread.turn,
-                    iteration: thread.iterations,
-                });
+            self.hooks.dispatch(&crate::hooks::HookEvent::AfterTurn {
+                turn: thread.turn,
+                iteration: thread.iterations,
+            });
 
             if thread.is_doom_loop() {
                 return Ok(AgentOutput::error("Doom loop detected"));
@@ -1033,10 +1032,10 @@ impl Agent {
 
             if thread.context.needs_compaction() {
                 thread.context.compact();
-                if thread.context.should_summarize() {
-                    if let Ok(summary) = self.summarize_context(thread).await {
-                        thread.context.insert_summary(&summary);
-                    }
+                if thread.context.should_summarize()
+                    && let Ok(summary) = self.summarize_context(thread).await
+                {
+                    thread.context.insert_summary(&summary);
                 }
             }
         }
@@ -1130,11 +1129,7 @@ impl Agent {
             .first()
             .map(|p| {
                 let p = PathBuf::from(p);
-                if p.is_absolute() {
-                    p
-                } else {
-                    cwd.join(p)
-                }
+                if p.is_absolute() { p } else { cwd.join(p) }
             })
             .unwrap_or(cwd)
     }
@@ -1153,7 +1148,12 @@ impl Agent {
     /// itself).
     fn batch_mutates(&self, tool_calls: &[(String, String, serde_json::Value)]) -> bool {
         tool_calls.iter().any(|(_, name, _)| {
-            name != "undo" && self.tools.get(name).map(|t| t.is_mutating()).unwrap_or(false)
+            name != "undo"
+                && self
+                    .tools
+                    .get(name)
+                    .map(|t| t.is_mutating())
+                    .unwrap_or(false)
         })
     }
 
@@ -1311,11 +1311,12 @@ pub(crate) async fn execute_tools_concurrent(
         }
 
         // Plugin veto (before user approval)
-        if let PluginAction::Veto(reason) = plugins.dispatch(&PluginEvent::BeforeToolCall {
-            tool_name: name.clone(),
-            args: args.clone(),
-        })
-        .await
+        if let PluginAction::Veto(reason) = plugins
+            .dispatch(&PluginEvent::BeforeToolCall {
+                tool_name: name.clone(),
+                args: args.clone(),
+            })
+            .await
         {
             evt_handler
                 .handle_event(AgentEvent::Permission {
@@ -1587,16 +1588,14 @@ fn reroot_sandbox_args(
     let mut out = obj.clone();
     let mut changed = false;
     for key in path_keys {
-        if let Some(value) = obj.get(*key).and_then(|v| v.as_str()) {
-            if !value.is_empty() {
-                out.insert(
-                    (*key).to_string(),
-                    serde_json::Value::String(
-                        sb.resolve_path(value).to_string_lossy().into_owned(),
-                    ),
-                );
-                changed = true;
-            }
+        if let Some(value) = obj.get(*key).and_then(|v| v.as_str())
+            && !value.is_empty()
+        {
+            out.insert(
+                (*key).to_string(),
+                serde_json::Value::String(sb.resolve_path(value).to_string_lossy().into_owned()),
+            );
+            changed = true;
         }
     }
     if changed {

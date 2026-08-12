@@ -190,7 +190,10 @@ impl sentinel_tool_runtime::Tool for SchedulerCreateTool {
             Result<ScheduledTask, super::types::SchedulerError>,
         >| async move {
             sender.send(cmd).map_err(|_| {
-                sentinel_tool_runtime::ToolError::custom("process_manager", "Scheduler actor stopped")
+                sentinel_tool_runtime::ToolError::custom(
+                    "process_manager",
+                    "Scheduler actor stopped",
+                )
             })?;
             reply_rx
                 .await

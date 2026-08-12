@@ -103,6 +103,7 @@ pub trait Tool: Send + Sync {
 
     fn to_tool_def(&self) -> ToolDef {
         ToolDef::new(self.name(), self.description(), self.parameters())
+            .with_read_only_hint(!self.is_mutating())
     }
 }
 

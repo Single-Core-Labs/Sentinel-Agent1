@@ -33,8 +33,8 @@ pub(crate) fn with_env_var<R>(name: &str, value: Option<&str>, f: impl FnOnce() 
     // named vars so no concurrent test races on the same name.
     unsafe {
         match value {
-            Some(v) => unsafe { std::env::set_var(name, v) },
-            None => unsafe { std::env::remove_var(name) },
+            Some(v) => std::env::set_var(name, v),
+            None => std::env::remove_var(name),
         }
     }
 
@@ -44,8 +44,8 @@ pub(crate) fn with_env_var<R>(name: &str, value: Option<&str>, f: impl FnOnce() 
     // leak env state to subsequent tests.
     unsafe {
         match previous {
-            Some(prev) => unsafe { std::env::set_var(name, prev) },
-            None => unsafe { std::env::remove_var(name) },
+            Some(prev) => std::env::set_var(name, prev),
+            None => std::env::remove_var(name),
         }
     }
 
@@ -76,7 +76,7 @@ mod tests {
         let key = "AI_HOOKS_TEST_SUPPORT_UNSET_RESTORE";
         // SAFETY: see module-level note.
         unsafe {
-            unsafe { std::env::remove_var(key) };
+            std::env::remove_var(key);
         }
         with_env_var(key, Some("temporary"), || {
             assert_eq!(std::env::var(key).unwrap(), "temporary");
@@ -89,7 +89,7 @@ mod tests {
         let key = "AI_HOOKS_TEST_SUPPORT_PANIC_RESTORE";
         // SAFETY: see module-level note.
         unsafe {
-            unsafe { std::env::remove_var(key) };
+            std::env::remove_var(key);
         }
         let panicked = catch_unwind(AssertUnwindSafe(|| {
             with_env_var(key, Some("during-panic"), || {
@@ -108,7 +108,7 @@ mod tests {
         let key = "AI_HOOKS_TEST_SUPPORT_EXPLICIT_UNSET";
         // SAFETY: see module-level note.
         unsafe {
-            unsafe { std::env::set_var(key, "before") };
+            std::env::set_var(key, "before");
         }
         with_env_var(key, None, || {
             assert!(std::env::var(key).is_err());
@@ -116,7 +116,7 @@ mod tests {
         assert_eq!(std::env::var(key).unwrap(), "before");
         // SAFETY: see module-level note.
         unsafe {
-            unsafe { std::env::remove_var(key) };
+            std::env::remove_var(key);
         }
     }
 }

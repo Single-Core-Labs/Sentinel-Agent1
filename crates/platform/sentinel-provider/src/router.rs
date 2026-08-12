@@ -1,5 +1,5 @@
 use crate::error::ProviderError;
-use crate::fallback::{classify_error, ModelAvailabilityService, RetryConfig};
+use crate::fallback::{ModelAvailabilityService, RetryConfig, classify_error};
 use crate::provider::ModelProvider;
 use async_trait::async_trait;
 use sentinel_protocol::{CompletionRequest, CompletionResponse, StreamChunk, ToolDef};
@@ -76,11 +76,11 @@ impl ModelRouter {
             let name = provider.name().to_string();
 
             // Skip unavailable models
-            if let Some(ref svc) = self.availability {
-                if !svc.is_available(&name) {
-                    tracing::info!(model = %name, "skipping unavailable model");
-                    continue;
-                }
+            if let Some(ref svc) = self.availability
+                && !svc.is_available(&name)
+            {
+                tracing::info!(model = %name, "skipping unavailable model");
+                continue;
             }
 
             match self.call_with_retry(provider, &req).await {
@@ -124,10 +124,10 @@ impl ModelRouter {
             let provider: &dyn ModelProvider = self.providers[i].as_ref();
             let name = provider.name().to_string();
 
-            if let Some(ref svc) = self.availability {
-                if !svc.is_available(&name) {
-                    continue;
-                }
+            if let Some(ref svc) = self.availability
+                && !svc.is_available(&name)
+            {
+                continue;
             }
 
             match self.call_stream_with_retry(provider, &req).await {
@@ -251,8 +251,8 @@ mod tests {
     use crate::fallback::{ErrorKind, ModelAvailabilityService, RetryConfig};
     use sentinel_protocol::{Choice, Message};
     use sentinel_provider_info::{AuthConfig, ModelEntry};
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Mutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn provider_info(name: &str) -> ProviderInfo {
         ProviderInfo {
@@ -463,10 +463,12 @@ mod tests {
             .as_ref()
             .expect("request captured")
             .clone();
-        assert!(request
-            .messages
-            .iter()
-            .any(|m| m.extract_text().contains("OVERRIDE")));
+        assert!(
+            request
+                .messages
+                .iter()
+                .any(|m| m.extract_text().contains("OVERRIDE"))
+        );
     }
 
     #[tokio::test]

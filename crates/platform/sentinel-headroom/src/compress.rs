@@ -192,14 +192,13 @@ impl Compressor {
                         .collect()
                 };
 
-                if !dropped_msgs.is_empty() {
-                    if let Some(ref memory) = self.memory {
-                        let dropped: Vec<Message> =
-                            dropped_msgs.iter().map(|m| (*m).clone()).collect();
-                        let _ = memory
-                            .extract_from_dropped(&dropped, &self.config.memory.user_id, None, 0)
-                            .await;
-                    }
+                if !dropped_msgs.is_empty()
+                    && let Some(ref memory) = self.memory
+                {
+                    let dropped: Vec<Message> = dropped_msgs.iter().map(|m| (*m).clone()).collect();
+                    let _ = memory
+                        .extract_from_dropped(&dropped, &self.config.memory.user_id, None, 0)
+                        .await;
                 }
 
                 if !dropped_msgs.is_empty() && self.config.ccr.enabled {
@@ -258,22 +257,22 @@ impl Compressor {
             _ => transformed,
         };
 
-        if let Some(ref memory) = self.memory {
-            if self.config.memory.inject_on_every_turn {
-                let prompt = final_messages
-                    .iter()
-                    .find(|m| matches!(m.role, MessageRole::System))
-                    .map(|m| m.content.clone())
-                    .unwrap_or_default();
-                if !prompt.is_empty() {
-                    let enriched = memory
-                        .inject_memories(&prompt, &self.config.memory.user_id, None)
-                        .await;
-                    if enriched != prompt {
-                        for m in final_messages.iter_mut() {
-                            if matches!(m.role, MessageRole::System) {
-                                m.content = enriched.clone();
-                            }
+        if let Some(ref memory) = self.memory
+            && self.config.memory.inject_on_every_turn
+        {
+            let prompt = final_messages
+                .iter()
+                .find(|m| matches!(m.role, MessageRole::System))
+                .map(|m| m.content.clone())
+                .unwrap_or_default();
+            if !prompt.is_empty() {
+                let enriched = memory
+                    .inject_memories(&prompt, &self.config.memory.user_id, None)
+                    .await;
+                if enriched != prompt {
+                    for m in final_messages.iter_mut() {
+                        if matches!(m.role, MessageRole::System) {
+                            m.content = enriched.clone();
                         }
                     }
                 }
@@ -534,7 +533,10 @@ mod tests {
         let mut compressor = Compressor::new(config);
         let messages = vec![
             msg(MessageRole::User, "short"),
-            msg(MessageRole::User, "this is a much longer message that should definitely be dropped due to budget constraints"),
+            msg(
+                MessageRole::User,
+                "this is a much longer message that should definitely be dropped due to budget constraints",
+            ),
             msg(MessageRole::User, "tiny"),
         ];
         let result = compressor.compress(messages, "test-model").await;

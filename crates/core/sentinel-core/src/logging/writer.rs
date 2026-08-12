@@ -61,7 +61,11 @@ pub fn write_logfmt(msg: &LogMessage) -> String {
         push_field(&mut out, KEY_PERSIST, "true");
     }
     if let Some(duration) = msg.persist_time {
-        push_field(&mut out, KEY_PERSIST_TIME, &format_persist_duration(duration));
+        push_field(
+            &mut out,
+            KEY_PERSIST_TIME,
+            &format_persist_duration(duration),
+        );
     }
     for (k, v) in &msg.attributes {
         push_field(&mut out, k, v);
@@ -114,7 +118,7 @@ pub fn parse_logfmt_line(line: &str) -> Result<LogMessage, LogfmtError> {
         .cloned()
         .ok_or(LogfmtError::MissingMessage)?;
     let level = match fields.get(KEY_LEVEL) {
-        Some(l) => LogLevel::from_str(l).ok_or_else(|| LogfmtError::InvalidLevel(l.clone()))?,
+        Some(l) => LogLevel::parse(l).ok_or_else(|| LogfmtError::InvalidLevel(l.clone()))?,
         None => LogLevel::Info,
     };
     let timestamp = match fields.get(KEY_TS) {
@@ -148,7 +152,8 @@ pub fn parse_logfmt_line(line: &str) -> Result<LogMessage, LogfmtError> {
 }
 
 /// Low-level logfmt `key=value` parser returning the raw field map.
-fn parse_fields(line: &str) -> Result<BTreeMap<String, String>, LogfmtError> {    let mut fields = BTreeMap::new();
+fn parse_fields(line: &str) -> Result<BTreeMap<String, String>, LogfmtError> {
+    let mut fields = BTreeMap::new();
     let bytes = line.as_bytes();
     let mut i = 0usize;
     while i < bytes.len() {
@@ -281,11 +286,8 @@ impl io::Write for LogfmtWriter {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.buffer.extend_from_slice(buf);
         let mut consumed = 0usize;
-        loop {
-            let nl = match self.buffer[consumed..].iter().position(|b| *b == b'\n') {
-                Some(nl) => consumed + nl,
-                None => break,
-            };
+        while let Some(nl) = self.buffer[consumed..].iter().position(|b| *b == b'\n') {
+            let nl = consumed + nl;
             let line = String::from_utf8_lossy(&self.buffer[consumed..nl]).into_owned();
             self.dispatch(&line);
             consumed = nl + 1;
@@ -351,7 +353,7 @@ mod tests {
             "id-x",
             Utc::now(),
             LogLevel::Warn,
-            "say \"hi\" then \\n done"
+            "say \"hi\" then \\n done",
         );
         let encoded = write_logfmt(&msg);
         let parsed = parse_logfmt_line(&encoded).unwrap();
@@ -400,10 +402,7 @@ mod tests {
             .with_persist_time(std::time::Duration::from_secs(7200));
         let encoded = write_logfmt(&msg);
         assert!(encoded.contains("persist=true"), "encoded: {encoded}");
-        assert!(
-            encoded.contains("persist_time="),
-            "encoded: {encoded}"
-        );
+        assert!(encoded.contains("persist_time="), "encoded: {encoded}");
 
         let decoded = parse_logfmt_line(&encoded).unwrap();
         assert_eq!(decoded, msg);
@@ -437,7 +436,9 @@ mod tests {
         }
 
         // Trailing partial line is flushed on flush().
-        writer.write_all(b"level=DEBUG id=d message=partial").unwrap();
+        writer
+            .write_all(b"level=DEBUG id=d message=partial")
+            .unwrap();
         assert_eq!(
             received.lock().unwrap().len(),
             3,

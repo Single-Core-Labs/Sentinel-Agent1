@@ -1,7 +1,7 @@
+use sentinel_tool_types::SubagentCompletedOutput;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use strip_ansi_escapes::strip_str;
-use sentinel_tool_types::SubagentCompletedOutput;
 /// `(added, removed)` line counts for the `edit.lines` telemetry counter.
 pub fn line_diff(old: &str, new: &str) -> (i64, i64) {
     let mut added = 0i64;
@@ -162,7 +162,8 @@ pub(crate) fn typed_tool_output_preserving_cco(
 ) -> sentinel_tool_runtime::TypedToolOutput {
     let cco = source.chat_completion_output();
     let value = serde_json::to_value(payload).unwrap_or(serde_json::Value::Null);
-    sentinel_tool_runtime::TypedToolOutput::from_value(tool_id, value).with_chat_completion_output(cco)
+    sentinel_tool_runtime::TypedToolOutput::from_value(tool_id, value)
+        .with_chat_completion_output(cco)
 }
 #[derive(Debug, Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub struct ListDirContent {
@@ -1301,9 +1302,9 @@ impl sentinel_tool_runtime::ToolOutput for MCPOutput {}
 mod tests {
     use super::*;
     use crate::implementations::ai_build::todo::{TodoPriority, TodoStatus};
-    use serde_json::json;
     use sentinel_tool_types::KillTaskResult;
     use sentinel_tool_types::TaskOutputResult;
+    use serde_json::json;
     /// Serialize a ToolOutput to JSON value
     fn to_json(output: ToolOutput) -> serde_json::Value {
         serde_json::to_value(&output).unwrap()
@@ -2663,9 +2664,9 @@ mod tests {
     }
     #[test]
     fn bash_tool_output_foreground_delegates_background_skips() {
-        let resp = sentinel_tool_runtime::ToolOutput::chat_completion_output(&BashToolOutput::Bash(
-            sample_bash(0, b"ok", false),
-        ))
+        let resp = sentinel_tool_runtime::ToolOutput::chat_completion_output(
+            &BashToolOutput::Bash(sample_bash(0, b"ok", false)),
+        )
         .unwrap();
         assert_cer(&resp, "ok", 0, false);
         assert!(
@@ -2721,13 +2722,15 @@ mod tests {
             0,
             false,
         );
-        let dropped = sentinel_tool_runtime::TypedToolOutput::from_value(typed.tool_id, expected_value);
+        let dropped =
+            sentinel_tool_runtime::TypedToolOutput::from_value(typed.tool_id, expected_value);
         assert!(dropped.chat_completion_output.is_none());
     }
     #[test]
     fn into_typed_tool_output_non_bash_cco_is_none() {
         let run = sample_run_result(ToolOutput::Text(TextOutput::from("noop")));
-        let typed = run.into_typed_tool_output(sentinel_tool_protocol::ToolId::new("text").unwrap());
+        let typed =
+            run.into_typed_tool_output(sentinel_tool_protocol::ToolId::new("text").unwrap());
         assert!(typed.chat_completion_output.is_none());
     }
     #[test]

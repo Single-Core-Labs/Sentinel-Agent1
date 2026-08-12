@@ -1,4 +1,4 @@
-use sentinel_agent_identity::crypto::{generate_agent_key_material, CryptoError, KeyPair};
+use sentinel_agent_identity::crypto::{CryptoError, KeyPair, generate_agent_key_material};
 
 #[test]
 fn test_keypair_generate_sign_verify_roundtrip() {

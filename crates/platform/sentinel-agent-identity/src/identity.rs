@@ -1,7 +1,7 @@
-use crate::bom::{resolve_backend_url, AgentBillOfMaterials};
-use crate::crypto::{generate_agent_key_material, KeyPair};
+use crate::bom::{AgentBillOfMaterials, resolve_backend_url};
+use crate::crypto::{KeyPair, generate_agent_key_material};
 use chrono::Utc;
-use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
+use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::Mutex;

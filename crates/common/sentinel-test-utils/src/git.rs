@@ -29,7 +29,7 @@ pub fn ensure_hermetic_git_on_path() {
                 let current_path = std::env::var("PATH").unwrap_or_default();
                 // SAFETY: called once via `Once` before any child processes are spawned.
                 unsafe {
-                    unsafe { std::env::set_var("PATH", format!("{}:{}", bin_dir.display(), current_path)) };
+                    std::env::set_var("PATH", format!("{}:{}", bin_dir.display(), current_path));
                     // git-minimal spawns subcommands (`git stash` → `git
                     // update-index`) through its exec path, which is baked to
                     // a build-machine prefix. Helpers live next to the binary,
@@ -37,7 +37,7 @@ pub fn ensure_hermetic_git_on_path() {
                     // wrapper (`git-host-fallback.sh`): host git must keep its
                     // own exec path.
                     if git_path.file_name().is_some_and(|name| name == "git") {
-                        unsafe { std::env::set_var("GIT_EXEC_PATH", bin_dir) };
+                        std::env::set_var("GIT_EXEC_PATH", bin_dir);
                     }
                 }
             }

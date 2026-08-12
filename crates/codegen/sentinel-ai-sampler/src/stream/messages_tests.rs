@@ -4,11 +4,11 @@
 
 use super::*;
 use futures_util::stream;
-use std::pin::pin;
 use sentinel_ai_sampling_types::messages::{
     ContentBlock, MessageDeltaBody, MessageDeltaUsage, MessagesResponse, MessagesUsage,
     StreamDelta, StreamError,
 };
+use std::pin::pin;
 
 fn rid() -> RequestId {
     RequestId::from("msg-test")

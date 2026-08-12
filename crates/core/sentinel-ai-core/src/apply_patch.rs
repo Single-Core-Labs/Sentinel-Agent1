@@ -373,11 +373,7 @@ fn hunk_anchors_level(file_lines: &[&str], hunk: &Hunk, start: usize) -> Option<
 /// apply even when the surrounding content has drifted. `min_pos` is the
 /// first line still available (after earlier hunks were consumed); a hunk is
 /// never matched against lines already applied.
-fn locate_hunk(
-    file_lines: &[&str],
-    hunk: &Hunk,
-    min_pos: usize,
-) -> Option<(usize, FuzzLevel)> {
+fn locate_hunk(file_lines: &[&str], hunk: &Hunk, min_pos: usize) -> Option<(usize, FuzzLevel)> {
     let anchors = hunk_anchor_len(hunk);
     let recorded = hunk.orig_start.saturating_sub(1);
     if anchors == 0 {
@@ -749,7 +745,10 @@ pub fn get_updated_file(source: &str, hunks: &[Hunk]) -> Result<(String, FuzzLev
 /// (a stale hunk anywhere leaves every file untouched), then each write is
 /// atomic (sibling temp file + rename). Move removes the source only after
 /// its destination was written successfully.
-pub fn apply_commit(workspace_root: &Path, commit: &mut Commit) -> Result<ApplyOutcome, PatchError> {
+pub fn apply_commit(
+    workspace_root: &Path,
+    commit: &mut Commit,
+) -> Result<ApplyOutcome, PatchError> {
     struct PlannedWrite {
         target: PathBuf,
         content: Option<String>,
@@ -866,7 +865,10 @@ pub fn apply_commit(workspace_root: &Path, commit: &mut Commit) -> Result<ApplyO
         files.push(entry.rel.clone());
     }
 
-    Ok(ApplyOutcome { files, fuzz: max_fuzz })
+    Ok(ApplyOutcome {
+        files,
+        fuzz: max_fuzz,
+    })
 }
 
 /// Validate a patch against the workspace **without applying it**, returning
@@ -1192,10 +1194,7 @@ mod tests {
             .expect("hunk should be located forward in the file");
 
         let result = fs::read_to_string(root.join("drift.txt")).unwrap();
-        assert_eq!(
-            result,
-            "divider\ndivider\ndivider\nalpha\nreplaced\nbeta\n"
-        );
+        assert_eq!(result, "divider\ndivider\ndivider\nalpha\nreplaced\nbeta\n");
     }
 
     // ── Test 3c: Stale diff must not apply to a distant unique line ──────────
@@ -1683,10 +1682,16 @@ mod tests {
         assert_eq!(outcome.fuzz, FuzzLevel::Exact);
 
         // Add.
-        assert_eq!(fs::read_to_string(root.join("new.txt")).unwrap(), "created\n");
+        assert_eq!(
+            fs::read_to_string(root.join("new.txt")).unwrap(),
+            "created\n"
+        );
         // Move with content change: source removed, target written.
         assert!(!root.join("old.txt").exists());
-        assert_eq!(fs::read_to_string(root.join("moved.txt")).unwrap(), "known\nNAME\n");
+        assert_eq!(
+            fs::read_to_string(root.join("moved.txt")).unwrap(),
+            "known\nNAME\n"
+        );
         // Delete.
         assert!(!root.join("del.txt").exists());
         // Update.
@@ -1709,7 +1714,10 @@ mod tests {
         let outcome = process_patch(&root, diff).expect("process patch");
         assert_eq!(outcome.files, vec!["a.txt"]);
         assert_eq!(outcome.fuzz, FuzzLevel::Exact);
-        assert_eq!(fs::read_to_string(root.join("a.txt")).unwrap(), "one\nTWO\nthree\n");
+        assert_eq!(
+            fs::read_to_string(root.join("a.txt")).unwrap(),
+            "one\nTWO\nthree\n"
+        );
     }
 
     #[test]
@@ -1743,7 +1751,10 @@ mod tests {
 +BETA
 ";
         assert_eq!(validate_patch(&root, clean).unwrap(), FuzzLevel::Exact);
-        assert_eq!(validate_patch_strict(&root, clean).unwrap(), FuzzLevel::Exact);
+        assert_eq!(
+            validate_patch_strict(&root, clean).unwrap(),
+            FuzzLevel::Exact
+        );
     }
 
     #[test]

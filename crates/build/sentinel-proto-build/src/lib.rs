@@ -161,15 +161,14 @@ impl AiProtoBuilder {
                 return Err(anyhow::anyhow!("protoc command failed"));
             }
 
-            let output = fs::read_to_string(dep_path).context("protoc dependency file not UTF-8")?;
+            let output =
+                fs::read_to_string(dep_path).context("protoc dependency file not UTF-8")?;
 
             let mut lines = output.lines();
             let first_line = lines.next().context("protoc dependency file is empty")?;
             let prefix = format!("{}:", desc_path.display());
             let rem = first_line.strip_prefix(&prefix).with_context(|| {
-                format!(
-                    "protoc dependency output must start with {prefix}: {output:?}"
-                )
+                format!("protoc dependency output must start with {prefix}: {output:?}")
             })?;
             for line in iter::once(rem).chain(lines) {
                 let line = line.trim();

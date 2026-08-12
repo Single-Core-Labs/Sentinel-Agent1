@@ -22,10 +22,10 @@ impl Auth {
     }
 
     pub fn apply(&self, headers: &mut reqwest::header::HeaderMap) {
-        if let Some(token) = self.resolve() {
-            if let Ok(val) = reqwest::header::HeaderValue::from_str(&format!("Bearer {}", token)) {
-                headers.insert(reqwest::header::AUTHORIZATION, val);
-            }
+        if let Some(token) = self.resolve()
+            && let Ok(val) = reqwest::header::HeaderValue::from_str(&format!("Bearer {}", token))
+        {
+            headers.insert(reqwest::header::AUTHORIZATION, val);
         }
     }
 }

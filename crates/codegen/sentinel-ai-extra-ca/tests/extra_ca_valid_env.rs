@@ -27,10 +27,10 @@ hJAE3EOL2ZddrMPF64QeU9UhvCm0Ch+Ceqa1ZWE0MygccggX5s2yQwtXO2ovJdjH\n\
 
     // Safety: sole test in this binary; set before any OnceLock resolve.
     unsafe {
-        unsafe { std::env::set_var(
+        std::env::set_var(
             sentinel_ai_extra_ca::ENV_AI_EXTRA_CA_BUNDLE,
             path.as_os_str(),
-        ) };
+        );
     }
 
     assert_eq!(sentinel_ai_extra_ca::extra_root_ders().len(), 1);

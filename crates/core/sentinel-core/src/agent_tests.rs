@@ -13,8 +13,8 @@
 mod tests {
     use async_trait::async_trait;
     use serde_json::json;
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     use sentinel_config::SentinelConfig;
     use sentinel_protocol::{
@@ -25,8 +25,10 @@ mod tests {
     use sentinel_provider_info::{AuthConfig, ProviderInfo};
     use sentinel_tools::{Tool, ToolContext, ToolOutput, ToolRegistry};
 
-    use crate::agent::{validate_tool_calls, Agent, AgentOutput, ApprovalDecision, ApprovalGate};
-    use crate::approval::{PermissionLevel, PermissionRule, PermissionRuleset, RulesetApprovalGate};
+    use crate::agent::{Agent, AgentOutput, ApprovalDecision, ApprovalGate, validate_tool_calls};
+    use crate::approval::{
+        PermissionLevel, PermissionRule, PermissionRuleset, RulesetApprovalGate,
+    };
     use crate::thread::{AgentThread, ApprovalRequest};
 
     // ── Mock provider ──────────────────────────────────────────────────────────
@@ -646,8 +648,9 @@ mod tests {
             .messages()
             .iter()
             .filter_map(|m| {
-                if let Some(ContentBlock::ToolResult { content, is_error, .. }) =
-                    m.content.first()
+                if let Some(ContentBlock::ToolResult {
+                    content, is_error, ..
+                }) = m.content.first()
                 {
                     (is_error == &Some(true) && content.contains("nothing to undo")).then_some(())
                 } else {
@@ -707,7 +710,10 @@ mod tests {
                 Some(ContentBlock::ToolResult { content, .. }) if content.contains("no writes allowed")
             )
         });
-        assert!(denied, "deny rule must block the write tool even in yolo mode");
+        assert!(
+            denied,
+            "deny rule must block the write tool even in yolo mode"
+        );
     }
 
     #[tokio::test]
@@ -746,7 +752,8 @@ mod tests {
         ]);
         let reg = ToolRegistry::new();
         reg.register(Arc::new(EchoTool));
-        let gate = RulesetApprovalGate::new(Box::new(RejectAllGate), PermissionRuleset::new(vec![]));
+        let gate =
+            RulesetApprovalGate::new(Box::new(RejectAllGate), PermissionRuleset::new(vec![]));
         let mut t = thread();
         let out = Agent::new(provider, Arc::new(reg), Arc::new(SentinelConfig::default()))
             .run_with_approval(&mut t, "go", &gate, &None)
@@ -800,7 +807,10 @@ mod tests {
                     if content.contains("denied by permission ruleset")
             )
         });
-        assert!(denied, "default deny must block tools with no matching rule");
+        assert!(
+            denied,
+            "default deny must block tools with no matching rule"
+        );
     }
 
     // ── Test 10: summary generation records tokens + budget ──────────────────
@@ -812,7 +822,9 @@ mod tests {
                 index: 0,
                 message: Message::new(
                     Role::Assistant,
-                    vec![ContentBlock::Text { text: "summary text".into() }],
+                    vec![ContentBlock::Text {
+                        text: "summary text".into(),
+                    }],
                 ),
                 finish_reason: Some("stop".into()),
             }],
@@ -845,7 +857,9 @@ mod tests {
         let mut t = thread();
         let override_text = "## IDE Context\n- active file: src/main.rs\n- diagnostics: none";
 
-        let out = agent.run_with_system(&mut t, "hi", Some(override_text)).await;
+        let out = agent
+            .run_with_system(&mut t, "hi", Some(override_text))
+            .await;
         assert!(matches!(out, Ok(AgentOutput::Success { .. })));
 
         let system_msgs: Vec<String> = t
@@ -874,8 +888,9 @@ mod tests {
     #[tokio::test]
     async fn run_with_system_none_uses_prompt_manager() {
         let provider = ScriptedProvider::new(vec![text_response("ok")]);
-        let agent = make_agent(provider).with_prompt_manager(crate::prompt::SystemPromptManager::new()
-            .with_base("## Custom Base\n- rule"));
+        let agent = make_agent(provider).with_prompt_manager(
+            crate::prompt::SystemPromptManager::new().with_base("## Custom Base\n- rule"),
+        );
         let mut t = thread();
 
         let _ = agent.run_with_system(&mut t, "hi", None).await;

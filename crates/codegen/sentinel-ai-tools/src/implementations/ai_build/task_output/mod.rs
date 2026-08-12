@@ -133,7 +133,9 @@ pub(crate) fn background_bash_requires_exprs() -> Vec<Expr<ToolRequirement>> {
     use crate::types::tool_metadata::ToolMetadata;
     let ai_build_bash = Expr::Value(ToolRequirement::Tool {
         namespace: ToolMetadata::tool_namespace(&BashTool).to_string(),
-        id: sentinel_tool_runtime::Tool::id(&BashTool).as_str().to_string(),
+        id: sentinel_tool_runtime::Tool::id(&BashTool)
+            .as_str()
+            .to_string(),
         if_params: Some(Expr::Value(ToolParamsRequirement {
             key: "enabled_background".to_string(),
             value: Expr::Value(serde_json::Value::Bool(true)),
@@ -164,7 +166,9 @@ pub(crate) fn task_output_requires_expr() -> Expr<ToolRequirement> {
     use crate::types::tool_metadata::ToolMetadata;
     let task_tool = Expr::Value(ToolRequirement::Tool {
         namespace: ToolMetadata::tool_namespace(&TaskTool).to_string(),
-        id: sentinel_tool_runtime::Tool::id(&TaskTool).as_str().to_string(),
+        id: sentinel_tool_runtime::Tool::id(&TaskTool)
+            .as_str()
+            .to_string(),
         if_params: None,
     });
     let mut arms = background_bash_requires_exprs();
@@ -217,9 +221,9 @@ impl TaskOutputTool {
             {
                 let res = resources.lock().await;
                 let renderer = res.require::<TemplateRenderer>()?;
-                read_file_name = renderer
-                    .render("${{ tools.by_kind.read }}")
-                    .map_err(|e| sentinel_tool_runtime::ToolError::invalid_arguments(e.to_string()))?;
+                read_file_name = renderer.render("${{ tools.by_kind.read }}").map_err(|e| {
+                    sentinel_tool_runtime::ToolError::invalid_arguments(e.to_string())
+                })?;
             }
             let max_output_bytes = resources
                 .lock()
@@ -804,15 +808,17 @@ impl crate::types::tool_metadata::ToolMetadata for TaskOutputTool {
         // renders it context-aware from the finalized toolset. This static
         // fallback mirrors the default ai-build toolset.
         static DESC: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
-            sentinel_tool_types::build_task_output_description(&sentinel_tool_types::TaskOutputToolNaming {
-                monitor_tool: Some("monitor"),
-                read_tool: Some("read_file"),
-                bash_background_param: Some("is_background"),
-                subagent_background_param: Some("run_in_background"),
-                task_ids_param: "task_ids",
-                timeout_ms_param: "timeout_ms",
-                task_id_param: "task_id",
-            })
+            sentinel_tool_types::build_task_output_description(
+                &sentinel_tool_types::TaskOutputToolNaming {
+                    monitor_tool: Some("monitor"),
+                    read_tool: Some("read_file"),
+                    bash_background_param: Some("is_background"),
+                    subagent_background_param: Some("run_in_background"),
+                    task_ids_param: "task_ids",
+                    timeout_ms_param: "timeout_ms",
+                    task_id_param: "task_id",
+                },
+            )
         });
         &DESC
     }
@@ -928,9 +934,9 @@ impl sentinel_tool_runtime::Tool for TaskOutputTool {
             ));
         }
         if ids.len() > MAX_MULTI_WAIT_IDS {
-            return Err(sentinel_tool_runtime::ToolError::invalid_arguments(format!(
-                "task_ids exceeds maximum of {MAX_MULTI_WAIT_IDS} entries."
-            )));
+            return Err(sentinel_tool_runtime::ToolError::invalid_arguments(
+                format!("task_ids exceeds maximum of {MAX_MULTI_WAIT_IDS} entries."),
+            ));
         }
 
         if ids.len() == 1 {
@@ -1790,9 +1796,10 @@ mod tests {
         let tool = TaskOutputTool;
 
         let mut ctx = test_ctx(resources.into_shared());
-        ctx.extensions.insert(sentinel_tool_runtime::BehaviorVersion(
-            "legacy-0.4.10".to_string(),
-        ));
+        ctx.extensions
+            .insert(sentinel_tool_runtime::BehaviorVersion(
+                "legacy-0.4.10".to_string(),
+            ));
 
         let result = sentinel_tool_runtime::Tool::run(
             &tool,

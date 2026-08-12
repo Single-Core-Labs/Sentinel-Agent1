@@ -1,6 +1,6 @@
 use colored::*;
 use sentinel_analytics::consent::{
-    is_consent_granted, load_consent, prompt_for_consent_once, save_consent, TelemetryConsent,
+    TelemetryConsent, is_consent_granted, load_consent, prompt_for_consent_once, save_consent,
 };
 
 /// Boot sequence: ask for consent once, then install the crash hook.

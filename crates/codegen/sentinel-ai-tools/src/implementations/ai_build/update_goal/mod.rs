@@ -408,10 +408,9 @@ pub fn render_ack_into_output(
                  again until you see it."
             ),
         }),
-        UpdateGoalAck::Rejected { reason, detail } => Err(sentinel_tool_runtime::ToolError::custom(
-            reason.error_code(),
-            detail,
-        )),
+        UpdateGoalAck::Rejected { reason, detail } => Err(
+            sentinel_tool_runtime::ToolError::custom(reason.error_code(), detail),
+        ),
     }
 }
 

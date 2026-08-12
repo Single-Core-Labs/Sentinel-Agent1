@@ -35,11 +35,13 @@ impl crate::types::tool_metadata::ToolMetadata for WaitTasksTool {
         // renders it context-aware from the finalized toolset. This static
         // fallback uses canonical tool/param names.
         static DESC: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
-            sentinel_tool_types::build_wait_tasks_description(&sentinel_tool_types::WaitTasksToolNaming {
-                background_retrieval_tool: "get_task_output",
-                bash_background_param: Some("is_background"),
-                subagent_background_param: Some("run_in_background"),
-            })
+            sentinel_tool_types::build_wait_tasks_description(
+                &sentinel_tool_types::WaitTasksToolNaming {
+                    background_retrieval_tool: "get_task_output",
+                    bash_background_param: Some("is_background"),
+                    subagent_background_param: Some("run_in_background"),
+                },
+            )
         });
         &DESC
     }
@@ -146,9 +148,9 @@ impl sentinel_tool_runtime::Tool for WaitTasksTool {
             ));
         }
         if input.task_ids.len() > MAX_MULTI_WAIT_IDS {
-            return Err(sentinel_tool_runtime::ToolError::invalid_arguments(format!(
-                "task_ids exceeds maximum of {MAX_MULTI_WAIT_IDS} entries."
-            )));
+            return Err(sentinel_tool_runtime::ToolError::invalid_arguments(
+                format!("task_ids exceeds maximum of {MAX_MULTI_WAIT_IDS} entries."),
+            ));
         }
 
         // wait_all (the common case) shares the unified multi path on get_task_output.

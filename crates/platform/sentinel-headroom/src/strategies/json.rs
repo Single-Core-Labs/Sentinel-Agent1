@@ -1,4 +1,4 @@
-use super::smart_crusher::{crush_json_array, SmartCrusherConfig};
+use super::smart_crusher::{SmartCrusherConfig, crush_json_array};
 use super::{CompressionResult, CompressionStrategy};
 use crate::classifier::ContentType;
 use crate::metrics::CompressionMetrics;

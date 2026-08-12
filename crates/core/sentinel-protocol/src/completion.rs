@@ -119,16 +119,15 @@ impl TryFrom<StreamChunk> for ContentBlock {
                     text: content.clone(),
                 });
             }
-            if let Some(tool_calls) = &choice.delta.tool_calls {
-                if let Some(tc) = tool_calls.first() {
-                    if let Some(name) = tc.function.as_ref().and_then(|f| f.name.clone()) {
-                        return Ok(ContentBlock::ToolCall {
-                            id: tc.id.clone().unwrap_or_default(),
-                            name,
-                            arguments: serde_json::Value::Null,
-                        });
-                    }
-                }
+            if let Some(tool_calls) = &choice.delta.tool_calls
+                && let Some(tc) = tool_calls.first()
+                && let Some(name) = tc.function.as_ref().and_then(|f| f.name.clone())
+            {
+                return Ok(ContentBlock::ToolCall {
+                    id: tc.id.clone().unwrap_or_default(),
+                    name,
+                    arguments: serde_json::Value::Null,
+                });
             }
         }
         Err(ProtocolError::EmptyStreamChunk)

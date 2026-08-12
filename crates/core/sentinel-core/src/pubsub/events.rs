@@ -28,7 +28,7 @@ impl EventType {
     }
 
     /// Parse a category string (case-insensitive). Unknown names → `None`.
-    pub fn from_str(s: &str) -> Option<EventType> {
+    pub fn parse(s: &str) -> Option<EventType> {
         match s.to_ascii_lowercase().as_str() {
             "created" => Some(EventType::Created),
             "updated" => Some(EventType::Updated),
@@ -51,7 +51,10 @@ pub struct Event<T> {
 impl<T> Event<T> {
     /// Build an event of `event_type` carrying `payload`.
     pub fn new(event_type: EventType, payload: T) -> Self {
-        Self { event_type, payload }
+        Self {
+            event_type,
+            payload,
+        }
     }
 
     /// The event's category.
@@ -115,7 +118,10 @@ pub enum LifecycleEvent<T> {
 
 impl<T> CreatedEvent<T> {
     pub fn new(id: impl Into<String>, value: T) -> Self {
-        Self { id: id.into(), value }
+        Self {
+            id: id.into(),
+            value,
+        }
     }
 
     pub fn id(&self) -> &str {
@@ -133,7 +139,10 @@ impl<T> CreatedEvent<T> {
 
 impl<T> UpdatedEvent<T> {
     pub fn new(id: impl Into<String>, value: T) -> Self {
-        Self { id: id.into(), value }
+        Self {
+            id: id.into(),
+            value,
+        }
     }
 
     pub fn id(&self) -> &str {
@@ -209,8 +218,8 @@ mod tests {
         assert_eq!(EventType::Created.as_str(), "created");
         assert_eq!(EventType::Updated.as_str(), "updated");
         assert_eq!(EventType::Deleted.as_str(), "deleted");
-        assert_eq!(EventType::from_str("CREATED"), Some(EventType::Created));
-        assert_eq!(EventType::from_str("bogus"), None);
+        assert_eq!(EventType::parse("CREATED"), Some(EventType::Created));
+        assert_eq!(EventType::parse("bogus"), None);
     }
 
     #[test]

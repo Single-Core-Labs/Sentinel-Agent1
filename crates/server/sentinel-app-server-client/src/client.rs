@@ -85,17 +85,15 @@ impl RemoteClient {
                             Some(msg) = read.next() => {
                                 match msg {
                                     Ok(tokio_tungstenite::tungstenite::Message::Text(text)) => {
-                                        if let Ok(response) = serde_json::from_str::<JsonRpcResponse>(&text) {
-                                            if let Some(id_val) = response.id.as_u64() {
-                                                if let Some(sender) = pending.remove(&id_val) {
+                                        if let Ok(response) = serde_json::from_str::<JsonRpcResponse>(&text)
+                                            && let Some(id_val) = response.id.as_u64()
+                                                && let Some(sender) = pending.remove(&id_val) {
                                                     if let Some(err) = response.error {
                                                         let _ = sender.send(Err(ClientError::RemoteError(err.message)));
                                                     } else {
                                                         let _ = sender.send(Ok(response.result.unwrap_or(Value::Null)));
                                                     }
                                                 }
-                                            }
-                                        }
                                     }
                                     Ok(tokio_tungstenite::tungstenite::Message::Close(_)) | Err(_) => break,
                                     _ => {}

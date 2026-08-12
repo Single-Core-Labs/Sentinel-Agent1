@@ -9,13 +9,13 @@
 
 use async_trait::async_trait;
 use sentinel_protocol::{
-    CompletionRequest, CompletionResponse, ContentBlock, Delta, Message, Role, StreamChunk,
-    StreamChoice, Usage,
+    CompletionRequest, CompletionResponse, ContentBlock, Delta, Message, Role, StreamChoice,
+    StreamChunk, Usage,
 };
 use sentinel_provider::{ModelProvider, ProviderError};
 use sentinel_provider_info::{AuthConfig, ModelEntry, ProviderInfo};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 /// A snapshot of what the agent loop sent to the model on one `complete()` call.
 #[derive(Debug, Clone)]
@@ -172,10 +172,7 @@ impl ModelProvider for MockInference {
         &self.info
     }
 
-    async fn complete(
-        &self,
-        req: &CompletionRequest,
-    ) -> Result<CompletionResponse, ProviderError> {
+    async fn complete(&self, req: &CompletionRequest) -> Result<CompletionResponse, ProviderError> {
         self.record(req);
         let idx = self.call_count.fetch_add(1, Ordering::SeqCst);
         if self.script.is_empty() {
@@ -254,11 +251,7 @@ mod tests {
         rt.block_on(async {
             let mut stream = mock.complete_stream(&req).await.unwrap();
             let chunk = stream.next().await.unwrap().unwrap();
-            let text = chunk.choices[0]
-                .delta
-                .content
-                .clone()
-                .unwrap_or_default();
+            let text = chunk.choices[0].delta.content.clone().unwrap_or_default();
             assert_eq!(text, "streamed!");
             assert!(stream.next().await.is_none());
         });

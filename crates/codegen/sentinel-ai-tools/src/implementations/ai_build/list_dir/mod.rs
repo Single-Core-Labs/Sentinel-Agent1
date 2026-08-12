@@ -1148,9 +1148,10 @@ mod tests {
         resources.insert(Cwd(tmp.path().to_path_buf()));
         let tool = ListDirTool;
         let mut ctx = test_ctx(resources.into_shared());
-        ctx.extensions.insert(sentinel_tool_runtime::BehaviorVersion(
-            "legacy-0.4.10".to_string(),
-        ));
+        ctx.extensions
+            .insert(sentinel_tool_runtime::BehaviorVersion(
+                "legacy-0.4.10".to_string(),
+            ));
         let output = sentinel_tool_runtime::Tool::run(
             &tool,
             ctx,
@@ -1179,9 +1180,10 @@ mod tests {
         resources.insert(Cwd(tmp.path().to_path_buf()));
         let tool = ListDirTool;
         let mut ctx = test_ctx(resources.into_shared());
-        ctx.extensions.insert(sentinel_tool_runtime::BehaviorVersion(
-            "legacy-0.4.10".to_string(),
-        ));
+        ctx.extensions
+            .insert(sentinel_tool_runtime::BehaviorVersion(
+                "legacy-0.4.10".to_string(),
+            ));
         let output = sentinel_tool_runtime::Tool::run(
             &tool,
             ctx,

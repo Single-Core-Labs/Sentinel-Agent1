@@ -50,7 +50,10 @@ impl AppServer {
                             Some(Arc::new(s) as Arc<dyn ThreadStore>)
                         }
                         Err(e) => {
-                            tracing::warn!("Failed to open SQLite thread store: {} — sessions will not persist", e);
+                            tracing::warn!(
+                                "Failed to open SQLite thread store: {} — sessions will not persist",
+                                e
+                            );
                             None
                         }
                     }
@@ -170,10 +173,7 @@ impl AppServer {
 
     /// Send a message on the shared sink; a failure means the client is gone,
     /// which is a normal disconnect, not a server error.
-    async fn send_ok(
-        sink: &Arc<tokio::sync::Mutex<BoxedSink>>,
-        msg: &JsonRpcMessage,
-    ) -> bool {
+    async fn send_ok(sink: &Arc<tokio::sync::Mutex<BoxedSink>>, msg: &JsonRpcMessage) -> bool {
         match sink.lock().await.send(msg).await {
             Ok(()) => true,
             Err(e) => {
@@ -191,8 +191,8 @@ impl AppServer {
     where
         S: tokio_stream::Stream<Item = TransportEvent> + Send + Unpin,
     {
-        use sentinel_app_server_protocol::api::methods;
         use sentinel_app_server_protocol::api::ServerEvent;
+        use sentinel_app_server_protocol::api::methods;
         use sentinel_app_server_protocol::rpc::JsonRpcNotification;
         use tokio::sync::mpsc;
         use tokio_stream::StreamExt;

@@ -1,8 +1,7 @@
 use crate::{
     computer::types::{AsyncFileSystem, TerminalBackend},
     implementations::{
-        codex, ai_build, ai_build_concise, ai_build_hashline, opencode,
-        skills::types::SkillInfo,
+        ai_build, ai_build_concise, ai_build_hashline, codex, opencode, skills::types::SkillInfo,
     },
     notification::ToolNotificationHandle,
     persistence::ResourcesPersistence,
@@ -399,7 +398,9 @@ struct ToolEntry {
     /// Noop when `T::Params = ()`.
     register_params: Box<dyn Fn(&mut Resources) + Send + Sync>,
     parse_input: Box<
-        dyn Fn(serde_json::Value) -> Result<ToolInput, sentinel_tool_runtime::ToolError> + Send + Sync,
+        dyn Fn(serde_json::Value) -> Result<ToolInput, sentinel_tool_runtime::ToolError>
+            + Send
+            + Sync,
     >,
     /// Registers this tool into a `LocalRegistry` using the concrete type.
     /// Captured at `register::<T>()` time when T is known.
@@ -439,7 +440,9 @@ struct FinalizedTool {
     reverse_params: HashMap<String, String>,
     /// useful for parsing input to specific type
     parse_input: Arc<
-        dyn Fn(serde_json::Value) -> Result<ToolInput, sentinel_tool_runtime::ToolError> + Send + Sync,
+        dyn Fn(serde_json::Value) -> Result<ToolInput, sentinel_tool_runtime::ToolError>
+            + Send
+            + Sync,
     >,
     /// Resolved behavior contract version for this tool (e.g. `"current"`,
     /// `"legacy-0.4.10"`). `None` for unmanaged tools and dynamically
@@ -739,10 +742,7 @@ impl ToolRegistryBuilder {
                 ai_build_concise::SearchReplaceConciseTool,
                 ai_build::search_replace::SearchReplaceParams,
             >();
-        b.register_with_params::<
-                ai_build_concise::BashConciseTool,
-                ai_build::bash::BashParams,
-            >();
+        b.register_with_params::<ai_build_concise::BashConciseTool, ai_build::bash::BashParams>();
         b.register_with_params::<
                 ai_build_hashline::HashlineReadTool,
                 ai_build_hashline::config::HashlineSchemeParams,
@@ -763,7 +763,10 @@ impl ToolRegistryBuilder {
         }
         b
     }
-    pub fn with_local_registry(mut self, registry: sentinel_computer_hub_sdk::LocalRegistry) -> Self {
+    pub fn with_local_registry(
+        mut self,
+        registry: sentinel_computer_hub_sdk::LocalRegistry,
+    ) -> Self {
         self.shared_local_registry = Some(registry);
         self
     }
@@ -1105,8 +1108,7 @@ impl ToolRegistryBuilder {
                 crate::implementations::cursor_rules_on_read::CursorRulesOnReadTracker,
             >();
         resources
-            .register_state::<crate::implementations::ai_build::scheduler::types::SchedulerState>(
-            );
+            .register_state::<crate::implementations::ai_build::scheduler::types::SchedulerState>();
         for entry in self.tools.values() {
             (entry.register_params)(&mut resources);
         }
@@ -1739,8 +1741,9 @@ impl FinalizedToolset {
         output_converter: &OutputConverter,
         effective_tool_name: Option<String>,
     ) -> Result<ToolRunResult, sentinel_tool_runtime::ToolError> {
-        let output = (output_converter)(value)
-            .map_err(|e| sentinel_tool_runtime::ToolError::custom("output_decoding", e.to_string()))?;
+        let output = (output_converter)(value).map_err(|e| {
+            sentinel_tool_runtime::ToolError::custom("output_decoding", e.to_string())
+        })?;
         let reminders_enabled;
         {
             reminders_enabled = self
@@ -1827,9 +1830,9 @@ impl FinalizedToolset {
     {
         let mut tools = self.tools.write();
         if tools.iter().any(|t| t.client_name == name) {
-            return Err(sentinel_tool_runtime::ToolError::invalid_arguments(format!(
-                "Tool already registered: {name}"
-            )));
+            return Err(sentinel_tool_runtime::ToolError::invalid_arguments(
+                format!("Tool already registered: {name}"),
+            ));
         }
         let description = tool.description_template().to_string();
         let kind = tool.kind();
@@ -2112,6 +2115,7 @@ fn has_tool_with_bool_param(
             && tool.params.get(param).and_then(|value| value.as_bool()) == Some(expected)
     })
 }
+#[allow(clippy::result_large_err)]
 fn compute_effective_params(
     entry: &ToolEntry,
     tool_config: &ToolConfig,
@@ -2164,13 +2168,13 @@ mod tests {
             state_path: tmp.path().join("state.json"),
             memory_backend: None,
             web_search_config: crate::implementations::web_search::WebSearchConfig::default(),
-            web_fetch_config:
-                crate::implementations::ai_build::web_fetch::WebFetchConfig::default(),
+            web_fetch_config: crate::implementations::ai_build::web_fetch::WebFetchConfig::default(
+            ),
             lsp: None,
-            image_gen_config:
-                crate::implementations::ai_build::image_gen::ImageGenConfig::default(),
-            video_gen_config:
-                crate::implementations::ai_build::video_gen::VideoGenConfig::default(),
+            image_gen_config: crate::implementations::ai_build::image_gen::ImageGenConfig::default(
+            ),
+            video_gen_config: crate::implementations::ai_build::video_gen::VideoGenConfig::default(
+            ),
             app_builder_deployer_config:
                 crate::implementations::ai_build::deploy_app::AppBuilderDeployerConfig::default(),
             api_key_provider: None,
@@ -3300,9 +3304,11 @@ mod tests {
             _input: serde_json::Value,
         ) -> sentinel_tool_runtime::ToolStream<String> {
             Box::pin(futures::stream::iter(vec![
-                sentinel_tool_runtime::ToolStreamItem::Progress(sentinel_tool_runtime::ToolProgress::Text {
-                    text: "progress-1".into(),
-                }),
+                sentinel_tool_runtime::ToolStreamItem::Progress(
+                    sentinel_tool_runtime::ToolProgress::Text {
+                        text: "progress-1".into(),
+                    },
+                ),
                 sentinel_tool_runtime::ToolStreamItem::Terminal(Ok("terminal-value".to_string())),
             ]))
         }
@@ -3369,7 +3375,10 @@ mod tests {
                         terminal.is_none(),
                         "progress must arrive before the terminal"
                     );
-                    assert!(matches!(p, sentinel_tool_runtime::ToolProgress::Text { .. }));
+                    assert!(matches!(
+                        p,
+                        sentinel_tool_runtime::ToolProgress::Text { .. }
+                    ));
                     progress_count += 1;
                 }
                 sentinel_tool_runtime::ToolStreamItem::Terminal(result) => {
@@ -3726,8 +3735,7 @@ mod tests {
         assert!(
             errors
                 .iter()
-                .any(|e| e.tool == "AiBuild:task"
-                    && e.message.contains("AiBuild:get_task_output")),
+                .any(|e| e.tool == "AiBuild:task" && e.message.contains("AiBuild:get_task_output")),
             "task tool should be rejected without get_task_output: {errors:?}",
         );
     }
@@ -4370,21 +4378,15 @@ mod tests {
     fn hashline_tools_registered_in_builder() {
         let builder = ToolRegistryBuilder::new();
         assert!(
-            builder
-                .tools
-                .contains_key("AiBuildHashline:hashline_read"),
+            builder.tools.contains_key("AiBuildHashline:hashline_read"),
             "hashline_read should be registered"
         );
         assert!(
-            builder
-                .tools
-                .contains_key("AiBuildHashline:hashline_edit"),
+            builder.tools.contains_key("AiBuildHashline:hashline_edit"),
             "hashline_edit should be registered"
         );
         assert!(
-            builder
-                .tools
-                .contains_key("AiBuildHashline:hashline_grep"),
+            builder.tools.contains_key("AiBuildHashline:hashline_grep"),
             "hashline_grep should be registered"
         );
     }

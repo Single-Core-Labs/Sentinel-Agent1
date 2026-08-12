@@ -205,12 +205,12 @@ impl GoogleProvider {
                 let mut content = Vec::new();
                 if let Some(parts) = candidate["content"]["parts"].as_array() {
                     for part in parts {
-                        if let Some(text) = part["text"].as_str() {
-                            if !text.is_empty() {
-                                content.push(ContentBlock::Text {
-                                    text: text.to_string(),
-                                });
-                            }
+                        if let Some(text) = part["text"].as_str()
+                            && !text.is_empty()
+                        {
+                            content.push(ContentBlock::Text {
+                                text: text.to_string(),
+                            });
                         }
                         if let Some(fc) = part.get("functionCall") {
                             content.push(ContentBlock::ToolCall {
@@ -257,27 +257,27 @@ impl GoogleProvider {
         let mut text_content = None;
         let mut finish_reason = None;
 
-        if let Some(candidates) = chunk["candidates"].as_array() {
-            if let Some(candidate) = candidates.first() {
-                finish_reason = candidate["finishReason"].as_str().map(|r| {
-                    match r {
-                        "STOP" => "stop",
-                        "MAX_TOKENS" => "length",
-                        "FUNCTION_CALL" => "tool_calls",
-                        other => other,
-                    }
-                    .to_string()
-                });
+        if let Some(candidates) = chunk["candidates"].as_array()
+            && let Some(candidate) = candidates.first()
+        {
+            finish_reason = candidate["finishReason"].as_str().map(|r| {
+                match r {
+                    "STOP" => "stop",
+                    "MAX_TOKENS" => "length",
+                    "FUNCTION_CALL" => "tool_calls",
+                    other => other,
+                }
+                .to_string()
+            });
 
-                if let Some(parts) = candidate["content"]["parts"].as_array() {
-                    let texts: Vec<&str> = parts
-                        .iter()
-                        .filter_map(|p| p["text"].as_str())
-                        .filter(|t| !t.is_empty())
-                        .collect();
-                    if !texts.is_empty() {
-                        text_content = Some(texts.join(""));
-                    }
+            if let Some(parts) = candidate["content"]["parts"].as_array() {
+                let texts: Vec<&str> = parts
+                    .iter()
+                    .filter_map(|p| p["text"].as_str())
+                    .filter(|t| !t.is_empty())
+                    .collect();
+                if !texts.is_empty() {
+                    text_content = Some(texts.join(""));
                 }
             }
         }

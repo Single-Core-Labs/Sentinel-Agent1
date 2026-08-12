@@ -102,10 +102,7 @@ fn includes_model_disabled_and_held_conditional_skills() {
     gated.paths = Some(vec!["src/**".to_owned()]);
     let mut manager = seeded_manager(vec![model_disabled, gated]);
 
-    let mut dynamic = skill(
-        "conditional",
-        "/home/user/.ai/skills/conditional/SKILL.md",
-    );
+    let mut dynamic = skill("conditional", "/home/user/.ai/skills/conditional/SKILL.md");
     dynamic.paths = Some(vec!["src/**".to_owned()]);
     assert!(!manager.add_discovered(vec![dynamic]));
 

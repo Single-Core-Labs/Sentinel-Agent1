@@ -1,10 +1,10 @@
 use async_trait::async_trait;
 use lru::LruCache;
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 use std::num::NonZeroUsize;
 use tokio::sync::Mutex;
 
-use super::embeddings::{combined_score, EmbeddingCache};
+use super::embeddings::{EmbeddingCache, combined_score};
 use super::types::*;
 
 #[async_trait]
@@ -664,33 +664,33 @@ impl MemoryStore for InMemoryStore {
             let mems = self.memories.lock().await;
             mems.iter()
                 .filter(|m| {
-                    if let Some(ref uid) = filter.user_id {
-                        if m.user_id != *uid {
-                            return false;
-                        }
+                    if let Some(ref uid) = filter.user_id
+                        && m.user_id != *uid
+                    {
+                        return false;
                     }
-                    if let Some(ref sid) = filter.session_id {
-                        if m.session_id.as_deref() != Some(sid) {
-                            return false;
-                        }
+                    if let Some(ref sid) = filter.session_id
+                        && m.session_id.as_deref() != Some(sid)
+                    {
+                        return false;
                     }
                     if !filter.include_superseded && m.superseded_by.is_some() {
                         return false;
                     }
-                    if let Some(ref cats) = filter.categories {
-                        if !cats.contains(&m.category) {
-                            return false;
-                        }
+                    if let Some(ref cats) = filter.categories
+                        && !cats.contains(&m.category)
+                    {
+                        return false;
                     }
-                    if let Some(ref scopes) = filter.scopes {
-                        if !scopes.contains(&m.scope) {
-                            return false;
-                        }
+                    if let Some(ref scopes) = filter.scopes
+                        && !scopes.contains(&m.scope)
+                    {
+                        return false;
                     }
-                    if let Some(min_imp) = filter.min_importance {
-                        if m.importance < min_imp {
-                            return false;
-                        }
+                    if let Some(min_imp) = filter.min_importance
+                        && m.importance < min_imp
+                    {
+                        return false;
                     }
                     true
                 })

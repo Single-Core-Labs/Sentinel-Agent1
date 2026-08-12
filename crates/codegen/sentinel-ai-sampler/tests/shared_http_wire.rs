@@ -10,9 +10,9 @@ use std::sync::Once;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use support::{send_one, test_config};
 use sentinel_ai_sampler::SamplingClient;
 use sentinel_ai_test_support::spawn_counting_server;
+use support::{send_one, test_config};
 
 /// Pin the env these assertions depend on before any client is built, so
 /// ambient shell exports (`AI_SAMPLER_SHARED_CLIENT=0`,
@@ -24,9 +24,9 @@ fn pin_env() {
         // racing tests block on the Once, and the crate latches the kill
         // switch and pool knobs only at first client construction.
         unsafe {
-            unsafe { std::env::remove_var("AI_SAMPLER_SHARED_CLIENT") };
-            unsafe { std::env::set_var("AI_POOL_MAX_IDLE", "2") };
-            unsafe { std::env::set_var("AI_POOL_IDLE_TIMEOUT_SECS", "90") };
+            std::env::remove_var("AI_SAMPLER_SHARED_CLIENT");
+            std::env::set_var("AI_POOL_MAX_IDLE", "2");
+            std::env::set_var("AI_POOL_IDLE_TIMEOUT_SECS", "90");
         }
     });
 }

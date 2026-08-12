@@ -296,9 +296,11 @@ mod tests {
         let config = ExtractionConfig::default();
         let results = extract_memories_from_text(text, &config);
         assert!(!results.is_empty());
-        assert!(results
-            .iter()
-            .any(|m| matches!(m.category, MemoryCategory::Preference)));
+        assert!(
+            results
+                .iter()
+                .any(|m| matches!(m.category, MemoryCategory::Preference))
+        );
     }
 
     #[test]

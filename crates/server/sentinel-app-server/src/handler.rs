@@ -1,24 +1,24 @@
+use sentinel_ai_core::diff::{change_count, generate_unified_diff_file, parse_unified_diff};
 use sentinel_analytics::{AnalyticsEvent, AnalyticsPipeline, EventKind};
-use sentinel_app_server_protocol::api::{self, methods, ServerEvent, SessionSummary};
+use sentinel_app_server_protocol::api::{self, ServerEvent, SessionSummary, methods};
 use sentinel_app_server_protocol::rpc::{JsonRpcError, JsonRpcRequest, JsonRpcResponse};
 use sentinel_config::SentinelConfig;
 use sentinel_core::conversation::Item;
 #[cfg(feature = "sqlite")]
 use sentinel_core::thread_store::SqliteThreadStore;
 use sentinel_core::thread_store::ThreadStore;
+use sentinel_plugin_system::PluginRegistry;
 use sentinel_provider::{ModelProvider, ProviderKind};
 use sentinel_provider_info::ProviderInfo;
-use sentinel_plugin_system::PluginRegistry;
 use sentinel_tools::ToolRegistry;
-use sentinel_ai_core::diff::{change_count, generate_unified_diff_file, parse_unified_diff};
 use serde_json::Value;
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Instant;
-use tokio::sync::{mpsc, oneshot, Mutex, RwLock};
-use tokio_stream::wrappers::ReceiverStream;
+use tokio::sync::{Mutex, RwLock, mpsc, oneshot};
 use tokio_stream::StreamExt;
+use tokio_stream::wrappers::ReceiverStream;
 
 pub struct RequestHandler {
     sessions: Arc<tokio::sync::Mutex<HashMap<String, Arc<crate::session::AppSession>>>>,
@@ -209,7 +209,8 @@ impl RequestHandler {
         }
         let (compressor, retrieve_tool, memory_tools) =
             sentinel_headroom::integration::create_headroom_compressor_with_tools().await;
-        self.tools.register(retrieve_tool as Arc<dyn sentinel_tools::Tool>);
+        self.tools
+            .register(retrieve_tool as Arc<dyn sentinel_tools::Tool>);
         for tool in memory_tools {
             self.tools.register(tool);
         }
@@ -411,10 +412,10 @@ impl RequestHandler {
         }
         drop(removed);
 
-        if let Some(ref store) = self.thread_store {
-            if let Err(e) = store.delete_thread(&session_id).await {
-                tracing::warn!("Failed to delete thread from store: {:?}", e);
-            }
+        if let Some(ref store) = self.thread_store
+            && let Err(e) = store.delete_thread(&session_id).await
+        {
+            tracing::warn!("Failed to delete thread from store: {:?}", e);
         }
 
         self.analytics.emit(AnalyticsEvent::new(
@@ -480,7 +481,9 @@ impl RequestHandler {
         } else {
             None
         };
-        let chat_result = session.chat_with_context(&p.message, first_turn_context).await;
+        let chat_result = session
+            .chat_with_context(&p.message, first_turn_context)
+            .await;
 
         if let Some(ref store) = self.thread_store {
             let thread = session.thread.lock().await;
@@ -532,10 +535,9 @@ impl RequestHandler {
                     session.agent.prompt_tokens() as u64,
                     session.agent.completion_tokens() as u64,
                 );
-                let _ = session.events.send(ServerEvent::TokenCount {
-                    prompt,
-                    completion,
-                });
+                let _ = session
+                    .events
+                    .send(ServerEvent::TokenCount { prompt, completion });
                 Ok(serde_json::json!({ "response": response }))
             }
             Err(e) => Err(JsonRpcError::internal_error(e)),
@@ -574,10 +576,9 @@ impl RequestHandler {
                 session_for_tokens.agent.prompt_tokens() as u64,
                 session_for_tokens.agent.completion_tokens() as u64,
             );
-            let _ = session_for_tokens.events.send(ServerEvent::TokenCount {
-                prompt,
-                completion,
-            });
+            let _ = session_for_tokens
+                .events
+                .send(ServerEvent::TokenCount { prompt, completion });
         });
 
         let stream = ReceiverStream::new(rx);
@@ -692,10 +693,7 @@ impl RequestHandler {
             "workdir": p.cwd.unwrap_or_default(),
             "timeout": 120_000,
         });
-        let output = self
-            .tools
-            .execute("run_shell_command", args, &ctx)
-            .await;
+        let output = self.tools.execute("run_shell_command", args, &ctx).await;
         let exit_code = if output.is_error { 1 } else { 0 };
         Ok(serde_json::json!({
             "exit_code": exit_code,
@@ -822,15 +820,15 @@ impl RequestHandler {
             .await
             .insert(p.request_id.clone(), tx);
 
-        if let Some(sid) = &session_id {
-            if let Some(session) = self.get_session(sid).await {
-                let _ = session.events.send(ServerEvent::AskUserDialog {
-                    request_id: p.request_id.clone(),
-                    prompt: p.prompt.clone(),
-                    options: p.options.clone(),
-                    allow_custom: p.allow_custom,
-                });
-            }
+        if let Some(sid) = &session_id
+            && let Some(session) = self.get_session(sid).await
+        {
+            let _ = session.events.send(ServerEvent::AskUserDialog {
+                request_id: p.request_id.clone(),
+                prompt: p.prompt.clone(),
+                options: p.options.clone(),
+                allow_custom: p.allow_custom,
+            });
         }
 
         Ok(serde_json::json!({
@@ -877,15 +875,15 @@ impl RequestHandler {
             .await
             .insert(request_id.clone(), tx);
 
-        if let Some(sid) = session_id {
-            if let Some(session) = self.get_session(sid).await {
-                let _ = session.events.send(ServerEvent::AskUserDialog {
-                    request_id: request_id.clone(),
-                    prompt: prompt.into(),
-                    options: options.clone(),
-                    allow_custom,
-                });
-            }
+        if let Some(sid) = session_id
+            && let Some(session) = self.get_session(sid).await
+        {
+            let _ = session.events.send(ServerEvent::AskUserDialog {
+                request_id: request_id.clone(),
+                prompt: prompt.into(),
+                options: options.clone(),
+                allow_custom,
+            });
         }
 
         tokio::time::timeout(timeout, rx)
@@ -920,22 +918,22 @@ impl RequestHandler {
         }
 
         // Persisted threads not currently loaded.
-        if let Some(ref store) = self.thread_store {
-            if let Ok(ids) = store.list_threads().await {
-                for id in ids {
-                    if !seen.contains(&id) {
-                        if let Ok(thread) = store.load_thread(&id).await {
-                            let title = conversation_title(&thread.conversation);
-                            summaries.push(SessionSummary {
-                                id: id.clone(),
-                                title: title.unwrap_or_else(|| "(restored session)".to_string()),
-                                created_at: 0,
-                                last_active_at: 0,
-                                total_tokens: thread.context.estimated_tokens() as u64,
-                                message_count: thread.conversation.total_items(),
-                            });
-                        }
-                    }
+        if let Some(ref store) = self.thread_store
+            && let Ok(ids) = store.list_threads().await
+        {
+            for id in ids {
+                if !seen.contains(&id)
+                    && let Ok(thread) = store.load_thread(&id).await
+                {
+                    let title = conversation_title(&thread.conversation);
+                    summaries.push(SessionSummary {
+                        id: id.clone(),
+                        title: title.unwrap_or_else(|| "(restored session)".to_string()),
+                        created_at: 0,
+                        last_active_at: 0,
+                        total_tokens: thread.context.estimated_tokens() as u64,
+                        message_count: thread.conversation.total_items(),
+                    });
                 }
             }
         }
@@ -974,26 +972,20 @@ impl RequestHandler {
             ide_block.push_str(&format!("- Active file: `{}`\n", file));
             has_ide = true;
         }
-        if let Some(line) = ide.cursor_line {
-            if let Some(col) = ide.cursor_column {
-                ide_block.push_str(&format!("- Cursor: line {}, column {}\n", line, col));
-                has_ide = true;
-            }
+        if let Some(line) = ide.cursor_line
+            && let Some(col) = ide.cursor_column
+        {
+            ide_block.push_str(&format!("- Cursor: line {}, column {}\n", line, col));
+            has_ide = true;
         }
-        if let Some(selected) = &ide.selected_text {
-            if !selected.trim().is_empty() {
-                ide_block.push_str(&format!(
-                    "- Selected text:\n```text\n{}\n```\n",
-                    selected
-                ));
-                has_ide = true;
-            }
+        if let Some(selected) = &ide.selected_text
+            && !selected.trim().is_empty()
+        {
+            ide_block.push_str(&format!("- Selected text:\n```text\n{}\n```\n", selected));
+            has_ide = true;
         }
         if !ide.open_tabs.is_empty() {
-            ide_block.push_str(&format!(
-                "- Open tabs: {}\n",
-                ide.open_tabs.join(", ")
-            ));
+            ide_block.push_str(&format!("- Open tabs: {}\n", ide.open_tabs.join(", ")));
             has_ide = true;
         }
         if has_ide {
@@ -1025,10 +1017,7 @@ impl RequestHandler {
                         .as_ref()
                         .map(|c| format!(" [{c}]"))
                         .unwrap_or_default();
-                    diag_block.push_str(&format!(
-                        "- {level}{at}{code}: {}\n",
-                        d.message
-                    ));
+                    diag_block.push_str(&format!("- {level}{at}{code}: {}\n", d.message));
                 }
                 if diags.len() > 24 {
                     diag_block.push_str(&format!("- …and {} more\n", diags.len() - 24));
@@ -1046,8 +1035,12 @@ impl RequestHandler {
 
     async fn handle_ide_diff_preview(&self, params: Option<Value>) -> Result<Value, JsonRpcError> {
         let p: api::IdeDiffParams = parse_params(params)?;
-        let diff =
-            generate_unified_diff_file(&p.file_path, &p.file_path, &p.original_content, &p.modified_content);
+        let diff = generate_unified_diff_file(
+            &p.file_path,
+            &p.file_path,
+            &p.original_content,
+            &p.modified_content,
+        );
         let changes = parse_unified_diff(&diff)
             .map(|d| change_count(&d))
             .unwrap_or(0);
@@ -1065,7 +1058,13 @@ impl RequestHandler {
         let required = std::env::var("SENTINEL_SERVER_TOKEN")
             .map(|t| !t.is_empty())
             .unwrap_or(false);
-        if required && self.auth_token.try_read().map(|t| t.is_none()).unwrap_or(true) {
+        if required
+            && self
+                .auth_token
+                .try_read()
+                .map(|t| t.is_none())
+                .unwrap_or(true)
+        {
             return Err(JsonRpcError::unauthorized(
                 "Not authenticated: call auth/login first",
             ));
@@ -1079,10 +1078,11 @@ impl RequestHandler {
             return Err(JsonRpcError::invalid_params("token is required"));
         }
         let expected = std::env::var("SENTINEL_SERVER_TOKEN").ok();
-        if let Some(expected) = expected {
-            if !expected.is_empty() && p.token != expected {
-                return Err(JsonRpcError::invalid_request("Invalid token"));
-            }
+        if let Some(expected) = expected
+            && !expected.is_empty()
+            && p.token != expected
+        {
+            return Err(JsonRpcError::invalid_request("Invalid token"));
         }
         *self.auth_token.write().await = Some(p.token.clone());
         self.analytics
@@ -1201,7 +1201,8 @@ mod tests {
 
     #[test]
     fn diff_preview_insertion() {
-        let diff = generate_unified_diff_file("", "", "one\ntwo\nthree\n", "one\ntwo\nTWO\nthree\n");
+        let diff =
+            generate_unified_diff_file("", "", "one\ntwo\nthree\n", "one\ntwo\nTWO\nthree\n");
         assert!(diff.contains("+TWO"), "diff: {}", diff);
         // Pure insertion: the aligned line "two" is kept, not removed.
         assert!(!diff.contains("-two"), "diff: {}", diff);

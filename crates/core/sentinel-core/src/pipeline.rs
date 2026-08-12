@@ -1,7 +1,7 @@
 use sentinel_protocol::{ContentBlock, Message, Role};
 use sentinel_tools::ToolContext;
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use tokio_util::sync::CancellationToken;
 
 use crate::agent::execute_tools_concurrent;
@@ -22,22 +22,32 @@ pub enum PipelineStage {
 impl PipelineStage {
     pub fn instruction(&self) -> &'static str {
         match self {
-            Self::Read => "You are in the **READ** stage. Gather context and explore the codebase.\n\
+            Self::Read => {
+                "You are in the **READ** stage. Gather context and explore the codebase.\n\
                           Use read, glob, grep, and web_search tools to understand the problem.\n\
                           Do NOT make any changes yet.\n\
-                          When you have enough context, produce a summary and the pipeline will advance.",
-            Self::Triage => "You are in the **TRIAGE** stage. Analyze what you found and plan.\n\
+                          When you have enough context, produce a summary and the pipeline will advance."
+            }
+            Self::Triage => {
+                "You are in the **TRIAGE** stage. Analyze what you found and plan.\n\
                            Identify which files need to change and the approach.\n\
                            Do NOT implement yet.\n\
-                           When the plan is ready, describe it and the pipeline will advance.",
-            Self::Draft => "You are in the **DRAFT** stage. Implement the solution.\n\
+                           When the plan is ready, describe it and the pipeline will advance."
+            }
+            Self::Draft => {
+                "You are in the **DRAFT** stage. Implement the solution.\n\
                           Write code, edit files, and make the necessary changes.\n\
-                          When implementation is complete, summarize what was done and the pipeline will advance.",
-            Self::QA => "You are in the **QA** stage. Review and verify your work.\n\
+                          When implementation is complete, summarize what was done and the pipeline will advance."
+            }
+            Self::QA => {
+                "You are in the **QA** stage. Review and verify your work.\n\
                         Run tests, check for edge cases, and fix any issues found.\n\
-                        When verification passes, report the results and the pipeline will advance.",
-            Self::Send => "You are in the **SEND** stage. Finalize and present the solution.\n\
-                          Provide a complete summary of all changes made and the final result.",
+                        When verification passes, report the results and the pipeline will advance."
+            }
+            Self::Send => {
+                "You are in the **SEND** stage. Finalize and present the solution.\n\
+                          Provide a complete summary of all changes made and the final result."
+            }
         }
     }
 
@@ -198,10 +208,10 @@ impl PipelineAgent {
                     cumulative_stage_text.push('\n');
                 }
                 Err(e) => {
-                    if self.config.rollback_on_error {
-                        if let Some(last) = checkpoints.last() {
-                            thread.restore(last);
-                        }
+                    if self.config.rollback_on_error
+                        && let Some(last) = checkpoints.last()
+                    {
+                        thread.restore(last);
                     }
                     return Err(e);
                 }
@@ -312,16 +322,16 @@ impl PipelineAgent {
                 })
                 .collect();
 
-            if !tool_calls.is_empty() {
-                if let Err(validation_errors) = validate_tool_calls(&tool_calls) {
-                    let error_detail = validation_errors.join("; ");
-                    let hint = Message::user(format!(
-                        "[SYSTEM: Malformed tool calls detected — {}]\n\n{}",
-                        error_detail, MALFORMED_TOOL_CALL_HINT,
-                    ));
-                    thread.add_message(hint);
-                    continue;
-                }
+            if !tool_calls.is_empty()
+                && let Err(validation_errors) = validate_tool_calls(&tool_calls)
+            {
+                let error_detail = validation_errors.join("; ");
+                let hint = Message::user(format!(
+                    "[SYSTEM: Malformed tool calls detected — {}]\n\n{}",
+                    error_detail, MALFORMED_TOOL_CALL_HINT,
+                ));
+                thread.add_message(hint);
+                continue;
             }
 
             if finish_reason == Some("length") && !tool_calls.is_empty() {
@@ -390,10 +400,10 @@ impl PipelineAgent {
 
             if thread.context.needs_compaction() {
                 thread.context.compact();
-                if thread.context.should_summarize() {
-                    if let Ok(summary) = self.agent.summarize_context(thread).await {
-                        thread.context.insert_summary(&summary);
-                    }
+                if thread.context.should_summarize()
+                    && let Ok(summary) = self.agent.summarize_context(thread).await
+                {
+                    thread.context.insert_summary(&summary);
                 }
             }
         }

@@ -84,17 +84,19 @@ impl OpenAIProvider {
             body["stop"] = serde_json::json!(stop);
         }
         if let Some(tools) = &req.tools {
-            body["tools"] = serde_json::json!(tools
-                .iter()
-                .map(|t| serde_json::json!({
-                    "type": "function",
-                    "function": {
-                        "name": t.name,
-                        "description": t.description,
-                        "parameters": t.input_schema,
-                    }
-                }))
-                .collect::<Vec<_>>());
+            body["tools"] = serde_json::json!(
+                tools
+                    .iter()
+                    .map(|t| serde_json::json!({
+                        "type": "function",
+                        "function": {
+                            "name": t.name,
+                            "description": t.description,
+                            "parameters": t.input_schema,
+                        }
+                    }))
+                    .collect::<Vec<_>>()
+            );
         }
 
         body
@@ -301,12 +303,12 @@ impl OpenAIProvider {
 
                         let mut content = Vec::new();
 
-                        if let Some(text) = msg["content"].as_str() {
-                            if !text.is_empty() {
-                                content.push(ContentBlock::Text {
-                                    text: text.to_string(),
-                                });
-                            }
+                        if let Some(text) = msg["content"].as_str()
+                            && !text.is_empty()
+                        {
+                            content.push(ContentBlock::Text {
+                                text: text.to_string(),
+                            });
                         }
 
                         if let Some(tool_calls) = msg["tool_calls"].as_array() {
@@ -356,7 +358,7 @@ fn map_api_error(status: u16, body: String) -> ProviderError {
         401 => ProviderError::Unauthorized { detail: body },
         403 => ProviderError::Forbidden { detail: body },
         408 | 429 => ProviderError::RateLimited { retry_after: 0 },
-        502 | 503 | 504 => ProviderError::ServiceUnavailable { retry_after: None },
+        502..=504 => ProviderError::ServiceUnavailable { retry_after: None },
         500..=599 => ProviderError::ServerError { status },
         _ => ProviderError::ApiError { status, body },
     }

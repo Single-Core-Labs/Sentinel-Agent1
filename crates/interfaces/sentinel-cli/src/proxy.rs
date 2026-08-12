@@ -1,4 +1,4 @@
-use sentinel_proxy::{run_proxy, ProxyConfig};
+use sentinel_proxy::{ProxyConfig, run_proxy};
 
 pub async fn run(args: &[String]) -> anyhow::Result<()> {
     let mut config = ProxyConfig::default();

@@ -112,7 +112,10 @@ impl sentinel_tool_runtime::Tool for SchedulerDeleteTool {
                 reply: reply_tx,
             })
             .map_err(|_| {
-                sentinel_tool_runtime::ToolError::custom("process_manager", "Scheduler actor stopped")
+                sentinel_tool_runtime::ToolError::custom(
+                    "process_manager",
+                    "Scheduler actor stopped",
+                )
             })?;
 
         let removed = reply_rx

@@ -167,7 +167,9 @@ impl OSJailSandbox {
         env: Option<Vec<(String, String)>>,
     ) -> Result<ExecOutput, ExecError> {
         if env.is_some() {
-            tracing::warn!("jail: custom env is not supported for the Job Object sandbox; falling back to raw exec");
+            tracing::warn!(
+                "jail: custom env is not supported for the Job Object sandbox; falling back to raw exec"
+            );
             return self.run_raw(command, args, env).await;
         }
         let cmdline = build_command_line(command, args);
@@ -197,15 +199,15 @@ mod win32 {
     use windows_sys::Win32::Security::SECURITY_ATTRIBUTES;
     use windows_sys::Win32::Storage::FileSystem::ReadFile;
     use windows_sys::Win32::System::JobObjects::{
-        AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
-        SetInformationJobObject, JOBOBJECT_BASIC_LIMIT_INFORMATION,
-        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
-        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+        AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_ACTIVE_PROCESS,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, JOBOBJECT_BASIC_LIMIT_INFORMATION,
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation,
+        SetInformationJobObject,
     };
     use windows_sys::Win32::System::Pipes::{CreatePipe, PeekNamedPipe};
     use windows_sys::Win32::System::Threading::{
-        CreateProcessW, GetExitCodeProcess, ResumeThread, WaitForSingleObject, CREATE_NO_WINDOW,
-        CREATE_SUSPENDED, PROCESS_INFORMATION, STARTF_USESTDHANDLES, STARTUPINFOW,
+        CREATE_NO_WINDOW, CREATE_SUSPENDED, CreateProcessW, GetExitCodeProcess,
+        PROCESS_INFORMATION, ResumeThread, STARTF_USESTDHANDLES, STARTUPINFOW, WaitForSingleObject,
     };
 
     pub fn run_job_object_blocking(cmdline: &str, workdir: &Path) -> Result<ExecOutput, ExecError> {
@@ -322,7 +324,7 @@ mod win32 {
         }
     }
 
-    unsafe fn drain_pipes(
+    fn drain_pipes(
         process: *mut std::ffi::c_void,
         out_read: *mut std::ffi::c_void,
         err_read: *mut std::ffi::c_void,
@@ -331,64 +333,71 @@ mod win32 {
     ) {
         let mut buf = [0u8; 8192];
         loop {
-            let mut any = false;
-            let mut avail: u32 = 0;
-            if PeekNamedPipe(
-                out_read,
-                std::ptr::null_mut(),
-                0,
-                std::ptr::null_mut(),
-                &mut avail,
-                std::ptr::null_mut(),
-            ) != 0
-                && avail > 0
-            {
-                any = true;
-                let mut n: u32 = 0;
-                if ReadFile(
+            unsafe {
+                let mut any = false;
+                let mut avail: u32 = 0;
+                if PeekNamedPipe(
                     out_read,
-                    buf.as_mut_ptr() as *mut _,
-                    avail,
-                    &mut n,
+                    std::ptr::null_mut(),
+                    0,
+                    std::ptr::null_mut(),
+                    &mut avail,
                     std::ptr::null_mut(),
                 ) != 0
+                    && avail > 0
                 {
-                    stdout.extend_from_slice(&buf[..n as usize]);
+                    any = true;
+                    let mut n: u32 = 0;
+                    if ReadFile(
+                        out_read,
+                        buf.as_mut_ptr() as *mut _,
+                        avail,
+                        &mut n,
+                        std::ptr::null_mut(),
+                    ) != 0
+                    {
+                        stdout.extend_from_slice(&buf[..n as usize]);
+                    }
                 }
-            }
-            let mut avail: u32 = 0;
-            if PeekNamedPipe(
-                err_read,
-                std::ptr::null_mut(),
-                0,
-                std::ptr::null_mut(),
-                &mut avail,
-                std::ptr::null_mut(),
-            ) != 0
-                && avail > 0
-            {
-                any = true;
-                let mut n: u32 = 0;
-                if ReadFile(
+                let mut avail: u32 = 0;
+                if PeekNamedPipe(
                     err_read,
-                    buf.as_mut_ptr() as *mut _,
-                    avail,
-                    &mut n,
+                    std::ptr::null_mut(),
+                    0,
+                    std::ptr::null_mut(),
+                    &mut avail,
                     std::ptr::null_mut(),
                 ) != 0
+                    && avail > 0
                 {
-                    stderr.extend_from_slice(&buf[..n as usize]);
+                    any = true;
+                    let mut n: u32 = 0;
+                    if ReadFile(
+                        err_read,
+                        buf.as_mut_ptr() as *mut _,
+                        avail,
+                        &mut n,
+                        std::ptr::null_mut(),
+                    ) != 0
+                    {
+                        stderr.extend_from_slice(&buf[..n as usize]);
+                    }
                 }
+                if any {
+                    continue;
+                }
+                if WaitForSingleObject(process, 50) == WAIT_TIMEOUT {
+                    continue;
+                }
+                break;
             }
-            if any {
-                continue;
-            }
-            if WaitForSingleObject(process, 50) == WAIT_TIMEOUT {
-                continue;
-            }
-            break;
         }
-        unsafe fn drain_until_empty(h: *mut std::ffi::c_void, out: &mut Vec<u8>, buf: &mut [u8]) {
+        drain_until_empty(out_read, stdout, &mut buf);
+        drain_until_empty(err_read, stderr, &mut buf);
+    }
+
+    fn drain_until_empty(h: *mut std::ffi::c_void, out: &mut Vec<u8>, buf: &mut [u8]) {
+        unsafe {
             let mut avail: u32 = 0;
             while PeekNamedPipe(
                 h,
@@ -413,8 +422,6 @@ mod win32 {
                 }
             }
         }
-        drain_until_empty(out_read, stdout, &mut buf);
-        drain_until_empty(err_read, stderr, &mut buf);
     }
 }
 

@@ -17,5 +17,5 @@
 mod headroom;
 mod host;
 
-pub use headroom::{HeadroomHost, HeadroomRetrieveArgs, HeadroomRetrieveAiTool};
+pub use headroom::{HeadroomHost, HeadroomRetrieveAiTool, HeadroomRetrieveArgs};
 pub use host::{AiHost, AiHostOptions, ToolResult};

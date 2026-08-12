@@ -1,9 +1,7 @@
 use sentinel_analytics::{AnalyticsEvent, AnalyticsPipeline, EventKind};
 use sentinel_app_server_protocol::api::ServerEvent;
 use sentinel_config::SentinelConfig;
-use sentinel_core::{
-    Agent, AgentEvent, AgentOutput, AgentThread, EventHandler, SessionLogger,
-};
+use sentinel_core::{Agent, AgentEvent, AgentOutput, AgentThread, EventHandler, SessionLogger};
 use sentinel_plugin_system::PluginRegistry;
 use sentinel_provider::ModelProvider;
 use sentinel_tools::ToolRegistry;
@@ -171,6 +169,7 @@ impl AppSession {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn new_with_thread(
         id: String,
         thread: AgentThread,
@@ -345,9 +344,7 @@ impl AppSession {
                         if let Some(ref text) = choice.delta.content {
                             accumulated_text.push_str(text);
                             if let Some(log) = &request_log {
-                                let _ = sentinel_core::append_to_stream_session_log_json(
-                                    log, text,
-                                );
+                                let _ = sentinel_core::append_to_stream_session_log_json(log, text);
                             }
                             let _ = self.events.send(ServerEvent::Thinking {
                                 text: accumulated_text.clone(),
@@ -523,7 +520,14 @@ mod tests {
     #[tokio::test]
     async fn new_creates_valid_session_with_event_channel() {
         let (provider, tools, config, analytics) = session_deps();
-        let session = AppSession::new(None, provider, tools, config, analytics, Arc::new(PluginRegistry::new()));
+        let session = AppSession::new(
+            None,
+            provider,
+            tools,
+            config,
+            analytics,
+            Arc::new(PluginRegistry::new()),
+        );
 
         assert!(Uuid::parse_str(&session.id).is_ok(), "id must be a UUID");
         assert_eq!(session.thread.lock().await.turn, 0);
@@ -533,7 +537,14 @@ mod tests {
     #[tokio::test]
     async fn events_broadcast_round_trip() {
         let (provider, tools, config, analytics) = session_deps();
-        let session = AppSession::new(None, provider, tools, config, analytics, Arc::new(PluginRegistry::new()));
+        let session = AppSession::new(
+            None,
+            provider,
+            tools,
+            config,
+            analytics,
+            Arc::new(PluginRegistry::new()),
+        );
 
         let mut rx = session.events.subscribe();
         let receivers = session
@@ -617,7 +628,14 @@ mod tests {
     #[tokio::test]
     async fn chat_returns_success_text() {
         let (provider, tools, config, analytics) = session_deps();
-        let session = AppSession::new(None, provider, tools, config, analytics, Arc::new(PluginRegistry::new()));
+        let session = AppSession::new(
+            None,
+            provider,
+            tools,
+            config,
+            analytics,
+            Arc::new(PluginRegistry::new()),
+        );
 
         let result = session.chat("hi").await;
         assert_eq!(result, Ok("hello".to_string()));
@@ -632,7 +650,14 @@ mod tests {
     #[tokio::test]
     async fn chat_with_context_seeds_first_system_message() {
         let (provider, tools, config, analytics) = session_deps();
-        let session = AppSession::new(None, provider, tools, config, analytics, Arc::new(PluginRegistry::new()));
+        let session = AppSession::new(
+            None,
+            provider,
+            tools,
+            config,
+            analytics,
+            Arc::new(PluginRegistry::new()),
+        );
 
         let result = session
             .chat_with_context("hi", Some("## IDE Context\n- active file: x.rs".into()))
@@ -658,7 +683,14 @@ mod tests {
     #[tokio::test]
     async fn chat_without_context_uses_prompt_manager() {
         let (provider, tools, config, analytics) = session_deps();
-        let session = AppSession::new(None, provider, tools, config, analytics, Arc::new(PluginRegistry::new()));
+        let session = AppSession::new(
+            None,
+            provider,
+            tools,
+            config,
+            analytics,
+            Arc::new(PluginRegistry::new()),
+        );
 
         let result = session.chat("hi").await;
         assert_eq!(result, Ok("hello".to_string()));
@@ -706,7 +738,14 @@ mod tests {
     #[tokio::test]
     async fn chat_stream_forwards_chunks_and_broadcasts_thinking() {
         let (provider, tools, config, analytics) = session_deps();
-        let session = AppSession::new(None, provider, tools, config, analytics, Arc::new(PluginRegistry::new()));
+        let session = AppSession::new(
+            None,
+            provider,
+            tools,
+            config,
+            analytics,
+            Arc::new(PluginRegistry::new()),
+        );
         let mut events_rx = session.events.subscribe();
         let (chunk_tx, mut chunk_rx) = tokio::sync::mpsc::channel(16);
 
@@ -730,7 +769,7 @@ mod tests {
         }
     }
 
-#[tokio::test]
+    #[tokio::test]
     async fn chat_stream_persists_request_and_response_when_enabled() {
         // Opt-in session message logging into a temp dir.
         let logs_root = std::env::temp_dir().join(format!("sentinel-sess-rw-{}", Uuid::new_v4()));
@@ -738,7 +777,14 @@ mod tests {
         unsafe { std::env::set_var("SENTINEL_SESSION_LOGS_DIR", &logs_root) };
 
         let (provider, tools, config, analytics) = session_deps();
-        let session = AppSession::new(None, provider, tools, config, analytics, Arc::new(PluginRegistry::new()));
+        let session = AppSession::new(
+            None,
+            provider,
+            tools,
+            config,
+            analytics,
+            Arc::new(PluginRegistry::new()),
+        );
         let (chunk_tx, _chunk_rx) = tokio::sync::mpsc::channel(16);
         session.chat_stream("hi", chunk_tx).await;
 
@@ -751,9 +797,10 @@ mod tests {
             .expect("one request dir per chat turn");
         let request_dir = session_dir.join(request_id);
 
-        let request_json: serde_json::Value =
-            serde_json::from_str(&std::fs::read_to_string(request_dir.join("request.jsonl")).unwrap())
-                .unwrap();
+        let request_json: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(request_dir.join("request.jsonl")).unwrap(),
+        )
+        .unwrap();
         assert_eq!(request_json["payload"], "hi");
         assert!(
             request_json["seq"].as_u64().unwrap() >= 1,
@@ -809,19 +856,36 @@ mod tests {
     #[tokio::test]
     async fn ensure_title_captures_llm_output() {
         let (provider, tools, config, analytics) = session_deps();
-        let session = AppSession::new(None, provider, tools, config, analytics, Arc::new(PluginRegistry::new()));
+        let session = AppSession::new(
+            None,
+            provider,
+            tools,
+            config,
+            analytics,
+            Arc::new(PluginRegistry::new()),
+        );
 
         assert!(session.title.read().await.is_none());
         session.ensure_title("Fix the login bug").await;
 
         let title = session.title.read().await.clone().unwrap();
-        assert_eq!(title, "hello", "title should come from the provider response");
+        assert_eq!(
+            title, "hello",
+            "title should come from the provider response"
+        );
     }
 
     #[tokio::test]
     async fn ensure_title_is_single_flight() {
         let (provider, tools, config, analytics) = session_deps();
-        let session = AppSession::new(None, provider, tools, config, analytics, Arc::new(PluginRegistry::new()));
+        let session = AppSession::new(
+            None,
+            provider,
+            tools,
+            config,
+            analytics,
+            Arc::new(PluginRegistry::new()),
+        );
 
         session.ensure_title("first").await;
         session.ensure_title("second").await;

@@ -1,14 +1,15 @@
-use sentinel_core::*;
 use sentinel_core::mock_inference::MockInference;
+use sentinel_core::*;
 use sentinel_provider::ModelProvider;
 use sentinel_tools::ToolRegistry;
 use std::sync::Arc;
 
 #[tokio::test]
 async fn test_agent_simple_response() {
-    let provider = Arc::new(MockInference::scripted(vec![
-        MockInference::text("Hello! How can I help you today?", Some("stop")),
-    ]));
+    let provider = Arc::new(MockInference::scripted(vec![MockInference::text(
+        "Hello! How can I help you today?",
+        Some("stop"),
+    )]));
     let tools = Arc::new(ToolRegistry::new());
     let config = Arc::new(sentinel_config::SentinelConfig::default());
 
@@ -230,9 +231,10 @@ async fn test_hooks_fire_through_agent_loop() {
         }));
     }
 
-    let provider = Arc::new(MockInference::scripted(vec![
-        MockInference::text("hi", Some("stop")),
-    ]));
+    let provider = Arc::new(MockInference::scripted(vec![MockInference::text(
+        "hi",
+        Some("stop"),
+    )]));
     let tools = Arc::new(ToolRegistry::new());
     let config = Arc::new(sentinel_config::SentinelConfig::default());
 

@@ -2,9 +2,7 @@
 
 use strip_ansi_escapes::strip_str;
 
-use crate::implementations::ai_build::bash::{
-    BashTool, BashToolInput, BashToolOutput, KillReason,
-};
+use crate::implementations::ai_build::bash::{BashTool, BashToolInput, BashToolOutput, KillReason};
 use crate::types::output::BashOutput;
 use crate::types::requirements::{Expr, ToolParamsRequirement, ToolRequirement};
 use crate::types::tool::{ToolKind, ToolNamespace};

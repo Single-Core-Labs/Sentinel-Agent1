@@ -128,15 +128,15 @@ impl SmartCrusher {
             }
 
             for (field, stats) in &field_stats {
-                if stats.std > 0.001 {
-                    if let Some(val) = get_numeric(item, field) {
-                        let z = (val - stats.mean).abs() / stats.std;
-                        if z > self.config.anomaly_std_threshold {
-                            score += 3.0;
-                            reasons.push("anomaly");
-                            anomaly_indices.push(i);
-                            break;
-                        }
+                if stats.std > 0.001
+                    && let Some(val) = get_numeric(item, field)
+                {
+                    let z = (val - stats.mean).abs() / stats.std;
+                    if z > self.config.anomaly_std_threshold {
+                        score += 3.0;
+                        reasons.push("anomaly");
+                        anomaly_indices.push(i);
+                        break;
                     }
                 }
             }
@@ -279,10 +279,7 @@ pub fn crush_json_array(
     let val: Value = serde_json::from_str(content).ok()?;
     let items = match &val {
         Value::Array(arr) => arr.clone(),
-        Value::Object(obj) => {
-            let arr_val = obj.values().find(|v| v.is_array())?.as_array()?.clone();
-            arr_val
-        }
+        Value::Object(obj) => obj.values().find(|v| v.is_array())?.as_array()?.clone(),
         _ => return None,
     };
     if items.len() < 3 {

@@ -45,10 +45,7 @@ pub fn detect_windows_shell() -> &'static WindowsShell {
                 }
                 "bash" | "gitbash" | "git-bash" => {
                     if let Some(path) = find_git_bash() {
-                        tracing::info!(
-                            shell = path,
-                            "Windows shell (AI_SHELL override): Git Bash"
-                        );
+                        tracing::info!(shell = path, "Windows shell (AI_SHELL override): Git Bash");
                         return WindowsShell::GitBash(path);
                     }
                     tracing::warn!(
@@ -78,11 +75,10 @@ pub fn detect_windows_shell() -> &'static WindowsShell {
             sentinel_tty_utils::detach_std_command(&mut cmd);
             cmd.arg("pwsh.exe").stdin(std::process::Stdio::null());
             cmd.output()
-        } {
-            if output.status.success() {
-                tracing::info!("Windows shell: pwsh");
-                return WindowsShell::Pwsh;
-            }
+        } && output.status.success()
+        {
+            tracing::info!("Windows shell: pwsh");
+            return WindowsShell::Pwsh;
         }
 
         // powershell.exe (Windows PowerShell 5.1).
@@ -131,14 +127,13 @@ fn find_git_bash() -> Option<String> {
         sentinel_tty_utils::detach_std_command(&mut cmd);
         cmd.arg("bash.exe").stdin(std::process::Stdio::null());
         cmd.output()
-    } {
-        if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            for line in stdout.lines() {
-                let line = line.trim();
-                if line.to_ascii_lowercase().contains("git") {
-                    return Some(line.to_string());
-                }
+    } && output.status.success()
+    {
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        for line in stdout.lines() {
+            let line = line.trim();
+            if line.to_ascii_lowercase().contains("git") {
+                return Some(line.to_string());
             }
         }
     }

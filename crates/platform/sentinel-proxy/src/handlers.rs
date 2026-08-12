@@ -1,11 +1,11 @@
 use axum::{
+    Router,
     extract::State,
     http::{HeaderMap, Method, StatusCode},
     response::{IntoResponse, Json, Response},
     routing::{get, post},
-    Router,
 };
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 use tracing::error;
 

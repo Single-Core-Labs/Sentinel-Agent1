@@ -32,9 +32,7 @@ pub async fn run_one_shot(model_arg: &str, prompt: &str) -> Result<()> {
     let tool_count = host.agent().tool_definitions().await.len();
     println!(" ai agent ready with {tool_count} tools");
 
-    let (text, tool_results) = host
-        .run(prompt, |_chunk| {})
-        .await?;
+    let (text, tool_results) = host.run(prompt, |_chunk| {}).await?;
 
     if !text.trim().is_empty() {
         println!("{}", text.trim_end());
@@ -42,10 +40,7 @@ pub async fn run_one_shot(model_arg: &str, prompt: &str) -> Result<()> {
 
     if !tool_results.is_empty() {
         let ok = tool_results.iter().filter(|t| t.ok).count();
-        println!(
-            "\n [done] {} tool calls ({ok} ok)",
-            tool_results.len()
-        );
+        println!("\n [done] {} tool calls ({ok} ok)", tool_results.len());
     }
     Ok(())
 }

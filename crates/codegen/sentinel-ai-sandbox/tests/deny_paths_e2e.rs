@@ -282,7 +282,10 @@ fn subprocess_entry() {
     }
 }
 
-fn subprocess_profile_and_bwrap_reexec(profile: &sentinel_ai_sandbox::ProfileName, workspace: &Path) {
+fn subprocess_profile_and_bwrap_reexec(
+    profile: &sentinel_ai_sandbox::ProfileName,
+    workspace: &Path,
+) {
     #[cfg(target_os = "linux")]
     {
         if !sentinel_ai_sandbox::is_inside_bwrap() {
@@ -835,8 +838,7 @@ fn hardlinked_hooks_paths_refuses_startup() {
     fs::write(&reg, b"").unwrap();
     fs::hard_link(&reg, &alias).unwrap();
 
-    let (status, stderr) =
-        run_hook_write_deny_scenario(&home, &ai, &workspace, "hook_write_deny");
+    let (status, stderr) = run_hook_write_deny_scenario(&home, &ai, &workspace, "hook_write_deny");
     assert!(
         !status.success(),
         "hard-linked hooks-paths must refuse startup\nstderr: {stderr}"
@@ -863,8 +865,7 @@ fn workspace_protects_direct_hook_sources() {
     let (home, ai, workspace, _ch, _cg, _cw) = fixture_homes("hook");
 
     fs::create_dir_all(ai.join("hooks")).expect("mkdir hooks");
-    fs::write(ai.join("hooks").join("keep.json"), r#"{"keep-me":true}"#)
-        .expect("write keep.json");
+    fs::write(ai.join("hooks").join("keep.json"), r#"{"keep-me":true}"#).expect("write keep.json");
     let dynamic = ai.join("sessions").join("extra-hooks");
     fs::create_dir_all(&dynamic).expect("mkdir dynamic hooks target");
     fs::write(dynamic.join("x.json"), r#"{"x":1}"#).expect("write dynamic hook");
@@ -878,8 +879,7 @@ fn workspace_protects_direct_hook_sources() {
     )
     .expect("write hooks-paths");
 
-    let (status, stderr) =
-        run_hook_write_deny_scenario(&home, &ai, &workspace, "hook_write_deny");
+    let (status, stderr) = run_hook_write_deny_scenario(&home, &ai, &workspace, "hook_write_deny");
     assert!(
         status.success(),
         "hook write-deny e2e failed: {status}\nstderr: {stderr}"
@@ -930,8 +930,7 @@ fn hardlinked_hooks_json_refuses_startup() {
     fs::write(&active, r#"{"hooks":{}}"#).unwrap();
     fs::hard_link(&active, &alias).unwrap();
 
-    let (status, stderr) =
-        run_hook_write_deny_scenario(&home, &ai, &workspace, "hook_write_deny");
+    let (status, stderr) = run_hook_write_deny_scenario(&home, &ai, &workspace, "hook_write_deny");
     assert!(
         !status.success(),
         "hard-linked hooks JSON must refuse startup\nstderr: {stderr}"
@@ -952,8 +951,7 @@ fn symlinked_hooks_json_refuses_startup() {
     fs::write(&real, r#"{"hooks":{}}"#).unwrap();
     std::os::unix::fs::symlink(&real, &active).unwrap();
 
-    let (status, stderr) =
-        run_hook_write_deny_scenario(&home, &ai, &workspace, "hook_write_deny");
+    let (status, stderr) = run_hook_write_deny_scenario(&home, &ai, &workspace, "hook_write_deny");
     assert!(
         !status.success(),
         "symlinked hooks JSON must refuse startup\nstderr: {stderr}"

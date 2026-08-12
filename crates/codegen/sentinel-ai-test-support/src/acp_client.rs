@@ -13,8 +13,8 @@ use std::time::Duration;
 use crate::scaled;
 
 use agent_client_protocol::{self as acp, Agent as _};
-use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 use sentinel_acp_lib::LineBufferedRead;
+use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 use crate::env::ai_binary;
 use crate::headless::stderr_tail;

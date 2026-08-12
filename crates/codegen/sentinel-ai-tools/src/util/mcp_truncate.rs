@@ -311,8 +311,8 @@ mod tests {
             let prev_max = std::env::var(ENV_MAX_MCP_OUTPUT_BYTES).ok();
             let prev_ai = std::env::var(ENV_AI_MAX_MCP_OUTPUT_BYTES).ok();
             unsafe {
-                unsafe { std::env::remove_var(ENV_MAX_MCP_OUTPUT_BYTES) };
-                unsafe { std::env::remove_var(ENV_AI_MAX_MCP_OUTPUT_BYTES) };
+                std::env::remove_var(ENV_MAX_MCP_OUTPUT_BYTES);
+                std::env::remove_var(ENV_AI_MAX_MCP_OUTPUT_BYTES);
             }
             assert_eq!(
                 mcp_max_output_bytes(),
@@ -332,12 +332,12 @@ mod tests {
 
             unsafe {
                 match prev_max {
-                    Some(v) => unsafe { std::env::set_var(ENV_MAX_MCP_OUTPUT_BYTES, v) },
-                    None => unsafe { std::env::remove_var(ENV_MAX_MCP_OUTPUT_BYTES) },
+                    Some(v) => std::env::set_var(ENV_MAX_MCP_OUTPUT_BYTES, v),
+                    None => std::env::remove_var(ENV_MAX_MCP_OUTPUT_BYTES),
                 }
                 match prev_ai {
-                    Some(v) => unsafe { std::env::set_var(ENV_AI_MAX_MCP_OUTPUT_BYTES, v) },
-                    None => unsafe { std::env::remove_var(ENV_AI_MAX_MCP_OUTPUT_BYTES) },
+                    Some(v) => std::env::set_var(ENV_AI_MAX_MCP_OUTPUT_BYTES, v),
+                    None => std::env::remove_var(ENV_AI_MAX_MCP_OUTPUT_BYTES),
                 }
             }
             set_mcp_max_output_bytes(prev);
@@ -350,8 +350,8 @@ mod tests {
             let prev_max = std::env::var(ENV_MAX_MCP_OUTPUT_BYTES).ok();
             let prev_ai = std::env::var(ENV_AI_MAX_MCP_OUTPUT_BYTES).ok();
             unsafe {
-                unsafe { std::env::remove_var(ENV_MAX_MCP_OUTPUT_BYTES) };
-                unsafe { std::env::remove_var(ENV_AI_MAX_MCP_OUTPUT_BYTES) };
+                std::env::remove_var(ENV_MAX_MCP_OUTPUT_BYTES);
+                std::env::remove_var(ENV_AI_MAX_MCP_OUTPUT_BYTES);
             }
             assert_eq!(mcp_max_output_bytes_from_env(), None);
 
@@ -373,12 +373,12 @@ mod tests {
 
             unsafe {
                 match prev_max {
-                    Some(v) => unsafe { std::env::set_var(ENV_MAX_MCP_OUTPUT_BYTES, v) },
-                    None => unsafe { std::env::remove_var(ENV_MAX_MCP_OUTPUT_BYTES) },
+                    Some(v) => std::env::set_var(ENV_MAX_MCP_OUTPUT_BYTES, v),
+                    None => std::env::remove_var(ENV_MAX_MCP_OUTPUT_BYTES),
                 }
                 match prev_ai {
-                    Some(v) => unsafe { std::env::set_var(ENV_AI_MAX_MCP_OUTPUT_BYTES, v) },
-                    None => unsafe { std::env::remove_var(ENV_AI_MAX_MCP_OUTPUT_BYTES) },
+                    Some(v) => std::env::set_var(ENV_AI_MAX_MCP_OUTPUT_BYTES, v),
+                    None => std::env::remove_var(ENV_AI_MAX_MCP_OUTPUT_BYTES),
                 }
             }
         });

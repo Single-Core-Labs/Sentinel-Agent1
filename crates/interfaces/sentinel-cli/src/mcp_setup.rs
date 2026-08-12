@@ -27,8 +27,7 @@ pub fn spawn_mcp_fetchers(servers: &[McpServerDef]) -> McpFetchers {
         .cloned()
         .map(|def| {
             tokio::spawn(async move {
-                let client =
-                    Arc::new(sentinel_mcp::McpClient::new(&def.id, def.transport.clone()));
+                let client = Arc::new(sentinel_mcp::McpClient::new(&def.id, def.transport.clone()));
                 let tools = client.list_tools().await.map_err(|e| e.to_string());
                 (def, client, tools)
             })

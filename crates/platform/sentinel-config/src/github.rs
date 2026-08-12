@@ -14,10 +14,10 @@ pub const GITHUB_TOKEN_ENV: &str = "GITHUB_TOKEN";
 /// Resolve a GitHub token: `GITHUB_TOKEN` env var first, then the Copilot
 /// `hosts.json` file. Returns `None` when neither source yields a token.
 pub fn load_github_token(get_env: &impl Fn(&str) -> Option<String>) -> Option<String> {
-    if let Some(t) = get_env(GITHUB_TOKEN_ENV) {
-        if !t.trim().is_empty() {
-            return Some(t);
-        }
+    if let Some(t) = get_env(GITHUB_TOKEN_ENV)
+        && !t.trim().is_empty()
+    {
+        return Some(t);
     }
     github_hosts_token(copilot_hosts_path().as_deref())
 }
@@ -29,13 +29,22 @@ pub fn copilot_hosts_path() -> Option<PathBuf> {
     #[cfg(windows)]
     {
         if let Ok(appdata) = std::env::var("APPDATA") {
-            return Some(PathBuf::from(appdata).join("github-copilot").join("hosts.json"));
+            return Some(
+                PathBuf::from(appdata)
+                    .join("github-copilot")
+                    .join("hosts.json"),
+            );
         }
     }
     #[cfg(not(windows))]
     {
         if let Some(home) = std::env::var_os("HOME") {
-            return Some(PathBuf::from(home).join(".config").join("github-copilot").join("hosts.json"));
+            return Some(
+                PathBuf::from(home)
+                    .join(".config")
+                    .join("github-copilot")
+                    .join("hosts.json"),
+            );
         }
     }
     None
@@ -89,9 +98,7 @@ mod tests {
 
     #[test]
     fn hosts_file_token_when_env_missing() {
-        let hosts = temp_hosts(
-            r#"{"github.com":{"oauth_token":"gho_file","expires_at":0}}"#,
-        );
+        let hosts = temp_hosts(r#"{"github.com":{"oauth_token":"gho_file","expires_at":0}}"#);
         let token = github_hosts_token(Some(Path::new(&hosts)));
         let _ = std::fs::remove_file(&hosts);
         assert_eq!(token.as_deref(), Some("gho_file"));

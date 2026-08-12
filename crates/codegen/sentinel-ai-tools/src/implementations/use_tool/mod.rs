@@ -87,7 +87,9 @@ async fn dispatch_local_mcp(
     ctx: sentinel_tool_runtime::ToolCallContext,
 ) -> Result<ToolOutput, sentinel_tool_runtime::ToolError> {
     let tool_id = sentinel_tool_protocol::ToolId::new(tool_name).map_err(|_| {
-        sentinel_tool_runtime::ToolError::invalid_arguments(format!("invalid tool name: '{tool_name}'"))
+        sentinel_tool_runtime::ToolError::invalid_arguments(format!(
+            "invalid tool name: '{tool_name}'"
+        ))
     })?;
     let typed = dispatch.0.call_terminal(tool_id, tool_input, ctx).await?;
     serde_json::from_value(typed.value)
@@ -208,9 +210,11 @@ pub async fn dispatch_mcp_tool(
         .get::<crate::types::resources::InnerDispatch>();
 
     if gateway_source.is_none() && dispatch.is_none() {
-        return Err(sentinel_tool_runtime::ToolError::invalid_arguments(format!(
-            "{caller} called outside of tool execution context. inner_dispatch not set -- this is a bug."
-        )));
+        return Err(sentinel_tool_runtime::ToolError::invalid_arguments(
+            format!(
+                "{caller} called outside of tool execution context. inner_dispatch not set -- this is a bug."
+            ),
+        ));
     }
 
     if let Some(source) = gateway_source {
@@ -404,9 +408,9 @@ mod tests {
         ) -> sentinel_tool_runtime::ToolStream<sentinel_tool_runtime::TypedToolOutput> {
             assert_eq!(tool_id.as_str(), self.expected_tool_name);
             let value = serde_json::to_value(self.return_output.clone()).unwrap();
-            sentinel_tool_runtime::terminal_only(Ok(sentinel_tool_runtime::TypedToolOutput::from_value(
-                tool_id, value,
-            )))
+            sentinel_tool_runtime::terminal_only(Ok(
+                sentinel_tool_runtime::TypedToolOutput::from_value(tool_id, value),
+            ))
         }
     }
 
@@ -435,9 +439,9 @@ mod tests {
             }
             *self.captured_args.lock().unwrap() = Some(args);
             let value = serde_json::to_value(ToolOutput::Text("ok".into())).unwrap();
-            sentinel_tool_runtime::terminal_only(Ok(sentinel_tool_runtime::TypedToolOutput::from_value(
-                tool_id, value,
-            )))
+            sentinel_tool_runtime::terminal_only(Ok(
+                sentinel_tool_runtime::TypedToolOutput::from_value(tool_id, value),
+            ))
         }
     }
 
@@ -476,9 +480,9 @@ mod tests {
             _args: serde_json::Value,
             _ctx: sentinel_tool_runtime::ToolCallContext,
         ) -> sentinel_tool_runtime::ToolStream<sentinel_tool_runtime::TypedToolOutput> {
-            sentinel_tool_runtime::terminal_only(Err(sentinel_tool_runtime::ToolError::invalid_arguments(
-                "local validation failed",
-            )))
+            sentinel_tool_runtime::terminal_only(Err(
+                sentinel_tool_runtime::ToolError::invalid_arguments("local validation failed"),
+            ))
         }
     }
 
@@ -533,7 +537,10 @@ mod tests {
         .await;
 
         let err = result.unwrap_err();
-        assert_eq!(err.kind, sentinel_tool_runtime::ToolErrorKind::InvalidArguments);
+        assert_eq!(
+            err.kind,
+            sentinel_tool_runtime::ToolErrorKind::InvalidArguments
+        );
         assert!(err.detail.contains("not a valid MCP tool name"));
         assert!(err.detail.contains("read_file"));
     }
@@ -554,7 +561,10 @@ mod tests {
         .await;
 
         let err = result.unwrap_err();
-        assert_eq!(err.kind, sentinel_tool_runtime::ToolErrorKind::InvalidArguments);
+        assert_eq!(
+            err.kind,
+            sentinel_tool_runtime::ToolErrorKind::InvalidArguments
+        );
         assert!(err.detail.contains("inner_dispatch not set"));
     }
 
@@ -952,7 +962,10 @@ mod tests {
         .await;
 
         let err = result.unwrap_err();
-        assert_eq!(err.kind, sentinel_tool_runtime::ToolErrorKind::InvalidArguments);
+        assert_eq!(
+            err.kind,
+            sentinel_tool_runtime::ToolErrorKind::InvalidArguments
+        );
         assert!(err.detail.contains("local validation failed"));
         assert!(gateway_captured.lock().unwrap().is_none());
     }
@@ -1581,7 +1594,10 @@ mod tests {
         .await;
 
         let err = result.unwrap_err();
-        assert_eq!(err.kind, sentinel_tool_runtime::ToolErrorKind::InvalidArguments);
+        assert_eq!(
+            err.kind,
+            sentinel_tool_runtime::ToolErrorKind::InvalidArguments
+        );
         assert!(err.detail.contains("native tool"), "got: {}", err.detail);
         assert!(err.detail.contains("scheduler_create"));
         assert!(err.detail.contains("directly"));

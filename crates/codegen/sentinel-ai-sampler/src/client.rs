@@ -578,19 +578,13 @@ impl SamplingClient {
         if let Some(client_version) = config.client_version.as_ref()
             && let Ok(header_value) = HeaderValue::from_str(client_version)
         {
-            headers.insert(
-                HeaderName::from_static("x-ai-client-version"),
-                header_value,
-            );
+            headers.insert(HeaderName::from_static("x-ai-client-version"), header_value);
         }
 
         if let Some(deployment_id) = config.deployment_id.as_ref()
             && let Ok(header_value) = HeaderValue::from_str(deployment_id)
         {
-            headers.insert(
-                HeaderName::from_static("x-ai-deployment-id"),
-                header_value,
-            );
+            headers.insert(HeaderName::from_static("x-ai-deployment-id"), header_value);
         }
 
         if let Some(user_id) = config.user_id.as_ref()

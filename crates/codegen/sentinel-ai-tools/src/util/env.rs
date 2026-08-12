@@ -71,7 +71,8 @@ pub fn substitute_plugin_tokens(
 mod tests {
     use super::{AI_AGENT_ENV, AI_AGENT_ENV_VALUE, substitute_plugin_tokens};
 
-    const ALL_TOKENS: &str = "${CLAUDE_PLUGIN_ROOT}/a ${AI_PLUGIN_ROOT}/b ${CLAUDE_PLUGIN_DATA}/c ${AI_PLUGIN_DATA}/d";
+    const ALL_TOKENS: &str =
+        "${CLAUDE_PLUGIN_ROOT}/a ${AI_PLUGIN_ROOT}/b ${CLAUDE_PLUGIN_DATA}/c ${AI_PLUGIN_DATA}/d";
 
     #[test]
     fn expands_all_four_tokens_when_both_provided() {

@@ -515,7 +515,7 @@ mod tests {
         let var = "GB1183_HOOKS_ADAPTER_TEST_HOME";
         // SAFETY: env writes are not thread-safe; this test is single-threaded.
         unsafe {
-            unsafe { std::env::set_var(var, "/expanded/home") };
+            std::env::set_var(var, "/expanded/home");
         }
 
         let cmd_braces = format!("${{{var}}}/helper.sh");
@@ -536,7 +536,7 @@ mod tests {
 
         // SAFETY: env writes are not thread-safe; this test is single-threaded.
         unsafe {
-            unsafe { std::env::remove_var(var) };
+            std::env::remove_var(var);
         }
 
         assert!(warnings.is_empty(), "unexpected warnings: {warnings:?}");

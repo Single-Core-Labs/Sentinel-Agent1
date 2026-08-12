@@ -84,11 +84,7 @@ where
             };
         }
         let id = self.next_id.fetch_add(1, Ordering::SeqCst);
-        self.inner
-            .lock()
-            .unwrap()
-            .subscribers
-            .insert(id, tx);
+        self.inner.lock().unwrap().subscribers.insert(id, tx);
         Subscription {
             id,
             rx,
@@ -103,13 +99,15 @@ where
     pub fn publish(&self, event: T) -> usize {
         let mut inner = self.inner.lock().unwrap();
         let mut delivered = 0usize;
-        inner.subscribers.retain(|_id, tx| match tx.try_send(event.clone()) {
-            Ok(()) => {
-                delivered += 1;
-                true
-            }
-            Err(_) => true, // buffer full → slow consumer, skip this event
-        });
+        inner
+            .subscribers
+            .retain(|_id, tx| match tx.try_send(event.clone()) {
+                Ok(()) => {
+                    delivered += 1;
+                    true
+                }
+                Err(_) => true, // buffer full → slow consumer, skip this event
+            });
         delivered
     }
 

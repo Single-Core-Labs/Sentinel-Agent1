@@ -363,10 +363,12 @@ impl VideoGenClient {
             tokio::time::sleep(poll_interval).await;
 
             if started.elapsed() >= deadline {
-                return Err(sentinel_tool_runtime::ToolError::invalid_arguments(format!(
-                    "Video generation did not complete within {}s (request_id={request_id})",
-                    VIDEO_GEN_TIMEOUT_SECS
-                )));
+                return Err(sentinel_tool_runtime::ToolError::invalid_arguments(
+                    format!(
+                        "Video generation did not complete within {}s (request_id={request_id})",
+                        VIDEO_GEN_TIMEOUT_SECS
+                    ),
+                ));
             }
 
             let poll_sent_bearer = self.current_bearer().await;
@@ -438,14 +440,16 @@ impl VideoGenClient {
                 }
                 "failed" => {
                     let preview: String = poll_body.chars().take(300).collect();
-                    return Err(sentinel_tool_runtime::ToolError::invalid_arguments(format!(
-                        "Video generation failed on the server (request_id={request_id}): {preview}"
-                    )));
+                    return Err(sentinel_tool_runtime::ToolError::invalid_arguments(
+                        format!(
+                            "Video generation failed on the server (request_id={request_id}): {preview}"
+                        ),
+                    ));
                 }
                 "expired" => {
-                    return Err(sentinel_tool_runtime::ToolError::invalid_arguments(format!(
-                        "Video generation request expired (request_id={request_id})."
-                    )));
+                    return Err(sentinel_tool_runtime::ToolError::invalid_arguments(
+                        format!("Video generation request expired (request_id={request_id})."),
+                    ));
                 }
                 other => {
                     tracing::debug!(
@@ -461,7 +465,9 @@ impl VideoGenClient {
     /// Download video bytes from a pre-signed temporary URL (no auth headers).
     async fn download_video(&self, url: &str) -> Result<Vec<u8>, sentinel_tool_runtime::ToolError> {
         let response = self.download_http.get(url).send().await.map_err(|e| {
-            sentinel_tool_runtime::ToolError::invalid_arguments(format!("Failed to download video: {e}"))
+            sentinel_tool_runtime::ToolError::invalid_arguments(format!(
+                "Failed to download video: {e}"
+            ))
         })?;
 
         if !response.status().is_success() {
@@ -546,9 +552,9 @@ impl VideoGenClient {
         })?;
 
         if !is_http_url(&upload_url) {
-            return Err(sentinel_tool_runtime::ToolError::invalid_arguments(format!(
-                "Presigned upload URL is not http(s): {upload_url}"
-            )));
+            return Err(sentinel_tool_runtime::ToolError::invalid_arguments(
+                format!("Presigned upload URL is not http(s): {upload_url}"),
+            ));
         }
 
         let get_url = match self
@@ -625,9 +631,9 @@ impl VideoGenClient {
         })?;
 
         if !is_http_url(&url) {
-            return Err(sentinel_tool_runtime::ToolError::invalid_arguments(format!(
-                "Presigned GET URL is not http(s): {url}"
-            )));
+            return Err(sentinel_tool_runtime::ToolError::invalid_arguments(
+                format!("Presigned GET URL is not http(s): {url}"),
+            ));
         }
         Ok(url)
     }
@@ -784,7 +790,9 @@ async fn resolve_image_reference(value: &str) -> Result<String, sentinel_tool_ru
 
     if value.starts_with("data:image/") {
         let comma = value.find(',').ok_or_else(|| {
-            sentinel_tool_runtime::ToolError::invalid_arguments("malformed data URL in image reference")
+            sentinel_tool_runtime::ToolError::invalid_arguments(
+                "malformed data URL in image reference",
+            )
         })?;
         if !value[..comma].contains(";base64") {
             return Err(sentinel_tool_runtime::ToolError::invalid_arguments(
@@ -811,7 +819,9 @@ async fn resolve_image_reference(value: &str) -> Result<String, sentinel_tool_ru
 
     let (_w, _h, mime) =
         crate::util::image_validate::validate_image_bytes(&raw_bytes).map_err(|e| {
-            sentinel_tool_runtime::ToolError::invalid_arguments(format!("invalid image reference: {e}"))
+            sentinel_tool_runtime::ToolError::invalid_arguments(format!(
+                "invalid image reference: {e}"
+            ))
         })?;
     let b64 = base64::engine::general_purpose::STANDARD.encode(&raw_bytes);
     Ok(format!("data:{mime};base64,{b64}"))
@@ -825,19 +835,23 @@ fn validate_one_of(
     if allowed.contains(&value) {
         return Ok(());
     }
-    Err(sentinel_tool_runtime::ToolError::invalid_arguments(format!(
-        "`{field}` must be one of: {}. Got {value}.",
-        allowed.join(", ")
-    )))
+    Err(sentinel_tool_runtime::ToolError::invalid_arguments(
+        format!(
+            "`{field}` must be one of: {}. Got {value}.",
+            allowed.join(", ")
+        ),
+    ))
 }
 
-fn validate_imagine_duration(duration: Option<u32>) -> Result<(), sentinel_tool_runtime::ToolError> {
+fn validate_imagine_duration(
+    duration: Option<u32>,
+) -> Result<(), sentinel_tool_runtime::ToolError> {
     if let Some(secs) = duration
         && !IMAGINE_VIDEO_DURATIONS_SECS.contains(&secs)
     {
-        return Err(sentinel_tool_runtime::ToolError::invalid_arguments(format!(
-            "`duration` must be either 6 or 10 seconds. Got {secs}."
-        )));
+        return Err(sentinel_tool_runtime::ToolError::invalid_arguments(
+            format!("`duration` must be either 6 or 10 seconds. Got {secs}."),
+        ));
     }
     Ok(())
 }
@@ -1143,9 +1157,11 @@ impl sentinel_tool_runtime::Tool for ReferenceToVideoTool {
             ));
         }
         if input.images.len() > MAX_R2V_REFERENCE_IMAGES {
-            return Err(sentinel_tool_runtime::ToolError::invalid_arguments(format!(
-                "`images` must contain at most {MAX_R2V_REFERENCE_IMAGES} image references."
-            )));
+            return Err(sentinel_tool_runtime::ToolError::invalid_arguments(
+                format!(
+                    "`images` must contain at most {MAX_R2V_REFERENCE_IMAGES} image references."
+                ),
+            ));
         }
         validate_imagine_duration(input.duration)?;
         validate_one_of(

@@ -3,7 +3,7 @@ use crate::classifier::ContentType;
 use crate::metrics::CompressionMetrics;
 use async_trait::async_trait;
 use base64::Engine as _;
-use image::{imageops::FilterType, load_from_memory, DynamicImage, ImageFormat};
+use image::{DynamicImage, ImageFormat, imageops::FilterType, load_from_memory};
 use lru::LruCache;
 use once_cell::sync::Lazy;
 use regex::Regex;

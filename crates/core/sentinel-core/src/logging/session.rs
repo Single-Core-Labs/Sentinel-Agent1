@@ -35,7 +35,9 @@ fn request_seq_table() -> &'static Mutex<HashMap<String, u64>> {
 
 /// The next request sequence number for a session (1-based, monotonic).
 pub fn next_request_seq(session_id: &str) -> u64 {
-    let mut table = request_seq_table().lock().unwrap_or_else(|e| e.into_inner());
+    let mut table = request_seq_table()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
     let next = table.entry(session_id.to_string()).or_insert(0);
     *next += 1;
     *next
@@ -85,8 +87,18 @@ pub fn default_session_logs_dir() -> PathBuf {
     }
     std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(|h| PathBuf::from(h).join(".sentinel").join("logs").join("sessions"))
-        .unwrap_or_else(|| PathBuf::from(".").join(".sentinel").join("logs").join("sessions"))
+        .map(|h| {
+            PathBuf::from(h)
+                .join(".sentinel")
+                .join("logs")
+                .join("sessions")
+        })
+        .unwrap_or_else(|| {
+            PathBuf::from(".")
+                .join(".sentinel")
+                .join("logs")
+                .join("sessions")
+        })
 }
 
 /// Env var that must be set for [`session_logger_for`] to return a logger.
@@ -99,14 +111,16 @@ pub const SESSION_LOGS_ENV: &str = "SENTINEL_SESSION_LOGS";
 /// directory can be overridden with `SENTINEL_SESSION_LOGS_DIR` (useful for
 /// tests and sandboxed setups).
 pub fn session_logger_for(session_id: &str) -> Option<SessionLogger> {
-    if std::env::var_os(SESSION_LOGS_ENV).is_none() {
-        return None;
-    }
+    std::env::var_os(SESSION_LOGS_ENV)?;
     let request_seq = next_request_seq(session_id);
     let root = std::env::var_os("SENTINEL_SESSION_LOGS_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(default_session_logs_dir);
-    Some(SessionLogger::new(root, session_id, request_seq.to_string()))
+    Some(SessionLogger::new(
+        root,
+        session_id,
+        request_seq.to_string(),
+    ))
 }
 
 /// Appends interaction data for one `(session_id, request_seq)` pair into a
@@ -294,10 +308,7 @@ mod tests {
         let logger = SessionLogger::new(&root, "sess-1", "req-42");
         logger.append(MessageKind::Request, "hello").unwrap();
         assert!(logger.file_for(MessageKind::Request).exists());
-        assert_eq!(
-            logger.dir(),
-            root.join("sess-1").join("req-42")
-        );
+        assert_eq!(logger.dir(), root.join("sess-1").join("req-42"));
         let _ = fs::remove_dir_all(root);
     }
 
@@ -308,12 +319,17 @@ mod tests {
         logger.append(MessageKind::Request, "what is 2+2?").unwrap();
         logger.append(MessageKind::Response, "4").unwrap();
         logger.append(MessageKind::Stream, "4").unwrap();
-        logger.append(MessageKind::ToolResult, "run_shell: ok").unwrap();
+        logger
+            .append(MessageKind::ToolResult, "run_shell: ok")
+            .unwrap();
 
         assert_eq!(logger.read(MessageKind::Request).unwrap(), "what is 2+2?\n");
         assert_eq!(logger.read(MessageKind::Response).unwrap(), "4\n");
         assert_eq!(logger.read(MessageKind::Stream).unwrap(), "4\n");
-        assert_eq!(logger.read(MessageKind::ToolResult).unwrap(), "run_shell: ok\n");
+        assert_eq!(
+            logger.read(MessageKind::ToolResult).unwrap(),
+            "run_shell: ok\n"
+        );
         let _ = fs::remove_dir_all(root);
     }
 
@@ -365,8 +381,8 @@ mod tests {
     fn write_json_helpers_persist_payloads_and_seq() {
         let root = tmp_root();
         unsafe {
-            unsafe { std::env::set_var("SENTINEL_SESSION_LOGS_DIR", &root) };
-            unsafe { std::env::set_var(SESSION_LOGS_ENV, "1") };
+            std::env::set_var("SENTINEL_SESSION_LOGS_DIR", &root);
+            std::env::set_var(SESSION_LOGS_ENV, "1");
         }
         let logger = session_logger_for("sess-json").expect("logger with env set");
 
@@ -387,8 +403,8 @@ mod tests {
         assert_eq!(tools[0]["payload"]["isError"], false);
 
         unsafe {
-            unsafe { std::env::remove_var("SENTINEL_SESSION_LOGS_DIR") };
-            unsafe { std::env::remove_var(SESSION_LOGS_ENV) };
+            std::env::remove_var("SENTINEL_SESSION_LOGS_DIR");
+            std::env::remove_var(SESSION_LOGS_ENV);
         }
         let _ = fs::remove_dir_all(root);
     }

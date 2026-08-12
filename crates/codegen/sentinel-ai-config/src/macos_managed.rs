@@ -154,8 +154,8 @@ mod tests {
         let decoded = decode_managed_toml(&b64("base_url = \"${AI_MDM_NO_EXPAND_TEST}/v1\"\n"));
         unsafe {
             match prior {
-                Some(p) => unsafe { std::env::set_var("AI_MDM_NO_EXPAND_TEST", p) },
-                None => unsafe { std::env::remove_var("AI_MDM_NO_EXPAND_TEST") },
+                Some(p) => std::env::set_var("AI_MDM_NO_EXPAND_TEST", p),
+                None => std::env::remove_var("AI_MDM_NO_EXPAND_TEST"),
             }
         }
         assert_eq!(

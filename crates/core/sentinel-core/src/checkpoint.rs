@@ -1,4 +1,4 @@
-use crate::snapshot::{restore_snapshot, default_file_reader, SnapshotManager};
+use crate::snapshot::{SnapshotManager, default_file_reader, restore_snapshot};
 use sentinel_tools::CheckpointStore;
 use std::sync::Mutex;
 
@@ -54,7 +54,7 @@ impl CheckpointStore for CheckpointManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_dir(name: &str) -> PathBuf {
@@ -67,7 +67,7 @@ mod tests {
         dir
     }
 
-    fn write(dir: &PathBuf, rel: &str, content: &str) -> String {
+    fn write(dir: &Path, rel: &str, content: &str) -> String {
         let path = dir.join(rel);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).unwrap();

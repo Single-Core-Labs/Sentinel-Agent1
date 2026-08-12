@@ -123,7 +123,6 @@ pub fn estimate_input_cost(model: &str, prompt_tokens: u32) -> f64 {
     (prompt_tokens as f64 / 1000.0) * price.input_per_1k
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;

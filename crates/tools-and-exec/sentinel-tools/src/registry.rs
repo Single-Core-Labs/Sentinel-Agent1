@@ -60,25 +60,25 @@ impl ToolRegistry {
             None => ToolOutput::err(format!("Tool not found: {}", name)),
         };
 
-        if let Ok(log_path) = std::env::var("SENTINEL_ACTIVITY_LOG") {
-            if !log_path.trim().is_empty() {
-                let log_entry = serde_json::json!({
-                    "timestamp": chrono::Utc::now().to_rfc3339(),
-                    "type": "tool_call",
-                    "tool": name,
-                    "args": args,
-                    "success": !output.is_error,
-                    "content": output.text,
-                    "sandboxed": output.sandboxed,
-                });
-                if let Ok(mut file) = std::fs::OpenOptions::new()
-                    .create(true)
-                    .append(true)
-                    .open(&log_path)
-                {
-                    use std::io::Write;
-                    let _ = writeln!(file, "{}", log_entry);
-                }
+        if let Ok(log_path) = std::env::var("SENTINEL_ACTIVITY_LOG")
+            && !log_path.trim().is_empty()
+        {
+            let log_entry = serde_json::json!({
+                "timestamp": chrono::Utc::now().to_rfc3339(),
+                "type": "tool_call",
+                "tool": name,
+                "args": args,
+                "success": !output.is_error,
+                "content": output.text,
+                "sandboxed": output.sandboxed,
+            });
+            if let Ok(mut file) = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&log_path)
+            {
+                use std::io::Write;
+                let _ = writeln!(file, "{}", log_entry);
             }
         }
 

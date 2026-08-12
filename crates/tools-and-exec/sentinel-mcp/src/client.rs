@@ -268,10 +268,14 @@ impl McpClient {
         tools
             .iter()
             .map(|t| {
+                // MCP spec: tools may advertise `annotations.readOnlyHint`.
+                // Honored so read-only MCP tools skip the approval gate.
+                let read_only = t["annotations"]["readOnlyHint"].as_bool().unwrap_or(false);
                 Ok(ToolDef {
                     name: t["name"].as_str().unwrap_or("unknown").to_string(),
                     description: t["description"].as_str().unwrap_or("").to_string(),
                     input_schema: t["inputSchema"].clone(),
+                    read_only_hint: read_only,
                 })
             })
             .collect()
@@ -387,10 +391,10 @@ fn convert_mcp_content_to_string(content_array: &[Value]) -> String {
 
 impl Drop for McpClient {
     fn drop(&mut self) {
-        if matches!(&self.transport, McpTransportConfig::Stdio { .. }) {
-            if let Some(mut proc) = self.process.try_lock().ok().and_then(|mut g| g.take()) {
-                drop(proc.child.kill());
-            }
+        if matches!(&self.transport, McpTransportConfig::Stdio { .. })
+            && let Some(mut proc) = self.process.try_lock().ok().and_then(|mut g| g.take())
+        {
+            drop(proc.child.kill());
         }
     }
 }

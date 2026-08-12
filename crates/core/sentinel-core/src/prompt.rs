@@ -66,4 +66,3 @@ Guidelines:
 - Ask for clarification when instructions are ambiguous
 - Use the bash tool for running commands, building, testing
 - Use web_search for finding information"#;
-

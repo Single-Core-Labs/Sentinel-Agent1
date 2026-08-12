@@ -552,9 +552,9 @@ impl ToolBridge {
         if let Some(terminal) = &self.terminal {
             Ok(terminal.kill_task(task_id).await)
         } else {
-            Err(sentinel_tool_runtime::ToolError::invalid_arguments(format!(
-                "Missing Task Id: {task_id}"
-            )))
+            Err(sentinel_tool_runtime::ToolError::invalid_arguments(
+                format!("Missing Task Id: {task_id}"),
+            ))
         }
     }
 
@@ -609,7 +609,10 @@ impl ToolBridge {
                 reply: reply_tx,
             })
             .map_err(|_| {
-                sentinel_tool_runtime::ToolError::custom("process_manager", "Scheduler actor stopped")
+                sentinel_tool_runtime::ToolError::custom(
+                    "process_manager",
+                    "Scheduler actor stopped",
+                )
             })?;
         reply_rx
             .await

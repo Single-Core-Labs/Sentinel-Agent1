@@ -112,7 +112,12 @@ impl AgentThread {
                 .filter_map(|m| {
                     if m.is_tool_call() {
                         m.content.iter().find_map(|b| {
-                            if let sentinel_protocol::ContentBlock::ToolCall { name, arguments, .. } = b {
+                            if let sentinel_protocol::ContentBlock::ToolCall {
+                                name,
+                                arguments,
+                                ..
+                            } = b
+                            {
                                 Some(format!("{}|{:?}", name, arguments))
                             } else {
                                 None
@@ -123,8 +128,7 @@ impl AgentThread {
                     }
                 })
                 .collect();
-            signatures.len() >= 3
-                && signatures.windows(3).all(|w| w[0] == w[1] && w[1] == w[2])
+            signatures.len() >= 3 && signatures.windows(3).all(|w| w[0] == w[1] && w[1] == w[2])
         } else {
             false
         };

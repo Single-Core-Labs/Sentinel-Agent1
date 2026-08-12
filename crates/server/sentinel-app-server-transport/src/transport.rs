@@ -23,6 +23,7 @@ pub trait MessageSink {
 }
 
 #[derive(Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum TransportEvent {
     Message(JsonRpcMessage),
     Connected(String),

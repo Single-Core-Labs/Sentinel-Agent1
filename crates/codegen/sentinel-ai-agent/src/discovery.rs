@@ -799,10 +799,7 @@ mod tests {
             .into_iter()
             .filter(|(p, _)| *p == ai.join("agents"))
             .count();
-        assert_eq!(
-            count, 1,
-            "no duplicate ~/.ai/agents when ai_home == ~/.ai"
-        );
+        assert_eq!(count, 1, "no duplicate ~/.ai/agents when ai_home == ~/.ai");
     }
 
     #[test]
@@ -968,9 +965,8 @@ mod tests {
         write_agent_file(&user_dir, "reviewer.md", "reviewer", "User reviewer");
         write_agent_file(&bundled_dir, "reviewer.md", "reviewer", "Bundled reviewer");
 
-        let def =
-            by_name_in_cwd_with_home("reviewer", &cwd, Some(&home), Some(&home.join(".ai")))
-                .unwrap();
+        let def = by_name_in_cwd_with_home("reviewer", &cwd, Some(&home), Some(&home.join(".ai")))
+            .unwrap();
         assert_eq!(def.scope, AgentScope::User);
         assert_eq!(def.description, "User reviewer");
     }
@@ -1005,9 +1001,8 @@ mod tests {
         write_agent_file(&project_dir, "reviewer.md", "reviewer", "Project reviewer");
         write_agent_file(&bundled_dir, "reviewer.md", "reviewer", "Bundled reviewer");
 
-        let def =
-            by_name_in_cwd_with_home("reviewer", &cwd, Some(&home), Some(&home.join(".ai")))
-                .unwrap();
+        let def = by_name_in_cwd_with_home("reviewer", &cwd, Some(&home), Some(&home.join(".ai")))
+            .unwrap();
         assert_eq!(def.scope, AgentScope::Project);
         assert_eq!(def.description, "Project reviewer");
     }
@@ -1019,12 +1014,7 @@ mod tests {
         fs::create_dir_all(&agents_dir).unwrap();
 
         // Create a project-level "ai-build" that shadows the built-in
-        write_agent_file(
-            &agents_dir,
-            "ai-build.md",
-            "ai-build",
-            "Custom ai-build",
-        );
+        write_agent_file(&agents_dir, "ai-build.md", "ai-build", "Custom ai-build");
 
         let def = by_name_in_cwd("ai-build", tmp.path());
         assert!(def.is_some());

@@ -8,7 +8,9 @@
 
 use super::types::{ToolConfig, ToolServerConfig};
 
-pub use sentinel_ai_tools_api::config_validation::{ToolConfigEntryError, ToolConfigEntryErrorKind};
+pub use sentinel_ai_tools_api::config_validation::{
+    ToolConfigEntryError, ToolConfigEntryErrorKind,
+};
 
 /// Convert one wire [`sentinel_ai_tools_api::ToolConfigEntry`] to a runtime
 /// [`ToolConfig`].

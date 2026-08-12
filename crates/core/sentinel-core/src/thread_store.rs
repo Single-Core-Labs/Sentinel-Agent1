@@ -4,10 +4,10 @@ use crate::sanitize::SecretSanitizer;
 use crate::thread::AgentThread;
 use async_trait::async_trait;
 #[cfg(feature = "sqlite")]
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
+use serde::{Deserialize, Serialize};
 #[cfg(feature = "sqlite")]
 use std::sync::{Arc, Mutex};
-use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 #[cfg(feature = "sqlite")]
@@ -84,10 +84,10 @@ impl SavedThread {
         budget.total_spend_usd = self.budget_total_spend_usd;
         budget.prompt_tokens = self.prompt_tokens;
         budget.completion_tokens = self.completion_tokens;
-        if let Some(cap) = self.budget_cost_cap_usd {
-            if self.budget_total_spend_usd >= cap {
-                budget.exhausted = true;
-            }
+        if let Some(cap) = self.budget_cost_cap_usd
+            && self.budget_total_spend_usd >= cap
+        {
+            budget.exhausted = true;
         }
         AgentThread {
             id: Uuid::parse_str(&self.id).unwrap_or_else(|_| Uuid::new_v4()),
@@ -179,10 +179,10 @@ impl ThreadStore for JsonFileThreadStore {
             .await
             .map_err(|e| ThreadStoreError::Io(e.to_string()))?
         {
-            if entry.path().extension().is_some_and(|e| e == "json") {
-                if let Some(stem) = entry.path().file_stem() {
-                    ids.push(stem.to_string_lossy().to_string());
-                }
+            if entry.path().extension().is_some_and(|e| e == "json")
+                && let Some(stem) = entry.path().file_stem()
+            {
+                ids.push(stem.to_string_lossy().to_string());
             }
         }
         ids.sort();
@@ -367,7 +367,8 @@ impl ThreadStore for SqliteThreadStore {
             .transaction()
             .map_err(|e| ThreadStoreError::Store(e.to_string()))?;
         let thread = load_in(&tx, thread_id)?;
-        let mut forked = AgentThread::new(thread.max_turns, thread.max_iterations, thread.yolo_mode);
+        let mut forked =
+            AgentThread::new(thread.max_turns, thread.max_iterations, thread.yolo_mode);
         forked.conversation = thread.conversation.clone();
         forked.parent_thread_id = Some(thread.id.to_string());
         upsert_thread(&tx, &forked)?;

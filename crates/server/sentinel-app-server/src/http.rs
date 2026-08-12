@@ -2,10 +2,10 @@ use crate::handler::RequestHandler;
 use axum::extract::{Query, State};
 use axum::http::StatusCode;
 use axum::{
+    Router,
     extract::ws::{Message, WebSocket, WebSocketUpgrade},
     response::IntoResponse,
     routing::get,
-    Router,
 };
 use colored::*;
 use futures_util::SinkExt as FuturesSinkExt;
@@ -56,16 +56,16 @@ impl HttpServer {
 
     fn default_static_dir() -> String {
         // 1) Prefer desktop/dist next to the executable (production install).
-        if let Ok(exe) = std::env::current_exe() {
-            if let Some(exe_dir) = exe.parent() {
-                let candidate = exe_dir.join("desktop").join("dist");
-                if candidate.exists() {
-                    return candidate.to_string_lossy().to_string();
-                }
-                let pub_candidate = exe_dir.join("public");
-                if pub_candidate.join("index.html").exists() {
-                    return pub_candidate.to_string_lossy().to_string();
-                }
+        if let Ok(exe) = std::env::current_exe()
+            && let Some(exe_dir) = exe.parent()
+        {
+            let candidate = exe_dir.join("desktop").join("dist");
+            if candidate.exists() {
+                return candidate.to_string_lossy().to_string();
+            }
+            let pub_candidate = exe_dir.join("public");
+            if pub_candidate.join("index.html").exists() {
+                return pub_candidate.to_string_lossy().to_string();
             }
         }
         // 2) Walk upward from cwd searching for public/index.html (dev layout).
@@ -150,8 +150,8 @@ async fn ws_upgrade(
 }
 
 async fn handle_ws(socket: WebSocket, handler: Arc<RequestHandler>) {
-    use sentinel_app_server_protocol::api::methods;
     use sentinel_app_server_protocol::api::ServerEvent;
+    use sentinel_app_server_protocol::api::methods;
     use sentinel_app_server_protocol::rpc::{JsonRpcNotification, JsonRpcResponse};
 
     let (mut ws_sender, mut ws_receiver) = socket.split();
@@ -162,7 +162,7 @@ async fn handle_ws(socket: WebSocket, handler: Arc<RequestHandler>) {
         let mut rx = UnboundedReceiverStream::new(rx);
         while let Some(msg) = FuturesStreamExt::next(&mut rx).await {
             let json = serde_json::to_string(&msg).unwrap_or_default();
-            if FuturesSinkExt::send(&mut ws_sender, Message::Text(json.into()))
+            if FuturesSinkExt::send(&mut ws_sender, Message::Text(json))
                 .await
                 .is_err()
             {
@@ -172,7 +172,8 @@ async fn handle_ws(socket: WebSocket, handler: Arc<RequestHandler>) {
     });
 
     // (session_id, event receiver) pairs for active event subscriptions.
-    let mut subscriptions: Vec<(String, tokio::sync::broadcast::Receiver<ServerEvent>)> = Vec::new();
+    let mut subscriptions: Vec<(String, tokio::sync::broadcast::Receiver<ServerEvent>)> =
+        Vec::new();
 
     // Slow LLM methods run off this loop so event notifications keep flowing
     // while an agent run is in progress.

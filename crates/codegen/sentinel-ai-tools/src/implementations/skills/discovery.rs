@@ -1540,10 +1540,7 @@ model: test-model
             CompatConfig::default(),
         );
         let names_on: Vec<&str> = on.iter().map(|s| s.name.as_str()).collect();
-        assert!(
-            names_on.contains(&"ai-dyn"),
-            "ai-dyn missing: {names_on:?}"
-        );
+        assert!(names_on.contains(&"ai-dyn"), "ai-dyn missing: {names_on:?}");
         assert!(
             names_on.contains(&"claude-dyn"),
             "claude-dyn should be found when claude.skills on: {names_on:?}"

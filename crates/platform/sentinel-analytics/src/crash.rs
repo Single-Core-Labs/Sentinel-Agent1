@@ -1,8 +1,8 @@
 use chrono::Utc;
 use serde::Serialize;
 use std::panic::{self, PanicHookInfo};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use uuid::Uuid;
 
 use crate::client::AnalyticsEventsClient;

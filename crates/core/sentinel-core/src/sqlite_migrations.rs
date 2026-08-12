@@ -9,7 +9,7 @@
 //! - Append a new entry for every schema change.
 
 #[cfg(feature = "sqlite")]
-use rusqlite::{params, Connection};
+use rusqlite::{Connection, params};
 
 /// Ordered list of migrations. Version of entry `i` is `i + 1`.
 pub const MIGRATIONS: &[&str] = &[
@@ -96,11 +96,9 @@ mod tests {
         run_migrations(&mut conn).unwrap();
 
         let count: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM schema_migrations",
-                [],
-                |row| row.get(0),
-            )
+            .query_row("SELECT COUNT(*) FROM schema_migrations", [], |row| {
+                row.get(0)
+            })
             .unwrap();
         assert_eq!(count, MIGRATIONS.len() as i64);
 

@@ -86,15 +86,15 @@ impl IntelligentContext {
 
         let mut tool_pairs: Vec<(usize, usize)> = Vec::new();
         for i in 0..total {
-            if matches!(messages[i].role, MessageRole::Tool) {
-                if let Some(ref id) = messages[i].tool_call_id {
-                    for j in (0..i).rev() {
-                        if matches!(messages[j].role, MessageRole::Assistant)
-                            && messages[j].content.contains(id)
-                        {
-                            tool_pairs.push((j, i));
-                            break;
-                        }
+            if matches!(messages[i].role, MessageRole::Tool)
+                && let Some(ref id) = messages[i].tool_call_id
+            {
+                for j in (0..i).rev() {
+                    if matches!(messages[j].role, MessageRole::Assistant)
+                        && messages[j].content.contains(id)
+                    {
+                        tool_pairs.push((j, i));
+                        break;
                     }
                 }
             }

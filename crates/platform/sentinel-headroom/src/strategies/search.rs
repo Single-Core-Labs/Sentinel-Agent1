@@ -260,10 +260,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_search_small() {
-        assert!(SearchCompressor::new()
-            .compress("a.rs:1: foo")
-            .await
-            .is_none());
+        assert!(
+            SearchCompressor::new()
+                .compress("a.rs:1: foo")
+                .await
+                .is_none()
+        );
     }
 
     #[tokio::test]

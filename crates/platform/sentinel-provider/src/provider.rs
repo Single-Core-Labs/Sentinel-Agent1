@@ -1,8 +1,8 @@
-use crate::error::ProviderError;
 use crate::AnthropicProvider;
 use crate::GoogleProvider;
 use crate::LocalProvider;
 use crate::OpenAIProvider;
+use crate::error::ProviderError;
 use async_trait::async_trait;
 use sentinel_protocol::{CompletionRequest, CompletionResponse, StreamChunk, ToolDef};
 use sentinel_provider_info::ProviderInfo;

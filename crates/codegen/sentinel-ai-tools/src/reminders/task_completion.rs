@@ -21,11 +21,11 @@ use crate::types::output::ToolOutput;
 use crate::types::resources::{SharedResources, State, Terminal};
 use crate::types::tool::{Reminder, ToolKind};
 use crate::util::truncate::{PREVIEW_SIZE, PartialOutput, truncate_with_preview};
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 use sentinel_tool_types::KillTaskOutput;
 use sentinel_tool_types::SubagentCompletedOutput;
 use sentinel_tool_types::TaskOutputOutput;
+use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 /// Default tool name used in auto-wake completion messages.
 pub const DEFAULT_TASK_OUTPUT_TOOL: &str = "get_task_output";
 /// Inline preview cap applied ONLY to bash completion reminders that ship
@@ -278,8 +278,7 @@ pub fn format_monitor_events(
             ))
         }
         _ => {
-            type Event =
-                crate::implementations::ai_build::monitor::types::MonitorEventNotification;
+            type Event = crate::implementations::ai_build::monitor::types::MonitorEventNotification;
             let mut groups: Vec<(&str, Vec<&Event>)> = Vec::new();
             for event in events {
                 match groups.iter_mut().find(|(id, _)| *id == event.task_id) {
@@ -305,9 +304,10 @@ pub fn format_monitor_events(
                     .map(|(desc, _)| desc)
                     .filter(|d| !d.is_empty())
                     .unwrap_or("event");
-                let description = crate::implementations::ai_build::monitor::event::sanitize_monitor_description(
-                    description,
-                );
+                let description =
+                    crate::implementations::ai_build::monitor::event::sanitize_monitor_description(
+                        description,
+                    );
                 let _ = write!(
                     buf,
                     "\n\n<monitor description=\"{description}\" task_id=\"{task_id}\">"
@@ -1155,10 +1155,10 @@ mod tests {
         BackgroundHandle, KillOutcome, TerminalBackend, TerminalRunRequest, TerminalRunResult,
     };
     use crate::types::resources::Resources;
-    use std::sync::Arc;
-    use std::time::Duration;
     use sentinel_tool_types::KillTaskResult;
     use sentinel_tool_types::{MultiTaskOutputResult, TaskOutputResult};
+    use std::sync::Arc;
+    use std::time::Duration;
     struct MockTerminal {
         tasks: Vec<TaskSnapshot>,
     }

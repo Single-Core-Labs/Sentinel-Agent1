@@ -101,10 +101,7 @@ impl ProjectContext {
         ));
         match (&self.git_root, &self.git_branch) {
             (Some(root), Some(branch)) => {
-                out.push_str(&format!(
-                    "- Git: branch `{}` at `{}`\n",
-                    branch, root
-                ));
+                out.push_str(&format!("- Git: branch `{}` at `{}`\n", branch, root));
             }
             (Some(root), None) => {
                 out.push_str(&format!("- Git repository root: `{}`\n", root));
@@ -127,10 +124,7 @@ impl ProjectContext {
         if self.lsp_servers.is_empty() {
             out.push_str("- LSP servers: none\n");
         } else {
-            out.push_str(&format!(
-                "- LSP servers: {}\n",
-                self.lsp_servers.join(", ")
-            ));
+            out.push_str(&format!("- LSP servers: {}\n", self.lsp_servers.join(", ")));
             out.push_str(
                 "- LSP diagnostics: these servers index the project; diagnostics and \
                  definitions are served to the assistant through the workspace integration.\n",
@@ -185,10 +179,7 @@ impl Default for ProjectContext {
 }
 
 fn git_cmd(args: &[&str]) -> Option<String> {
-    let out = std::process::Command::new("git")
-        .args(args)
-        .output()
-        .ok()?;
+    let out = std::process::Command::new("git").args(args).output().ok()?;
     if !out.status.success() {
         return None;
     }
@@ -213,11 +204,7 @@ fn list_dir(cwd: &Path) -> (Vec<String>, usize) {
             continue;
         }
         let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
-        names.push(if is_dir {
-            format!("{name}/")
-        } else {
-            name
-        });
+        names.push(if is_dir { format!("{name}/") } else { name });
     }
     names.sort();
     let total = names.len();
@@ -250,10 +237,14 @@ fn read_agents_rules(cwd: &Path) -> Option<String> {
     let mut text = lines.join("\n");
     if text.chars().count() > AGENTS_MD_MAX_CHARS {
         text = text.chars().take(AGENTS_MD_MAX_CHARS).collect();
-        text.push_str("…");
+        text.push('…');
     }
     if text.lines().count() > AGENTS_MD_MAX_LINES {
-        text = text.lines().take(AGENTS_MD_MAX_LINES).collect::<Vec<_>>().join("\n");
+        text = text
+            .lines()
+            .take(AGENTS_MD_MAX_LINES)
+            .collect::<Vec<_>>()
+            .join("\n");
     }
     Some(text)
 }
@@ -269,7 +260,7 @@ fn read_project_memory(cwd: &Path) -> Option<String> {
     let mut text = content;
     if text.chars().count() > PROJECT_MEMORY_MAX_CHARS {
         text = text.chars().take(PROJECT_MEMORY_MAX_CHARS).collect();
-        text.push_str("…");
+        text.push('…');
     }
     Some(text)
 }
@@ -295,7 +286,9 @@ mod tests {
             dir_entries: vec!["src/".into(), "Cargo.toml".into(), "README.md".into()],
             dir_total: 25,
             agents_md: Some("## Rules\n- run tests".into()),
-            project_memory: Some("# Project Memory\n\n## Session History\n### Session 1\nfixed parser".into()),
+            project_memory: Some(
+                "# Project Memory\n\n## Session History\n### Session 1\nfixed parser".into(),
+            ),
         }
     }
 
@@ -389,10 +382,8 @@ mod tests {
 
     #[test]
     fn agents_md_hierarchy_is_scoped_and_capped() {
-        let dir = std::env::temp_dir().join(format!(
-            "sentinel-prompt-ctx-{}-hier",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("sentinel-prompt-ctx-{}-hier", std::process::id()));
         std::fs::create_dir_all(dir.join("crates/core")).unwrap();
         std::fs::write(dir.join("AGENTS.md"), "## Root\n\n- run tests\n").unwrap();
         std::fs::write(

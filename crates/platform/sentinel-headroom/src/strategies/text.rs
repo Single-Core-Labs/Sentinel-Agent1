@@ -225,10 +225,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_text_small() {
-        assert!(TextCompressor::new()
-            .compress("Hello world.")
-            .await
-            .is_none());
+        assert!(
+            TextCompressor::new()
+                .compress("Hello world.")
+                .await
+                .is_none()
+        );
     }
 
     #[tokio::test]

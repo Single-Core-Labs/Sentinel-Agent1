@@ -39,9 +39,8 @@ pub async fn run_sub_agent_team(
     let mut set: JoinSet<SubTaskResult> = JoinSet::new();
     // Discover once, share across forks: forked threads carry no system
     // message, so each sub-agent's manager must inject project context.
-    let prompt_manager = crate::project_context::ProjectContext::inject_into_prompt_manager(
-        &config,
-    );
+    let prompt_manager =
+        crate::project_context::ProjectContext::inject_into_prompt_manager(&config);
 
     for task in sub_tasks {
         let provider = Arc::clone(&provider);
@@ -86,7 +85,6 @@ pub async fn run_sub_agent_team(
 
     results
 }
-
 
 #[cfg(test)]
 mod tests {

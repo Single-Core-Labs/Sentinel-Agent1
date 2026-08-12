@@ -562,19 +562,15 @@ mod tests {
     /// test locks the property in.
     #[test]
     fn extra_values_are_not_recursively_expanded() {
-        with_env_var(
-            "AI_HOOKS_RECURSION_BAR",
-            Some("should-not-appear"),
-            || {
-                let mut extra = HashMap::new();
-                extra.insert(
-                    "AI_HOOKS_RECURSION_FOO".to_string(),
-                    "$AI_HOOKS_RECURSION_BAR".to_string(),
-                );
-                let out = expand_env_vars_with_extra("${AI_HOOKS_RECURSION_FOO}", &extra);
-                assert_eq!(out, "$AI_HOOKS_RECURSION_BAR");
-            },
-        );
+        with_env_var("AI_HOOKS_RECURSION_BAR", Some("should-not-appear"), || {
+            let mut extra = HashMap::new();
+            extra.insert(
+                "AI_HOOKS_RECURSION_FOO".to_string(),
+                "$AI_HOOKS_RECURSION_BAR".to_string(),
+            );
+            let out = expand_env_vars_with_extra("${AI_HOOKS_RECURSION_FOO}", &extra);
+            assert_eq!(out, "$AI_HOOKS_RECURSION_BAR");
+        });
     }
 
     // ── mask_modifier_forms helper unit tests ────────────────────

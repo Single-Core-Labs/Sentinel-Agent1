@@ -115,7 +115,7 @@ impl SessionUploader for HttpUploader {
                     ok: false,
                     error: Some(format!("Serialization error: {}", e)),
                     url: None,
-                }
+                };
             }
         };
 
@@ -130,7 +130,7 @@ impl SessionUploader for HttpUploader {
                     ok: false,
                     error: Some(format!("Read error: {}", e)),
                     url: None,
-                }
+                };
             }
         };
 
@@ -210,7 +210,7 @@ impl SessionUploader for FileUploader {
                     ok: false,
                     error: Some(format!("Serialization error: {}", e)),
                     url: None,
-                }
+                };
             }
         };
 
@@ -221,7 +221,7 @@ impl SessionUploader for FileUploader {
                     ok: false,
                     error: Some(format!("Dir create error: {}", e)),
                     url: None,
-                }
+                };
             }
         }
 
@@ -251,7 +251,7 @@ impl SessionUploader for FileUploader {
                     ok: false,
                     error: Some(format!("Dir create error: {}", e)),
                     url: None,
-                }
+                };
             }
         }
 
@@ -275,10 +275,10 @@ pub fn create_uploader(config: &UploadConfig) -> Box<dyn SessionUploader> {
         return Box::new(NullUploader);
     }
 
-    if let Some(_url) = &config.endpoint_url {
-        if let Some(uploader) = HttpUploader::from_config(config) {
-            return Box::new(uploader);
-        }
+    if let Some(_url) = &config.endpoint_url
+        && let Some(uploader) = HttpUploader::from_config(config)
+    {
+        return Box::new(uploader);
     }
 
     if let Some(repo_id) = &config.repo_id {

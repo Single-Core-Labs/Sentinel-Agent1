@@ -216,18 +216,16 @@ fn finish(selected_model: &str, provider: ProviderInfo) -> Result<SelectedModel,
 
     // #53 — API-key preflight: fail fast before the agent is created.
     // Local backends (Ollama/vLLM/lm-studio/llamacpp) don't require a key.
-    if !is_local {
-        if let sentinel_provider_info::AuthConfig::EnvKey { var } = &provider.auth {
-            if std::env::var(var)
-                .map(|v| v.trim().is_empty())
-                .unwrap_or(true)
-            {
-                return Err(SelectError::ApiKeyMissing {
-                    provider: provider.name.clone(),
-                    env_var: var.clone(),
-                });
-            }
-        }
+    if !is_local
+        && let sentinel_provider_info::AuthConfig::EnvKey { var } = &provider.auth
+        && std::env::var(var)
+            .map(|v| v.trim().is_empty())
+            .unwrap_or(true)
+    {
+        return Err(SelectError::ApiKeyMissing {
+            provider: provider.name.clone(),
+            env_var: var.clone(),
+        });
     }
 
     // Local backends get their wire model name from `models[0].id`
@@ -559,9 +557,7 @@ mod tests {
     fn local_selection_requires_configured_backend() {
         let cfg = SentinelConfig::default();
         let err = resolve_model(&cfg, "ollama/qwen3:8b").unwrap_err();
-        assert!(
-            matches!(err, SelectError::LocalUnavailable { provider } if provider == "ollama")
-        );
+        assert!(matches!(err, SelectError::LocalUnavailable { provider } if provider == "ollama"));
     }
 
     #[test]

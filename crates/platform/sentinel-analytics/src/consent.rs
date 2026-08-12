@@ -49,11 +49,12 @@ pub fn is_consent_granted() -> bool {
 /// Persist the consent decision.
 pub fn save_consent(opted_in: bool) -> Result<PathBuf, String> {
     let path = consent_path();
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() && !parent.exists() {
-            std::fs::create_dir_all(parent)
-                .map_err(|e| format!("Failed to create '{}': {}", parent.display(), e))?;
-        }
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+        && !parent.exists()
+    {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create '{}': {}", parent.display(), e))?;
     }
     std::fs::write(&path, if opted_in { "on\n" } else { "off\n" })
         .map_err(|e| format!("Failed to write '{}': {}", path.display(), e))?;
@@ -69,7 +70,7 @@ pub fn prompt_for_consent_once(non_interactive: bool) -> TelemetryConsent {
         return load_consent();
     }
 
-    let decided = if non_interactive || !std::io::stdin().is_terminal() {
+    if non_interactive || !std::io::stdin().is_terminal() {
         let _ = save_consent(false);
         TelemetryConsent::OptedOut
     } else {
@@ -87,9 +88,7 @@ pub fn prompt_for_consent_once(non_interactive: bool) -> TelemetryConsent {
         } else {
             TelemetryConsent::OptedOut
         }
-    };
-
-    decided
+    }
 }
 
 /// Whether a decision marker already exists, so we don't ask again.

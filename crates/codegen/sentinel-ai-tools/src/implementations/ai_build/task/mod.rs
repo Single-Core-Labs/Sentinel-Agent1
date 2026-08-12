@@ -324,10 +324,12 @@ impl sentinel_tool_runtime::Tool for TaskTool {
         };
 
         if depth >= max_depth {
-            return Err(sentinel_tool_runtime::ToolError::invalid_arguments(format!(
-                "Subagent depth limit exceeded (current depth: {depth}, max: {max_depth}). \
+            return Err(sentinel_tool_runtime::ToolError::invalid_arguments(
+                format!(
+                    "Subagent depth limit exceeded (current depth: {depth}, max: {max_depth}). \
                  Cannot spawn further nested subagents."
-            )));
+                ),
+            ));
         }
 
         // Treat blank/empty/"null" resume_from as absent (models sometimes emit these).
@@ -409,23 +411,26 @@ impl sentinel_tool_runtime::Tool for TaskTool {
                 } else {
                     format!(". Available types: {}", available.join(", "))
                 };
-                return Err(sentinel_tool_runtime::ToolError::invalid_arguments(format!(
-                    "Unknown subagent type: {}{suffix}",
-                    input.subagent_type
-                )));
+                return Err(sentinel_tool_runtime::ToolError::invalid_arguments(
+                    format!("Unknown subagent type: {}{suffix}", input.subagent_type),
+                ));
             }
             SubagentValidateTypeOutcome::Disabled => {
-                return Err(sentinel_tool_runtime::ToolError::invalid_arguments(format!(
-                    "Subagent '{}' is disabled via [subagents.toggle] in config.toml",
-                    input.subagent_type
-                )));
+                return Err(sentinel_tool_runtime::ToolError::invalid_arguments(
+                    format!(
+                        "Subagent '{}' is disabled via [subagents.toggle] in config.toml",
+                        input.subagent_type
+                    ),
+                ));
             }
             SubagentValidateTypeOutcome::NotAllowed { allowed } => {
-                return Err(sentinel_tool_runtime::ToolError::invalid_arguments(format!(
-                    "agent can only spawn: {}; '{}' not allowed",
-                    allowed.join(", "),
-                    input.subagent_type
-                )));
+                return Err(sentinel_tool_runtime::ToolError::invalid_arguments(
+                    format!(
+                        "agent can only spawn: {}; '{}' not allowed",
+                        allowed.join(", "),
+                        input.subagent_type
+                    ),
+                ));
             }
             SubagentValidateTypeOutcome::ValidationUnavailable => {
                 // `custom` (not `invalid_arguments`) so the model doesn't
@@ -646,9 +651,9 @@ mod tests {
     };
     use crate::types::resources::Resources;
     use crate::types::tool_metadata::test_ctx;
+    use sentinel_tool_types::SubagentCapabilityMode;
     use std::sync::Arc;
     use tokio::sync::mpsc;
-    use sentinel_tool_types::SubagentCapabilityMode;
 
     /// Backend whose `ValidateType` events are auto-acked with `Ok`.
     fn make_backend() -> (
@@ -1255,7 +1260,8 @@ mod tests {
         input.model = Some("invented-model".to_string());
 
         let result =
-            sentinel_tool_runtime::Tool::run(&TaskTool, test_ctx(resources.into_shared()), input).await;
+            sentinel_tool_runtime::Tool::run(&TaskTool, test_ctx(resources.into_shared()), input)
+                .await;
 
         let msg = result
             .expect_err("invalid model must reject before spawn")

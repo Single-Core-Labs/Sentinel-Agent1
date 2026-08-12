@@ -1,3 +1,4 @@
+use crate::task::TaskTool;
 use crate::tool::{Tool, ToolContext, ToolOutput};
 use crate::undo::UndoTool;
 use async_trait::async_trait;
@@ -30,6 +31,7 @@ pub fn builtin_tools() -> Vec<Arc<dyn Tool>> {
         Arc::new(ExploreDocsTool),
         Arc::new(FetchDocsTool),
         Arc::new(FindApiTool),
+        Arc::new(TaskTool::new()),
     ]
 }
 
@@ -116,16 +118,15 @@ impl Tool for WriteTool {
             return ToolOutput::err("file_path is required");
         }
         let p = std::path::Path::new(path);
-        if let Some(parent) = p.parent() {
-            if !parent.exists() {
-                if let Err(e) = std::fs::create_dir_all(parent) {
-                    return ToolOutput::err(format!(
-                        "Failed to create directory {}: {}",
-                        parent.display(),
-                        e
-                    ));
-                }
-            }
+        if let Some(parent) = p.parent()
+            && !parent.exists()
+            && let Err(e) = std::fs::create_dir_all(parent)
+        {
+            return ToolOutput::err(format!(
+                "Failed to create directory {}: {}",
+                parent.display(),
+                e
+            ));
         }
         match std::fs::write(path, content) {
             Ok(_) => ToolOutput::ok(format!("Wrote {} bytes to {}", content.len(), path)),
@@ -322,11 +323,7 @@ impl Tool for GlobTool {
         let dot_files = args["dot_files"].as_bool().unwrap_or(false);
         let limit = args["limit"].as_u64().map(|v| v as usize);
         let base_dir = base_dir.unwrap_or_else(|| ".".to_string());
-        let full_pattern = format!(
-            "{}/{}",
-            base_dir.trim_end_matches(['/', '\\']),
-            pattern
-        );
+        let full_pattern = format!("{}/{}", base_dir.trim_end_matches(['/', '\\']), pattern);
         let base_path = std::path::Path::new(&base_dir);
         let filter = crate::filter::FileFilter::new(base_path, dot_files);
         match glob::glob(&full_pattern) {
@@ -338,26 +335,22 @@ impl Tool for GlobTool {
                     .collect();
                 // With a limit, collect the full match set, keep the most
                 // recently modified first, then truncate and say so.
-                if let Some(max) = limit {
-                    if results.len() > max {
-                        results.sort_by(|a, b| {
-                            let mtime = |p: &str| {
-                                std::fs::metadata(p)
-                                    .and_then(|m| m.modified())
-                                    .ok()
-                            };
-                            let (ta, tb) = (mtime(a), mtime(b));
-                            tb.cmp(&ta).then_with(|| a.cmp(b))
-                        });
-                        let total = results.len();
-                        results.truncate(max);
-                        let json = serde_json::to_string_pretty(&results)
-                            .unwrap_or_else(|_| "[]".to_string());
-                        return ToolOutput::ok(format!(
-                            "{} match(es), showing the latest {} (most recently modified first):\n{}",
-                            total, max, json
-                        ));
-                    }
+                if let Some(max) = limit
+                    && results.len() > max
+                {
+                    results.sort_by(|a, b| {
+                        let mtime = |p: &str| std::fs::metadata(p).and_then(|m| m.modified()).ok();
+                        let (ta, tb) = (mtime(a), mtime(b));
+                        tb.cmp(&ta).then_with(|| a.cmp(b))
+                    });
+                    let total = results.len();
+                    results.truncate(max);
+                    let json =
+                        serde_json::to_string_pretty(&results).unwrap_or_else(|_| "[]".to_string());
+                    return ToolOutput::ok(format!(
+                        "{} match(es), showing the latest {} (most recently modified first):\n{}",
+                        total, max, json
+                    ));
                 }
                 results.sort();
                 ToolOutput::ok(
@@ -431,7 +424,10 @@ impl Tool for GrepTool {
 }
 
 /// Depth-first walk pruning hidden/ignored directories upfront.
-fn walk_filtered(dir: &std::path::Path, filter: &crate::filter::FileFilter) -> Vec<std::path::PathBuf> {
+fn walk_filtered(
+    dir: &std::path::Path,
+    filter: &crate::filter::FileFilter,
+) -> Vec<std::path::PathBuf> {
     let mut out = Vec::new();
     let mut stack = vec![dir.to_path_buf()];
     while let Some(d) = stack.pop() {
@@ -555,7 +551,7 @@ impl Tool for WebSearchTool {
         "web_search"
     }
     fn description(&self) -> &str {
-        "Search the web for information"
+        "Search the web for information (DuckDuckGo instant answers, Wikipedia fallback)"
     }
     fn input_schema(&self) -> serde_json::Value {
         json!({
@@ -574,23 +570,93 @@ impl Tool for WebSearchTool {
             return ToolOutput::err("query is required");
         }
         let max_results = args["max_results"].as_u64().unwrap_or(5);
-
-        // Simple web search via a public API (can be replaced with any search backend)
         let client = reqwest::Client::new();
-        let url = format!(
+
+        // Primary: DuckDuckGo Instant Answer API — keyless general web search.
+        // Returns an abstract, definition, and RelatedTopics entries.
+        let ddg_url = format!(
+            "https://api.duckduckgo.com/?q={}&format=json&no_html=1&skip_disambig=1",
+            urlencoding(query)
+        );
+        if let Ok(resp) = client.get(&ddg_url).send().await
+            && let Ok(body) = resp.json::<serde_json::Value>().await
+            && let Some(rendered) = render_ddg_results(&body, max_results)
+        {
+            return ToolOutput::ok(rendered);
+        }
+
+        // Fallback: Wikipedia opensearch (title-only suggestions).
+        let wiki_url = format!(
             "https://en.wikipedia.org/w/api.php?action=opensearch&search={}&limit={}&format=json",
             urlencoding(query),
             max_results
         );
-
-        match client.get(&url).send().await {
-            Ok(resp) => match resp.text().await {
-                Ok(body) => ToolOutput::ok(body),
+        match client.get(&wiki_url).send().await {
+            Ok(resp) => match resp.json::<serde_json::Value>().await {
+                Ok(body) => ToolOutput::ok(serde_json::to_string_pretty(&body).unwrap_or_default()),
                 Err(e) => ToolOutput::err(format!("Search failed: {}", e)),
             },
             Err(e) => ToolOutput::err(format!("Search request failed: {}", e)),
         }
     }
+}
+
+/// Render a DuckDuckGo Instant Answer response as plain text. Returns `None`
+/// when the response carries no usable results (abstract or related topics).
+fn render_ddg_results(body: &serde_json::Value, max_results: u64) -> Option<String> {
+    let mut out = String::new();
+
+    let abstract_text = body["AbstractText"].as_str().unwrap_or("");
+    if !abstract_text.is_empty() {
+        if let Some(source) = body["AbstractSource"].as_str() {
+            out.push_str(&format!("Abstract ({source}):\n"));
+        } else {
+            out.push_str("Abstract:\n");
+        }
+        out.push_str(abstract_text);
+        out.push('\n');
+        if let Some(url) = body["AbstractURL"].as_str() {
+            out.push_str(&format!("\nSource: {url}\n"));
+        }
+    }
+
+    let heading = body["Heading"].as_str().unwrap_or("");
+    if !heading.is_empty() {
+        out.push_str(&format!("\nHeading: {heading}\n"));
+    }
+
+    let mut count: u64 = 0;
+    for topic in body["RelatedTopics"].as_array().into_iter().flatten() {
+        if topic.get("Topics").is_some() {
+            for sub in topic["Topics"].as_array().into_iter().flatten() {
+                if count >= max_results {
+                    break;
+                }
+                push_ddg_topic(&mut out, sub);
+                count += 1;
+            }
+        } else if count < max_results {
+            push_ddg_topic(&mut out, topic);
+            count += 1;
+        }
+    }
+
+    if out.is_empty() { None } else { Some(out) }
+}
+
+fn push_ddg_topic(out: &mut String, topic: &serde_json::Value) {
+    let text = topic["Text"].as_str().unwrap_or("");
+    if text.is_empty() {
+        return;
+    }
+    if !out.is_empty() && !out.ends_with('\n') {
+        out.push('\n');
+    }
+    out.push_str(&format!("- {text}"));
+    if let Some(url) = topic["FirstURL"].as_str() {
+        out.push_str(&format!("\n  {url}"));
+    }
+    out.push('\n');
 }
 
 // ── Git Status ─────────────────────────────────────────────────
@@ -1344,7 +1410,9 @@ impl Tool for ViewTool {
         if start >= total {
             return ToolOutput::ok(format!(
                 "{} has {} lines; requested offset {} is past the end.",
-                path, total, start + 1
+                path,
+                total,
+                start + 1
             ));
         }
         let end = match limit {
@@ -1377,7 +1445,7 @@ fn suggest_similar_path(path: &str, ctx: &ToolContext) -> String {
             .workspace_dir
             .as_ref()
             .map(std::path::PathBuf::from)
-            .unwrap_or_else(std::path::PathBuf::new),
+            .unwrap_or_default(),
     };
     let wanted = p
         .file_name()
@@ -1396,12 +1464,13 @@ fn suggest_similar_path(path: &str, ctx: &ToolContext) -> String {
     }
     scored.sort_by_key(|(d, _)| *d);
     let mut out = format!("File not found: {}", path);
-    if let Some((dist, name)) = scored.first() {
-        if *dist <= 4 && *dist < wanted.len().max(2) {
-            out.push_str(&format!("\nDid you mean: {}", name));
-            if scored.len() > 1 && scored[1].0 <= *dist + 1 {
-                out.push_str(&format!(" or {}", scored[1].1));
-            }
+    if let Some((dist, name)) = scored.first()
+        && *dist <= 4
+        && *dist < wanted.len().max(2)
+    {
+        out.push_str(&format!("\nDid you mean: {}", name));
+        if scored.len() > 1 && scored[1].0 <= *dist + 1 {
+            out.push_str(&format!(" or {}", scored[1].1));
         }
     }
     out
@@ -1459,8 +1528,15 @@ impl Tool for LsTool {
             return ToolOutput::err(format!("Not a directory: {}", root.display()));
         }
 
-        let depth = args["depth"].as_u64().map(|v| v as usize).unwrap_or(2).min(6);
-        let max_entries = args["max_entries"].as_u64().map(|v| v as usize).unwrap_or(200);
+        let depth = args["depth"]
+            .as_u64()
+            .map(|v| v as usize)
+            .unwrap_or(2)
+            .min(6);
+        let max_entries = args["max_entries"]
+            .as_u64()
+            .map(|v| v as usize)
+            .unwrap_or(200);
         let fuzzy_query = args["fuzzy"]
             .as_str()
             .map(str::to_string)
@@ -1544,7 +1620,15 @@ impl Tool for LsTool {
             }
         }
 
-        walk(&root, "", depth, max_entries, &mut count, &mut truncated, &mut out);
+        walk(
+            &root,
+            "",
+            depth,
+            max_entries,
+            &mut count,
+            &mut truncated,
+            &mut out,
+        );
         if truncated {
             out.push_str(&format!("... (truncated after {} entries)\n", count));
         }
@@ -1621,7 +1705,12 @@ fn fuzzy_score(query: &str, text: &str) -> Option<i64> {
 /// Flat walk for `ls --fuzzy`: emit every non-skipped entry whose relative
 /// path is a subsequence match, keeping the score. Descends into non-matching
 /// directories so deep matches are found.
-fn collect_fuzzy(root: &std::path::Path, query: &str, max_depth: usize, out: &mut Vec<(i64, String)>) {
+fn collect_fuzzy(
+    root: &std::path::Path,
+    query: &str,
+    max_depth: usize,
+    out: &mut Vec<(i64, String)>,
+) {
     fn walk(
         dir: &std::path::Path,
         root: &std::path::Path,

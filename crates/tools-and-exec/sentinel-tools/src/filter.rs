@@ -127,10 +127,7 @@ fn segments_prefix_match(comps: &[String], segs: &[String]) -> bool {
     if segs.len() < comps.len() {
         return false;
     }
-    comps
-        .iter()
-        .zip(segs.iter())
-        .all(|(c, s)| glob_comp(c, s))
+    comps.iter().zip(segs.iter()).all(|(c, s)| glob_comp(c, s))
 }
 
 // ── Gitignore store ─────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -149,11 +146,11 @@ impl Gitignore {
                 break;
             };
             let candidate = d.join(".gitignore");
-            if candidate.is_file() {
-                if let Ok(content) = std::fs::read_to_string(&candidate) {
-                    let rules = content.lines().filter_map(parse_rule).collect();
-                    return Self { rules };
-                }
+            if candidate.is_file()
+                && let Ok(content) = std::fs::read_to_string(&candidate)
+            {
+                let rules = content.lines().filter_map(parse_rule).collect();
+                return Self { rules };
             }
             dir = d.parent();
         }
@@ -216,7 +213,10 @@ impl FileFilter {
         if segs.is_empty() {
             return false;
         }
-        if segs.iter().any(|s| ALWAYS_IGNORED_DIRS.contains(&s.as_str())) {
+        if segs
+            .iter()
+            .any(|s| ALWAYS_IGNORED_DIRS.contains(&s.as_str()))
+        {
             return true;
         }
         if !self.dot_files && segs.iter().any(|s| s.starts_with('.')) {
@@ -296,30 +296,30 @@ mod tests {
     #[test]
     fn gitignore_dir_rule_covers_subtree() {
         let rule = parse_rule("/build/").unwrap();
-        assert!(rule.matches(&rel_segments(&Path::new("build"))));
-        assert!(rule.matches(&rel_segments(&Path::new("build/out/obj"))));
-        assert!(!rule.matches(&rel_segments(&Path::new("my/build/x"))));
+        assert!(rule.matches(&rel_segments(Path::new("build"))));
+        assert!(rule.matches(&rel_segments(Path::new("build/out/obj"))));
+        assert!(!rule.matches(&rel_segments(Path::new("my/build/x"))));
     }
 
     #[test]
     fn gitignore_anchored_literal_covers_subtree() {
         let rule = parse_rule("/foo/bar").unwrap();
-        assert!(rule.matches(&rel_segments(&Path::new("foo/bar"))));
-        assert!(rule.matches(&rel_segments(&Path::new("foo/bar/baz.txt"))));
-        assert!(!rule.matches(&rel_segments(&Path::new("my/foo/bar/x"))));
+        assert!(rule.matches(&rel_segments(Path::new("foo/bar"))));
+        assert!(rule.matches(&rel_segments(Path::new("foo/bar/baz.txt"))));
+        assert!(!rule.matches(&rel_segments(Path::new("my/foo/bar/x"))));
     }
 
     #[test]
     fn gitignore_glob_segments() {
         let rule = parse_rule("src/**/tmp.rs").unwrap();
-        assert!(rule.matches(&rel_segments(&Path::new("src/deep/tmp.rs"))));
-        assert!(rule.matches(&rel_segments(&Path::new("src/tmp.rs"))));
-        assert!(!rule.matches(&rel_segments(&Path::new("src/other.rs"))));
+        assert!(rule.matches(&rel_segments(Path::new("src/deep/tmp.rs"))));
+        assert!(rule.matches(&rel_segments(Path::new("src/tmp.rs"))));
+        assert!(!rule.matches(&rel_segments(Path::new("src/other.rs"))));
 
         let star = parse_rule("*.tmp").unwrap();
-        assert!(star.matches(&rel_segments(&Path::new("file.tmp"))));
-        assert!(star.matches(&rel_segments(&Path::new("a/b/file.tmp"))));
-        assert!(!star.matches(&rel_segments(&Path::new("file.rs"))));
+        assert!(star.matches(&rel_segments(Path::new("file.tmp"))));
+        assert!(star.matches(&rel_segments(Path::new("a/b/file.tmp"))));
+        assert!(!star.matches(&rel_segments(Path::new("file.rs"))));
     }
 
     #[test]
@@ -328,8 +328,8 @@ mod tests {
         let _ = std::fs::create_dir_all(&root);
         std::fs::write(root.join(".gitignore"), "*.log\n!keep.log\n").unwrap();
         let gi = Gitignore::load_for(&root);
-        assert!(gi.is_ignored(&rel_segments(&Path::new("drop.log"))));
-        assert!(!gi.is_ignored(&rel_segments(&Path::new("keep.log"))));
+        assert!(gi.is_ignored(&rel_segments(Path::new("drop.log"))));
+        assert!(!gi.is_ignored(&rel_segments(Path::new("keep.log"))));
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -338,7 +338,7 @@ mod tests {
         let root = tmp("none");
         let _ = std::fs::create_dir_all(&root);
         let gi = Gitignore::load_for(&root);
-        assert!(!gi.is_ignored(&rel_segments(&Path::new("anything.go"))));
+        assert!(!gi.is_ignored(&rel_segments(Path::new("anything.go"))));
         let _ = std::fs::remove_dir_all(&root);
     }
 }

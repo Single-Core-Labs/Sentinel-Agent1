@@ -24,9 +24,9 @@ use opentelemetry_proto::tonic::metrics::v1::{
 use opentelemetry_proto::tonic::resource::v1::Resource;
 use prometheus::proto::{MetricFamily, MetricType};
 use prost::Message as _;
+use sentinel_tool_protocol::{MAX_DONATION_BYTES, MAX_METRICS_PER_DONATION};
 use tokio::sync::mpsc;
 use tokio_util::sync::CancellationToken;
-use sentinel_tool_protocol::{MAX_DONATION_BYTES, MAX_METRICS_PER_DONATION};
 
 use crate::donate_pump::{
     PENDING_FLUSHES, PumpMsg, make_resource, now_unix_nanos, run_pump, string_kv,
@@ -521,8 +521,7 @@ other_family_total 9\n";
     fn converts_counter_gauge_histogram_with_labels() {
         let registry = Registry::new();
 
-        let counter =
-            IntCounterVec::new(Opts::new("ai_test_total", "help"), &["reason"]).unwrap();
+        let counter = IntCounterVec::new(Opts::new("ai_test_total", "help"), &["reason"]).unwrap();
         registry.register(Box::new(counter.clone())).unwrap();
         counter.with_label_values(&["zdr"]).inc_by(5);
 

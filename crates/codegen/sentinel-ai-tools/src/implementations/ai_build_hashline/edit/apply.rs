@@ -387,6 +387,7 @@ fn build_snippet(
     parts.join("\n")
 }
 /// Resolve a single `HashlineOp` into a `ResolvedOp`, validating anchors.
+#[allow(clippy::result_large_err)]
 fn resolve_op(
     op: &HashlineOp,
     original_idx: usize,
@@ -528,6 +529,7 @@ fn recover_anchor_by_suffix(
 
 /// Validate an anchor string against file content.
 /// Returns the 0-based line index on success, or a structured error.
+#[allow(clippy::result_large_err)]
 fn validate_anchor(
     anchor_str: &str,
     lines: &[&str],

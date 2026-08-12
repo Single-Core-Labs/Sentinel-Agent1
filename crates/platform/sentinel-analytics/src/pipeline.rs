@@ -51,10 +51,7 @@ impl AnalyticsPipeline {
         }
     }
 
-    async fn dispatch_loop(
-        mut rx: mpsc::Receiver<AnalyticsEvent>,
-        config: Arc<AnalyticsConfig>,
-    ) {
+    async fn dispatch_loop(mut rx: mpsc::Receiver<AnalyticsEvent>, config: Arc<AnalyticsConfig>) {
         let mut batch: Vec<AnalyticsEvent> = Vec::new();
         let mut flush_interval =
             tokio::time::interval(Duration::from_secs(config.batch_interval_secs));

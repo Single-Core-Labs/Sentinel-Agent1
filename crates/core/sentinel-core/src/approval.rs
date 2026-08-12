@@ -90,7 +90,6 @@ fn glob_match(pattern: &str, name: &str) -> bool {
     false
 }
 
-
 /// Approval gate that consults a [`PermissionRuleset`] before delegating to an
 /// inner gate:
 ///
@@ -308,5 +307,4 @@ mod tests {
             ApprovalDecision::Approved
         }
     }
-
 }

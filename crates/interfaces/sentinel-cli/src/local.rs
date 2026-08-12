@@ -1,8 +1,8 @@
 use colored::*;
 use sentinel_provider_info::{AuthConfig, ProviderInfo};
-use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::sync::OnceLock;
+use std::sync::atomic::Ordering;
 
 static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 fn client() -> &'static reqwest::Client {
@@ -103,10 +103,7 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     let (loaded_count, failed_plugins) =
         sentinel_plugin_system::load_default_plugins(&plugin_registry).await;
     if loaded_count > 0 {
-        println!(
-            " {} plugins loaded",
-            format!("{}", loaded_count).yellow()
-        );
+        println!(" {} plugins loaded", format!("{}", loaded_count).yellow());
     }
     if !failed_plugins.is_empty() {
         for err in failed_plugins {
@@ -163,15 +160,15 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
 
     // One-shot slash command mode: `sentinel local <model> /cmd [arg]` runs once and exits.
     // Used by the cost harness (zero LLM tokens for deterministic work).
-    if let Some(one_shot) = args.get(1) {
-        if one_shot.starts_with('/') {
-            let (cmd, arg) = match one_shot.split_once(' ') {
-                Some((c, a)) => (c, a),
-                None => (one_shot.as_str(), ""),
-            };
-            run_slash(&agent, &mut thread, &model, &info, cmd, arg).await;
-            return Ok(());
-        }
+    if let Some(one_shot) = args.get(1)
+        && one_shot.starts_with('/')
+    {
+        let (cmd, arg) = match one_shot.split_once(' ') {
+            Some((c, a)) => (c, a),
+            None => (one_shot.as_str(), ""),
+        };
+        run_slash(&agent, &mut thread, &model, &info, cmd, arg).await;
+        return Ok(());
     }
 
     chat_loop(&agent, &mut thread, &model, &info, approval).await
@@ -370,8 +367,14 @@ fn cmd_stats(thread: &sentinel_core::AgentThread) {
 async fn cmd_bench(model: &str) {
     let prompts = [
         ("Short", "What is 2+2? Answer concisely."),
-        ("Medium", "Explain how neural networks work in 2-3 paragraphs."),
-        ("Long", "Write a detailed analysis of the transformer architecture, including attention mechanisms, multi-head attention, positional encoding, and how these components work together to enable parallel processing of sequences. Cover the key innovations over previous RNN-based approaches."),
+        (
+            "Medium",
+            "Explain how neural networks work in 2-3 paragraphs.",
+        ),
+        (
+            "Long",
+            "Write a detailed analysis of the transformer architecture, including attention mechanisms, multi-head attention, positional encoding, and how these components work together to enable parallel processing of sequences. Cover the key innovations over previous RNN-based approaches.",
+        ),
     ];
 
     println!();
@@ -440,15 +443,15 @@ async fn cmd_show(model: &str) {
                 println!("   {} {}", "Format:".dimmed(), f);
             }
 
-            if let Some(ref caps) = m.capabilities {
-                if !caps.is_empty() {
-                    println!();
-                    println!(
-                        "   {} {}",
-                        "Capabilities:".dimmed(),
-                        caps.join(", ").green()
-                    );
-                }
+            if let Some(ref caps) = m.capabilities
+                && !caps.is_empty()
+            {
+                println!();
+                println!(
+                    "   {} {}",
+                    "Capabilities:".dimmed(),
+                    caps.join(", ").green()
+                );
             }
 
             if let Some(ref mi) = m.model_info {
@@ -459,14 +462,13 @@ async fn cmd_show(model: &str) {
                     .or_else(|| mi.get("mistral.context_length"))
                     .or_else(|| mi.get("phi3.context_length"))
                     .or_else(|| mi.get("gemma2.context_length"))
+                    && let Some(n) = ctx.as_f64()
                 {
-                    if let Some(n) = ctx.as_f64() {
-                        println!(
-                            "   {} {} tokens",
-                            "Context:".dimmed(),
-                            format!("{:.0}", n).bold()
-                        );
-                    }
+                    println!(
+                        "   {} {} tokens",
+                        "Context:".dimmed(),
+                        format!("{:.0}", n).bold()
+                    );
                 }
                 if let Some(param_count) =
                     mi.get("general.parameter_count").and_then(|v| v.as_f64())
@@ -922,11 +924,7 @@ async fn select_model(info: &SysInfo) -> anyhow::Result<String> {
         println!("   {}", "(none)".dimmed());
     } else {
         for (i, m) in existing.iter().enumerate() {
-            println!(
-                "   {}. {}",
-                (i + 1).to_string().cyan().bold(),
-                m.green()
-            );
+            println!("   {}. {}", (i + 1).to_string().cyan().bold(), m.green());
         }
     }
 
@@ -948,13 +946,7 @@ async fn select_model(info: &SysInfo) -> anyhow::Result<String> {
         } else {
             " ".normal()
         };
-        println!(
-            " {} {:8}  {}  {}",
-            marker,
-            tier,
-            name.bold(),
-            note.dimmed()
-        );
+        println!(" {} {:8}  {}  {}", marker, tier, name.bold(), note.dimmed());
     }
 
     println!();

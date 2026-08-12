@@ -38,8 +38,18 @@ pub fn default_panic_dump_dir() -> PathBuf {
     }
     std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
-        .map(|h| PathBuf::from(h).join(".sentinel").join("logs").join("panics"))
-        .unwrap_or_else(|| PathBuf::from(".").join(".sentinel").join("logs").join("panics"))
+        .map(|h| {
+            PathBuf::from(h)
+                .join(".sentinel")
+                .join("logs")
+                .join("panics")
+        })
+        .unwrap_or_else(|| {
+            PathBuf::from(".")
+                .join(".sentinel")
+                .join("logs")
+                .join("panics")
+        })
 }
 
 /// Guard that dumps on unwind and always runs an optional cleanup.
@@ -91,11 +101,8 @@ impl Drop for RecoverPanic {
 /// Run `f`, recovering from a panic: on failure, the payload and a full stack
 /// trace are dumped to a timestamped file under `dir` and `cleanup` still
 /// runs. Returns `Ok(result)` on success or `Err(())` after the panic.
-pub fn recover_panic<F, R>(
-    dir: &Path,
-    cleanup: impl FnOnce(),
-    closure: F,
-) -> Result<R, ()>
+#[allow(clippy::result_unit_err)]
+pub fn recover_panic<F, R>(dir: &Path, cleanup: impl FnOnce(), closure: F) -> Result<R, ()>
 where
     F: FnOnce() -> R + UnwindSafe,
 {
@@ -129,7 +136,7 @@ pub fn format_payload(payload: &dyn Any) -> String {
     if let Some(s) = payload.downcast_ref::<&String>() {
         return (*s).clone();
     }
-    format!("non-string panic payload ({})", type_name_of(&*payload))
+    format!("non-string panic payload ({})", type_name_of(payload))
 }
 
 fn type_name_of(p: &dyn Any) -> &'static str {
@@ -154,12 +161,18 @@ pub fn write_panic_dump(dir: &Path, payload: Option<&str>) -> std::io::Result<Pa
     let payload = payload.unwrap_or("<payload unavailable>");
 
     let mut body = String::new();
-    let _ = writeln!(body, "──────────────────────────────────────────────────────");
+    let _ = writeln!(
+        body,
+        "──────────────────────────────────────────────────────"
+    );
     let _ = writeln!(body, "Sentinel panic");
     let _ = writeln!(body, "time:   {}", chrono::Utc::now().to_rfc3339());
     let _ = writeln!(body, "thread: {}", thread_name);
     let _ = writeln!(body, "panic:  {}", payload);
-    let _ = writeln!(body, "──────────────────────────────────────────────────────");
+    let _ = writeln!(
+        body,
+        "──────────────────────────────────────────────────────"
+    );
     let _ = writeln!(body, "stack:\n{}", Backtrace::force_capture());
 
     let mut file = fs::File::create(&path)?;
@@ -191,7 +204,12 @@ pub fn record_panic(dir: &Path, payload: Option<&str>) -> Option<PathBuf> {
     )
     .with_attr("caller", get_caller())
     .with_attr("thread", thread_name)
-    .with_attr("dump_path", path.as_ref().map(|p| p.display().to_string()).unwrap_or_default());
+    .with_attr(
+        "dump_path",
+        path.as_ref()
+            .map(|p| p.display().to_string())
+            .unwrap_or_default(),
+    );
 
     default_log_store().log(message);
     tracing::error!(panic = %detail, "panic recovered (see dump file)");
@@ -214,11 +232,15 @@ mod tests {
     fn recover_panic_writes_dump_and_runs_cleanup() {
         let dir = tmp_dir();
         let mut cleanup_ran = false;
-        let result = recover_panic(&dir, || cleanup_ran = true, || {
-            panic!("boom {}-test", 42);
-            #[allow(unreachable_code)]
-            5
-        });
+        let result = recover_panic(
+            &dir,
+            || cleanup_ran = true,
+            || {
+                panic!("boom {}-test", 42);
+                #[allow(unreachable_code)]
+                5
+            },
+        );
         assert!(result.is_err());
         assert!(cleanup_ran);
         let entries: Vec<PathBuf> = fs::read_dir(&dir)
@@ -226,10 +248,19 @@ mod tests {
             .map(|e| e.unwrap().path())
             .collect();
         assert_eq!(entries.len(), 1);
-        assert!(entries[0].file_name().unwrap().to_string_lossy().starts_with("panic_"));
+        assert!(
+            entries[0]
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with("panic_")
+        );
         let dump = fs::read_to_string(&entries[0]).unwrap();
         assert!(dump.contains("stack"));
-        assert!(dump.contains("boom 42-test"), "missing payload in dump: {dump}");
+        assert!(
+            dump.contains("boom 42-test"),
+            "missing payload in dump: {dump}"
+        );
         let _ = fs::remove_dir_all(dir);
     }
 
@@ -246,8 +277,8 @@ mod tests {
 
     #[test]
     fn guard_dumps_only_when_panicking() {
-        use std::sync::atomic::{AtomicBool, Ordering};
         use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
 
         let dir = tmp_dir();
         let cleaned = Arc::new(AtomicBool::new(false));
@@ -295,7 +326,10 @@ mod tests {
             "expected caller file prefix, got {caller}"
         );
         let (_, line) = caller.rsplit_once(':').unwrap();
-        assert!(line.parse::<u32>().is_ok(), "line must be numeric: {caller}");
+        assert!(
+            line.parse::<u32>().is_ok(),
+            "line must be numeric: {caller}"
+        );
     }
 
     #[test]
@@ -304,11 +338,15 @@ mod tests {
 
         let dir = tmp_dir();
         crate::logging::store::drain_default_log_store();
-        let result = recover_panic(&dir, || {}, || {
-            panic!("kaboom-event");
-            #[allow(unreachable_code)]
-            ()
-        });
+        let result = recover_panic(
+            &dir,
+            || {},
+            || {
+                panic!("kaboom-event");
+                #[allow(unreachable_code)]
+                ()
+            },
+        );
         assert!(result.is_err());
 
         let events: Vec<LogMessage> = default_log_store().messages();
@@ -318,9 +356,7 @@ mod tests {
             .expect("panic must be surfaced in the log store");
         assert_eq!(panic_event.level, LogLevel::Error);
         assert!(
-            panic_event
-                .attr("thread")
-                .is_some_and(|t| !t.is_empty()),
+            panic_event.attr("thread").is_some_and(|t| !t.is_empty()),
             "expected a thread attribute"
         );
         assert!(

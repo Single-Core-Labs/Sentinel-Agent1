@@ -796,9 +796,10 @@ mod tests {
             format: None,
         };
         let mut ctx = test_ctx(resources.into_shared());
-        ctx.extensions.insert(sentinel_tool_runtime::BehaviorVersion(
-            "legacy-0.4.10".to_string(),
-        ));
+        ctx.extensions
+            .insert(sentinel_tool_runtime::BehaviorVersion(
+                "legacy-0.4.10".to_string(),
+            ));
         let result = sentinel_tool_runtime::Tool::run(&tool, ctx, input)
             .await
             .unwrap();
@@ -825,9 +826,10 @@ mod tests {
             pages: None,
             format: None,
         };
-        let result = sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
-            .await
-            .unwrap();
+        let result =
+            sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
+                .await
+                .unwrap();
         match result {
             ReadFileOutput::FileNotFound(msg) => {
                 assert!(msg.contains("does not exist"), "got: {msg}");
@@ -848,10 +850,13 @@ mod tests {
             pages: None,
             format: None,
         };
-        let result =
-            sentinel_tool_runtime::Tool::run(&ReadFileTool, test_ctx(resources.into_shared()), input)
-                .await
-                .unwrap();
+        let result = sentinel_tool_runtime::Tool::run(
+            &ReadFileTool,
+            test_ctx(resources.into_shared()),
+            input,
+        )
+        .await
+        .unwrap();
         match result {
             ReadFileOutput::FileNotFound(msg) => msg,
             other => panic!("Expected FileNotFound, got {other:?}"),
@@ -981,9 +986,10 @@ mod tests {
             format: None,
         };
         let mut ctx = test_ctx(resources.into_shared());
-        ctx.extensions.insert(sentinel_tool_runtime::BehaviorVersion(
-            "legacy-0.4.10".to_string(),
-        ));
+        ctx.extensions
+            .insert(sentinel_tool_runtime::BehaviorVersion(
+                "legacy-0.4.10".to_string(),
+            ));
         let result = sentinel_tool_runtime::Tool::run(&tool, ctx, input)
             .await
             .unwrap();
@@ -1010,9 +1016,10 @@ mod tests {
             pages: None,
             format: None,
         };
-        let result = sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
-            .await
-            .unwrap();
+        let result =
+            sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
+                .await
+                .unwrap();
         match result {
             ReadFileOutput::IsADirectory(msg) => {
                 assert!(msg.contains("is a directory, not a file"), "got: {msg}");
@@ -1033,9 +1040,10 @@ mod tests {
             pages: None,
             format: None,
         };
-        let result = sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
-            .await
-            .unwrap();
+        let result =
+            sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
+                .await
+                .unwrap();
         match result {
             ReadFileOutput::FileContent(content) => {
                 assert_eq!(content.content, "");
@@ -1059,9 +1067,10 @@ mod tests {
             pages: None,
             format: None,
         };
-        let result = sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
-            .await
-            .unwrap();
+        let result =
+            sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
+                .await
+                .unwrap();
         match result {
             ReadFileOutput::FileContent(content) => {
                 assert!(content.content.contains("2"));
@@ -1085,9 +1094,10 @@ mod tests {
             pages: None,
             format: None,
         };
-        let result = sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
-            .await
-            .unwrap();
+        let result =
+            sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
+                .await
+                .unwrap();
         match result {
             ReadFileOutput::FileContent(content) => {
                 assert!(content.raw_output.contains("content"));
@@ -1108,9 +1118,10 @@ mod tests {
             pages: None,
             format: None,
         };
-        let result = sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
-            .await
-            .unwrap();
+        let result =
+            sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
+                .await
+                .unwrap();
         match result {
             ReadFileOutput::FileContent(content) => {
                 assert_eq!(content.content, "1→hello\n");
@@ -1132,9 +1143,10 @@ mod tests {
             pages: None,
             format: None,
         };
-        let result = sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
-            .await
-            .unwrap();
+        let result =
+            sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
+                .await
+                .unwrap();
         match result {
             ReadFileOutput::FileContent(content) => {
                 let concise = content.content_concise.unwrap();
@@ -1164,9 +1176,10 @@ mod tests {
             pages: None,
             format: None,
         };
-        let result = sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
-            .await
-            .unwrap();
+        let result =
+            sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
+                .await
+                .unwrap();
         match result {
             ReadFileOutput::FileTooLarge(msg) => {
                 assert!(msg.contains("exceeds maximum allowed tokens"));
@@ -1200,9 +1213,10 @@ mod tests {
             pages: None,
             format: None,
         };
-        let result = sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
-            .await
-            .unwrap();
+        let result =
+            sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
+                .await
+                .unwrap();
         match result {
             ReadFileOutput::FileTooLarge(msg) => {
                 assert!(msg.contains("requested line range"));
@@ -1446,9 +1460,10 @@ mod tests {
             pages: None,
             format: None,
         };
-        let result = sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
-            .await
-            .unwrap();
+        let result =
+            sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
+                .await
+                .unwrap();
         match result {
             ReadFileOutput::FileContent(content) => {
                 assert!(
@@ -1482,9 +1497,10 @@ mod tests {
             pages: None,
             format: None,
         };
-        let result = sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
-            .await
-            .unwrap();
+        let result =
+            sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
+                .await
+                .unwrap();
         match result {
             ReadFileOutput::FileReadError(msg) => {
                 assert!(
@@ -1518,9 +1534,10 @@ mod tests {
             format: None,
         };
         let mut ctx = test_ctx(resources.into_shared());
-        ctx.extensions.insert(sentinel_tool_runtime::BehaviorVersion(
-            "legacy-0.4.10".to_string(),
-        ));
+        ctx.extensions
+            .insert(sentinel_tool_runtime::BehaviorVersion(
+                "legacy-0.4.10".to_string(),
+            ));
         let result = sentinel_tool_runtime::Tool::run(&tool, ctx, input)
             .await
             .unwrap();
@@ -1552,9 +1569,10 @@ mod tests {
             pages: None,
             format: None,
         };
-        let result = sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
-            .await
-            .unwrap();
+        let result =
+            sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
+                .await
+                .unwrap();
         match result {
             ReadFileOutput::FileContent(content) => {
                 assert!(content.raw_output.contains("fn main()"));
@@ -1580,9 +1598,10 @@ mod tests {
             pages: None,
             format: None,
         };
-        let result = sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
-            .await
-            .unwrap();
+        let result =
+            sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
+                .await
+                .unwrap();
         match result {
             ReadFileOutput::FileContent(content) => {
                 assert!(content.raw_output.contains("log data for read_file test"));
@@ -1610,9 +1629,10 @@ mod tests {
             pages: None,
             format: None,
         };
-        let result = sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
-            .await
-            .unwrap();
+        let result =
+            sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
+                .await
+                .unwrap();
         match result {
             ReadFileOutput::FileContent(_) => {}
             other => {
@@ -1883,16 +1903,13 @@ pub fn verify(req: &HttpRequest) -> Result<Claims, Error> {
     #[test]
     fn compress_output_never_exceeds_payload_limit() {
         let png = make_noisy_png(4096, 3072);
-        match compress_image_for_conversation(png, "image/png".into()) {
-            Ok((buf, mime)) => {
-                assert_eq!(mime, "image/jpeg");
-                let b64_len = (buf.len() * 4).div_ceil(3);
-                assert!(
-                    b64_len <= MAX_IMAGE_PAYLOAD_BYTES,
-                    "JPEG output ({b64_len} B b64) must fit within {MAX_IMAGE_PAYLOAD_BYTES} B"
-                );
-            }
-            Err(_) => {}
+        if let Ok((buf, mime)) = compress_image_for_conversation(png, "image/png".into()) {
+            assert_eq!(mime, "image/jpeg");
+            let b64_len = (buf.len() * 4).div_ceil(3);
+            assert!(
+                b64_len <= MAX_IMAGE_PAYLOAD_BYTES,
+                "JPEG output ({b64_len} B b64) must fit within {MAX_IMAGE_PAYLOAD_BYTES} B"
+            );
         }
     }
     /// Wrapper-level user-visible message: prefix matches the caller's
@@ -1930,9 +1947,10 @@ pub fn verify(req: &HttpRequest) -> Result<Claims, Error> {
             pages: None,
             format: None,
         };
-        let result = sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
-            .await
-            .unwrap();
+        let result =
+            sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
+                .await
+                .unwrap();
         match result {
             ReadFileOutput::FileContent(fc) => {
                 assert!(
@@ -1974,9 +1992,10 @@ pub fn verify(req: &HttpRequest) -> Result<Claims, Error> {
             pages: None,
             format: None,
         };
-        let result = sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
-            .await
-            .unwrap();
+        let result =
+            sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
+                .await
+                .unwrap();
         assert!(
             matches!(result, ReadFileOutput::FileContent(_)),
             "SKILL.md should not be truncated, got {:?}",
@@ -2002,9 +2021,10 @@ pub fn verify(req: &HttpRequest) -> Result<Claims, Error> {
             pages: None,
             format: None,
         };
-        let result = sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
-            .await
-            .unwrap();
+        let result =
+            sentinel_tool_runtime::Tool::run(&tool, test_ctx(resources.into_shared()), input)
+                .await
+                .unwrap();
         match result {
             ReadFileOutput::FileContent(fc) => {
                 assert!(

@@ -546,8 +546,10 @@ mod tests {
         let opt = CacheOptimizer::new(config);
         let messages = vec![msg(MessageRole::System, "system prompt here")];
         let result = opt.optimize(messages, "claude-sonnet-4-20250514");
-        assert!(result.messages[0]
-            .content
-            .contains("[cache_control: breakpoint type=system]"));
+        assert!(
+            result.messages[0]
+                .content
+                .contains("[cache_control: breakpoint type=system]")
+        );
     }
 }

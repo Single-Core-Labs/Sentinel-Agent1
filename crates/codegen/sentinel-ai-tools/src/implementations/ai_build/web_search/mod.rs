@@ -116,7 +116,10 @@ mod tests {
     #[test]
     fn tool_name_and_description() {
         let tool = WebSearchTool;
-        assert_eq!(sentinel_tool_runtime::Tool::id(&tool).as_str(), "web_search");
+        assert_eq!(
+            sentinel_tool_runtime::Tool::id(&tool).as_str(),
+            "web_search"
+        );
         assert!(
             crate::types::tool_metadata::ToolMetadata::description_template(&tool)
                 .contains("Search the web")

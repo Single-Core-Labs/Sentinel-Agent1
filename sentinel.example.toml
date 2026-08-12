@@ -1,5 +1,5 @@
 [agent]
-default_model = "gpt-4o-mini"
+default_model = "ollama/qwen3:latest"
 max_turns = 50
 max_iterations = 100
 yolo_mode = true

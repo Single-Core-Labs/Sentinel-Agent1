@@ -4,7 +4,7 @@
 # event JSON on stdin; first stdout line decides: "allow" | "veto <reason>".
 tool="$2"
 case "$tool" in
-  write|edit|apply_patch) ;;
+  write|edit|apply_patch|patch) ;;
   *) echo "allow"; exit 0 ;;
 esac
 
@@ -41,18 +41,17 @@ case "$tool" in
       echo "veto file escapes workspace: $path"
     fi
     ;;
-  apply_patch)
+  apply_patch|patch)
     violation=""
     for p in $(printf '%s' "$json" | grep -o '\+\+\+ [^"\]*' | sed 's/^+++ //' | sort -u); do
       case "$p" in
         /dev/null) continue ;;
-        /*)
-          if ! inside "$p"; then
-            violation="$p"
-            break
-          fi
-          ;;
+        b/*) p="${p#b/}" ;;
       esac
+      if ! inside "$p"; then
+        violation="$p"
+        break
+      fi
     done
     if [ -n "$violation" ]; then
       echo "veto apply_patch target escapes workspace: $violation"

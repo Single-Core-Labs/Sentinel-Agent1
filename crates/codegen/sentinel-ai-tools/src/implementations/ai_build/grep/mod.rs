@@ -190,7 +190,8 @@ fn grep_timeout() -> Duration {
 /// [`sentinel_tty_utils::KILL_REAP_TIMEOUT`]; on expiry the corpse is abandoned to
 /// tokio's orphan reaper (see the constant's docs for the D-state rationale).
 async fn reap_killed_rg(child: &mut Child) -> Option<std::process::ExitStatus> {
-    let status = sentinel_tty_utils::reap_killed_bounded(child, sentinel_tty_utils::KILL_REAP_TIMEOUT).await;
+    let status =
+        sentinel_tty_utils::reap_killed_bounded(child, sentinel_tty_utils::KILL_REAP_TIMEOUT).await;
     if status.is_none() {
         tracing::warn!(
             reap_timeout_secs = sentinel_tty_utils::KILL_REAP_TIMEOUT.as_secs(),
@@ -1799,10 +1800,13 @@ mod tests {
             (resources, input)
         };
         let run = |resources: Resources, input| async {
-            let out =
-                sentinel_tool_runtime::Tool::run(&GrepTool, test_ctx(resources.into_shared()), input)
-                    .await
-                    .unwrap();
+            let out = sentinel_tool_runtime::Tool::run(
+                &GrepTool,
+                test_ctx(resources.into_shared()),
+                input,
+            )
+            .await
+            .unwrap();
             String::from_utf8_lossy(&out.stdout).into_owned()
         };
 
@@ -2586,7 +2590,8 @@ mod tests {
 
         let tool = GrepTool;
         let mut stream =
-            sentinel_tool_runtime::Tool::execute(&tool, test_ctx(resources.into_shared()), input).await;
+            sentinel_tool_runtime::Tool::execute(&tool, test_ctx(resources.into_shared()), input)
+                .await;
 
         let mut deltas = String::new();
         let mut terminal: Option<Result<GrepSearchOutput, sentinel_tool_runtime::ToolError>> = None;
