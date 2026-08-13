@@ -17,6 +17,7 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
             sentinel_config::SentinelConfig::default()
         }
     });
+    crate::theme::Theme::install(crate::theme::Theme::from_settings(&config.theme));
 
     let model_id = if !args.is_empty() && !args[0].starts_with('-') {
         args[0].clone()
@@ -214,17 +215,33 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
 
     let mut thread = app.new_session(config.agent.yolo_mode);
 
-    print_banner();
-    println!(" Model:  {}", model_id.green().bold());
-    println!(
-        " Yolo:   {}",
-        if config.agent.yolo_mode {
-            "yes".green()
-        } else {
-            "no".yellow()
-        }
-    );
-    println!(" Pipeline: {}", "read → triage → draft → QA → send".cyan());
+    print_banner("sentinel exec");
+    crate::display::print_session_facts(&[
+        crate::display::Fact {
+            label: "Model",
+            value: model_id.clone(),
+            role: crate::theme::Role::Accent,
+        },
+        crate::display::Fact {
+            label: "Yolo",
+            value: if config.agent.yolo_mode {
+                "yes".into()
+            } else {
+                "no".into()
+            },
+            role: if config.agent.yolo_mode {
+                crate::theme::Role::Warning
+            } else {
+                crate::theme::Role::Muted
+            },
+        },
+        crate::display::Fact {
+            label: "Pipeline",
+            value: "read → triage → draft → QA → send".into(),
+            role: crate::theme::Role::Info,
+        },
+    ]);
+    println!();
     print_divider();
 
     let result = pipeline_agent

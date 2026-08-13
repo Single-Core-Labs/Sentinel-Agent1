@@ -125,6 +125,7 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
             sentinel_config::SentinelConfig::default()
         }
     });
+    crate::theme::Theme::install(crate::theme::Theme::from_settings(&config.theme));
 
     let parsed = match CliArgs::parse(args, &config.agent.default_model) {
         Ok(cli) => cli,
@@ -352,18 +353,30 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
         None => app.new_session(yolo_mode),
     };
 
-    print_banner();
-    println!(" Model:  {}", model_id.green().bold());
-    println!(
-        " Yolo:   {}",
-        if yolo_mode {
-            "yes".green()
-        } else {
-            "no".yellow()
-        }
-    );
+    print_banner("sentinel agent");
+    crate::display::print_session_facts(&[
+        crate::display::Fact {
+            label: "Model",
+            value: model_id.clone(),
+            role: crate::theme::Role::Accent,
+        },
+        crate::display::Fact {
+            label: "Yolo",
+            value: if yolo_mode { "yes".into() } else { "no".into() },
+            role: if yolo_mode {
+                crate::theme::Role::Warning
+            } else {
+                crate::theme::Role::Muted
+            },
+        },
+        crate::display::Fact {
+            label: "Session",
+            value: thread.id.to_string(),
+            role: crate::theme::Role::Info,
+        },
+    ]);
+    println!();
     print_divider();
-    println!(" Session: {}", thread.id.to_string().green().bold());
     println!(
         " {} Resume later with: sentinel ai --resume {}",
         "→".cyan().bold(),

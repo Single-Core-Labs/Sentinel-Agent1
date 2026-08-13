@@ -85,6 +85,7 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     )?);
 
     let config = Arc::new(sentinel_config::SentinelConfig::default());
+    crate::theme::Theme::install(crate::theme::Theme::from_settings(&config.theme));
 
     let tools = Arc::new(sentinel_tools::ToolRegistry::new());
 
@@ -872,27 +873,7 @@ async fn model_show(model: &str) -> Result<ModelMeta, String> {
 // ── Display ──
 
 fn banner() {
-    println!();
-    println!(
-        "{}",
-        "  ╭──────────────────────────────────────────╮"
-            .bright_white()
-            .dimmed()
-    );
-    println!(
-        "  {} {}",
-        "│".bright_white().dimmed(),
-        "           Sentinel Local                    "
-            .bright_white()
-            .bold()
-    );
-    println!(
-        "{}",
-        "  ╰──────────────────────────────────────────╯"
-            .bright_white()
-            .dimmed()
-    );
-    println!();
+    crate::display::print_banner("sentinel local");
 }
 
 fn step(msg: &str) {

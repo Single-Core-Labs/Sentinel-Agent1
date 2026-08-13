@@ -61,3 +61,9 @@ verbose = false
 # headers = { Authorization = "Bearer your_github_token_here" }
 
 
+
+[theme]
+# Named palette: opencode-dark | paper | warp | gemini
+# name = "opencode-dark"
+# Optional brand accent override: hex (#a78bfa) or ANSI name (magenta)
+# accent = "#a78bfa"

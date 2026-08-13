@@ -15,6 +15,7 @@ mod plugin_cmd;
 mod proxy;
 mod schema;
 mod telemetry;
+mod theme;
 mod tui_run;
 
 use colored::*;

@@ -78,8 +78,13 @@ impl Default for ContextSettings {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ThemeSettings {
+    /// Named palette preset (`opencode-dark`, `paper`, `warp`, `gemini`).
     #[serde(default = "default_theme")]
     pub name: String,
+    /// Optional brand accent override as `#rrggbb` (truecolor terminals) or
+    /// `magenta`/`blue`/... for the 16-color fallback.
+    #[serde(default)]
+    pub accent: Option<String>,
 }
 
 fn default_theme() -> String {
@@ -90,6 +95,7 @@ impl Default for ThemeSettings {
     fn default() -> Self {
         Self {
             name: default_theme(),
+            accent: None,
         }
     }
 }
