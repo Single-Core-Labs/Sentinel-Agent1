@@ -16,6 +16,10 @@
 
 mod headroom;
 mod host;
+mod stream;
 
 pub use headroom::{HeadroomHost, HeadroomRetrieveAiTool, HeadroomRetrieveArgs};
 pub use host::{AiHost, AiHostOptions, ToolResult};
+pub use stream::{
+    HostPromptEvent, PromptEventSink, PromptOutcome, ToolApproval, ToolApprover, ToolCallInfo,
+};

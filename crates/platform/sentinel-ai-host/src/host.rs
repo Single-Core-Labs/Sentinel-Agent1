@@ -5,7 +5,14 @@ use std::sync::Arc;
 
 use anyhow::{Context, Result};
 use sentinel_ai_agent::{Agent, AgentBuilder};
-use sentinel_ai_sampler::{ApiBackend, AuthScheme, SamplerConfig, SamplingClient};
+use sentinel_ai_sampler::{
+    ApiBackend, AuthScheme, RequestId, SamplerConfig, SamplingClient, stream_chat_completions,
+};
+use tokio_util::sync::CancellationToken;
+
+use crate::stream::{
+    HostPromptEvent, PromptEventSink, PromptOutcome, ToolApproval, ToolApprover, ToolCallInfo,
+};
 use sentinel_ai_sampling_types::{
     ContentPart, ConversationItem, ConversationRequest, SystemItem, ToolResultItem, ToolSpec,
     UserItem,
@@ -294,6 +301,252 @@ impl AiHost {
         }
 
         Ok((full_text, tool_results))
+    }
+
+    /// Streaming variant of [`Self::run`].
+    ///
+    /// Every text/reasoning/tool-call delta is forwarded to `emit` as it
+    /// arrives; each tool call runs through plugin policy and then `approve`
+    /// (unless cancelled, which aborts the whole turn). Returns final text,
+    /// observed tool results, and whether the turn was cancelled.
+    pub async fn stream_prompt(
+        &self,
+        prompt: &str,
+        emit: PromptEventSink,
+        approve: ToolApprover,
+        cancel: Option<CancellationToken>,
+    ) -> Result<PromptOutcome> {
+        let mut items: Vec<ConversationItem> = vec![
+            ConversationItem::System(SystemItem {
+                content: self.agent.system_prompt().into(),
+            }),
+            ConversationItem::User(UserItem {
+                content: vec![ContentPart::Text {
+                    text: prompt.trim().to_string().into(),
+                }],
+                ..Default::default()
+            }),
+        ];
+
+        let tool_specs: Vec<ToolSpec> = self
+            .agent
+            .tool_definitions()
+            .await
+            .into_iter()
+            .map(ToolSpec::from)
+            .collect();
+
+        tracing::debug!(
+            tools = tool_specs.len(),
+            model = %self.options.model,
+            "starting ai host streaming turn loop"
+        );
+
+        let mut outcome = PromptOutcome::default();
+        let cancel = cancel.as_ref();
+
+        for turn in 0..self.options.max_turns {
+            let request = ConversationRequest {
+                items: items.clone(),
+                tools: tool_specs.clone(),
+                model: Some(self.options.model.clone()),
+                ..Default::default()
+            };
+
+            let request_id = RequestId::random();
+            let (raw, meta) = self
+                .client
+                .conversation_stream(request)
+                .await
+                .context("sampler conversation_stream failed")?;
+            let events =
+                stream_chat_completions(raw, meta, request_id, std::time::Duration::from_secs(300));
+
+            let response = match crate::stream::drain_events(events, &emit, cancel).await {
+                Some(Ok(response)) => response,
+                Some(Err(err)) => {
+                    emit(HostPromptEvent::TextDelta(format!("⚠ {err}\n")));
+                    return Err(anyhow::anyhow!(err));
+                }
+                None => {
+                    outcome.cancelled = true;
+                    return Ok(outcome);
+                }
+            };
+
+            items.extend(response.items.iter().cloned());
+
+            let assistant_text = response.assistant_text();
+            if !assistant_text.is_empty() {
+                if !outcome.text.is_empty() && !outcome.text.ends_with('\n') {
+                    outcome.text.push('\n');
+                }
+                outcome.text.push_str(&assistant_text);
+            }
+
+            let calls = response.tool_calls().to_vec();
+            if calls.is_empty() {
+                break;
+            }
+            if calls.len() > self.options.max_tool_results {
+                tracing::warn!(
+                    calls = calls.len(),
+                    cap = self.options.max_tool_results,
+                    "truncating tool calls this turn"
+                );
+            }
+
+            for call in calls.into_iter().take(self.options.max_tool_results) {
+                let name = call.name.clone();
+                let call_id = call.id.to_string();
+                let args: serde_json::Value =
+                    serde_json::from_str(&call.arguments).unwrap_or(serde_json::Value::Null);
+
+                // Guard plugin policy (before_tool_call) runs first — the
+                // user-facing approval gate only sees calls that survived it.
+                match self
+                    .plugins
+                    .dispatch(&PluginEvent::BeforeToolCall {
+                        tool_name: name.clone(),
+                        args: args.clone(),
+                    })
+                    .await
+                {
+                    PluginAction::Continue | PluginAction::Modify(_) => {}
+                    PluginAction::Veto(reason) => {
+                        tracing::warn!(tool = %name, %reason, "tool call vetoed by guard plugin");
+                        emit(HostPromptEvent::ToolCallStarted {
+                            call_id: call_id.clone(),
+                            name: name.clone(),
+                        });
+                        let content = format!("Vetoed by plugin policy: {reason}");
+                        emit(HostPromptEvent::ToolCallFinished {
+                            call_id: call_id.clone(),
+                            name: name.clone(),
+                            ok: false,
+                            output: content.clone(),
+                        });
+                        outcome.tool_results.push(ToolResult {
+                            name: name.clone(),
+                            call_id: call_id.clone(),
+                            ok: false,
+                            output: content.clone(),
+                        });
+                        items.push(ConversationItem::ToolResult(ToolResultItem {
+                            tool_call_id: call_id,
+                            content: content.into(),
+                            images: Vec::new(),
+                        }));
+                        continue;
+                    }
+                    PluginAction::Deny(reason) => {
+                        return Err(anyhow::anyhow!(
+                            "tool call {name} denied by guard plugin: {reason}"
+                        ));
+                    }
+                }
+
+                emit(HostPromptEvent::ToolCallStarted {
+                    call_id: call_id.clone(),
+                    name: name.clone(),
+                });
+
+                // User-facing approval (permission dialog).
+                let approval = if let Some(token) = cancel {
+                    let approve = approve.clone();
+                    let info = ToolCallInfo {
+                        name: name.clone(),
+                        call_id: call_id.clone(),
+                        args: args.clone(),
+                    };
+                    tokio::select! {
+                        verdict = approve(info) => verdict,
+                        _ = token.cancelled() => {
+                            outcome.cancelled = true;
+                            return Ok(outcome);
+                        }
+                    }
+                } else {
+                    approve(ToolCallInfo {
+                        name: name.clone(),
+                        call_id: call_id.clone(),
+                        args: args.clone(),
+                    })
+                    .await
+                };
+
+                match approval {
+                    ToolApproval::Denied | ToolApproval::CancelTurn => {
+                        let cancelled = approval == ToolApproval::CancelTurn;
+                        let content = if cancelled {
+                            "Tool call cancelled by the user".to_string()
+                        } else {
+                            "Tool call rejected by the user".to_string()
+                        };
+                        emit(HostPromptEvent::ToolCallFinished {
+                            call_id: call_id.clone(),
+                            name: name.clone(),
+                            ok: false,
+                            output: content.clone(),
+                        });
+                        outcome.tool_results.push(ToolResult {
+                            name: name.clone(),
+                            call_id: call_id.clone(),
+                            ok: false,
+                            output: content.clone(),
+                        });
+                        items.push(ConversationItem::ToolResult(ToolResultItem {
+                            tool_call_id: call_id,
+                            content: content.into(),
+                            images: Vec::new(),
+                        }));
+                        if cancelled {
+                            outcome.cancelled = true;
+                            return Ok(outcome);
+                        }
+                        continue;
+                    }
+                    ToolApproval::Allowed => {}
+                }
+
+                tracing::debug!(tool = %name, call_id = %call_id, "dispatching tool call");
+
+                let (ok, content) = match self.agent.tool_bridge().call(&name, args, &call_id).await
+                {
+                    Ok(result) => (true, result.prompt_text),
+                    Err(e) => (false, format!("tool error: {e}")),
+                };
+
+                let model_content = match &self.headroom {
+                    Some(h) => h.compress(&name, &content, !ok).await,
+                    None => content.clone(),
+                };
+
+                emit(HostPromptEvent::ToolCallFinished {
+                    call_id: call_id.clone(),
+                    name: name.clone(),
+                    ok,
+                    output: model_content.clone(),
+                });
+
+                outcome.tool_results.push(ToolResult {
+                    name: name.clone(),
+                    call_id: call_id.clone(),
+                    ok,
+                    output: model_content.clone(),
+                });
+
+                items.push(ConversationItem::ToolResult(ToolResultItem {
+                    tool_call_id: call_id,
+                    content: model_content.into(),
+                    images: Vec::new(),
+                }));
+            }
+
+            emit(HostPromptEvent::TurnFinished { turn });
+        }
+
+        Ok(outcome)
     }
 }
 

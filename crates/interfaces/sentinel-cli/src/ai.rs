@@ -11,6 +11,7 @@ struct CliArgs {
     prompt_arg: Option<String>,
     hook_command: Option<String>,
     host: String,
+    tui: bool,
 }
 
 impl CliArgs {
@@ -22,6 +23,7 @@ impl CliArgs {
             prompt_arg: None,
             hook_command: None,
             host: "legacy".to_string(),
+            tui: false,
         };
         let mut resume_or_new_seen = false;
         let mut iter = args.iter();
@@ -47,6 +49,7 @@ impl CliArgs {
                     resume_or_new_seen = true;
                 }
                 "--yolo" => out.yolo_mode = true,
+                "--tui" => out.tui = true,
                 "--host" => match iter.next() {
                     Some(h) if h == "ai" || h == "legacy" => out.host = h.clone(),
                     Some(_) => return Err("--host must be 'ai' or 'legacy'".into()),
@@ -76,13 +79,15 @@ impl CliArgs {
 pub async fn run(args: &[String]) -> anyhow::Result<()> {
     if args.iter().any(|a| a == "-h" || a == "--help") {
         println!(
-            "Usage: sentinel ai [model-id] [--resume <session-id> | --new] [--yolo] [--model <id>] [--prompt <text>] [--hook-command <cmd>] [--host <ai|legacy>]"
+            "Usage: sentinel ai [model-id] [--resume <session-id> | --new] [--yolo] [--tui] [--model <id>] [--prompt <text>] [--hook-command <cmd>] [--host <ai|legacy>]"
         );
         println!(
             "  --resume <id>     Continue a previously saved session (mutually exclusive with --new)"
         );
         println!("  --new             Start a fresh session (mutually exclusive with --resume)");
         println!("  --yolo            Auto-approve tool actions");
+        println!("  --tui             Full-screen grok-style TUI (ratatui) over the sentinel-ai");
+        println!("                    agent core; falls back to the REPL if it cannot start");
         println!(
             "  --model <id>      Select a model (e.g. gpt-4o, claude-sonnet-4, gemini-2.5-flash)"
         );
@@ -161,6 +166,28 @@ pub async fn run(args: &[String]) -> anyhow::Result<()> {
     if parsed.host == "ai" {
         let prompt = prompt_arg.as_deref().expect("--prompt guarded above");
         return crate::host::run_one_shot(&model_id, prompt).await;
+    }
+
+    // --tui: full-screen grok-style TUI over the sentinel-ai agent core
+    // (in-process ACP: ratatui client + AiHost stream_prompt agent). The
+    // REPL stays the default UI; if the TUI cannot start we fall through to
+    // the REPL so an interactive session is never lost.
+    if parsed.tui {
+        if resume_id.is_some() {
+            eprintln!(
+                " {} --tui does not support --resume yet; starting a fresh session",
+                "W".yellow()
+            );
+        }
+        if let Err(e) = crate::tui_run::run_tui(&model_id, yolo_mode).await {
+            eprintln!(
+                " {} TUI failed to start ({}); falling back to the terminal REPL",
+                "W".yellow(),
+                e
+            );
+        } else {
+            return Ok(());
+        }
     }
 
     // #49/#52/#53 — centralized model+provider resolution with validation and
@@ -452,6 +479,13 @@ mod tests {
     #[test]
     fn yolo_flag() {
         assert!(parse(&["--yolo"]).unwrap().yolo_mode);
+    }
+
+    #[test]
+    fn tui_flag() {
+        assert!(parse(&["--tui"]).unwrap().tui);
+        let a = parse(&["--tui", "--yolo", "qwen3:8b"]).unwrap();
+        assert!(a.tui && a.yolo_mode && a.model_id == "qwen3:8b");
     }
 
     #[test]

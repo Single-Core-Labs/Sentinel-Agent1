@@ -8,6 +8,7 @@ description = "Sentinel host that drives the sentinel-ai agent core (AgentBuilde
 [dependencies]
 anyhow.workspace = true
 tokio.workspace = true
+tokio-util.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true

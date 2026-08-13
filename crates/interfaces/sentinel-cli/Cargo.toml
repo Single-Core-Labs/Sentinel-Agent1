@@ -30,6 +30,7 @@ sentinel-agent-identity = { workspace = true }
 sentinel-provider-info = { workspace = true }
 sentinel-headroom = { workspace = true }
 sentinel-ai-host = { workspace = true }
+sentinel-tui = { workspace = true }
 sentinel-proxy = { workspace = true }
 hex.workspace = true
 reqwest.workspace = true

@@ -1,0 +1,26 @@
+[package]
+name = "sentinel-tui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Grok-style full-screen ratatui terminal UI for the sentinel-ai agent (in-process ACP)"
+
+[dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+agent-client-protocol = { workspace = true, features = ["unstable"] }
+crossterm.workspace = true
+futures.workspace = true
+ratatui.workspace = true
+serde_json.workspace = true
+textwrap.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+unicode-width.workspace = true
+
+sentinel-acp-lib = { workspace = true }
+sentinel-ai-host = { workspace = true }
+
+[lints]
+workspace = true

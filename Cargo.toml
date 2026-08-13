@@ -265,6 +265,7 @@ sentinel-agent-identity = { path = "crates/platform/sentinel-agent-identity" }
 sentinel-analytics = { path = "crates/platform/sentinel-analytics" }
 sentinel-headroom = { path = "crates/platform/sentinel-headroom" }
 sentinel-ai-host = { path = "crates/platform/sentinel-ai-host" }
+sentinel-tui = { path = "crates/interfaces/sentinel-tui" }
 sentinel-proxy = { path = "crates/platform/sentinel-proxy" }
 
 [workspace.lints.clippy]
