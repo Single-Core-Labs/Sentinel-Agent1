@@ -270,7 +270,8 @@ impl App {
             match result {
                 Ok(AgentOutput::Success { text }) => {
                     if !text.is_empty() {
-                        println!("\n{}", text);
+                        // output render is already handled by event handler
+                        // println!("\n{}", text);
                     }
                 }
                 Ok(AgentOutput::Error { message }) => {
