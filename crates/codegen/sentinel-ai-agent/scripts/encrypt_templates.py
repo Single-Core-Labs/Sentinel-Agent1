@@ -37,7 +37,7 @@ def main():
     ]
     for const_name, filename in TEMPLATES.items():
         path = TEMPLATE_DIR / filename
-        data = path.read_bytes()
+        data = path.read_bytes().replace(b'\r', b'')
         enc = xor_encrypt(data, SEEDS[const_name])
         arr = ", ".join(str(b) for b in enc)
         # `#[rustfmt::skip]` keeps the multi-KB byte array on a single line so

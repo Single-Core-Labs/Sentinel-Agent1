@@ -72,23 +72,26 @@ mod tests {
                 .map(|(i, &b)| b ^ seed.wrapping_add(i as u8))
                 .collect()
         }
-        let base_raw = include_bytes!("../../templates/prompt.md");
-        let apply_patch_raw = include_bytes!("../../templates/apply_patch_prompt.md");
-        let subagent_raw = include_bytes!("../../templates/subagent_prompt.md");
+        fn normalize_newlines(data: &[u8]) -> Vec<u8> {
+            data.iter().copied().filter(|&b| b != b'\r').collect()
+        }
+        let base_raw = normalize_newlines(include_bytes!("../../templates/prompt.md"));
+        let apply_patch_raw = normalize_newlines(include_bytes!("../../templates/apply_patch_prompt.md"));
+        let subagent_raw = normalize_newlines(include_bytes!("../../templates/subagent_prompt.md"));
 
         assert_eq!(
             BASE_PROMPT_ENC,
-            &xor_encrypt(base_raw, PROMPT_SEEDS[0]),
+            &xor_encrypt(&base_raw, PROMPT_SEEDS[0]),
             "prompt.md encrypted bytes are stale — run scripts/encrypt_templates.py"
         );
         assert_eq!(
             CODEX_PROMPT_ENC,
-            &xor_encrypt(apply_patch_raw, PROMPT_SEEDS[1]),
+            &xor_encrypt(&apply_patch_raw, PROMPT_SEEDS[1]),
             "apply_patch_prompt.md encrypted bytes are stale — run scripts/encrypt_templates.py"
         );
         assert_eq!(
             SUBAGENT_PROMPT_ENC,
-            &xor_encrypt(subagent_raw, PROMPT_SEEDS[2]),
+            &xor_encrypt(&subagent_raw, PROMPT_SEEDS[2]),
             "subagent_prompt.md encrypted bytes are stale — run scripts/encrypt_templates.py"
         );
     }
