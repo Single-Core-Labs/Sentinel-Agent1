@@ -167,7 +167,11 @@ impl TrustStore {
     /// is under the user's home directory.  Otherwise it requires explicit
     /// trust via `~/.ai/trusted-plugins`.
     pub fn is_config_path_auto_trusted(plugin_root: &Path) -> bool {
-        let Some(home) = dirs::home_dir() else {
+        let home = std::env::var("USERPROFILE")
+            .map(PathBuf::from)
+            .ok()
+            .or_else(dirs::home_dir);
+        let Some(home) = home else {
             return false;
         };
         match dunce::canonicalize(plugin_root) {
